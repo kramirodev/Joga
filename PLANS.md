@@ -1,4 +1,4 @@
-# Roadmap de desenvolvimento — Esporte Vivo
+# Roadmap de desenvolvimento — JOGA
 
 Este roadmap define dependências e critérios de saída. Cada fase deve ganhar um arquivo próprio em `harness/build/` antes da implementação. Não executar várias fases com um único pedido ao Codex.
 
@@ -6,7 +6,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 | Fase | Nome | Objetivo de saída | Dependência |
 |---|---|---|---|
-| 0 | Repositório e governança | Repositório V2 protegido, documentação e fluxo de trabalho definidos | Nenhuma |
+| 0 | Repositório e governança | Repositório `kramirodev/Joga`, documentação e fluxo de trabalho definidos | Nenhuma |
 | 1 | Prova técnica mobile/nativa | Build Android/iOS e provas de passkey, localização e integrações críticas | 0 |
 | 2 | Fundação de engenharia | Esqueletos mobile/backend, ambiente local, CI e health checks | 1 |
 | 3 | Identidade e segurança | Cadastro por telefone, OTP, passkeys, sessões e recuperação segura | 2 |
@@ -20,11 +20,11 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 0 — Repositório e governança
 
-**Escopo:** preservar a implementação antiga; decidir novo repositório ou branch `rebuild/v2`; adicionar os arquivos de governança; definir `main` estável e branches curtas; preparar documentação e templates de PR.
+**Escopo:** desenvolver o JOGA como projeto independente, do zero, no repositório `kramirodev/Joga`; preparar documentação, governança, README e templates de PR; definir `main` estável e branches curtas. O repositório anterior pode ser consultado apenas como referência conceitual, sem dependência operacional.
 
 **Não fazer:** implementar endpoints, telas, tabelas de negócio, autenticação ou matchmaking.
 
-**Aceite:** arquivos `AGENTS.md`, `GOALS.md`, `PLANS.md`, `PROMPTS.md` e documentação técnica estão no lugar; README explica como iniciar; `git diff --check` passa; projeto antigo permanece recuperável; nenhuma credencial é adicionada.
+**Aceite:** arquivos `AGENTS.md`, `GOALS.md`, `PLANS.md`, `PROMPTS.md` e documentação técnica estão no lugar; `README.md` apresenta o projeto e orienta a documentação; decisões e pendências têm fase responsável; `harness/build/phase-00-repositorio-e-governanca.md` registra escopo e evidências; `git diff --check` passa; o repositório `kramirodev/Joga` está provisionado e vinculado; nenhuma credencial é adicionada. Nenhuma atividade relativa ao repositório anterior é exigida.
 
 ## Fase 1 — Prova técnica mobile/nativa
 

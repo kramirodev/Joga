@@ -1,4 +1,4 @@
-# Instruções permanentes do repositório — Esporte Vivo
+# Instruções permanentes do repositório — JOGA
 
 ## 1. Fonte da verdade
 

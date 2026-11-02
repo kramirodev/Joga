@@ -1,17 +1,10 @@
-# Esporte Vivo — início do desenvolvimento com Codex
+# JOGA — início do desenvolvimento com Codex
 
-Este pacote prepara o repositório para um desenvolvimento incremental. Ele não contém código do aplicativo nem do backend.
+Este guia complementar prepara o repositório para um desenvolvimento incremental. O ponto de entrada principal é `README.md`. Este pacote não contém código do aplicativo nem do backend.
 
-## 1. Proteja o projeto antigo
+## 1. Repositório da V2
 
-Não apague nem sobrescreva o repositório atual para começar a V2.
-
-Escolha uma destas opções:
-
-- **Preferida para uma reconstrução limpa:** crie um novo repositório `esporte-vivo-v2` e mantenha o atual como legado/arquivo de referência.
-- **Alternativa:** crie uma branch `rebuild/v2` no repositório atual e não altere a branch `main` até a V2 estar estável.
-
-Não copie código antigo automaticamente. Reaproveite somente arquivos e comportamentos que forem revisados e aprovados.
+JOGA será desenvolvido do zero como projeto independente no repositório `kramirodev/Joga`. O projeto anterior está em um repositório independente e poderá ser consultado futuramente como referência conceitual, sem obrigação de reutilizar código, arquitetura, banco ou histórico.
 
 ## 2. Estrutura inicial
 
@@ -33,7 +26,7 @@ Copie o conteúdo deste pacote para a raiz do repositório escolhido. A estrutur
 └── .github/
 ```
 
-Depois, inicialize o Git (se for um repositório novo), faça o primeiro commit apenas da documentação de governança e abra o projeto no Codex.
+O repositório `kramirodev/Joga` já está vinculado a este workspace. Nenhuma renomeação ou outra alteração remota foi necessária.
 
 ## 3. Primeiro pedido ao Codex
 
@@ -53,4 +46,4 @@ Quando o Codex terminar, confira se ele entendeu as decisões, se encontrou cont
 
 ## 5. Decisões ainda abertas
 
-A documentação define a arquitetura-alvo, mas algumas escolhas precisam ser comprovadas antes de virarem dependências permanentes: estratégia Expo/React Native com módulos nativos, biblioteca de passkeys, provedor de SMS, provedor de mapas/geocodificação, domínio técnico e infraestrutura de produção. O Codex deve comparar opções e propor um pequeno protótipo antes de escolher.
+As decisões ainda pendentes e suas fases responsáveis estão listadas em `docs/DOCUMENTACAO_TECNICA.md`, seção 18. Escolhas de mobile e passkeys devem ser comprovadas na Fase 1; serviços e parâmetros de domínio devem ser decididos na fase que os implementa.

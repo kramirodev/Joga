@@ -1,8 +1,8 @@
-# Objetivos do produto — Esporte Vivo
+# Objetivos do produto — JOGA
 
 ## Propósito
 
-Criar um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável.
+Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável.
 
 ## Resultados desejados
 

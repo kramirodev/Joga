@@ -1,4 +1,4 @@
-# Esporte Vivo — Documentação Técnica
+# JOGA — Documentação Técnica
 
 **Versão:** 1.0  
 **Status:** especificação-base para reconstrução do projeto  
@@ -12,7 +12,7 @@
 
 ## 1. Visão do produto
 
-O Esporte Vivo é uma plataforma mobile de matchmaking esportivo amador. O objetivo é conectar jogadores para partidas presenciais, formar equipes equilibradas e construir uma experiência competitiva confiável por modalidade.
+JOGA é uma plataforma mobile de matchmaking esportivo amador. O objetivo é conectar jogadores para partidas presenciais, formar equipes equilibradas e construir uma experiência competitiva confiável por modalidade.
 
 O produto deve permitir que uma pessoa:
 
@@ -168,7 +168,7 @@ flowchart TB
 | SMS | Provedor intercambiável | Segredos fora do código; limites e monitoramento de custo. |
 | CI | GitHub Actions | Lint, tipos, testes, auditorias e build. |
 
-A escolha final de bibliotecas mobile para passkeys deve ser validada com protótipo nativo real em Android e iOS antes de fechar a implementação. Não depender de Expo Go para funcionalidades que exigem integração nativa; usar uma configuração de desenvolvimento que permita módulos nativos. Mesmo sem site público, o projeto deverá controlar um domínio técnico para associação segura do aplicativo, passkeys e, se adotados, links verificados. Esse domínio pode servir somente arquivos estáticos de associação e redirecionamentos mínimos, sem oferecer uma interface web para jogadores.
+A escolha final de bibliotecas mobile para passkeys deve ser validada com protótipo nativo real em Android e iOS antes de fechar a implementação. Não depender de Expo Go para funcionalidades que exigem integração nativa; usar uma configuração de desenvolvimento que permita módulos nativos. Mesmo sem site público, o projeto precisará de um domínio técnico para associação segura do aplicativo, passkeys e, se adotados, links verificados. O uso e os requisitos serão validados na Fase 1; qualquer compra, registro, DNS ou hospedagem depende de autorização específica e não faz parte da Fase 0. Esse domínio pode servir somente arquivos estáticos de associação e redirecionamentos mínimos, sem oferecer uma interface web para jogadores.
 
 ---
 
@@ -305,7 +305,7 @@ Requisitos:
 
 Implementações nativas devem usar os mecanismos de plataforma: Credential Manager no Android e Authentication Services no iOS, respeitando a configuração de domínio/RP exigida por cada sistema. A API deve ser independente da plataforma cliente.
 
-**Domínio técnico obrigatório, sem site de produto:** a integração de passkeys no iOS exige domínio associado com o serviço `webcredentials` e arquivo `apple-app-site-association`. No Android, a configuração de credenciais/links pode exigir Digital Asset Links, publicado em `/.well-known/assetlinks.json`, conforme o recurso utilizado. Portanto, “app-only” significa não construir um site público ou frontend web; não significa que seja possível dispensar domínio, DNS e hospedagem HTTPS para os arquivos técnicos de associação. O domínio deve ser registrado e protegido desde a Fase 0.
+**Domínio técnico obrigatório, sem site de produto:** a integração de passkeys no iOS exige domínio associado com o serviço `webcredentials` e arquivo `apple-app-site-association`. No Android, a configuração de credenciais/links pode exigir Digital Asset Links, publicado em `/.well-known/assetlinks.json`, conforme o recurso utilizado. Portanto, “app-only” significa não construir um site público ou frontend web; não significa que seja possível dispensar domínio, DNS e hospedagem HTTPS para os arquivos técnicos de associação. Os requisitos e a escolha do domínio serão validados na Fase 1. Registro, DNS e hospedagem exigem autorização específica e não fazem parte da Fase 0.
 
 ### 5.5 Sessões e tokens
 
@@ -792,23 +792,23 @@ Pipeline inicial recomendado:
 
 ## 16. Roadmap de implementação
 
-A ordem abaixo reduz retrabalho: primeiro invariantes e segurança de identidade; depois domínio competitivo; por fim recursos auxiliares e escala.
+A sequência normativa, os escopos e os critérios de saída são os definidos em `PLANS.md`. A tabela abaixo resume a mesma sequência para relacionar os domínios técnicos, sem criar fases adicionais ou alterar seus limites.
 
-| Fase | Entrega | Critério de saída |
-|---|---|---|
-| 0. Preparação | Repositório limpo, padrões, ADRs, ambientes, CI e Docker local. | Build reproduzível e pipeline obrigatório. |
-| 1. Fundação | FastAPI modular, configuração, banco, SQLAlchemy, Alembic, logs e health checks. | Migrações e testes de integração funcionando. |
-| 2. Identidade | OTP, telefone protegido, passkeys, sessões, dispositivos e recuperação. | Fluxos positivos e negativos cobertos por testes. |
-| 3. Perfil e catálogo | Usuários, esportes, formatos, preferências, disponibilidade e locais. | API validada e autorização por recurso. |
-| 4. Localização | Permissões mobile, região manual, consultas PostGIS e privacidade. | Funciona com localização negada/aproximada e sem rastreamento. |
-| 5. Matchmaking | Fila persistente, worker, elegibilidade e balanceamento. | Testes concorrentes sem consumo duplicado. |
-| 6. Partidas | Confirmação, presença e máquina de estados. | Transições válidas e expiração previsível. |
-| 7. Resultados e disputas | Relatos, confirmação cruzada, evidências e resolução. | Disputa nunca altera rating antes da resolução. |
-| 8. Competitivo | Elo versionado, histórico imutável, ranking e correções compensatórias. | Uma aplicação de rating por partida/versão. |
-| 9. Confiança | Trust Events, políticas, revisão e contestação. | Nenhuma punição baseada apenas em denúncia isolada. |
-| 10. Realtime e push | WebSockets autenticados, FCM/APNs, Outbox e reconexão. | Falha de notificação não altera estado oficial. |
-| 11. Hardening | Testes de abuso, carga, revisão de segurança e LGPD. | Riscos críticos corrigidos e evidências registradas. |
-| 12. Produção | Deploy, alertas, backups, runbooks e resposta a incidentes. | Restauração testada e operação monitorada. |
+| Fase | Entrega técnica (resumo) |
+|---|---|
+| 0. Repositório e governança | Novo repositório JOGA e documentação governados; projeto independente. |
+| 1. Prova técnica mobile/nativa | Provas Android/iOS para build, passkeys, localização e integrações críticas. |
+| 2. Fundação de engenharia | Estrutura mobile/backend, ambiente local, CI e health checks. |
+| 3. Identidade e segurança | Telefone, OTP, passkeys, sessões e recuperação segura. |
+| 4. Perfil e descoberta | Perfil esportivo, catálogo, locais e busca manual/GPS. |
+| 5. Filas e matchmaking | Filas persistentes, worker e formação idempotente de partidas. |
+| 6. Ciclo de partidas | Confirmação, presença, expiração e máquina de estados. |
+| 7. Resultados e disputas | Relatos, divergências, evidências e resolução auditável. |
+| 8. Sistema competitivo | MMR versionado, ranking e Trust Factor separado. |
+| 9. Comunicação em tempo real | WebSocket autorizado, Outbox, push e reconciliação. |
+| 10. Hardening e piloto | Segurança, carga, observabilidade, backup/restore e lançamento controlado. |
+
+As dependências e critérios de aceite de cada entrega permanecem definidos exclusivamente em `PLANS.md`.
 
 ### 16.1 Ordem de prioridade dentro do MVP
 
@@ -820,7 +820,7 @@ A ordem abaixo reduz retrabalho: primeiro invariantes e segurança de identidade
 
 ## 17. Critérios de aceite para produção
 
-O Esporte Vivo não deve ser considerado pronto para produção enquanto qualquer item crítico abaixo estiver pendente:
+JOGA não deve ser considerado pronto para produção enquanto qualquer item crítico abaixo estiver pendente:
 
 - [ ] Nenhuma API confia em `user_id` fornecido pelo cliente para identificar o usuário autenticado.
 - [ ] Telefone não é chave primária e não aparece em respostas públicas ou logs.
@@ -844,38 +844,29 @@ O Esporte Vivo não deve ser considerado pronto para produção enquanto qualque
 
 ## 18. Riscos conhecidos e decisões pendentes
 
-Os itens abaixo não impedem começar a fundação, mas precisam de decisão antes dos módulos correspondentes:
+Esta lista atribui cada decisão à fase normativa de `PLANS.md`. Não significa que a decisão já foi tomada. Decisões que alterem arquitetura, segurança, dados ou contratos devem ser registradas em `docs/ADR/` com contexto, opções, decisão, consequências e data.
 
-1. **Provedor de SMS:** comparar entrega, cobertura internacional, proteção contra abuso, preço e suporte a números brasileiros/internacionais.
-2. **Biblioteca mobile de passkeys:** validar integração nativa e associação de domínio/RP em protótipos Android e iOS.
-3. **Política para números reciclados:** definir prazo de inatividade, recuperação e liberação de número sem transferir a conta antiga.
-4. **Regras de resultado:** definir por modalidade quem relata, quantas confirmações são necessárias e prazos de disputa.
-5. **Parâmetros de matchmaking:** definir tamanho dos grupos, tolerância de rating, tempo máximo de espera e raio máximo por modalidade.
-6. **Política de rating:** definir rating inicial, fator K, partidas provisórias, sazonalidade e procedimento de anulação.
-7. **Retenção e LGPD:** definir prazos concretos para localização temporária, logs, evidências e contas excluídas.
-8. **Infraestrutura de produção:** escolher provedor, região, gestão de segredos, backup e objetivos RPO/RTO.
+| Decisão pendente | Fase responsável | Limite/observação |
+|---|---|---|
+| Expo com development builds ou React Native CLI; versões e módulos nativos | 1 — Prova técnica mobile/nativa | Comparar por protótipos Android/iOS antes de fixar bibliotecas. |
+| Biblioteca e fluxo de passkeys, RP ID, origem e associação Apple/Android | 1 — Prova técnica mobile/nativa | Validar nos dois sistemas. O domínio técnico é requisito; sua compra/registro/hospedagem não pertence à Fase 0 e exige autorização própria antes de qualquer ação externa. |
+| Permissões de localização aproximada, precisa e negada e integração mobile | 1 — Prova técnica mobile/nativa | Provar o comportamento da plataforma; política de produto continua exigindo alternativa manual e sem rastreamento em segundo plano. |
+| SMS sandbox/adaptador simulado para provas e integração real/provedor | 1 para validar adaptador; 3 para escolha e integração do fluxo de identidade | Não gerar custos nem usar credenciais reais sem autorização. |
+| Política de números reciclados, recuperação e liberação de número | 3 — Identidade e segurança | SMS isolado não deve permitir assumir uma conta existente. |
+| Política de retenção, bases/finalidades e solicitações LGPD para os dados de perfil e localização | 4 — Perfil e descoberta; revisão final em 10 — Hardening e piloto | Definir antes de persistir dados pessoais correspondentes; revisão não substitui avaliação jurídica. |
+| Provedor de mapas/geocodificação, licenças, custos e limites | 4 — Perfil e descoberta | Comparar antes de integrar serviço externo. |
+| Regras de confirmação de resultado e prazos por modalidade | 7 — Resultados e disputas | Definir antes de aceitar resultados competitivos. |
+| Tamanho de grupos, tolerância de rating, espera e raio por modalidade | 5 — Filas e matchmaking | Versionar parâmetros e validar com testes/simulações. |
+| Rating inicial, fator K, provisórios, sazonalidade e anulação | 8 — Sistema competitivo | Validar por simulações; manter histórico append-only e correções compensatórias. |
+| Infraestrutura de produção, região, gestão de segredos, backup, RPO/RTO e custos | 10 — Hardening e piloto | Basear em estimativa de tráfego e requisitos LGPD; nenhuma implantação nesta decisão documental. |
 
-Cada decisão relevante deve ser registrada em um ADR (Architecture Decision Record), contendo contexto, opções, decisão, consequências e data.
+Os critérios para `local` e `test`, incluindo quando Redis é realmente necessário, pertencem à Fase 2. Esta lista será refinada nas fichas das fases, sem antecipar a implementação.
 
 ---
 
-## 19. Auditoria do ponto de partida e migração
+## 19. Projeto anterior como referência conceitual
 
-O README anterior descrevia uma base com FastAPI, SQLAlchemy, PostgreSQL/PostGIS, Redis, WebSockets e worker de matchmaking. Também registrava autenticação simplificada, limitações de testes, ausência de atualização competitiva completa e funcionalidades ainda planejadas.
-
-A configuração Compose de desenvolvimento anteriormente consultada continha credencial padrão de banco, portas de PostgreSQL/Redis expostas e execução da API com reload. Esses padrões podem ser convenientes localmente, mas não devem ser copiados para produção.
-
-Antes de reaproveitar código:
-1. Classificar cada módulo como reutilizável, refatorável ou descartável.
-2. Escrever testes de caracterização das regras existentes que forem aproveitadas.
-3. Remover credenciais hardcoded e configurações inseguras.
-4. Substituir autenticação simplificada pelo fluxo de identidade definido aqui.
-5. Retirar estado oficial de filas/partidas do Redis e migrá-lo para PostgreSQL.
-6. Substituir gerenciadores de WebSocket em memória por autenticação e distribuição compatíveis com múltiplos processos.
-7. Implementar máquina de estados e Outbox antes de ampliar funcionalidades competitivas.
-8. Não migrar dados de rating sem validar origem, integridade e possibilidade de auditoria.
-
-A análise anterior foi baseada principalmente no README, Compose e configuração de ambiente, e não equivale a uma revisão completa de cada arquivo-fonte. A implementação deve começar com uma inspeção efetiva do código e dos testes existentes.
+O projeto anterior está em um repositório independente. JOGA será desenvolvido do zero e não depende de auditoria, preservação operacional, migração, importação ou reutilização de código, arquitetura, banco ou histórico do projeto anterior. Uma consulta conceitual futura é opcional e não altera os contratos nem os critérios desta especificação.
 
 ---
 
@@ -898,16 +889,8 @@ As referências abaixo orientam decisões e verificações. Devem ser revisitada
 
 ---
 
-## 21. Próxima tarefa de desenvolvimento
+## 21. Início por fase
 
-A primeira entrega de código deve ser a **Fase 0 + Fase 1**, sem implementar matchmaking ainda:
+A próxima fase só começa quando solicitada explicitamente, conforme `PLANS.md`. Para a Fase 0, executar exclusivamente a preparação de repositório e governança definida em `harness/build/phase-00-repositorio-e-governanca.md`. A Fase 1 é a prova técnica mobile/nativa e só deve começar após a Fase 0 ser encerrada e uma nova solicitação ser aprovada.
 
-1. Auditar a árvore atual do repositório e decidir o que será reaproveitado.
-2. Criar a estrutura modular de backend e mobile.
-3. Configurar Docker local, PostgreSQL/PostGIS e Redis sem credenciais de produção.
-4. Configurar FastAPI, SQLAlchemy, Alembic, logging, configuração por ambiente e health checks.
-5. Criar CI com lint, análise de tipos, testes e secret scanning.
-6. Criar as primeiras migrações e testes de integração.
-7. Registrar os primeiros ADRs: monólito modular, PostgreSQL como fonte da verdade, app-only e telefone + passkey.
-
-**Não começar pelo algoritmo de matchmaking.** Primeiro construir identidade, persistência, transações, autorização e testes. O motor competitivo dependerá dessas fundações para ser confiável.
+Não antecipar estrutura de aplicação, Docker, CI funcional, banco, endpoints ou funcionalidades de fases posteriores durante a Fase 0.

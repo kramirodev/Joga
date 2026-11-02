@@ -1,4 +1,4 @@
-# Prompts reutilizáveis para Codex — Esporte Vivo
+# Prompts reutilizáveis para Codex — JOGA
 
 Copie um prompt por vez. Substitua apenas o número/nome da fase ou tarefa. Não combine várias fases num único pedido.
 
@@ -8,7 +8,7 @@ Copie um prompt por vez. Substitua apenas o número/nome da fase ou tarefa. Não
 Leia AGENTS.md, GOALS.md, PLANS.md e docs/DOCUMENTACAO_TECNICA.md.
 Inspecione o repositório atual em modo somente leitura.
 
-Quero iniciar o Esporte Vivo do zero, sem perder nem copiar cegamente a implementação antiga.
+Quero desenvolver o JOGA do zero como projeto independente.
 
 Entregue:
 1. Estrutura atual encontrada e arquivos relevantes.

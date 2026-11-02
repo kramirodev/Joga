@@ -1,0 +1,3 @@
+# Cache local do pnpm (não é artefato do projeto)
+.pnpm-store/
+.tools/
