@@ -238,6 +238,25 @@ Nos lobbies elegíveis:
 
 A aprovação da votação não substitui a confirmação da disponibilidade nem a conclusão de uma nova reserva. Uma reserva já paga não será cancelada automaticamente apenas porque uma votação foi aprovada. O sistema deverá apresentar os efeitos de cancelamento/reembolso antes de confirmar a mudança.
 
+### 8.3 Votação de troca de quadra
+
+A votação de troca de quadra será uma funcionalidade dos lobbies abertos originados pelo matchmaking. Não existirá votação de troca de arena em lobbies fechados ou em lobbies criados manualmente.
+
+Nos lobbies elegíveis:
+
+- Não haverá um dono com poder unilateral de trocar o local.
+- Qualquer participante poderá sugerir uma alternativa compatível.
+- Cada participante poderá votar uma vez por proposta.
+- Haverá apenas uma votação ativa por lobby.
+- A proposta deverá respeitar o tipo de espaço permitido no lobby.
+- O sistema verificará disponibilidade, horário, duração e demais restrições antes de efetivar a mudança.
+
+A aprovação exige quórum mínimo de 50% dos participantes elegíveis e mais de 50% dos votos válidos favoráveis. Empate, maioria contrária ou ausência de quórum rejeitam a proposta.
+
+A votação deve preservar a transparência entre os participantes: os votos poderão ser visualizados pelos demais jogadores, incentivando responsabilidade e reduzindo decisões aleatórias.
+
+A aprovação não substitui a confirmação da disponibilidade nem a conclusão de uma nova reserva. Uma reserva já paga não será cancelada automaticamente apenas porque uma votação foi aprovada. O sistema deverá apresentar os efeitos de cancelamento e reembolso antes de confirmar a mudança.
+
 ## 9. Partidas, equipes e resultados
 
 O JOGA terá partidas casuais e ranqueadas.
@@ -246,9 +265,81 @@ O JOGA terá partidas casuais e ranqueadas.
 
 **Partidas ranqueadas:** utilizam o MMR específico da modalidade/formato. Resultados validados podem alterar o rating e os rankings individuais.
 
-O ciclo da partida deve incluir formação, confirmação, realização, relato do resultado, validação, eventual disputa e finalização.
+### 9.1 Escolha do capitão
 
-Resultados não confirmados ou em disputa não podem alterar o MMR. A plataforma deve manter histórico auditável dos relatos originais e das decisões finais.
+Nas partidas formadas pelo matchmaking, cada equipe terá um capitão simbólico, escolhido automaticamente pelo sistema.
+
+O capitão não terá autoridade administrativa sobre os demais jogadores nem poderá decidir unilateralmente o resultado da partida. Sua função principal será representar a equipe na comunicação e na confirmação inicial do resultado.
+
+A escolha seguirá esta ordem de prioridade:
+
+1. Maior Trust Factor esportivo.
+2. Maior número de partidas válidas realizadas.
+3. Maior MMR.
+4. Maior idade, em caso de empate nos critérios anteriores.
+
+O Trust Factor será o principal critério porque o capitão deve ser, prioritariamente, o jogador considerado mais confiável pelo sistema.
+
+### 9.2 Confirmação do resultado
+
+Ao final da partida, todos os jogadores deverão informar o resultado individualmente, selecionando a equipe vencedora ou indicando empate, quando permitido pelo formato.
+
+Além disso, os capitães poderão informar o resultado de suas respectivas equipes. Essa confirmação será uma informação adicional para o sistema, não uma decisão absoluta.
+
+Os votos dos participantes serão visíveis aos demais jogadores. Essa transparência é intencional: a expectativa é reduzir votos aleatórios ou incorretos por meio da responsabilidade social entre os participantes.
+
+O prazo de votação será limitado, configurável entre 5 e 10 minutos após o encerramento da partida.
+
+Jogadores que não votarem dentro do prazo serão registrados como votos anulados, e não como votos favoráveis a qualquer resultado.
+
+### 9.3 Divergências e validação
+
+O sistema comparará os resultados informados pelos participantes e as confirmações dos capitães.
+
+Pequenas divergências, como um ou dois votos isolados, não deverão interromper automaticamente a validação. O resultado majoritário poderá ser aceito quando a divergência estiver dentro da tolerância definida para a modalidade e a quantidade de participantes.
+
+Quando mais de 50% dos votos válidos divergirem do resultado predominante, a partida entrará em disputa.
+
+A quantidade de votos anulados será registrada separadamente e não deverá ser interpretada automaticamente como concordância ou discordância.
+
+A disputa será uma medida de proteção, não um mecanismo para anular partidas automaticamente. A anulação deverá ser considerada apenas como última alternativa, depois de avaliadas as evidências disponíveis.
+
+### 9.4 Disputas de partidas
+
+Uma partida em disputa não poderá alterar o MMR até a resolução.
+
+O sistema deverá reunir:
+
+- Resultado informado por cada participante.
+- Resultado informado pelos capitães.
+- Histórico de alterações e confirmações.
+- Denúncias relacionadas à partida.
+- Histórico de confiabilidade relevante dos envolvidos.
+- Outras evidências disponíveis e pertinentes.
+
+A primeira análise poderá ser automatizada por regras de consistência e mecanismos de detecção de comportamento suspeito.
+
+Casos inconclusivos ou com indícios relevantes de fraude poderão ser encaminhados para revisão humana.
+
+As decisões possíveis incluem:
+
+- Confirmar o resultado predominante.
+- Solicitar informações adicionais.
+- Corrigir o resultado quando houver evidência suficiente.
+- Aplicar medidas de integridade quando houver fraude comprovada.
+- Anular a partida somente quando não houver alternativa confiável.
+
+Toda decisão deverá ser registrada e possuir justificativa auditável.
+
+### 9.5 Integridade do sistema de resultados
+
+O sistema deverá evitar que usuários manipulem resultados por meio de votos coordenados, contas falsas ou denúncias abusivas.
+
+O MMR poderá reduzir a vantagem de combinações artificiais de resultados ao longo do tempo, mas não será considerado proteção suficiente contra fraude.
+
+O JOGA deverá manter mecanismos independentes de detecção de padrões suspeitos, sem presumir que o balanceamento competitivo elimina sozinho o problema.
+
+Resultados não confirmados ou em disputa não podem alterar o MMR. A plataforma deverá manter histórico auditável dos relatos originais e das decisões finais.
 
 ## 10. Locais e infraestrutura esportiva
 
@@ -369,6 +460,148 @@ O JOGA manterá separados:
 
 Compras, publicidade, assinaturas e pagamentos não poderão alterar MMR, elegibilidade competitiva de forma oculta ou troféus de clã.
 
+## 15.1 Prevenção de fraudes comerciais
+
+O JOGA deverá proteger compradores e vendedores contra fraudes, tanto durante a compra quanto após a confirmação do pedido.
+
+Os principais riscos considerados incluem:
+
+- Comprador alegar falsamente que não recebeu um produto.
+- Vendedor registrar entrega que não aconteceu.
+- Comprador utilizar comprovantes falsos.
+- Vendedor anunciar produtos inexistentes ou diferentes dos entregues.
+- Tentativas de obter reembolso indevido.
+- Uso de contas falsas ou múltiplas contas para manipular avaliações e transações.
+- Acordos entre comprador e vendedor para explorar o sistema de pagamentos ou reembolsos.
+
+O sistema deverá manter registros auditáveis de pedidos, pagamentos, alterações de status, mensagens, códigos de recebimento e solicitações de suporte.
+
+O código de confirmação de recebimento será uma evidência operacional, mas não será considerado prova absoluta de que o produto estava correto ou sem defeitos.
+
+### 15.2 Denúncia de transações
+
+O comprador e o vendedor poderão denunciar problemas relacionados a uma transação.
+
+O formulário de denúncia deverá permitir:
+
+- Selecionar o tipo de problema.
+- Descrever detalhadamente o ocorrido.
+- Anexar até três imagens como evidência.
+- Vincular automaticamente a denúncia ao pedido correspondente.
+
+As imagens e mensagens deverão possuir limites de tamanho e formatos permitidos, além de controles de segurança.
+
+A IA poderá auxiliar na classificação da denúncia, identificação de inconsistências e priorização de casos. Ela não deverá realizar decisões irreversíveis de reembolso ou penalização apenas com base em uma classificação automatizada.
+
+Casos com indícios relevantes de fraude, evidências conflitantes ou consequências financeiras significativas poderão ser encaminhados para revisão humana.
+
+### 15.3 Comunicação entre comprador e vendedor
+
+O JOGA deverá oferecer comunicação direta entre comprador e loja durante o processo comercial.
+
+Além do contato relacionado ao pedido, haverá um espaço separado para negociação e propostas, permitindo que o comprador converse com a loja sobre condições do produto, defeitos identificados, alternativas ou possíveis soluções.
+
+Essa comunicação deverá permanecer vinculada ao contexto comercial correspondente, com histórico preservado para consulta em eventuais disputas.
+
+O recurso não deverá permitir que a conversa seja utilizada para contornar pagamentos ou controles de segurança da plataforma.
+
+### 15.4 Decisão de disputas comerciais
+
+As disputas comerciais deverão seguir um fluxo de análise progressiva:
+
+1. Coleta automática de dados do pedido, pagamento, mensagens e evidências.
+2. Classificação inicial e identificação de inconsistências por regras e IA.
+3. Tentativa de resolução entre comprador e vendedor, quando apropriado.
+4. Encaminhamento de casos complexos ou suspeitos para revisão humana.
+5. Registro da decisão, justificativa e ações executadas.
+
+A anulação, o cancelamento ou o reembolso deverão respeitar as condições comerciais e a legislação aplicável.
+
+O sistema deverá evitar tanto fraudes de compradores quanto práticas abusivas de vendedores. Nenhuma das partes deverá ser considerada culpada automaticamente apenas por abrir uma denúncia.
+
+## 15.5 Moderação de chats e denúncias de usuários
+
+A moderação deverá abranger os chats de lobby e de clãs, com prioridade para automação e revisão humana apenas quando necessária.
+
+Como o escopo inicial dos chats será limitado a texto e referências internas do JOGA, não haverá moderação de imagens, áudios ou vídeos enviados diretamente pelos usuários.
+
+### 15.5.1 Denúncia de perfil no lobby
+
+Cada participante poderá denunciar outro jogador diretamente pelo perfil disponível no lobby.
+
+O formulário deverá permitir selecionar categorias de comportamento, incluindo:
+
+- Ofensas e insultos.
+- Assédio e intimidação.
+- Discurso de ódio ou discriminação.
+- Atitude antidesportiva.
+- Provocação ou comportamento abusivo.
+- Spam e mensagens indesejadas.
+- Tentativa de fraude ou manipulação de partida.
+- Outras condutas inadequadas.
+
+O usuário também poderá selecionar até cinco mensagens específicas relacionadas à denúncia.
+
+A IA deverá analisar o contexto dessas mensagens e uma faixa limitada de mensagens próximas, respeitando o limite de contexto definido pelo sistema. A finalidade é evitar interpretações isoladas de frases que dependem do contexto da conversa.
+
+A denúncia deverá registrar o autor, o denunciado, o lobby, as mensagens selecionadas, o contexto autorizado e o horário dos eventos.
+
+### 15.5.2 Moderação automatizada por IA
+
+A IA será utilizada como primeira camada de moderação, auxiliando em:
+
+- Classificação de denúncias.
+- Identificação de ofensas, assédio e discriminação.
+- Detecção de spam e mensagens repetitivas.
+- Identificação de ameaças e comportamentos potencialmente perigosos.
+- Agrupamento de denúncias relacionadas.
+- Priorização de casos por gravidade e risco.
+- Identificação de possíveis denúncias abusivas ou coordenadas.
+
+A automação poderá aplicar medidas preventivas proporcionais e reversíveis, conforme regras previamente definidas, como ocultação temporária de conteúdo ou limitação de mensagens.
+
+Suspensões permanentes e decisões graves deverão exigir critérios mais rigorosos e, quando necessário, revisão humana.
+
+A IA não deverá ser tratada como autoridade infalível. Suas classificações deverão possuir níveis de confiança e possibilidade de contestação.
+
+### 15.5.3 Revisão humana
+
+No estágio inicial, o próprio responsável pelo JOGA poderá atuar como moderador humano.
+
+A revisão humana deverá ser reservada principalmente para:
+
+- Casos graves.
+- Denúncias com evidências conflitantes.
+- Situações que envolvam risco à segurança de usuários.
+- Recursos contra medidas automatizadas.
+- Casos em que a IA não tenha confiança suficiente.
+- Possíveis fraudes ou denúncias coordenadas.
+
+O sistema deverá fornecer uma interface de análise com histórico, mensagens relevantes, evidências, classificação automatizada e ações recomendadas.
+
+### 15.5.4 Medidas e histórico de moderação
+
+As medidas possíveis poderão incluir:
+
+- Aviso ao usuário.
+- Remoção ou ocultação de mensagens.
+- Restrição temporária de envio de mensagens.
+- Restrição de participação em lobbies.
+- Suspensão temporária da conta.
+- Suspensão permanente em casos graves ou reincidentes.
+
+As medidas deverão ser proporcionais à gravidade e reincidência, com registro da justificativa e possibilidade de contestação.
+
+Denúncias não deverão reduzir automaticamente o Trust Factor. O sistema deverá considerar a confiabilidade da denúncia e a existência de evidências antes de aplicar penalidades.
+
+### 15.5.5 Privacidade e retenção
+
+O acesso às mensagens e evidências utilizadas na moderação deverá ser limitado às pessoas e processos autorizados.
+
+A plataforma deverá armazenar apenas o contexto necessário para analisar a denúncia, respeitando políticas de retenção, privacidade e requisitos legais.
+
+A automação deverá priorizar o processamento eficiente, evitando que toda conversa precise ser encaminhada continuamente para análise humana ou por IA.
+
 ## 16. Escopo futuro e exclusões atuais
 
 Não fazem parte do escopo inicial:
@@ -396,13 +629,16 @@ O roadmap abaixo representa uma visão de produto, não substitui a ordem técni
 | 2. Matchmaking | Fila única, disponibilidade, localização e formação de grupos |
 | 3. Lobbies e partidas | Horário fixo, participantes, confirmações e ciclo de partida |
 | 4. Competitivo | Resultados validados, MMR, histórico e Trust Factor inicial |
-| 5. Comunicação | Chat de lobby, lista de amigos e convites |
-| 6. Quadras | Cadastro, descoberta, disponibilidade e reserva de espaços privados |
-| 7. Gestão web | Organizações, lojas, quadras e permissões comerciais |
-| 8. Marketplace | Produtos, estoque comprometido, pedidos, pagamentos, retirada e entrega pelo vendedor |
-| 9. Clãs | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
-| 10. Publicidade | Produtos e estabelecimentos patrocinados após existir audiência |
-| 11. Expansões | Aluguel de equipamentos, academias, torneios e outros serviços |
+| 5. Integridade esportiva | Capitães, votação de resultados, detecção de divergências, disputas e prevenção de manipulação |
+| 6. Comunicação | Chat de lobby, lista de amigos e convites |
+| 7. Moderação | Denúncias de perfil, seleção de mensagens, análise contextual por IA e revisão humana |
+| 8. Quadras | Cadastro, descoberta, disponibilidade e reserva de espaços privados |
+| 9. Gestão web | Organizações, lojas, quadras e permissões comerciais |
+| 10. Marketplace | Produtos, estoque comprometido, pedidos, pagamentos, retirada e entrega pelo vendedor |
+| 11. Integridade comercial | Denúncias de pedidos, evidências, comunicação comprador-vendedor e análise de fraude |
+| 12. Clãs | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
+| 13. Publicidade | Produtos e estabelecimentos patrocinados após existir audiência |
+| 14. Expansões | Aluguel de equipamentos, academias, torneios e outros serviços |
 
 ## 18. Princípios fundamentais
 
