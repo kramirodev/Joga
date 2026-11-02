@@ -1,0 +1,8 @@
+# Configuração do pnpm (pnpm 10+ lê estas opções daqui, não do .npmrc).
+#
+# nodeLinker: hoisted — recomendado pelo Expo para projetos pnpm e usado por padrão
+# pelo `create-expo-app`. Além do layout plano esperado pelo React Native, evita os
+# caminhos longos do store virtual (.pnpm/<pacote>@<versão>_<hash>/node_modules/...),
+# que estouram o limite de caminho do Windows e fazem o Ninja/CMake entrar em loop
+# ("manifest 'build.ninja' still dirty after 100 tries").
+nodeLinker: hoisted

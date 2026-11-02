@@ -103,7 +103,7 @@ export default function App() {
       </View>
 
       <Text style={styles.footnote}>
-        Para comparar localização aproximada, precisa e negada, altere a permissão do Expo Go nas configurações do Android durante esta prova.
+        Para repetir a prova com outra permissão, altere a localização do app JOGA nas configurações do Android.
       </Text>
       <StatusBar style="auto" />
     </View>
