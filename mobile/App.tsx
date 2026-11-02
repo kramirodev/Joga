@@ -18,7 +18,9 @@ function describePermission(permission: Location.LocationPermissionResponse): st
 
 export default function App() {
   const [permissionMessage, setPermissionMessage] = useState('Consultando permissão…');
-  const [locationMessage, setLocationMessage] = useState('Nenhuma leitura de localização realizada.');
+  const [locationMessage, setLocationMessage] = useState(
+    'Nenhuma leitura de localização realizada.',
+  );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function App() {
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.LocationAccuracy.Balanced,
+        accuracy: Location.Accuracy.Balanced,
         mayShowUserSettingsDialog: false,
       });
       const accuracy = location.coords.accuracy;
@@ -59,7 +61,9 @@ export default function App() {
         `Leitura única concluída${accuracy === null ? '' : ` • precisão estimada de ${Math.round(accuracy)} m`}. Coordenadas não exibidas nem armazenadas.`,
       );
     } catch {
-      setLocationMessage('A leitura não foi concluída. Verifique se os serviços de localização estão ativos.');
+      setLocationMessage(
+        'A leitura não foi concluída. Verifique se os serviços de localização estão ativos.',
+      );
     } finally {
       setBusy(false);
     }
@@ -76,34 +80,51 @@ export default function App() {
 
       <View style={styles.card}>
         <Text style={styles.label}>Estado da permissão</Text>
-        <Text accessibilityLiveRegion="polite" style={styles.value}>{permissionMessage}</Text>
+        <Text accessibilityLiveRegion="polite" style={styles.value}>
+          {permissionMessage}
+        </Text>
       </View>
 
       <Pressable
         accessibilityRole="button"
         disabled={busy}
         onPress={requestForegroundPermission}
-        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, busy && styles.buttonDisabled]}
+        style={({ pressed }) => [
+          styles.button,
+          pressed && styles.buttonPressed,
+          busy && styles.buttonDisabled,
+        ]}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Solicitar permissão em primeiro plano</Text>}
+        {busy ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Solicitar permissão em primeiro plano</Text>
+        )}
       </Pressable>
 
       <Pressable
         accessibilityRole="button"
         disabled={busy}
         onPress={readLocationOnce}
-        style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed, busy && styles.buttonDisabled]}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          pressed && styles.buttonPressed,
+          busy && styles.buttonDisabled,
+        ]}
       >
         <Text style={styles.secondaryButtonText}>Fazer uma leitura única</Text>
       </Pressable>
 
       <View style={styles.card}>
         <Text style={styles.label}>Resultado</Text>
-        <Text accessibilityLiveRegion="polite" style={styles.value}>{locationMessage}</Text>
+        <Text accessibilityLiveRegion="polite" style={styles.value}>
+          {locationMessage}
+        </Text>
       </View>
 
       <Text style={styles.footnote}>
-        Para repetir a prova com outra permissão, altere a localização do app JOGA nas configurações do Android.
+        Para repetir a prova com outra permissão, altere a localização do app JOGA nas configurações
+        do Android.
       </Text>
       <StatusBar style="auto" />
     </View>
@@ -126,11 +147,26 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 6 },
   label: { color: '#52625a', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   value: { color: '#173b2a', fontSize: 15, lineHeight: 22 },
-  button: { alignItems: 'center', backgroundColor: '#26724a', borderRadius: 12, minHeight: 52, justifyContent: 'center', padding: 14 },
+  button: {
+    alignItems: 'center',
+    backgroundColor: '#26724a',
+    borderRadius: 12,
+    minHeight: 52,
+    justifyContent: 'center',
+    padding: 14,
+  },
   buttonPressed: { opacity: 0.82 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  secondaryButton: { alignItems: 'center', borderColor: '#26724a', borderRadius: 12, borderWidth: 1, minHeight: 50, justifyContent: 'center', padding: 14 },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: '#26724a',
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 50,
+    justifyContent: 'center',
+    padding: 14,
+  },
   secondaryButtonText: { color: '#26724a', fontSize: 15, fontWeight: '700' },
   footnote: { color: '#66736b', fontSize: 12, lineHeight: 18 },
 });

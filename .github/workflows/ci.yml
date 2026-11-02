@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feat/**", "fix/**", "docs/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, tipos, migrações, testes)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: joga
+          POSTGRES_PASSWORD: joga
+          POSTGRES_DB: joga_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U joga -d joga_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      JOGA_DATABASE_URL: postgresql+psycopg://joga:joga@localhost:5432/joga_test
+      PGPASSWORD: joga
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Instalar dependências fixadas
+        run: python -m pip install -r requirements.lock
+      - name: Habilitar PostGIS no banco de teste
+        run: psql -h localhost -U joga -d joga_test -c "CREATE EXTENSION IF NOT EXISTS postgis"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Formatação
+        run: python -m ruff format --check .
+      - name: Tipos
+        run: python -m mypy app
+      - name: Aplicar migração inicial
+        run: python -m alembic upgrade head
+      - name: Reverter migração inicial
+        run: python -m alembic downgrade base
+      - name: Reaplicar migração inicial
+        run: python -m alembic upgrade head
+      - name: Testes
+        run: python -m pytest
+
+  mobile:
+    name: Mobile (lint, formatação, tipos)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - name: Instalar dependências fixadas
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint
+      - name: Formatação
+        run: pnpm run format:check
+      - name: Tipos
+        run: pnpm run typecheck
+      - name: Compatibilidade Expo
+        run: pnpm exec expo install --check

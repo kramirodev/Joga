@@ -6,7 +6,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 |---|---|---|---|---|
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
 | 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build) | Domínio/RP com arquivos reais e iOS/Xcode pendentes, por decisão de manter a fase em andamento |
-| 2 — Fundação de engenharia | Not started | — | — | — |
+| 2 — Fundação de engenharia | In progress | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI escrita e app aberto no Moto G24 via Expo Go | CI ainda não observada no GitHub Actions; build nativo não repetido por ausência de Android SDK no ambiente atual |
 | 3 — Identidade e segurança | Not started | — | — | — |
 | 4 — Perfil e descoberta | Not started | — | — | — |
 | 5 — Filas e matchmaking | Not started | — | — | — |
@@ -180,3 +180,23 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Critério aberto:** apenas a validação real de domínio/RP com arquivos de associação publicados. Os demais critérios estão atendidos ou têm bloqueio documentado.
 - **Condição para `Complete`:** execução dos itens de domínio/iOS ou aceite formal do responsável de que o bloqueio externo basta para encerrar a fase sem declarar suporte completo.
 - **Estado:** nenhum domínio, conta Apple, build iOS, credencial ou custo foi gerado. Nenhuma fase seguinte iniciada.
+
+### 2026-11-02 — Início da Fase 2 em paralelo à Fase 1
+
+- **Decisão do responsável do produto:** não manter o trabalho parado nas pendências externas da Fase 1; iniciar a Fase 2 em paralelo. Registrada em `docs/ADR/0010-inicio-fase-2-com-pendencias-da-fase-1.md`, com a Fase 1 mantida `In progress` e sem declarar suporte multiplataforma.
+- **Branch:** `feat/02-fundacao-engenharia`, criada a partir de `e59b46c`. Nenhum commit/push feito nesta execução.
+- **Mobile — ferramentas:** `pnpm add -D eslint eslint-config-expo prettier`. O primeiro `pnpm add` falhou com `ERR_PNPM_ENOENT` ao importar `metro-source-map`; `pnpm install --frozen-lockfile` recompôs a árvore. ESLint 10.14.0 foi instalado inicialmente e quebrou `eslint-plugin-react` 7.37.5 (`contextOrFilename.getFilename is not a function`); fixado `eslint@^9` → **9.39.5**. Prettier 3.9.10. `App.tsx` passou a usar `Location.Accuracy.Balanced` (export público de `expo-location`).
+- **Mobile — verificação:** `pnpm run lint` (exit 0), `pnpm run format:check` (todos os arquivos formatados), `pnpm run typecheck` (exit 0) e `pnpm exec expo install --check` (`Dependencies are up to date`).
+- **Backend — estrutura:** criados `backend/app` (`api/v1`, `core`, `infrastructure/database`, `modules`), `workers/`, testes, `pyproject.toml`, `.env.example` e `requirements.lock` (45 linhas, ambiente Python 3.14.7). Dependências fixadas: FastAPI 0.162.0, Uvicorn 0.54.0, SQLAlchemy 2.1.6, psycopg 3.3.6, Alembic 1.20.1, pydantic-settings 2.16.2; ferramentas Ruff 0.17.3, Mypy 2.4.1, Pytest 9.2.0.
+- **Backend — health:** `/api/v1/health/live` não toca dependências; `/api/v1/health/ready` consulta `SELECT 1` e devolve 503 genérico em falha, com log do erro. Testes cobrem sucesso, falha e ausência de vazamento de credenciais.
+- **Backend — migração:** Alembic configurado para ler `JOGA_DATABASE_URL`; baseline `af763231ef2f` vazia e reversível.
+- **Infra:** `infra/compose.yaml` com `postgis/postgis:16-3.4`, healthcheck e volume; `infra/postgres/init/001-extensions.sql` habilita `postgis`.
+- **Conflito de portas:** 5432 já era usada pelo PostgreSQL 18 do host e 5433 por outro projeto (`matchmaking-engine-db-1`). O Compose foi movido para **5434** (configurável por `POSTGRES_PORT`) e `JOGA_DATABASE_URL` acompanhou; o container alheio não foi tocado.
+- **Banco:** container `joga-postgres-1` recriado e `healthy` em 8 s; `postgis` confirmado. `alembic upgrade head` → `af763231ef2f`, `downgrade base`, `upgrade head` e `current` = `af763231ef2f (head)`.
+- **API ao vivo:** Uvicorn em `127.0.0.1:8000`; `live` → `200 {"status":"ok"}`; `ready` → `200 {"status":"ok","database":"ok"}`. Segunda instância apontando para porta fechada: `ready` → `503 {"detail":{"status":"unavailable","database":"unavailable"}}` e `live` → `200`. Processos encerrados ao final.
+- **Backend — verificação:** `ruff check .` sem achados, `ruff format --check .` sem alterações, `mypy app` sem erros (14 arquivos) e `pytest` com 5 testes aprovados. Permanece um aviso do Starlette sobre `httpx`/`httpx2`; dependência não alterada.
+- **Lock reproduzível:** `pip install -r requirements.lock` em venv descartável instalou as 42 versões fixadas; importações confirmaram FastAPI 0.162.0, SQLAlchemy 2.1.6, Alembic 1.20.1 e psycopg 3.3.6. `pip install --dry-run --python-version 3.13 --only-binary=:all:` também terminou com exit 0, cobrindo a diferença de versão usada na CI.
+- **CI:** `.github/workflows/ci.yml` com job backend (Python 3.13, serviço PostGIS em 5432, `requirements.lock`, lint, formatação, tipos, upgrade/downgrade/upgrade, testes) e job mobile (Node 24, pnpm 11.25.0, lint, formatação, tipos, `expo install --check`). **Ainda não executada no GitHub.**
+- **App no aparelho:** sem Android SDK no ambiente atual, a execução foi feita com Expo Go pela rede local (`expo start --lan`; `exp://192.168.0.107:8081`). O Moto G24 (`0087722228`) abriu `ExperienceActivity`, o bundle compilou, `ReactNativeJS: Running "main"` apareceu no logcat e a captura de tela confirmou a tela de prova renderizada. Isso valida abertura do app, não um novo build nativo.
+- **Documentação:** `docs/RUNBOOK.md` com pré-requisitos, portas, backend, migrações, verificações, mobile, CI e problemas conhecidos; `README.md` atualizado; ficha `harness/build/phase-02-fundacao-de-engenharia.md` criada.
+- **Estado:** Fase 2 `In progress`. Falta observar a CI verde no GitHub e repetir o build nativo Android no ambiente atual. Fase 1 permanece `In progress` com as pendências externas já registradas. Nenhum segredo, custo, serviço externo, domínio ou ação de deploy.
