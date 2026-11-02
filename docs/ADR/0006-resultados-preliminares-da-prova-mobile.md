@@ -14,12 +14,15 @@ A Fase 1 precisa comparar Expo development build com React Native CLI e provar b
 - O lockfile `mobile/pnpm-lock.yaml` foi inicialmente gerado sem instalar dependências; depois, as dependências foram instaladas em modo frozen. O protótipo inclui `expo-location`, mas ainda não inclui development client ou integração de passkeys. Scaffold, lockfile e execução em Expo Go não comprovam build nativo.
 - No ambiente Windows disponível, Node `24.22.1`, pnpm `11.25.0`, Java `25.0.2` e adb antigo `1.0.31` estavam no PATH. Android SDK, emulador e Xcode/macOS não estão disponíveis.
 - O Moto G24 foi autorizado via USB. Para este workspace foi baixado o Platform-Tools oficial `37.0.1` (ADB `1.0.41`) em `.tools/`, ignorado pelo Git. O dispositivo passou a aparecer como `device`; o ADB atualizado encaminhou a porta local `8081`.
+- Em 2026-11-02, ADB `1.0.41` confirmou novamente o Moto G24 (`0087722228`, Android 14, `device`) e `adb reverse --list` confirmou `tcp:8081 tcp:8081`.
 - O Metro respondeu HTTP 200 e compilou `index.ts` para Android (721 módulos). A atividade Expo Go `ExperienceActivity` abriu e a árvore de acessibilidade exibiu a tela JOGA.
 - Foi adicionado `expo-location` `~58.0.20`, compatível com SDK 58. A tela de prova solicita somente permissão foreground e oferece leitura única; `app.json` contém permissões coarse/fine e mensagem de uso durante busca, sem configurar background.
 - No Moto G24, a permissão retornou `fine`. Uma leitura única concluiu com precisão estimada de `100 m`; a UI confirma que coordenadas não foram exibidas nem armazenadas. Localização aproximada e negada ainda não foram exercitadas.
 - O primeiro servidor Metro retornou HTTP 500 ao tentar escrever estado do Expo em `.expo` no perfil pessoal. O servidor foi reiniciado com estado local apontado para `%TEMP%\joga-expo-home` e telemetria desativada; depois disso respondeu HTTP 200 e compilou o app. Na execução final, o cache DotSlash foi apontado para `%TEMP%\joga-dotslash-cache`, mas a busca da versão mais recente do React Native DevTools falhou por rede e usou fallback; isso não bloqueou Metro ou o app.
 - A primeira consulta ao registry foi bloqueada por EACCES no sandbox. Com acesso de registry aprovado, `pnpm install --lockfile-only --ignore-scripts` gerou lockfile sem instalar dependências; nenhum `node_modules` foi criado.
 - A prova de passkeys depende da associação do app a um domínio HTTPS controlado pelo projeto, incluindo os arquivos de associação requeridos pelas plataformas. O projeto ainda não tem domínio selecionado/configurado; não se registrou nem hospedou domínio.
+- `expo prebuild --platform android --no-install` gerou `mobile/android/` (diretório ignorado pelo Git) e atualizou `mobile/app.json` e os scripts `android`/`ios` em `mobile/package.json`. O identificador gerado é `com.anonymous.joga`, ainda provisório e sem decisão arquitetural registrada.
+- `mobile/android/gradlew.bat assembleDebug` foi tentado. A primeira execução foi bloqueada pelo sandbox ao baixar Gradle; com execução externa aprovada, o wrapper baixou Gradle `9.4.1` e iniciou o daemon, mas a sessão não apresentou saída de compilação e foi interrompida. Portanto, não há resultado de build nativo a declarar. Android SDK/build-tools não foram localizados no ambiente.
 - Foi pesquisada uma biblioteca React Native/Expo de passkeys como candidata, mas não testada. Não há evidência suficiente para recomendá-la como dependência do produto.
 
 ## Decisão provisória
@@ -29,7 +32,7 @@ Manter Expo development build e React Native CLI como alternativas em avaliaçã
 ## Próximas evidências necessárias nesta fase
 
 1. **Comprovado:** lockfile validado offline/congelado, dependências instaladas, `expo install --check` e `tsc --noEmit` passaram.
-2. Build e execução em Android e iOS, registrando sistema, toolchain e comandos.
+2. Build e execução em Android e iOS, registrando sistema, toolchain e comandos. O prebuild Android foi gerado, mas `assembleDebug` ainda não foi comprovado; o identificador de pacote é provisório.
 3. Comparação prática com React Native CLI ou justificativa baseada em evidências de custo/benefício da prova.
 4. Exercício de passkey nos dois sistemas e validação de RP ID, origem e arquivos de associação usando domínio autorizado.
 5. Exercício das permissões aproximada, precisa e negada; alternativa de seleção manual.
@@ -38,6 +41,6 @@ Manter Expo development build e React Native CLI como alternativas em avaliaçã
 ## Consequências e limites
 
 - A Fase 1 permanece em andamento. A execução JavaScript em Expo Go e uma leitura foreground foram comprovadas, mas isso não prova um development build com código nativo próprio nem dá base para decisão final Expo/React Native CLI.
-- Para build nativo Android local, ainda é necessário instalar/configurar Android SDK e toolchain compatível. Para build/teste iOS, é necessário macOS com Xcode ou serviço de build cloud autorizado. Domínio/hospedagem para associação de passkeys exige decisão e autorização próprias.
+- Para build nativo Android local, ainda é necessário instalar/configurar Android SDK e toolchain compatível e obter uma execução concluída de `assembleDebug`. Para build/teste iOS, é necessário macOS com Xcode ou serviço de build cloud autorizado. Domínio/hospedagem para associação de passkeys exige decisão e autorização próprias.
 - Passkeys, arquivos de associação, localização aproximada/negada, SMS simulado/sandbox e comparação prática com React Native CLI continuam pendentes.
 - Esta ADR registra observações e pendências; não autoriza uso de serviço externo, compra ou registro de domínio.

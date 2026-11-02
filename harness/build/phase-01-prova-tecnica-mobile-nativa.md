@@ -56,7 +56,10 @@ Obter evidência técnica em Android e iOS para escolher a estratégia React Nat
 - O preflight encontrou Node 24.22.1, pnpm 11.25.0 e Java 25.0.2. O `adb` inicial 1.0.31 foi substituído para esta sessão/workspace pelo Platform-Tools oficial 37.0.1 (ADB 1.0.41), guardado em `.tools/` e ignorado pelo Git. Android SDK, `emulator`, macOS e `xcodebuild` continuam indisponíveis.
 - O scaffold Expo existente declara Expo `~58.0.22`, React Native `0.88.1`, React `19.3.0` e TypeScript `~6.0.3`; o lockfile foi instalado em modo frozen e o pacote compatível `expo-location ~58.0.20` foi adicionado. TypeScript e `expo install --check` passaram. Ainda não há development client nem integração de passkeys; execução em Expo Go não valida build nativo.
 - O Moto G24 foi autorizado; `adb devices -l` retornou `0087722228 device` (`moto_g24`).
+- ADB 1.0.41 confirmou novamente o Moto G24 como autorizado (`0087722228 device`) e o encaminhamento `tcp:8081 tcp:8081` ativo.
 - O Metro local respondeu HTTP 200, compilou o bundle Android (`index.ts`, 721 módulos), e a tela JOGA foi confirmada no Expo Go.
+- `pnpm exec expo prebuild --platform android --no-install` gerou o projeto nativo `mobile/android/`, ignorado pelo Git, e atualizou `mobile/app.json`/scripts de plataforma. O package ID `com.anonymous.joga` é valor padrão gerado, provisório e pendente de decisão.
+- `mobile/android/gradlew.bat assembleDebug` iniciou Gradle 9.4.1 após baixar a distribuição com acesso de rede aprovado, mas não chegou a apresentar resultado de compilação; a tentativa foi interrompida. Android SDK/build-tools não estão configurados, então build nativo não está comprovado.
 - `expo-location` `~58.0.20` foi instalado via `pnpm exec expo install`; permissão foreground retornou `fine` e uma leitura única concluiu com precisão estimada de 100 m. Coordenadas não foram exibidas nem persistidas.
 - Não foram testadas localização aproximada/negada nem permissions num app nativo próprio; no Expo Go a permissão pertence ao app hospedeiro Expo Go.
 - A leitura do bundle via Expo Go não comprova build de desenvolvimento com módulos nativos próprios. Sem Android SDK/toolchain não é possível completar o build nativo Android; sem macOS/Xcode não é possível completar o build/teste nativo iOS.
@@ -72,7 +75,7 @@ Obter evidência técnica em Android e iOS para escolher a estratégia React Nat
 
 ## Comandos reais de validação
 
-Nenhum comando de build do app pode ser definido antes de escolher a estratégia e criar o protótipo. Preflight realizado:
+Comandos executados na prova de viabilidade e no protótipo atual:
 
 - `Get-Command node,npm,npx,corepack,pnpm,yarn,java,adb,emulator,xcodebuild,gradle,python,py,git -ErrorAction SilentlyContinue`
 - `node --version`
@@ -86,8 +89,12 @@ Nenhum comando de build do app pode ser definido antes de escolher a estratégia
 - `pnpm exec expo start --localhost --go --clear` (estado Expo redirecionado para `%TEMP%\joga-expo-home`; telemetria desativada)
 - `Invoke-RestMethod http://127.0.0.1:8081/status`
 - ADB 1.0.41: `devices -l`, `reverse tcp:8081 tcp:8081`, abertura via Expo Go e consulta da árvore acessível da tela
+- `pnpm exec expo prebuild --platform android --no-install`
+- `mobile/android/gradlew.bat assembleDebug` (tentativa inconclusiva; Gradle 9.4.1 iniciou, sem resultado de compilação; Android SDK/build-tools ausentes)
+- Nova execução de `pnpm exec tsc --noEmit` (passou)
+- Nova tentativa de `pnpm exec expo install --check` (sandbox bloqueou acesso à rede; repetida com rede aprovada e estado Expo em `%TEMP%`, resultado `Dependencies are up to date`)
 
-Resultados: manifesto e lockfile instalaram 454 dependências fixadas; TypeScript passou; `expo config` mostrou apenas permissões coarse/fine de localização; Metro respondeu `packager-status:running` e HTTP 200; bundle Android compilado e tela JOGA aberta no Moto G24. A leitura foreground `fine` concluiu com precisão estimada de 100 m. Android SDK, emulador e Xcode ainda ausentes.
+Resultados: manifesto e lockfile instalaram 454 dependências fixadas; TypeScript passou; `expo config` mostrou apenas permissões coarse/fine de localização; Metro respondeu `packager-status:running` e HTTP 200; bundle Android compilado e tela JOGA aberta no Moto G24. A leitura foreground `fine` concluiu com precisão estimada de 100 m. `expo prebuild` gerou o projeto Android, mas `assembleDebug` não foi concluído; Android SDK/build-tools, emulador e Xcode continuam ausentes.
 
 ## Critérios de aceite
 
@@ -102,4 +109,4 @@ Resultados: manifesto e lockfile instalaram 454 dependências fixadas; TypeScrip
 
 ## Condição de parada
 
-Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. Expo Go no Moto G24 comprova execução do bundle e uma leitura de localização em primeiro plano, mas não substitui builds nativos. Ainda faltam Android SDK/toolchain, ambiente macOS/Xcode (ou cloud autorizado), provas de permissão aproximada/negada, passkeys/domínio, SMS e comparação CLI. Não iniciar a Fase 2 automaticamente.
+Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. Expo Go no Moto G24 comprova execução do bundle e uma leitura de localização em primeiro plano, mas não substitui builds nativos; a geração do projeto Android também não comprova build. Ainda faltam Android SDK/toolchain, ambiente macOS/Xcode (ou cloud autorizado), provas de permissão aproximada/negada, passkeys/domínio, SMS e comparação CLI. Não iniciar a Fase 2 automaticamente.

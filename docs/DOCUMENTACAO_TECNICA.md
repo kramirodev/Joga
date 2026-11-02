@@ -4,7 +4,7 @@
 **Status:** especificação-base para reconstrução do projeto  
 **Data:** 1º de novembro de 2026  
 **Escopo:** aplicativo Android/iOS, API, banco de dados, workers e infraestrutura  
-**Repositório de referência:** https://github.com/kramirodev/esporte-vivo
+**Repositório do projeto:** https://github.com/kramirodev/Joga
 
 > Este documento descreve a arquitetura-alvo. Ele não afirma que os componentes aqui especificados já estejam implementados. A implementação deve seguir as fases e os critérios de aceite definidos ao final.
 
