@@ -6,7 +6,7 @@ Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, 
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
 - `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova de permissão de localização, sem navegação/funcionalidade.
-- A escolha entre Expo development builds e React Native CLI **não foi decidida** (ADR 0006 provisório; ADR 0007 exige decisão com provas). Não presumir Expo (nem EAS como estratégia de build/OTA definitive) e não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
+- A estratégia mobile foi decidida no **ADR 0009 (aprovado)**: Expo development build com `expo prebuild`, mantendo `android/` e `ios/` gerados e não versionados neste momento. EAS Build, distribuição e OTA continuam sem decisão; não presumir EAS. Não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
 
 ## Tooling real do projeto
 
@@ -35,7 +35,7 @@ Expo entrega breaking changes a cada SDK. Antes de escrever código que toque AP
 ## Regras de escopo
 
 - Não avançar fase; não criar telas/features de produto (perfil, matchmaking, lobbies, chat, marketplace).
-- Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; a decisão definitiva Expo vs CLI definirá se projetos nativos serão versionados no Git.
+- Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; o ADR 0009 mantém os projetos nativos gerados e não versionados e prevê reavaliar se surgir módulo nativo próprio.
 - Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
 - Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).
 - Ações externas com custo (build cloud, aceitação de licenças Android, domínio, registro em lojas) exigem autorização e registro no `harness/build-log.md`.

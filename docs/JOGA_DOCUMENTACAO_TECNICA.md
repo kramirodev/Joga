@@ -347,7 +347,7 @@ O número poderá ser reciclado, compartilhado ou comprometido por SIM swap. SMS
 
 Passkeys serão o método preferencial após o cadastro. O backend gera e valida desafios de uso único, origem/RP ID, flags e assinatura. Registrar múltiplas credenciais quando suportado, permitir revogação individual e oferecer recuperação de risco elevado.
 
-O protótipo da Fase 1 deve validar Android e iOS com mecanismos nativos: Credential Manager no Android e Authentication Services no iOS. A escolha entre Expo Development Builds e React Native CLI e as bibliotecas específicas ainda depende das provas técnicas.
+O protótipo da Fase 1 deve validar Android e iOS com mecanismos nativos: Credential Manager no Android e Authentication Services no iOS. A estratégia de framework foi decidida em favor do Expo development build com `expo prebuild` (ADR 0009); a biblioteca de passkeys ainda depende de prova em ambas as plataformas.
 
 Access tokens de curta duração; refresh tokens opacos, aleatórios, armazenados no servidor como hash e rotacionados. Reutilização de token antigo revoga a família da sessão. Tokens ficam em Keychain/Keystore no aplicativo e em armazenamento seguro equivalente no navegador.
 
@@ -1245,7 +1245,7 @@ O JOGA não deve ser considerado pronto enquanto itens críticos estiverem pende
 
 Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 
-1. **React Native:** resultado da prova entre Expo Development Builds e React Native CLI; biblioteca de passkeys validada em Android e iOS.
+1. **React Native:** estratégia decidida — Expo development build com `expo prebuild` (ADR 0009). Pendentes: biblioteca de passkeys validada em Android e iOS, build iOS e domínio/RP.
 2. **Painel web:** framework, autenticação web e estratégia de deploy.
 3. **Esportes:** duração oficial de futebol 5x5 e vôlei; composição definitiva do vôlei; regras específicas por formato.
 4. **Matchmaking:** tolerância de MMR, janelas de disponibilidade, raio, cálculo de região de encontro e timeout.
@@ -1293,7 +1293,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 A próxima entrega autorizada é a **Fase 1: prova técnica mobile**. O trabalho deve validar, com protótipos mínimos e evidências:
 
-- React Native CLI versus Expo Development Builds.
+- Estratégia React Native: Expo development build com `expo prebuild`, decidida no ADR 0009 após comparar React Native CLI.
 - Builds Android e viabilidade de build iOS.
 - Passkeys nativas em Android e iOS.
 - Integração SMS para OTP.

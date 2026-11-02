@@ -1,8 +1,9 @@
 # ADR 0006 — Resultados preliminares da prova mobile/nativa
 
-- **Status:** Em avaliação; nenhuma escolha de framework ou biblioteca foi ratificada.
+- **Status:** Substituído pelo ADR 0009; mantido como registro histórico das observações preliminares.
 - **Data:** 2026-11-02
 - **Decisores:** responsável pelo produto e equipe técnica; decisão final pendente de prova executável Android/iOS.
+- **Substituído por:** `docs/ADR/0009-estrategia-react-native-expo-vs-cli.md` (estratégia aprovada de Expo development build, com a comparação prática Expo × React Native CLI). As evidências abaixo continuam válidas como histórico do período em que foram coletadas; onde divergirem do ADR 0009, prevalece o ADR 0009.
 
 ## Contexto
 

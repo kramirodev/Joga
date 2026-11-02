@@ -1,3 +1,7 @@
 # Cache local do pnpm (não é artefato do projeto)
 .pnpm-store/
 .tools/
+
+# Artefatos de execução Python (prova de OTP)
+__pycache__/
+*.py[cod]

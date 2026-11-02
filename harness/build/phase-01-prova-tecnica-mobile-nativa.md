@@ -1,6 +1,6 @@
 # Fase 01 — Prova técnica mobile/nativa
 
-**Status:** Em andamento — build Android próprio gerado, instalado e executado no Moto G24; permissões precisa, aproximada e negada provadas no app; iOS, passkeys e SMS pendentes
+**Status:** Em andamento — build Android próprio gerado, instalado e executado no Moto G24; permissões precisa, aproximada e negada provadas no app; React Native CLI buildado e executado; OTP por SMS provado com adapter simulado; ADR 0009 aprovado; iOS e passkeys/domínio pendentes de ambiente e autorização
 **Branch:** `feat/01-prova-mobile-nativa` em `kramirodev/Joga`
 
 ## Fontes e contexto
@@ -71,8 +71,13 @@ Obter evidência técnica em Android e iOS para escolher a estratégia React Nat
 - Testes de permissão no app próprio (Android 14, Moto G24): **precisa** → `precisão fine`, leitura única com 32 m; **aproximada** (revogado só `ACCESS_FINE_LOCATION`) → `precisão coarse`, leitura com 2000 m; **negada** → mensagem de permissão negada, leitura bloqueada com orientação para autorizar. O diálogo do sistema exibiu `Exata`/`Aproximada`, `Durante o uso do app`/`Apenas esta vez` e `Não permitir`.
 - O rodapé da tela citava `Expo Go`; foi corrigido para o app JOGA e o recarregamento foi confirmado no aparelho.
 - O build de desenvolvimento Android com módulos nativos próprios está comprovado: APK gerado, instalado e executado no Moto G24. Continua faltando o build/teste nativo iOS, que exige macOS/Xcode (ou build cloud autorizado).
+- **Comparação com React Native CLI (2026-11-02):** `@react-native-community/cli` 20.2.0 criou projeto com React Native 0.88.1, React 19.3.0, New Architecture e Hermes. Em caminho profundo, o build falhou com `Filename longer than 260 characters`; recriado em `C:\prog\rncli\JogaCliProof` (26 caracteres), `assembleDebug` passou em 2m59s e gerou APK universal de 125,3 MB (4 ABIs). O app `com.jogacliproof` abriu "Welcome to React Native" com Hermes. O manifesto do template continha apenas `INTERNET`, sem as permissões de localização que o `app.json` do Expo já gerava. Projeto temporário removido e Metro do JOGA restaurado.
+- **Decisão aprovada:** `docs/ADR/0009-estrategia-react-native-expo-vs-cli.md` adota Expo development build com `expo prebuild` (aprovado em 2026-11-02). `docs/ADR/0006-...` foi marcado como substituído.
+- **SMS com adapter simulado (2026-11-02):** prova isolada em `harness/proofs/sms-otp/`, em Python sem dependências externas. Cobre normalização E.164, código de 6 dígitos, hash HMAC-SHA-256 com segredo de ao menos 32 bytes, validade de 5 minutos, uso único, 5 tentativas, reenvio com intervalo de 60 segundos e invalidação do desafio anterior. `python -X utf8 -m unittest discover -s harness/proofs/sms-otp -v` executou 12 testes, todos aprovados. Nenhum provedor, número real, credencial ou custo envolvido.
+- **Limite da prova de SMS:** não há persistência, HTTP, Redis ou rate limit por IP/dispositivo; o adapter guarda o código em memória apenas para o teste. A lógica deve ser portada ao backend na Fase 3, conforme §5.3 da documentação técnica.
+- **Bloqueios detalhados:** `harness/build/phase-01-bloqueios-passkeys-e-ios.md` registra requisitos de RP/domínio, `assetlinks.json`, `apple-app-site-association`, identificadores provisórios e o bloqueio de iOS por ausência de macOS/Xcode. Nenhum domínio, arquivo `.well-known`, conta Apple ou build iOS foi executado.
 - Domínio técnico é necessário para associações de passkey conforme o fluxo escolhido; qualquer registro/hospedagem requer autorização.
-- Bibliotecas, estratégia Expo/CLI, SMS provider e integração devem ser escolhidos apenas com evidências do protótipo.
+- Bibliotecas de passkeys, provedor de SMS e integração devem ser escolhidos apenas com evidências do protótipo.
 
 ## Plano Red / Green / Refactor / Verify
 
@@ -110,20 +115,58 @@ Comandos executados na prova de viabilidade e no protótipo atual:
 - `pnpm exec expo run:android --device 0087722228` (passou em 4m41s; 176 tasks; APK 47,6 MB; instalado e aberto no Moto G24)
 - ADB 1.0.41 no app próprio: `dumpsys package com.anonymous.joga` (estado das permissões), `pm revoke`/`pm grant` de `ACCESS_FINE_LOCATION` e `ACCESS_COARSE_LOCATION`, `am force-stop`/`am start`, `uiautomator dump` e `input tap` para os três cenários de permissão
 - `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` após a correção do texto da tela (ambos passaram)
+- `npx @react-native-community/cli@latest init JogaCliProof --version 0.88.1 --skip-git-init --pm npm --install-pods false` (criou o projeto duas vezes: em `%TEMP%` e em `C:\prog\rncli`)
+- `C:\prog\rncli\JogaCliProof\android\gradlew.bat assembleDebug --console=plain` (falhou em caminho profundo por `Filename longer than 260 characters`; passou em 2m59s no caminho curto, APK 125,3 MB)
+- `npx react-native start --port 8081` no projeto CLI, `adb install -r app-debug.apk`, `adb shell monkey -p com.jogacliproof`, `uiautomator dump` (tela "Welcome to React Native", Hermes)
+- `adb uninstall com.jogacliproof`; Metro do JOGA restaurado com `pnpm exec expo start --dev-client`; app JOGA reaberto e revalidado
+- Inspeção de ABIs e permissões: leitura de `AndroidManifest.xml` de ambos os projetos e listagem de entradas `lib/<abi>` nos dois APKs
+- `python -X utf8 -m unittest discover -s harness\proofs\sms-otp -v` (12 testes, todos aprovados)
 
-Resultado atual: as 492 dependências foram instaladas offline em layout hoisted sem alterar o lockfile; `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` passam; o build Android de desenvolvimento concluiu, gerou APK de 47,6 MB, instalou e abriu o app no Moto G24 com Metro conectado; as três variações de permissão (precisa, aproximada, negada) foram exercitadas no app próprio e a tela recarregou com o texto corrigido. `emulator`, macOS e Xcode continuam ausentes; iOS, passkeys/domínio e SMS seguem pendentes.
+Resultado atual: as 492 dependências foram instaladas offline em layout hoisted sem alterar o lockfile; `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` passam; o build Android de desenvolvimento concluiu, gerou APK de 47,6 MB, instalou e abriu o app no Moto G24 com Metro conectado; as três variações de permissão (precisa, aproximada, negada) foram exercitadas no app próprio e a tela recarregou com o texto corrigido. O React Native CLI foi criado, buildado em caminho curto (APK 125,3 MB, 2m59s) e executado no mesmo aparelho; a comparação foi registrada no ADR 0009, aprovado em 2026-11-02. O contrato de OTP por SMS foi provado com adapter simulado em 12 testes aprovados. `emulator`, macOS e Xcode continuam ausentes; iOS e validação de domínio/RP seguem pendentes.
 
 ## Critérios de aceite
 
-- [ ] ADR compara Expo development build e React Native CLI e decide com evidências e versões.
+- [x] ADR compara Expo development build e React Native CLI e decide com evidências e versões. — ADR 0009 **aprovado** pelo responsável do produto em 2026-11-02: Expo development build com `expo prebuild`.
 - [x] Protótipo mínimo builda e abre em Android e iOS, ou limitação/bloqueio de plataforma fica documentado sem declarar suporte completo. — Android comprovado (build, instalação e execução); iOS documentado como bloqueado por ausência de macOS/Xcode.
-- [ ] Registro/autenticação de passkey é exercitado nos dois sistemas ou bloqueios são detalhados por sistema.
-- [ ] Requisitos de domínio/RP e arquivos de associação são validados; não registrar/hospedar domínio sem autorização.
+- [x] Registro/autenticação de passkey é exercitado nos dois sistemas ou bloqueios são detalhados por sistema. — Bloqueios detalhados por sistema em `harness/build/phase-01-bloqueios-passkeys-e-ios.md`; nenhuma cerimônia WebAuthn executada.
+- [ ] Requisitos de domínio/RP e arquivos de associação são validados; não registrar/hospedar domínio sem autorização. — Requisitos documentados (assetlinks, AASA, RP ID/origem), mas a validação real depende de domínio autorizado; nenhum arquivo publicado. **Único critério ainda aberto.**
 - [x] Localização aproximada, precisa e negada é exercitada; busca manual permanece viável. — Provado no app próprio em Android: fine (32 m), coarse (2000 m) e negada, com leitura bloqueada.
-- [ ] SMS funciona em sandbox autorizada ou adaptador simulado, sem custos não aprovados.
-- [ ] Versões, limitações, comandos e evidências estão registrados no ADR e build log. — Parcial: build log e ficha da fase atualizados; ADR comparativo pendente.
+- [x] SMS funciona em sandbox autorizada ou adaptador simulado, sem custos não aprovados. — Adaptador simulado em `harness/proofs/sms-otp/`, 12 testes aprovados; nenhum provedor real contatado. Persistência/rate limit por IP ficam para a Fase 3.
+- [x] Versões, limitações, comandos e evidências estão registrados no ADR e build log. — ADR 0009 aprovado, build log e ficha da fase atualizados com comandos e resultados.
 - [x] `git diff --check` passa; nenhum segredo real foi adicionado.
+
+## Pendências para conclusão da Fase 1
+
+A Fase 1 permanece `In progress` por decisão do responsável do produto em 2026-11-02. Falta apenas o critério de validação real de domínio/RP; os itens abaixo descrevem o que precisa acontecer, sem autorizar nenhuma ação externa.
+
+1. **Domínio e associação Android**
+   - Decidir e autorizar um domínio técnico (apenas `.well-known`; sem site público para jogadores).
+   - Fixar `android.package` definitivo (hoje `com.anonymous.joga`, provisório).
+   - Publicar `https://<domínio>/.well-known/assetlinks.json` com `package_name` e `sha256_cert_fingerprints` do certificado real.
+   - Confirmar HTTP 200, `Content-Type: application/json` e ausência de redirecionamento.
+   - Evidência de aceite: associação reconhecida pelo Android e cerimônia de passkey concluída no aparelho.
+
+2. **Domínio e associação iOS**
+   - Fixar `ios.bundleIdentifier` (ainda ausente em `mobile/app.json`).
+   - Definir Apple Developer Team ID e provisioning.
+   - Publicar `https://<domínio>/.well-known/apple-app-site-association` com `webcredentials.apps`.
+   - Declarar o entitlement `webcredentials:<domínio>`.
+   - Evidência de aceite: associação aceita pelo iOS e cerimônia de passkey concluída.
+
+3. **Ambiente iOS**
+   - Obter macOS com Xcode **ou** autorizar build cloud (conta e custo).
+   - Executar build, instalar e abrir o protótipo em iPhone/simulador.
+   - Evidência de aceite: log de build, app executando e passkey exercitada; sem isso, não declarar suporte iOS comprovado.
+
+4. **Biblioteca de passkeys**
+   - Escolher com ADR própria após necessidade concreta, validando Credential Manager (Android) e Authentication Services (iOS).
+   - Não adicionar dependência antes da decisão.
+
+5. **SMS real (opcional nesta fase)**
+   - Só com sandbox/provedor autorizado e sem custo não aprovado. O adaptador simulado já atende ao critério da fase.
+
+**Condição para marcar `Complete`:** aprovação explícita do responsável do produto após os itens 1–3, ou aceite formal de que o bloqueio externo é suficiente para encerrar a fase sem declarar suporte completo. Nenhuma ação externa foi executada até aqui.
 
 ## Condição de parada
 
-Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. O build Android de desenvolvimento com módulos nativos próprios está comprovado (APK instalado e executado no Moto G24) e as permissões de localização precisa, aproximada e negada foram exercitadas no app. Ainda faltam: ambiente macOS/Xcode (ou cloud autorizado) para iOS, passkeys/domínio, SMS simulado ou sandbox e a comparação Expo development build × React Native CLI com ADR. Não iniciar a Fase 2 automaticamente.
+Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. O build Android de desenvolvimento com módulos nativos próprios está comprovado (APK instalado e executado no Moto G24), as permissões de localização precisa, aproximada e negada foram exercitadas no app, a comparação Expo × React Native CLI foi executada e o ADR 0009 foi aprovado, e o OTP por SMS foi provado com adapter simulado. A Fase 1 permanece `In progress` por decisão do responsável do produto: falta validar domínio/RP com arquivos de associação reais e executar o protótipo no iOS, ambos dependentes de autorização externa e ambiente macOS/Xcode. Não iniciar a Fase 2 automaticamente.

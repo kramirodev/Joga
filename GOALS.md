@@ -74,7 +74,7 @@ A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo cor
 
 ## Decisões ainda pendentes
 
-- Expo com development builds ou React Native CLI, a decidir após protótipo nativo.
+- EAS Build, distribuição e OTA, após a decisão por Expo development build com `expo prebuild` (ADR 0009).
 - Biblioteca e fluxo concreto de passkeys em Android e iOS.
 - Provedor de SMS e política de custo/abuso.
 - Domínio técnico e hospedagem dos arquivos de associação de plataforma.

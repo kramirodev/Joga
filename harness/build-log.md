@@ -5,7 +5,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | Fase | Status | Branch | Evidências | Bloqueios |
 |---|---|---|---|---|
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
-| 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Bundle JOGA abriu no Moto G24 via Expo Go; leitura foreground `fine` executada; TypeScript e compatibilidade Expo passaram; achados em ADR 0006 | Android SDK/build nativo, iOS/Xcode, approximate/denied, passkeys/domínio, SMS e comparação CLI pendentes |
+| 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build) | Domínio/RP com arquivos reais e iOS/Xcode pendentes, por decisão de manter a fase em andamento |
 | 2 — Fundação de engenharia | Not started | — | — | — |
 | 3 — Identidade e segurança | Not started | — | — | — |
 | 4 — Perfil e descoberta | Not started | — | — | — |
@@ -137,3 +137,46 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Correção de texto:** o rodapé do `App.tsx` citava o Expo Go; passou a citar o app JOGA e o recarregamento foi confirmado no aparelho. `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` passaram após a alteração.
 - **Limpeza:** cópias temporárias de diagnóstico removidas (`C:\p`, `%TEMP%\opencode\joga-mobile-*`, `.tools\mobile-short`, `.tools\pnpm-short`).
 - **Estado:** Fase 1 segue `In progress` — Android comprovado; iOS, passkeys/domínio, SMS simulado e ADR Expo×CLI pendentes. Nenhum commit/push e nenhum avanço de fase.
+
+### 2026-11-02 — Comparação prática Expo development build × React Native CLI
+
+- **Objetivo:** cumprir o primeiro item pendente da Fase 1 (`PLANS.md`): comparar as duas pilhas com evidência executável e registrar a decisão em ADR próprio.
+- **Projeto CLI:** `@react-native-community/cli` 20.2.0 criou um projeto com React Native 0.88.1, React 19.3.0 e template padrão (`react-native-safe-area-context`, New Architecture e Hermes habilitados). Dependências instaladas com npm, sem pods (Windows).
+- **Primeira tentativa em caminho profundo:** build em `%TEMP%\opencode\rn-cli\JogaCliProof` falhou após 5m45s com `ninja: error: Stat(...RNCSafeAreaViewShadowNode.cpp.o): Filename longer than 260 characters`. A falha é do limite de caminho do Windows, não de uma pilha específica.
+- **Segunda tentativa em caminho curto:** projeto recriado em `C:\prog\rncli\JogaCliProof` (raiz de 26 caracteres). `gradlew.bat assembleDebug` concluiu em 2m59s, gerou APK universal de 125,3 MB com `arm64-v8a` (31,5 MB de bibliotecas nativas), `armeabi-v7a`, `x86` e `x86_64`.
+- **Execução:** APK instalado como `com.jogacliproof`; com Metro do CLI na porta 8081, o app abriu a tela "Welcome to React Native", versão 0.88.1, motor Hermes. Antes disso, o app chegou a carregar o bundle do Metro do Expo e falhou com `EventEmitter of undefined` — evidência de que os dois bundlers não são intercambiáveis e que a porta 8081 precisa ser exclusiva.
+- **Comparação de configuração:** o manifesto Expo, gerado a partir de `app.json`, já continha `ACCESS_COARSE_LOCATION` e `ACCESS_FINE_LOCATION`; o manifesto do template CLI continha apenas `INTERNET`. O CLI exigiria edição manual do manifesto ou biblioteca de permissões para um requisito já previsto.
+- **Comparação de artefato:** APK Expo 47,6 MB restrito a `arm64-v8a`; APK CLI 125,3 MB universal. Os tamanhos não são diretamente comparáveis porque o Expo gerou apenas a ABI do dispositivo. Tempo Expo 4m41s com cache aquecido; CLI 2m59s com cache Gradle reaproveitado — não usar como benchmark definitivo.
+- **Ambiente comum:** mesmo Windows 11, Node 24.22.1, JDK 17.0.20.1, Android SDK (compileSdk 37, Build Tools 37.0.0), NDK 27.1.12297006, CMake 3.22.1, Gradle 9.4.1 e `GRADLE_USER_HOME` temporário.
+- **Limpeza:** projeto CLI, caches `.cxx`/`build` e cópias em `%TEMP%` removidos; `com.jogacliproof` desinstalado; Metro do JOGA restaurado na porta 8081 e app JOGA reaberto no Moto G24.
+- **Revalidação pós-reinício:** após reiniciar o PC, `adb kill-server`/`start-server` reconectou o Moto G24; `adb reverse tcp:8081 tcp:8081` e `pnpm exec expo start --dev-client` restauraram o app, que abriu com permissão `fine` preservada e o texto corrigido na tela.
+- **Decisão registrada:** `docs/ADR/0009-estrategia-react-native-expo-vs-cli.md`, status **Proposta** (Expo development build com `expo prebuild`), aguardando aprovação do responsável do produto. `docs/ADR/0006-...` marcado como substituído pelo ADR 0009.
+- **Estado:** Fase 1 segue `In progress`. Restam aprovação do ADR 0009, iOS (sem macOS/Xcode), passkeys/domínio (sem domínio autorizado) e SMS por adaptador simulado. Nenhum segredo, custo ou serviço externo utilizado; nenhum commit/push feito nesta execução; Fase 2 não iniciada.
+
+### 2026-11-02 — OTP por SMS provado com adapter simulado
+
+- **Objetivo:** cumprir o item de SMS da Fase 1 sem provedor real, credencial ou custo, exercitando o contrato de `docs/JOGA_DOCUMENTACAO_TECNICA.md` §5.3.
+- **Local:** `harness/proofs/sms-otp/` (`otp.py`, `test_otp.py`, `README.md`), em Python 3.14 sem dependências externas. A pasta `backend/` não foi criada para não antecipar a Fase 2; o README explica que a lógica deve ser portada ao backend na Fase 3.
+- **Contrato implementado:** normalização E.164 (aceita separadores e prefixo `00`), código de 6 dígitos, HMAC-SHA-256 com segredo de ao menos 32 bytes, validade de 5 minutos, uso único, 5 tentativas por desafio, reenvio com intervalo mínimo de 60 segundos e invalidação do desafio anterior no reenvio. `Challenge.__repr__` não expõe telefone nem código.
+- **Adapter:** `SimulatedSmsAdapter` registra remetente e código apenas em memória, para o teste ler. Nenhuma rede, nenhum número real.
+- **Testes:** `python -X utf8 -m unittest discover -s harness\proofs\sms-otp -v` → 12 testes, todos `ok` (normalização, hash sem código em claro, uso único, expiração, tentativas esgotadas, reenvio, desafio inexistente, não vazamento em `repr`).
+- **Limites:** sem persistência, HTTP, Redis ou rate limit por IP/dispositivo; números locais sem país não são normalizados. A prova valida a lógica e o contrato, não a entrega por operadora.
+- **Estado:** Fase 1 segue `In progress`. Restam aprovação do ADR 0009, iOS (sem macOS/Xcode) e passkeys/domínio (sem domínio autorizado). Nenhum segredo, custo ou serviço externo; nenhum commit/push nesta execução; Fase 2 não iniciada.
+
+### 2026-11-02 — Bloqueios de passkeys/domínio e iOS documentados
+
+- **Motivo:** `PLANS.md` exige registrar bloqueio quando um caminho não pode ser testado, sem declarar suporte multiplataforma completo. Os dois itens restantes dependem de decisões e ações externas ainda não autorizadas.
+- **Documento criado:** `harness/build/phase-01-bloqueios-passkeys-e-ios.md`, com requisitos de RP ID/origem, `assetlinks.json` (Android), `apple-app-site-association` e entitlement `webcredentials` (iOS), identificadores provisórios e checklist de desbloqueio.
+- **Passkeys:** nenhum domínio foi escolhido, registrado ou autorizado; nenhum arquivo `.well-known` foi publicado; nenhuma biblioteca de passkeys foi adicionada; nenhuma cerimônia WebAuthn foi executada. O bloqueio foi detalhado por sistema.
+- **iOS:** sem macOS/Xcode e sem conta Apple Developer autorizada, não há IPA nem execução em iPhone; build cloud não foi autorizado. O bloqueio é de ambiente, não conclusão de incompatibilidade.
+- **Ficha da fase:** critério de passkeys marcado como atendido pela via "bloqueios detalhados por sistema"; critério de validação real de domínio/RP permanece aberto.
+- **Estado:** Fase 1 segue `In progress`; falta aprovação do ADR 0009 e a validação dependente de domínio/iOS. Nenhum commit/push; Fase 2 não iniciada.
+
+### 2026-11-02 — ADR 0009 aprovado; Fase 1 mantida em andamento com pendências explícitas
+
+- **Decisão do responsável do produto:** aprovada a estratégia **Expo development build com `expo prebuild`**, mantendo `android/` e `ios/` gerados e não versionados neste momento. A aprovação não cobre EAS Build, distribuição, OTA, biblioteca de passkeys nem provedor de SMS.
+- **Documentos atualizados:** `docs/ADR/0009-...` passou a **Aprovado**; `docs/ADR/0006-...` permanece marcado como substituído; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §5.4, pendência 1 da §26 e §28 refletem a decisão; `mobile/AGENTS.md` deixou de tratar Expo × CLI como pendente.
+- **Status da fase:** por decisão do responsável, a Fase 1 **permanece `In progress`**. A ficha da fase ganhou a seção "Pendências para conclusão", detalhando domínio/assetlinks, bundle ID/AASA, ambiente macOS/Xcode, escolha da biblioteca de passkeys e SMS real opcional.
+- **Critério aberto:** apenas a validação real de domínio/RP com arquivos de associação publicados. Os demais critérios estão atendidos ou têm bloqueio documentado.
+- **Condição para `Complete`:** execução dos itens de domínio/iOS ou aceite formal do responsável de que o bloqueio externo basta para encerrar a fase sem declarar suporte completo.
+- **Estado:** nenhum domínio, conta Apple, build iOS, credencial ou custo foi gerado. Nenhuma fase seguinte iniciada.
