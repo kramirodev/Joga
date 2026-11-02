@@ -1,41 +1,42 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# Instruções específicas de `mobile/` para agentes
 
-## Expo has changed — do not trust your training data
+## Conexão com a governança do projeto
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` é o protótipo mínimo da **Fase 1 (prova técnica mobile/nativa)** — não é o aplicativo de produto.
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+- `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
+- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova de permissão de localização, sem navegação/funcionalidade.
+- A escolha entre Expo development builds e React Native CLI **não foi decidida** (ADR 0006 provisório; ADR 0007 exige decisão com provas). Não presumir Expo (nem EAS como estratégia de build/OTA definitive) e não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
 
-## Commands
+## Tooling real do projeto
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
+O projeto usa **pnpm** (não existe `bun.lock`; não usar bunx/npm diretamente). Comandos válidos (registrados no build-log da Fase 1, a partir de `mobile/`):
 
-```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
+```text
+pnpm install --frozen-lockfile
+pnpm exec tsc --noEmit
+pnpm exec expo config --type public --json
+pnpm exec expo install --check
+pnpm exec expo start --localhost --go --clear
+pnpm exec expo prebuild --platform android --no-install   # apenas no contexto aprovado da Fase 1
 ```
 
-Run lint and typecheck before declaring any task done.
+- `pnpm exec tsc --noEmit` deve passar antes de declarar qualquer tarefa concluída. Lint não está configurado; não instalá-lo exceto se aprovado para a fase.
+- Novo módulo nativo (ex.: passkeys, push) só mediante escopo aprovado da fase e `pnpm exec expo install`.
 
-## Navigation & Routing
+## Expo muda entre versões — não confie em dados de treino
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+Expo entrega breaking changes a cada SDK. Antes de escrever código que toque APIs de Expo/EAS/React Native:
 
-## Building with EAS
+1. Leia a versão major do pacote `expo` em `package.json` (hoje `~58.0.22`).
+2. Consulte a doc versionada: `https://docs.expo.dev/versions/v<major>.0.0/`
+3. Para o resto, use `https://docs.expo.dev/llms.txt` e siga para a página específica; nunca responda de memória.
 
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
+## Regras de escopo
 
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+- Não avançar fase; não criar telas/features de produto (perfil, matchmaking, lobbies, chat, marketplace).
+- Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; a decisão definitiva Expo vs CLI definirá se projetos nativos serão versionados no Git.
+- Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
+- Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).
+- Ações externas com custo (build cloud, aceitação de licenças Android, domínio, registro em lojas) exigem autorização e registro no `harness/build-log.md`.
+- Ao concluir a tarefa: registrar evidências no build-log/ficha da fase e NÃO iniciar a próxima fase automaticamente.

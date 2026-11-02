@@ -4,12 +4,13 @@
 
 Antes de qualquer tarefa, leia:
 1. `AGENTS.md` aplicável ao diretório.
-2. `GOALS.md` para objetivos e limites do produto.
-3. `PLANS.md` para a ordem das fases.
-4. `docs/DOCUMENTACAO_TECNICA.md` para os contratos e arquitetura-alvo.
-5. `harness/build-log.md` e o arquivo da fase atual, se existirem.
+2. `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` — referência máxima em matéria de produto.
+3. `GOALS.md` para objetivos e limites do produto.
+4. `PLANS.md` para a ordem das fases.
+5. `docs/JOGA_DOCUMENTACAO_TECNICA.md` para os contratos e arquitetura-alvo.
+6. `harness/build-log.md` e o arquivo da fase atual, se existirem.
 
-Em caso de contradição, não escolha silenciosamente. Informe o conflito, indique os arquivos e proponha uma decisão. Decisões aprovadas devem ser registradas em `docs/ADR/` quando alterarem arquitetura, segurança, dados ou contratos.
+Em caso de contradição, não escolha silenciosamente. Informe o conflito, indique os arquivos e proponha uma decisão. Em matéria de produto, prevalece a documentação conceitual; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`; a documentação técnica traduz ambos em arquitetura e contratos. O arquivo técnico antigo `docs/DOCUMENTACAO_TECNICA.md` foi substituído por `docs/JOGA_DOCUMENTACAO_TECNICA.md` e não deve ser consultado. Decisões aprovadas devem ser registradas em `docs/ADR/` quando alterarem arquitetura, segurança, dados ou contratos.
 
 ## 2. Papel e forma de trabalhar
 

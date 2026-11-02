@@ -2,7 +2,7 @@
 
 ## Propósito
 
-Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável.
+Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável. O produto também inclui comunidade (lobbies, amigos, clãs), descoberta e reserva de quadras/espaços e marketplace de produtos, conforme a referência máxima em `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`.
 
 ## Resultados desejados
 
@@ -18,23 +18,36 @@ Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais
 
 ## Escopo do produto
 
-- Aplicativos Android e iOS.
-- Backend FastAPI e workers.
-- PostgreSQL + PostGIS; Redis como componente auxiliar.
-- Cadastro por telefone verificado, passkeys e sessões seguras.
-- Perfil, modalidades, disponibilidade, locais e busca geográfica.
-- Filas casuais/ranqueadas, matchmaking e partidas.
-- Confirmação, resultado, disputas, rating, Trust Factor e notificações.
+Referência máxima: `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` (seção 3). O produto completo segue os quatro pilares do conceito:
 
-## Fora do escopo inicial
+1. **Competitividade:** matchmaking, partidas casuais e ranqueadas, MMR, rankings individuais e troféus de clã por modalidade.
+2. **Social:** lobbies, chat por lobby, lista de amigos, convites e clãs, com moderação dedicada.
+3. **Infraestrutura esportiva:** descoberta de locais públicos e privados, agenda e reserva de quadras particulares.
+4. **Comércio:** marketplace de produtos, pedidos, pagamentos, retirada/entrega pelo vendedor, resolução de disputas comerciais; painel web de gestão (JOGA y GESTÃO) para as operações originadas no JOGA.
 
-- Site público para jogadores.
-- Marketplace, reservas ou pagamentos de quadras.
-- Chat privado completo.
-- Premium com vantagens competitivas.
+A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo corresponde às fases 0–10; os módulos comerciais e sociais avançados têm fases próprias (11+).
+
+## Fora do escopo do produto
+
+- Site público para jogadores/consumidores.
+- App nativo separado para gerenciadores.
+- ERP completo, gestão de vendas presenciais do estabelecimento e integrações PDV.
+- Processador de pagamentos próprio ou carteira custodial.
+- Logística própria: cotação de frete, transportadoras, etiquetas e rastreamento centralizado.
+- Chat global universal e upload livre de mídia em chats.
+- Premium ou publicidade com vantagens competitivas.
 - Microserviços, Kafka e Kubernetes.
-- ML antifraude, temporadas complexas e torneios avançados.
 - Localização em segundo plano contínua.
+
+## Fora do escopo do MVP (fases 0–10)
+
+- Marketplace, catálogo, estoque, pedidos e pagamentos (fases 12–13).
+- Painel de gestão web e organizações comerciais (fase 11).
+- Quadras privadas com reserva paga (fase 14).
+- Clãs, troféus e temporadas (fase 16).
+- Moderação dedicada e Trust & Safety (fase 17).
+- Publicidade (fase 18).
+- Aluguel de equipamentos, gestão completa de academias/clubes, marketplace de profissionais, torneios: exclusões do escopo atual do conceito (seção 16) — reavaliar como decisão de produto antes de qualquer implementação.
 
 ## Restrições não negociáveis
 
@@ -66,6 +79,11 @@ Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais
 - Provedor de SMS e política de custo/abuso.
 - Domínio técnico e hospedagem dos arquivos de associação de plataforma.
 - Provedor de mapas/geocodificação e custos/licenças.
+- Provedor de pagamentos (PSP), split e política de disputas/chargebacks.
+- Framework e estratégia de deploy do painel web de gestão.
 - Infraestrutura e região de hospedagem após estimativa de tráfego, custo e requisitos LGPD.
-- Regra de confirmação de resultados por modalidade.
-- Parâmetros iniciais do rating, a validar com simulações e testes.
+- Regra de confirmação de resultados por modalidade, tolerância de divergências e prazos de relato (faixa de 5 a 10 minutos; valor de segunda rodada de desempate pendente). Tratamento de empate exato em 50% está definido (conceito §9.4; ADR 0008).
+- Política de moderação, limites de contexto e retenção de mensagens.
+- Parâmetros iniciais do rating e da fórmula de troféus, a validar com simulações e testes.
+
+A lista completa de pendências e fases responsáveis está em `docs/JOGA_DOCUMENTACAO_TECNICA.md`, seção 26.

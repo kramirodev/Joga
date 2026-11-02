@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `GOALS.md`
 - `PLANS.md` (fonte normativa das fases)
-- `docs/DOCUMENTACAO_TECNICA.md`, especialmente seções 3, 5.4, 6 e 18
+- `docs/JOGA_DOCUMENTACAO_TECNICA.md`, especialmente seções 3, 5.4, 6 e 26
 - `harness/build-log.md`
 - `harness/build/phase-00-repositorio-e-governanca.md`
 

@@ -7,7 +7,8 @@
 - `AGENTS.md`
 - `GOALS.md`
 - `PLANS.md`
-- `docs/DOCUMENTACAO_TECNICA.md`
+- `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`
+- `docs/JOGA_DOCUMENTACAO_TECNICA.md`
 - Contextos e fases anteriores relevantes
 
 ## Objetivo

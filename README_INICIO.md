@@ -18,7 +18,9 @@ Copie o conteúdo deste pacote para a raiz do repositório escolhido. A estrutur
 ├── PROMPTS.md
 ├── README_INICIO.md
 ├── docs/
-│   └── DOCUMENTACAO_TECNICA.md
+│   ├── JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md
+│   ├── JOGA_DOCUMENTACAO_TECNICA.md
+│   └── ADR/
 ├── harness/
 │   ├── build-log.md
 │   ├── build/
@@ -46,4 +48,4 @@ Quando o Codex terminar, confira se ele entendeu as decisões, se encontrou cont
 
 ## 5. Decisões ainda abertas
 
-As decisões ainda pendentes e suas fases responsáveis estão listadas em `docs/DOCUMENTACAO_TECNICA.md`, seção 18. Escolhas de mobile e passkeys devem ser comprovadas na Fase 1; serviços e parâmetros de domínio devem ser decididos na fase que os implementa.
+As decisões ainda pendentes e suas fases responsáveis estão listadas em `docs/JOGA_DOCUMENTACAO_TECNICA.md`, seção 26. Escolhas de mobile e passkeys devem ser comprovadas na Fase 1; serviços e parâmetros de domínio devem ser decididos na fase que os implementa.

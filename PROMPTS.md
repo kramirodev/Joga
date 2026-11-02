@@ -5,7 +5,7 @@ Copie um prompt por vez. Substitua apenas o número/nome da fase ou tarefa. Não
 ## 1. Orientação inicial — somente leitura
 
 ```text
-Leia AGENTS.md, GOALS.md, PLANS.md e docs/DOCUMENTACAO_TECNICA.md.
+Leia AGENTS.md, GOALS.md, PLANS.md, docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md e docs/JOGA_DOCUMENTACAO_TECNICA.md.
 Inspecione o repositório atual em modo somente leitura.
 
 Quero desenvolver o JOGA do zero como projeto independente.
@@ -23,7 +23,7 @@ Não edite arquivos. Não instale dependências. Não crie código, tabelas ou e
 ## 2. Preparar uma fase — planejamento somente leitura
 
 ```text
-Leia AGENTS.md, GOALS.md, PLANS.md, docs/DOCUMENTACAO_TECNICA.md, harness/build-log.md e os contextos/fases relevantes.
+Leia AGENTS.md, GOALS.md, PLANS.md, docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md, docs/JOGA_DOCUMENTACAO_TECNICA.md, harness/build-log.md e os contextos/fases relevantes.
 Prepare somente a Fase [NN — NOME].
 
 Antes de propor a implementação, inspecione o estado real do repositório e identifique os comandos reais de lint, tipos, testes e build. Não invente comandos.

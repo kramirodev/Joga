@@ -85,6 +85,8 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 - Pedidos, pagamentos, comissões, retirada e entrega pelo vendedor.
 - Código de confirmação de recebimento.
 - Cancelamentos, devoluções e reembolsos com trilha de auditoria.
+- Denúncias e disputas comerciais, com comunicação pré-compra (loja/produto) e pós-compra (pedido) vinculadas ao contexto.
+- Denúncias de usuários e moderação de chats de lobby e clã, com revisão humana.
 - Publicidade patrocinada como módulo posterior, sem impacto competitivo.
 
 ### 2.2 Fora do escopo atual
@@ -102,7 +104,7 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 - Chat global universal.
 - Upload livre de imagens, vídeos, áudios e arquivos nos chats.
 - Kafka, Kubernetes e microserviços como requisito inicial.
-- Antifraude baseado em machine learning.
+- Antifraude completamente automatizado/decisório (a IA é auxiliar e casos sensíveis demandam revisão humana; denúncia não gera punição automática).
 - Rastreamento contínuo em segundo plano.
 
 ## 3. Arquitetura geral
@@ -266,10 +268,13 @@ backend/
       disputes/
       ratings/
       reputation/
+      moderation/
       marketplace_catalog/
       inventory/
       orders/
       payments/
+      merchant_conversations/
+      commerce_disputes/
       fulfillment/
       advertising/
       notifications/
@@ -283,8 +288,8 @@ backend/
   Dockerfile
 
 docs/
-  DOCUMENTACAO_CONCEITO_PRODUTO.md
-  DOCUMENTACAO_TECNICA.md
+  JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md
+  JOGA_DOCUMENTACAO_TECNICA.md
   ADR/
   API.md
   SECURITY.md
@@ -511,9 +516,62 @@ stateDiagram-v2
     FINALIZED --> [*]
 ```
 
-As transições devem ser implementadas em serviço de domínio central. Não permitir alteração livre de status por endpoint.
+As transições devem ser implementadas em serviço de domínio central. Não permitir alteração livre de status por endpoint. A quantidade e o tipo de confirmações são configuráveis por formato. Denúncia isolada não determina punição; relatos divergentes levam a `DISPUTED`, e resultado disputado não altera MMR até a resolução.
 
-Resultados são enviados por participantes autorizados. Relatos divergentes levam a `DISPUTED`; resultado disputado não altera MMR. A quantidade e o tipo de confirmações são configuráveis por formato. Denúncia isolada não determina punição.
+### 10.1 Capitães
+
+Nas partidas formadas pelo matchmaking, cada equipe terá um capitão simbólico, escolhido automaticamente pelo backend.
+
+- O capitão não terá autoridade administrativa sobre os demais jogadores e não poderá decidir unilateralmente o resultado. Sua função é representar a equipe na comunicação e registrar uma confirmação adicional do resultado, que o sistema tratará como informação adicional, não como decisão absoluta.
+- A seleção segue esta ordem de prioridade:
+  1. Maior Trust Factor esportivo.
+  2. Maior número de partidas válidas realizadas.
+  3. Maior MMR da modalidade/formato.
+  4. Maior idade, em caso de empate nos critérios anteriores.
+- A seleção deve ser determinística, registrada na partida e auditável. Os critérios (inicialização do Trust Factor de novos jogadores, empates finais e substituição por ausência) permanecem pendentes de definição (seção 26).
+- O conceito define capitão apenas para partidas formadas pelo matchmaking. Lobbies manuais ficam sem capitão até que o produto decida o contrário (seção 26); os endpoints de confirmação não devem exigir capitão nesses casos.
+
+### 10.2 Relato e confirmação do resultado
+
+- Ao final da partida, todos os participantes devem relatar o resultado individualmente, selecionando a equipe vencedora ou empate, quando o formato permitir.
+- Os capitães podem registrar a confirmação de suas respectivas equipes.
+- Os relatos individuais são visíveis aos demais participantes da partida. A exposição é intencional (responsabilidade social) e deve respeitar autorização: somente participantes da partida podem consultar os relatos e as confirmações; nenhuma consulta externa.
+- O prazo de relato será limitado e configurável entre 5 e 10 minutos após o encerramento da partida. Os limites da faixa são validados no servidor; o valor efetivo por formato permanece pendente (seção 26).
+- Jogadores que não relatarem dentro do prazo são registrados como relatos anulados. Relatos anulados não contam como favoráveis a nenhum resultado e são apresentados separadamente, sem interpretação automática de concordância ou discordância.
+
+### 10.3 Divergências e validação
+
+- O backend compara os relatos e as confirmações dos capitães. Divergências isoladas não interrompem automaticamente a validação: o resultado majoritário pode ser aceito quando a divergência estiver dentro da tolerância configurável por modalidade e quantidade de participantes. O valor base da tolerância permanece pendente (seção 26) e deve ser validado antes do uso.
+- Quando mais de 50% dos relatos válidos divergirem do resultado predominante, a partida entra em `DISPUTED`. Quando a divergência for exatamente de 50%, aplica-se o fluxo de desempate da seção 10.4.
+- A disputa é medida de proteção, não mecanismo para anular partidas automaticamente. A anulação é considerada apenas como última alternativa, depois de avaliadas as evidências.
+
+### 10.4 Desempate exato em 50% — segunda votação e análise de confiabilidade
+
+Regra aprovada para o caso de divergência exatamente igual a 50% (conceito §9.4; ADR 0008).
+
+1. **Segunda confirmação.** O backend abre uma nova rodada de confirmação para todos os participantes da partida. Cada jogador pode confirmar ou corrigir a resposta anterior. A segunda rodada tem prazo curto e configurável; o valor efetivo permanece pendente (seção 26).
+2. **Histórico preservado.** Nenhum relato é sobrescrito: a primeira votação é mantida integralmente para auditoria, e cada confirmação/correção da segunda rodada é registrada de forma append-only com ator e timestamp.
+3. **Análise interna e invisível.** Se a segunda rodada continuar exatamente empatada em 50%, a partida entra em análise interna de confiabilidade, sem exposição de indicadores aos participantes:
+   - Avalia cada relato individualmente — não por média simples de Trust Factor do grupo — impedindo que um grupo vença apenas acumulando contas de alta reputação.
+   - Sinais avaliados: consistência de votos entre as rodadas; histórico competitivo; coerência em alterações de voto; detecção de padrões de comportamento coordenado ou manipulação.
+   - Os relatos dos capitães (selecionados por Trust Factor, seção 10.1) funcionam como sinais relevantes pela confiabilidade de seu histórico, sem peso automático de voto adicional e sem autoridade para determinar o resultado sozinhos.
+   - Os indicadores internos e a análise nunca são exibidos aos participantes; servem exclusivamente ao sistema.
+4. **Desfechos.** O sistema tenta resolver com base nos indicadores; se as evidências não permitirem conclusão segura, o caso vai para revisão humana. A anulação permanece como último recurso.
+5. **MMR congelado.** Durante as duas rodadas e a análise, nenhuma aplicação de rating é permitida: o rating só é aplicado após decisão final validada, via mecanismo idempotente (seção 11.1).
+
+### 10.5 Disputas de partida
+
+Uma partida em `DISPUTED` não gera aplicação de rating.
+
+- O sistema reúne: relatos de cada participante; confirmações dos capitães; histórico de alterações e confirmações; denúncias relacionadas à partida; histórico de confiabilidade relevante dos envolvidos; outras evidências disponíveis e pertinentes.
+- A primeira análise pode ser automatizada por regras de consistência e mecanismos de detecção de comportamento suspeito. Casos inconclusivos ou com indícios relevantes de fraude podem ser encaminhados para revisão humana.
+- Decisões possíveis: confirmar o resultado predominante; solicitar informações adicionais; corrigir o resultado quando houver evidência suficiente; aplicar medidas de integridade quando houver fraude comprovada; anular a partida somente quando não houver alternativa confiável.
+- Toda decisão é registrada com justificativa auditável, ator, timestamp e mecânica append-only; correções posteriores geram eventos compensatórios (seção 11.1).
+
+### 10.6 Integridade do sistema de resultados
+
+- O sistema deve proteger relatos contra manipulação por votos coordenados, contas falsas e denúncias abusivas, com mecanismos próprios de detecção de padrões suspeitos. O balanceamento de MMR não é tratamento suficiente contra fraude.
+- Resultados não confirmados ou em disputa não alteram MMR. A plataforma preserva histórico auditável dos relatos originais e das decisões finais.
 
 ## 11. Rating, Trust Factor e justiça competitiva
 
@@ -562,7 +620,39 @@ Clãs possuem estado aberto ou fechado, membros, administradores, convites e lim
 
 O vínculo do jogador ao clã na data de uma partida deve ser registrado para atribuir corretamente os pontos. Mudança de clã não transfere retroativamente troféus conquistados.
 
-### 12.4 Troféus de clã
+### 12.4 Moderação, denúncias de usuários e Trust & Safety
+
+Módulo dedicado (fase 17 do `PLANS.md`). Especificação alvo traduzida do conceito (seções 15.5 e 15.5.1–15.5.5); políticas e parâmetros pendentes de decisão (seção 26). Escopo inicial: chats de lobby e de clã, limitados a texto e referências internas do JOGA; não há moderação de mídia enviada por usuários, pois o MVP não admite upload livre.
+
+#### 12.4.1 Denúncia de perfil no lobby
+
+- Cada participante pode denunciar outro jogador diretamente pelo perfil disponível no lobby.
+- Categorias de comportamento incluem: ofensas e insultos; assédio e intimidação; discurso de ódio ou discriminação; atitude antidesportiva; provocação ou comportamento abusivo; spam e mensagens indesejadas; tentativa de fraude ou manipulação de partida; outras condutas inadequadas.
+- O denunciante pode selecionar até cinco mensagens específicas como contexto. A IA analisa o contexto dessas mensagens e uma faixa limitada de mensagens próximas, conforme o limite de contexto definido pelo sistema, evitando interpretação isolada. O limite de janela é parâmetro pendente (seção 26).
+- O backend deve registrar autor, denunciado, lobby, mensagens selecionadas, contexto autorizado e horário dos eventos.
+
+#### 12.4.2 Moderação automatizada por IA
+
+A IA é camada auxiliar, com níveis de confiança e possibilidade de contestação. Ela pode auxiliar:
+
+- Classificação de denúncias; identificação de ofensas, assédio e discriminação; detecção de spam e mensagens repetitivas; identificação de ameaças e comportamentos potencialmente perigosos; agrupamento de denúncias relacionadas; priorização por gravidade e risco; identificação de possíveis denúncias abusivas ou coordenadas.
+
+- A automação pode aplicar apenas medidas preventivas proporcionais e reversíveis, conforme regras previamente definidas (ocultação temporária de conteúdo, limitação de envio). Suspensões permanentes e decisões graves exigem critérios mais rigorosos e revisão humana. A IA não é autoridade infalível.
+
+#### 12.4.3 Revisão humana e medidas
+
+- No estágio inicial, o próprio responsável pelo JOGA pode atuar como moderador humano. A ferramenta de revisão é interna e separada do painel de lojas (JOGA y GESTÃO); deve apresentar histórico, mensagens relevantes, evidências, classificação automatizada e ações recomendadas.
+- Revisão humana é reservada principalmente para casos graves; denúncias com evidências conflitantes; risco à segurança de usuários; recursos contra medidas automatizadas; casos de baixa confiança da IA; possíveis fraudes ou denúncias coordenadas.
+- Medidas possíveis: aviso; remoção ou ocultação de mensagens; restrição temporária de envio; restrição de participação em lobbies; suspensão temporária da conta; suspensão permanente em casos graves ou reincidentes. Medidas são proporcionais à gravidade e reincidência, com justificativa e possibilidade de contestação, em registro append-only.
+- Denúncia isolada não reduz automaticamente o Trust Factor esportivo; o sistema considera a confiabilidade da denúncia e a existência de evidências antes de aplicar penalidades (seção 11.2).
+
+#### 12.4.4 Privacidade, acesso e retenção
+
+- Acesso a mensagens e evidências de moderação limitado a pessoas e processos autorizados, com auditoria de acessos.
+- Armazenar apenas o contexto necessário para analisar a denúncia, com política de retenção a definir (seção 26).
+- A automação prioriza o processamento eficiente; conversas não são encaminhadas continuamente para IA/revisão humana sem necessidade.
+
+### 12.5 Troféus de clã
 
 O ranking será separado por modalidade. Não somar futebol e vôlei em um único ranking inicial.
 
@@ -723,6 +813,44 @@ Em compras à distância, o artigo 49 do Código de Defesa do Consumidor prevê 
 
 A plataforma deve passar por revisão jurídica antes do lançamento. Definir papéis e responsabilidades contratuais não elimina automaticamente possíveis responsabilidades legais do marketplace.
 
+### 16.5 Denúncias de transações e antifraude comercial
+
+Módulo dedicado (fase 15 do `PLANS.md`). Tradução técnica do conceito (seções 15.1–15.4). O sistema protege compradores e vendedores tanto na compra quanto após a confirmação do pedido, sem presunção de culpa de qualquer parte e sem decisões irreversíveis automatizadas.
+
+#### 16.5.1 Denúncia de transação
+
+- Aberta por comprador ou vendedor, vinculada automaticamente ao pedido correspondente. Não permitir denúncia por quem não é comprador/vendedor daquele pedido.
+- Formulário: tipo de problema; descrição detalhada; até três imagens de evidência com limites de tamanho/formato e controles de segurança (armazenamento privado, allowlist, autorização por papel).
+- A IA pode auxiliar na classificação, identificação de inconsistências e priorização de casos. Casos com indícios relevantes de fraude, evidências conflitantes ou consequências financeiras significativas vão para revisão humana.
+- Junto da denúncia, registrar referência às mensagens do contexto comercial existentes; mensagens e imagens seguem os limites e a autorização definidos.
+
+#### 16.5.2 Fluxo de decisão de disputa
+
+Análise progressiva, com histórico append-only em cada etapa:
+
+1. Coleta automática de dados do pedido, pagamento, mensagens, códigos de recebimento e evidências.
+2. Classificação inicial e identificação de inconsistências por regras e IA.
+3. Tentativa de resolução entre comprador e vendedor, quando apropriado, inclusive por propostas de solução (condições, defeitos, alternativas, possíveis soluções).
+4. Encaminhamento de casos complexos ou suspeitos para revisão humana.
+5. Registro da decisão, justificativa e ações executadas.
+
+- Anulação, cancelamento e reembolso seguem as condições comerciais, o fluxo da seção 16.4 e os eventos autenticados do PSP (seção 16.2); a disposição financeira nunca decorre apenas da classificação da IA.
+- O código de confirmação de recebimento é evidência operacional, não prova absoluta de conformidade do produto (seção 15.2).
+
+#### 16.5.3 Proteções antifraude
+
+- Riscos previstos: alegação falsa de não recebimento; registro de entrega inexistente; comprovantes falsos; anúncios de produtos inexistentes ou divergentes; tentativa de reembolso indevido; contas falsas ou múltiplas para manipular avaliações e transações; acordos entre comprador e vendedor para explorar pagamentos/reembolsos.
+- O sistema mantém registros auditáveis de pedidos, pagamentos, alterações de status, mensagens, códigos de recebimento e solicitações de suporte, e protege os códigos contra manipulação (seção 15.2/20.5).
+- Indicadores permanecem separados: denúncia ou disputa comercial não altera MMR, Trust Factor esportivo nem troféus de clã (seções 11.3 e 12.5). Sinais de confiabilidade comercial são tratados como indicador próprio do estabelecimento/vendedor, sem mistura com o esportivo.
+
+### 16.6 Comunicação entre comprador e vendedor
+
+- Estruturada por contexto: pré-compra vinculada à loja e ao produto (condições, disponibilidade, dúvidas e possibilidades de solução); pós-compra vinculada ao pedido (status, cumprimento, defeitos, alternativas e propostas).
+- Histórico preservado e associado à denúncia/disputa quando existente.
+- Autorização: comprador do pedido (ou interessado pré-compra autenticado) e membros autorizados da loja daquele contexto; nada de acesso cruzado entre lojas.
+- Não permitir uso da conversa para contornar pagamentos ou controles da plataforma (sem troca de dados sensíveis de pagamento, sem redirecionamento fora do JOGA para transações de pedido). Moderação desse canal segue as regras da seção 12.4, adaptadas na fase comercial.
+- Controles de tamanho, frequência, idempotência e retenção equivalentes ao chat de lobby. Diferenciação detalhada de papéis para pré-compra é pendência de detalhamento (seção 26).
+
 ## 17. Publicidade
 
 Módulo posterior para:
@@ -779,6 +907,12 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `rating_accounts` | MMR por usuário/modalidade/formato |
 | `rating_events` | Histórico imutável de rating |
 | `trust_events` | Sinais auditáveis do Trust Factor |
+| `moderation_cases` | Casos de moderação consolidados (denúncia, classificação, decisão e recurso) |
+| `moderation_actions` | Medidas aplicadas, justificativa, reversibilidade e contestação |
+| `moderation_message_refs` | Mensagens selecionadas como contexto de denúncia (até cinco) |
+| `commerce_disputes` | Denúncias/disputas comerciais vinculadas a pedidos |
+| `commerce_dispute_evidences` | Evidências de denúncia comercial (até três imagens) |
+| `commercial_threads` | Conversas pré-compra (loja/produto) e pós-compra (pedido) |
 | `products` | Anúncios de produtos |
 | `product_variants` | Tamanho/cor/modelo e SKU |
 | `inventory_balances` | Saldo alocado ao canal JOGA, se materializado |
@@ -815,7 +949,13 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 - Reserva de quadra não pode sobrepor intervalo bloqueado/reservado.
 - Código de recebimento é de uso único e vinculado ao pedido.
 - Rating aplicado uma única vez por partida/usuário/versão.
+- Desempate em 50%: a segunda rodada nunca sobrescreve o relato original; todo histórico de relato e alteração é append-only.
+- Partidas em segunda rodada de desempate ou em análise de confiabilidade não podem gerar aplicação de rating (MMR congelado até decisão final).
 - Troféus de clã sempre associados a eventos competitivos válidos e versão do algoritmo.
+- Denúncia de perfil só pode ser criada por participante do lobby e referenciar mensagens da própria conversa.
+- Denúncia comercial só pode ser criada pelo comprador ou vendedor do pedido e fica vinculada a ele.
+- Conversa comercial só é acessível ao comprador/vendedor do contexto autorizado (loja/produto ou pedido).
+- Medida de moderação exige ator, justificativa e estado de recurso; medida automatizada é reversível.
 
 ## 19. API e contratos
 
@@ -839,6 +979,10 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Partidas | Consultar, confirmar, presença e ciclo de vida |
 | Resultados | Relatar, contestar e consultar decisão |
 | Ratings | Consultar histórico individual |
+| Moderação | Denunciar perfil no lobby, acompanhar denúncia e recurso |
+| Moderação interna | Fila de casos, mensagens/evidências, aplicar medida, revisar recurso (staff autorizado) |
+| Disputas comerciais | Abrir denúncia de pedido, responder, propor solução e acompanhar decisão |
+| Conversa comercial | Pré-compra por loja/produto e pós-compra por pedido, paginada |
 | Produtos | Catálogo, variantes e busca |
 | Estoque | Alocar, ajustar e consultar estoque do canal JOGA |
 | Pedidos | Checkout, histórico, status e cancelamento |
@@ -981,6 +1125,11 @@ Backups automáticos criptografados, retenção definida, RPO/RTO e teste docume
 - Cálculo de horário e duração do formato.
 - Transições de lobby e partida.
 - Quórum e maioria da votação.
+- Tolerância de divergência, relatos anulados e prazo do relato de resultado (faixa de 5 a 10 minutos).
+- Desempate em 50%: segunda rodada, preservação de histórico e regras da análise de confiabilidade individual.
+- Denúncia de perfil no lobby: categorias, até cinco mensagens e limites de contexto.
+- Medidas de moderação e fluxo de recurso.
+- Denúncia comercial com até três imagens, vínculo ao pedido e fluxo de decisão.
 - Cálculo de MMR e troféus.
 - Regras de clãs e elegibilidade.
 - Estoque, hold, expiração e movimentações.
@@ -1002,7 +1151,10 @@ Executar com PostgreSQL/PostGIS e Redis reais em containers. Testar migrações,
 - Dois participantes tentam abrir votação simultaneamente.
 - Participante envia voto repetido.
 - Código de recebimento é utilizado simultaneamente ou repetido.
-- Dois processos tentam aplicar MMR/troféus para o mesmo resultado.
+- Denúncia comercial é aberta simultaneamente pelo comprador e pelo vendedor do mesmo pedido.
+- Segunda rodada de desempate é aberta simultaneamente por dois participantes; confirmação repetida não duplica histórico.
+- Um processo tenta aplicar rating durante a segunda rodada de desempate ou a análise de confiabilidade, antes de decisão final validada.
+- Dois processos tentam aplicar MMR/troféus para o mesmo resultado validado.
 
 Critério: nenhuma dupla reserva, estoque negativo, pedido duplicado, confirmação duplicada ou aplicação competitiva dupla.
 
@@ -1014,6 +1166,9 @@ Critério: nenhuma dupla reserva, estoque negativo, pedido duplicado, confirmaç
 - Abuso de OTP, sessões e passkeys.
 - Acesso indevido a chats, lobbies e clãs.
 - Manipulação de votos, MMR, troféus, estoque, preço e pagamento pelo cliente.
+- BOLA/IDOR em denúncias, casos de moderação, relatos de resultado e conversas comerciais.
+- Mass assignment em medidas de moderação, classificação de denúncia e status de disputa.
+- Denúncia comercial ou abertura de disputa alterando Trust Factor, MMR ou troféus.
 - Replay de webhook e código de recebimento.
 - Enumeração de pedidos e códigos.
 - Spam, flooding e abuso de convites.
@@ -1037,17 +1192,24 @@ Pipeline recomendado:
 |---|---|---|
 | 0. Governança e documentação | Repositório, regras, ADRs, objetivos e planos | Sem implementação de produto |
 | 1. Prova técnica mobile | Comparar Expo Development Builds/React Native CLI; testar builds, passkeys, SMS e localização em Android/iOS | Protótipos mínimos; sem aplicativo completo ou backend comercial definitivo |
-| 2. Fundação de engenharia | Monorepo, backend, mobile, painel web quando autorizado, CI, configuração, banco, Redis, logs e health checks | Sem expandir funcionalidades de negócio antes da fundação |
-| 3. Identidade e segurança | OTP, telefone protegido, passkeys, sessões, dispositivos, organizações e permissões | Sem matchmaking até identidade/autorização testadas |
+| 2. Fundação de engenharia | Monorepo, backend, mobile, CI, configuração, banco, Redis, logs e health checks | Sem expandir funcionalidades de negócio antes da fundação |
+| 3. Identidade e segurança | OTP, telefone protegido, passkeys, sessões, dispositivos e permissões base | Sem matchmaking até identidade/autorização testadas |
 | 4. Perfil, modalidades e locais | Esportes, formatos, durações, disponibilidade, preferências e locais | Incluir apenas futebol 5x5 e vôlei inicialmente |
 | 5. Matchmaking e lobbies | Fila única, horário concreto, formação, tipos de lobby e votação aplicável | Sem torneios; concorrência e regras testadas |
-| 6. Partidas e competitivo | Confirmações, resultados, disputas, MMR, Trust Factor inicial | Nenhum resultado em disputa altera MMR |
-| 7. Realtime e comunidade | Chat de lobby, amigos, convites e depois clãs/chat de clã | Texto e links internos; sem chat global ou mídia livre |
-| 8. Quadras e reservas | Cadastro, disponibilidade, agenda e reserva de quadra particular | Espaços públicos não são tratados como reserváveis sem autorização |
-| 9. Marketplace | Catálogo, estoque JOGA, pedidos, pagamentos, retirada/entrega pelo vendedor e código | Sem logística operada pelo JOGA |
-| 10. Clãs competitivos | Troféus por modalidade, temporadas e ranking | Fórmula validada por simulações e controles antiabuso |
-| 11. Publicidade e hardening | Campanhas patrocinadas, LGPD, segurança, carga e operação | Publicidade nunca altera competitividade |
-| 12. Produção | Deploy, alertas, backups, runbooks e resposta a incidentes | Go-live somente com critérios de produção atendidos |
+| 6. Ciclo de partidas | Confirmações, presença, prazos e máquina de estados | Transições centralizadas e testadas |
+| 7. Resultados e disputas | Capitães, relatos com transparência, divergências, disputas e decisões auditáveis | Nenhum resultado em disputa altera MMR |
+| 8. Competitivo | MMR versionado, ranking e Trust Factor separados | Nenhum resultado em disputa altera MMR; casual não altera ranqueado |
+| 9. Comunidade em tempo real | Chat de lobby, amigos, convites, WebSocket, Outbox e push | Texto e links internos; sem chat global ou mídia livre |
+| 10. Hardening e piloto (núcleo esportivo) | Segurança, carga, observabilidade, backup/restore e piloto | Go-live comercial fica na fase 19 |
+| 11. Organizações e gestão web | Organizações, papéis, BOLA e painel web (JOGA y GESTÃO) | Framework web com ADR; sem operações de negócio |
+| 12. Catálogo e estoque comprometido | Produtos, variantes e movimentações auditáveis do estoque JOGA | Sem pedidos pagos ou logística |
+| 13. Pedidos, pagamentos e cumprimento | PSP, webhooks, ledger interno, retirada/entrega pelo vendedor, código de recebimento, devoluções | Sem logística operada pelo JOGA |
+| 14. Quadras e reservas | Agenda, disponibilidade e reserva paga de quadras privadas | Espaços públicos não reserváveis sem autorização |
+| 15. Integridade comercial | Denúncias de pedidos, evidências, conversas pré/pós-compra, disputas e antifraude | Decisão financeira irreversível nunca automática |
+| 16. Clãs e troféus | Clãs, chat de clã, troféus por modalidade e temporadas | Fórmula validada por simulações e controles antiabuso |
+| 17. Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | Denúncia isolada não altera Trust Factor; medidas graves exigem revisão humana |
+| 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
+| 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
 A Fase 1 está autorizada como prova técnica. Não iniciar Fase 2 ou qualquer implementação ampla sem cumprir os critérios da Fase 1 e obter a aprovação prevista no processo do projeto.
 
@@ -1070,6 +1232,10 @@ O JOGA não deve ser considerado pronto enquanto itens críticos estiverem pende
 - Cancelamento/devolução respeita direitos do consumidor.
 - MMR e troféus são calculados no servidor e têm histórico.
 - Publicidade não altera critérios competitivos.
+- Relatos de resultado são visíveis apenas aos participantes da partida; relatos anulados são contados e exibidos separadamente.
+- O desempate exato em 50% segue o fluxo de segunda confirmação e análise de confiabilidade individual (sem média de grupo), com histórico preservado e MMR congelado até decisão final; indicadores internos nunca são expostos aos participantes.
+- Denúncias de usuários e medidas de moderação têm justificativa, recurso e registro auditável; denúncia isolada não reduz Trust Factor.
+- Denúncias e disputas comerciais ficam vinculadas ao pedido, com evidências autorizadas e decisão humana em casos sensíveis; nenhuma decisão financeira irreversível decorre apenas de IA.
 - Dados sensíveis não aparecem em logs/traces/analytics.
 - Backups foram restaurados em teste.
 - Testes cobrem concorrência, autorização, pagamentos, estoque, chats e fluxos críticos.
@@ -1093,6 +1259,12 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 12. **LGPD:** retenção de mensagens, localização, eventos, dados financeiros e contas excluídas.
 13. **Infraestrutura:** provedor, região, secrets manager, backup, RPO/RTO e custos.
 14. **Marca:** busca de disponibilidade de JOGA e nomes derivados antes de divulgação/registro.
+15. **Identificador do aplicativo:** package/bundle ID definitivo (hoje `com.anonymous.joga` é provisório) e nome de exibição (`JOGA y JOGA`).
+16. **Capitães:** desempate final, substituição/ausência do capitão e comportamento em lobbies manuais.
+17. **Resultados:** tolerância de divergência por modalidade; valor efetivo do prazo de relato (na faixa de 5 a 10 minutos) e prazo da segunda rodada de desempate. O tratamento de divergência exatamente em 50% está definido (seção 10.4; ADR 0008).
+18. **Votação de troca de quadra:** definição explícita de abstenções e de o que conta como voto válido para o quórum.
+19. **Moderação:** política de conteúdo, limites de contexto das denúncias, ferramenta/provedor de IA, retenção de mensagens e acesso da revisão humana.
+20. **Integridade comercial:** participante e forma da conversa pré-compra, prazos de resposta de vendedores e integração detalhada com o PSP nas disputas.
 
 Cada decisão relevante deve ser registrada em ADR com contexto, alternativas, decisão, consequências, status e data.
 

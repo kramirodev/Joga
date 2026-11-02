@@ -9,7 +9,7 @@
 - `GOALS.md`
 - `PLANS.md` (fonte normativa das fases)
 - `PROMPTS.md`
-- `docs/DOCUMENTACAO_TECNICA.md`
+- `docs/JOGA_DOCUMENTACAO_TECNICA.md` (sucessora de `docs/DOCUMENTACAO_TECNICA.md`)
 - `docs/ADR/0001-repositorio-v2-e-roadmap.md`
 - `docs/ADR/0002-nome-joga-e-repositorio-vinculado.md`
 - `docs/ADR/0003-independencia-entre-projetos.md`
@@ -56,7 +56,7 @@ Preparar a documentação e a governança do JOGA, a ser desenvolvido do zero co
 - O repositório remoto foi confirmado como `kramirodev/Joga`; o nome já estava correto, portanto não foi necessária escrita ou renomeação remota.
 - O projeto anterior não é critério nem bloqueio operacional da Fase 0.
 - Domínio técnico é necessário para associações de passkeys; validar requisitos na Fase 1. Registro e hospedagem não pertencem a esta fase.
-- As demais decisões técnicas e suas fases estão listadas em `docs/DOCUMENTACAO_TECNICA.md`, seção 18.
+- As demais decisões técnicas e suas fases estão listadas em `docs/JOGA_DOCUMENTACAO_TECNICA.md`, seção 26 (na época desta ficha, o arquivo se chamava `docs/DOCUMENTACAO_TECNICA.md` e a seção era a 18).
 
 ## Plano de verificação
 

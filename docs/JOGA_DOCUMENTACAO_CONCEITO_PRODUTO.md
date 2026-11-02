@@ -286,7 +286,25 @@ A quantidade de votos anulados será registrada separadamente e não deverá ser
 
 A disputa será uma medida de proteção, não um mecanismo para anular partidas automaticamente. A anulação deverá ser considerada apenas como última alternativa, depois de avaliadas as evidências disponíveis.
 
-### 9.4 Disputas de partidas
+### 9.4 Desempate de resultados e análise de confiabilidade
+
+Quando a primeira votação terminar exatamente em 50% para cada resultado, o JOGA solicitará uma segunda confirmação a todos os participantes.
+
+Os jogadores poderão confirmar ou corrigir suas respostas anteriores. O histórico da primeira votação será preservado para auditoria.
+
+Se a segunda votação continuar exatamente empatada, a partida entrará em uma análise interna e invisível de confiabilidade.
+
+Nessa análise, o sistema avaliará os relatos individualmente — e não por média simples de grupo —, buscando consistência de votos, histórico competitivo, coerência em eventuais alterações de voto e detecção de padrões de comportamento coordenado ou manipulação.
+
+Os relatos dos capitães serão considerados como sinais relevantes, em função de seu histórico de confiabilidade, mas não receberão peso automático de voto adicional nem autoridade para determinar o resultado sozinhos.
+
+Os indicadores internos não serão exibidos aos participantes. Eles serão utilizados exclusivamente pelo sistema para auxiliar na identificação do resultado mais confiável.
+
+Caso as evidências não permitam uma conclusão segura, a partida será encaminhada para revisão humana. A anulação deverá permanecer como último recurso.
+
+Durante todo o processo, o MMR permanecerá sem atualização definitiva.
+
+### 9.5 Disputas de partidas
 
 Uma partida em disputa não poderá alterar o MMR até a resolução.
 
@@ -313,7 +331,7 @@ As decisões possíveis incluem:
 
 Toda decisão deverá ser registrada e possuir justificativa auditável.
 
-### 9.5 Integridade do sistema de resultados
+### 9.6 Integridade do sistema de resultados
 
 O sistema deverá evitar que usuários manipulem resultados por meio de votos coordenados, contas falsas ou denúncias abusivas.
 
