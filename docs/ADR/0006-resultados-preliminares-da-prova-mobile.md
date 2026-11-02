@@ -23,6 +23,7 @@ A Fase 1 precisa comparar Expo development build com React Native CLI e provar b
 - A prova de passkeys depende da associação do app a um domínio HTTPS controlado pelo projeto, incluindo os arquivos de associação requeridos pelas plataformas. O projeto ainda não tem domínio selecionado/configurado; não se registrou nem hospedou domínio.
 - `expo prebuild --platform android --no-install` gerou `mobile/android/` (diretório ignorado pelo Git) e atualizou `mobile/app.json` e os scripts `android`/`ios` em `mobile/package.json`. O identificador gerado é `com.anonymous.joga`, ainda provisório e sem decisão arquitetural registrada.
 - `mobile/android/gradlew.bat assembleDebug` foi tentado. A primeira execução foi bloqueada pelo sandbox ao baixar Gradle; com execução externa aprovada, o wrapper baixou Gradle `9.4.1` e iniciou o daemon, mas a sessão não apresentou saída de compilação e foi interrompida. Portanto, não há resultado de build nativo a declarar. Android SDK/build-tools não foram localizados no ambiente.
+- As ferramentas de linha de comando do Android SDK para Windows (pacote `15859902`) foram baixadas em `.tools/android-sdk/cmdline-tools/latest` e o SHA-256 foi conferido contra o valor publicado pelo Android. Isso ainda não instala uma plataforma/build-tools; nenhuma licença Android foi aceita.
 - Foi pesquisada uma biblioteca React Native/Expo de passkeys como candidata, mas não testada. Não há evidência suficiente para recomendá-la como dependência do produto.
 
 ## Decisão provisória
@@ -41,6 +42,6 @@ Manter Expo development build e React Native CLI como alternativas em avaliaçã
 ## Consequências e limites
 
 - A Fase 1 permanece em andamento. A execução JavaScript em Expo Go e uma leitura foreground foram comprovadas, mas isso não prova um development build com código nativo próprio nem dá base para decisão final Expo/React Native CLI.
-- Para build nativo Android local, ainda é necessário instalar/configurar Android SDK e toolchain compatível e obter uma execução concluída de `assembleDebug`. Para build/teste iOS, é necessário macOS com Xcode ou serviço de build cloud autorizado. Domínio/hospedagem para associação de passkeys exige decisão e autorização próprias.
+- Para build nativo Android local, ainda é necessário instalar/configurar plataforma e build-tools do Android SDK, aceitar as licenças aplicáveis pelo responsável e obter uma execução concluída de `assembleDebug`. Para build/teste iOS, é necessário macOS com Xcode ou serviço de build cloud autorizado. Domínio/hospedagem para associação de passkeys exige decisão e autorização próprias.
 - Passkeys, arquivos de associação, localização aproximada/negada, SMS simulado/sandbox e comparação prática com React Native CLI continuam pendentes.
 - Esta ADR registra observações e pendências; não autoriza uso de serviço externo, compra ou registro de domínio.
