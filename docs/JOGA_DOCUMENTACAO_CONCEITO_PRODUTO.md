@@ -222,24 +222,6 @@ Não está previsto, no escopo inicial, envio livre de vídeos, áudios, arquivo
 
 ### 8.3 Votação de troca de quadra
 
-A votação de troca de quadra será uma funcionalidade dos **lobbies abertos originados pelo matchmaking**. Não existirá votação de troca de arena em lobbies fechados ou em lobbies criados manualmente.
-
-Nos lobbies elegíveis:
-
-- Não haverá um dono com poder unilateral de trocar o local.
-- Qualquer participante poderá sugerir uma alternativa compatível.
-- Cada participante poderá votar uma vez em cada proposta.
-- Haverá apenas uma votação ativa por lobby.
-- A proposta deverá respeitar o tipo de espaço permitido no lobby.
-- Se o lobby estiver limitado a quadras públicas, só poderão ser sugeridas outras públicas. A mesma regra vale para particulares. Se a preferência final permitir ambas, as duas categorias poderão ser consideradas.
-- O sistema verificará disponibilidade, horário, duração e demais restrições antes de efetivar a mudança.
-
-**Regra inicial de aprovação:** a proposta precisa atingir quórum mínimo de participação de 50% dos participantes elegíveis e receber mais de 50% dos votos válidos favoráveis. Empate, maioria contrária ou ausência de quórum rejeitam a mudança. Abstenções não contam como voto válido, mas contam para verificar o quórum de participação.
-
-A aprovação da votação não substitui a confirmação da disponibilidade nem a conclusão de uma nova reserva. Uma reserva já paga não será cancelada automaticamente apenas porque uma votação foi aprovada. O sistema deverá apresentar os efeitos de cancelamento/reembolso antes de confirmar a mudança.
-
-### 8.3 Votação de troca de quadra
-
 A votação de troca de quadra será uma funcionalidade dos lobbies abertos originados pelo matchmaking. Não existirá votação de troca de arena em lobbies fechados ou em lobbies criados manualmente.
 
 Nos lobbies elegíveis:
