@@ -9,7 +9,7 @@ JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por 
 - PostgreSQL com PostGIS como fonte oficial da verdade; Redis somente para funções auxiliares e efêmeras.
 - Comunicação do aplicativo com o backend por contratos HTTP/WebSocket versionados.
 
-A Fase 0 foi documental e está concluída. A Fase 1 (prova técnica mobile/nativa) permanece em andamento por pendências externas de domínio/passkeys e iOS, e a Fase 2 (fundação de engenharia) está em andamento em paralelo. Já existe uma API FastAPI mínima com health checks, PostgreSQL/PostGIS local por container e verificações automatizadas; não há painel web, funcionalidades de produto nem dados reais.
+A Fase 0 foi documental e está concluída. A Fase 1 (prova técnica mobile/nativa) permanece em andamento por pendências externas de domínio/passkeys e iOS. A Fase 2 (fundação de engenharia) foi concluída: há uma API FastAPI mínima com health checks, PostgreSQL/PostGIS local por container, migração baseline reversível e CI verde nos dois projetos; não há painel web, funcionalidades de produto nem dados reais.
 
 ## Por onde começar
 

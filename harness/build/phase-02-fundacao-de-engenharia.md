@@ -1,6 +1,6 @@
 # Fase 02 — Fundação de engenharia
 
-**Status:** Em andamento — backend mínimo com health checks, PostgreSQL/PostGIS local, migração baseline e verificações automatizadas comprovadas; CI escrita, ainda não observada em execução no GitHub
+**Status:** Complete — backend mínimo com health checks, PostgreSQL/PostGIS local, migração baseline reversível, verificações automatizadas e CI verde nos dois projetos em 2026-11-02
 **Branch:** `feat/02-fundacao-engenharia`
 **Decisão de sequenciamento:** `docs/ADR/0010-inicio-fase-2-com-pendencias-da-fase-1.md` (Fase 1 permanece `In progress` por pendências externas)
 
@@ -72,8 +72,8 @@ Criar a base de engenharia verificável do JOGA — estrutura de pastas, configu
 
 ## Riscos e decisões pendentes
 
-- **CI não executada no GitHub.** O workflow foi escrito e o equivalente foi executado localmente, mas nenhuma execução real foi observada. É o critério aberto da fase.
-- **Versão de Python diferente entre local e CI.** Local 3.14.7, CI 3.13. O código usa apenas recursos compatíveis com 3.12+; a divergência precisa ser confirmada na primeira execução da CI.
+- **CI observada em execução.** O workflow rodou no GitHub Actions para o commit `3e6c692`: job `Backend (lint, tipos, migrações, testes)` e job `Mobile (lint, formatação, tipos)` concluíram com `success` (run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880)).
+- **Versão de Python diferente entre local e CI.** Local 3.14.7, CI 3.13. O `requirements.lock` foi conferido para 3.13 por `pip install --dry-run --python-version 3.13` e a CI instalou o lock com sucesso; a diferença está coberta.
 - **Android SDK ausente no ambiente atual.** A execução do app foi validada via Expo Go na rede local. O build nativo com `expo run:android` foi comprovado na Fase 1, mas não foi repetido nesta fase por falta de SDK; não confundir as duas evidências.
 - **Volume do PostgreSQL preservado.** A migração foi aplicada, revertida e reaplicada no container atual; o teste em banco realmente vazio depende de `down -v`, não executado para não perder o estado local.
 - **Redis desligado.** Permitido pelo `PLANS.md`; será introduzido quando existir uso real.
@@ -129,6 +129,7 @@ Mobile (Node em `.tools/nodejs`):
 - **API:** `GET /api/v1/health/live` → `200 {"status":"ok"}`; `GET /api/v1/health/ready` → `200 {"status":"ok","database":"ok"}` com o banco real; com o banco inacessível, `ready` → `503 {"detail":{"status":"unavailable","database":"unavailable"}}` e `live` continuou `200`.
 - **Mobile:** lint, formatação, `tsc --noEmit` e `expo install --check` passaram; app abriu no Moto G24 via Expo Go pela rede local e renderizou a tela de prova sem erro de JS no logcat.
 - **Segurança:** nenhuma credencial real; `.env` fica fora do Git; readiness não expõe detalhes de conexão.
+- **CI:** run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880) concluída com `success`; backend e mobile verdes, incluindo aplicação e reversão da migração no serviço PostGIS da CI.
 
 ## Critérios de aceite
 
@@ -137,14 +138,16 @@ Mobile (Node em `.tools/nodejs`):
 - [x] API sobe. — Uvicorn em `127.0.0.1:8000`, endpoints de health respondendo.
 - [x] Health check verifica dependências corretamente. — `live` independente; `ready` consulta o banco e falha fechado com 503 sem vazar detalhes.
 - [x] Migração inicial vazia aplica em banco descartável. — PostgreSQL/PostGIS em container; upgrade/downgrade/upgrade confirmados.
-- [ ] CI valida os dois projetos. — Workflow escrito para backend e mobile; **execução no GitHub ainda não observada**.
+- [x] CI valida os dois projetos. — Run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880): `Backend (lint, tipos, migrações, testes)` e `Mobile (lint, formatação, tipos)` concluídos com `success`.
 - [x] Instruções locais reproduzíveis. — `docs/RUNBOOK.md`.
 - [x] Lint, formatação, tipos e testes mínimos passam localmente. — Comandos e resultados registrados acima.
 - [x] `git diff --check` e revisão de segredos no diff.
 
-## Pendências para conclusão da Fase 2
+## Observações pós-conclusão
 
-1. **CI observada em execução.** Fazer push da branch (com autorização), confirmar os jobs `Backend` e `Mobile` verdes no GitHub Actions e corrigir eventuais diferenças de ambiente (Python 3.13, banco em 5432).
-2. **Repetir o build nativo Android no ambiente atual.** Exige Android SDK/Platform-Tools instalados; não foi possível nesta execução. A evidência de execução via Expo Go não substitui o build nativo da Fase 1.
-3. **Decidir quando adicionar Dockerfile do backend.** Fora do escopo imediato; depende de deploy.
-4. **Confirmar política de atualização de dependências.** Lockfiles estão fixados, mas Dependabot/auditoria automatizada (mencionados na documentação técnica) ainda não foram configurados.
+A Fase 2 atende a todos os critérios de `PLANS.md`. Os itens abaixo não bloqueiam a conclusão e ficam para as próximas fases ou para hardening.
+
+1. **Repetir o build nativo Android no ambiente atual.** Exige Android SDK/Platform-Tools instalados; não foi possível nesta sessão. A abertura do app foi validada via Expo Go e o build nativo já foi comprovado na Fase 1.
+2. **Decidir quando adicionar Dockerfile do backend.** Fora do escopo imediato; depende de deploy.
+3. **Configurar Dependabot e auditoria automatizada de dependências.** Lockfiles estão fixados; a automação mencionada na documentação técnica pode entrar no hardening.
+4. **Redis continua desligado.** Só deve ser introduzido quando existir uso real, conforme `PLANS.md`.

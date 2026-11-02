@@ -34,4 +34,10 @@ Manter o trabalho parado até um domínio ser contratado e um macOS estar dispon
 
 - Nenhum domínio foi escolhido, registrado ou configurado.
 - Nenhuma conta Apple, build iOS ou serviço pago foi utilizado.
-- A CI foi escrita, mas ainda não foi observada em execução no GitHub; esse é o critério aberto da Fase 2.
+- No momento da decisão, a CI havia sido escrita mas ainda não observada em execução no GitHub; esse foi o critério aberto da Fase 2 até a atualização registrada abaixo.
+
+## Atualização em 2026-11-02
+
+- A Fase 1 foi integrada à `main` por fast-forward (`e965146..e59b46c`), mantendo o status `In progress` e as pendências externas.
+- A CI da Fase 2 executou no commit `3e6c692`: jobs de backend e mobile concluídos com `success` (run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880)). O critério aberto deixou de existir e a Fase 2 foi marcada `Complete`.
+- A decisão desta ADR permanece válida: a Fase 1 só será `Complete` quando domínio/RP e iOS forem executados ou o bloqueio for formalmente aceito.

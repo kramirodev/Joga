@@ -149,7 +149,7 @@ pnpm exec expo run:android --device <serial>
 - **backend:** Python 3.13, serviço `postgis/postgis:16-3.4` em 5432, instalação por `requirements.lock`, `ruff check`, `mypy app`, `alembic upgrade head`/`downgrade base`/`upgrade head` e `pytest`.
 - **mobile:** Node 24, pnpm 11.25.0, `pnpm install --frozen-lockfile`, `lint`, `format:check`, `typecheck` e `expo install --check`.
 
-A CI ainda não foi observada em execução no GitHub; até isso acontecer, o critério correspondente da Fase 2 permanece aberto.
+A CI foi observada em execução no commit `3e6c692`: backend e mobile concluíram com `success` (run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880)). Para repetir, faça push de uma branch coberta pelos gatilhos ou abra um pull request.
 
 ## 7. Problemas conhecidos
 

@@ -6,7 +6,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 |---|---|---|---|---|
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
 | 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build) | Domínio/RP com arquivos reais e iOS/Xcode pendentes, por decisão de manter a fase em andamento |
-| 2 — Fundação de engenharia | In progress | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI escrita e app aberto no Moto G24 via Expo Go | CI ainda não observada no GitHub Actions; build nativo não repetido por ausência de Android SDK no ambiente atual |
+| 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 via Expo Go | — (build nativo não repetido nesta sessão; conclusão apoiada na CI e na prova nativa da Fase 1) |
 | 3 — Identidade e segurança | Not started | — | — | — |
 | 4 — Perfil e descoberta | Not started | — | — | — |
 | 5 — Filas e matchmaking | Not started | — | — | — |
@@ -200,3 +200,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **App no aparelho:** sem Android SDK no ambiente atual, a execução foi feita com Expo Go pela rede local (`expo start --lan`; `exp://192.168.0.107:8081`). O Moto G24 (`0087722228`) abriu `ExperienceActivity`, o bundle compilou, `ReactNativeJS: Running "main"` apareceu no logcat e a captura de tela confirmou a tela de prova renderizada. Isso valida abertura do app, não um novo build nativo.
 - **Documentação:** `docs/RUNBOOK.md` com pré-requisitos, portas, backend, migrações, verificações, mobile, CI e problemas conhecidos; `README.md` atualizado; ficha `harness/build/phase-02-fundacao-de-engenharia.md` criada.
 - **Estado:** Fase 2 `In progress`. Falta observar a CI verde no GitHub e repetir o build nativo Android no ambiente atual. Fase 1 permanece `In progress` com as pendências externas já registradas. Nenhum segredo, custo, serviço externo, domínio ou ação de deploy.
+
+### 2026-11-02 — Fase 1 na `main` e Fase 2 concluída com CI verde
+
+- **Merge da Fase 1:** `origin/main` estava em `e965146`, ancestral de `e59b46c` e sem commits ausentes na branch. O merge foi fast-forward `e965146..e59b46c` e publicado em `main`; nenhum conflito ou reescrita de histórico.
+- **Publicação da Fase 2:** commit `3e6c692` (`feat(foundation): bootstrap backend, local PostGIS and CI`, 41 arquivos) enviado para `feat/02-fundacao-engenharia` com tracking de `origin`.
+- **CI observada:** run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880), commit `3e6c692`, concluída com `success`. Job `Backend (lint, tipos, migrações, testes)`: success; job `Mobile (lint, formatação, tipos)`: success. A CI exercitou o lock em Python 3.13, o serviço PostGIS em 5432 e o ciclo `upgrade`/`downgrade`/`upgrade`.
+- **Critérios de aceite:** todos atendidos — app abre no Moto G24 (Expo Go), API sobe, readiness verifica o banco e falha fechado, migração baseline aplica e reverte em banco descartável, CI valida os dois projetos e `docs/RUNBOOK.md` reproduz o ambiente local.
+- **Ficha e build log:** `harness/build/phase-02-fundacao-de-engenharia.md` marcada `Complete`; linha da Fase 2 na tabela atualizada. Itens não bloqueantes (repetir build nativo, Dockerfile, Dependabot, Redis) ficaram registrados como próximos passos.
+- **Fase 1:** continua `In progress`; o merge não alterou o status nem as pendências externas de domínio/RP e iOS.
+- **Limites:** nenhum segredo, custo, domínio, deploy ou serviço pago; nenhuma fase 3 iniciada.
