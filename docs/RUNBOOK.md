@@ -151,6 +151,12 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_DISCOVERY_PAGE_SIZE` | `20` |
 | `JOGA_LOCATION_ROUND_DECIMALS` | `2` |
 | `JOGA_DEFAULT_TIMEZONE` | `America/Sao_Paulo` |
+| `JOGA_MATCHMAKING_ALGORITHM_VERSION` | `level_v1` |
+| `JOGA_MATCHMAKING_QUEUE_TTL_HOURS` | `24` |
+| `JOGA_MATCHMAKING_SEARCH_DAYS` | `7` |
+| `JOGA_MATCHMAKING_SLOT_MINUTES` | `30` |
+| `JOGA_MATCHMAKING_MIN_LEAD_MINUTES` | `120` |
+| `JOGA_MATCHMAKING_MAX_RADIUS_KM` | `30` |
 
 Nunca versionar `.env`, credenciais reais ou segredos. `.env.example` só contém placeholders.
 
@@ -176,17 +182,27 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m pytest
 ```
 
-Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação).
+Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação). Na Fase 5: Mypy sem erros em 41 arquivos, 145 testes sem PostgreSQL e 158 com a variável, incluindo concorrência real de dois workers e reexecução idempotente.
 
 Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam schemas isolados `identity_test` e `profile_test`):
 
 ```powershell
 Set-Location C:\prog\joga\backend
 $env:JOGA_TEST_DATABASE_URL = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
-.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py tests\test_profile_postgres.py -v
+.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py tests\test_profile_postgres.py tests\test_matchmaking_postgres.py -v
 ```
 
 Sem `JOGA_TEST_DATABASE_URL`, esses testes são ignorados; a CI define a variável e os executa após as migrações.
+
+### Worker de matchmaking
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.run_matchmaking            # uma rodada
+.venv\Scripts\python.exe -m scripts.run_matchmaking --loop --interval 15
+```
+
+Cada rodada expira entradas vencidas, seleciona entradas compatíveis com `FOR UPDATE SKIP LOCKED`, revalida dentro da transação e cria `lobbies` + `lobby_participants`. A versão da política fica em `matchmaking_runs.algorithm_version`. Redis não participa da formação.
 
 ### Limpeza de dados efêmeros
 

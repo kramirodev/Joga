@@ -346,6 +346,17 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Escopo não incluído:** quadras (`venue_spaces`), vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
 - **Git:** branch `feat/04-perfil-e-descoberta`.
 
+### 2026-11-03 — Fase 5: fila casual e formação transacional
+
+- **Governança:** ADR 0020 registra fila somente casual, janela de horário pela agenda do perfil (7 dias, slots de 30 min, 2 h de antecedência), balanceamento `level_v1` e MMR reservado para a Fase 8 como `mmr_v1`.
+- **Modelo:** `queue_entries`, `lobbies`, `lobby_participants` e `matchmaking_runs` (migração `c5e1a7d3f208`, aplicada/revertida/reaplicada). Índice único parcial impede duas entradas ativas do mesmo usuário/formato/modo.
+- **API:** `POST|GET|DELETE /api/v1/matchmaking/queue`, autenticados, com 409 para região/perfil ausentes e duplicidade, e 400 para ranqueada.
+- **Worker:** `scripts/run_matchmaking.py` (rodada única ou loop) seleciona com `FOR UPDATE SKIP LOCKED`, revalida quadra/região/agenda/horário na transação e cria lobby + participantes, gravando `algorithm_version`.
+- **Balanceamento:** `level_v1` minimiza a diferença de soma de níveis; a versão fica no lobby e na rodada. MMR entra depois sem mudar o schema da fila.
+- **Testes:** 145 sem PostgreSQL (13 ignorados) e 158 com a variável, incluindo 2 workers concorrentes com 20 entradas (2 lobbies, 20 participantes distintos), reexecução idempotente, expiração e incompatibilidades.
+- **Smoke real:** enfileirar 201, duplicado 409, ranqueada 400, estado `waiting`; worker gravou rodada `completed`/`level_v1` com 0 lobbies para um único jogador.
+- **Pendências:** notificações ao parear, app mobile da fila, política `mmr_v1` e quadra real (Fases 6/8/9/14).
+
 ### 2026-11-03 — Fase 4: validação no moto g24 e agenda semanal
 
 - **Build:** o APK da Fase 3 era `armeabi-v7a` e não instalava no moto g24 (arm64, Android 14); gerado debug `arm64-v8a` com o SDK local (`gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a`), instalado com `adb install -r` e `adb reverse` para 8000/8081.

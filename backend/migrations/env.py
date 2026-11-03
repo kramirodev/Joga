@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, pool
 from app.core.config import get_settings
 from app.infrastructure.database.base import Base
 from app.modules.identity import models as identity_models  # noqa: F401
+from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
 
 # this is the Alembic Config object, which provides

@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     location_round_decimals: int = Field(default=2, ge=1, le=3)
     default_timezone: str = Field(default="America/Sao_Paulo", min_length=1)
 
+    # Matchmaking (Fase 5).
+    matchmaking_algorithm_version: str = Field(default="level_v1", min_length=1, max_length=40)
+    matchmaking_queue_ttl_hours: int = Field(default=24, ge=1, le=168)
+    matchmaking_search_days: int = Field(default=7, ge=1, le=30)
+    matchmaking_slot_minutes: int = Field(default=30, ge=5, le=60)
+    matchmaking_min_lead_minutes: int = Field(default=120, ge=0, le=1440)
+    matchmaking_max_radius_km: int = Field(default=30, ge=1, le=200)
+
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")

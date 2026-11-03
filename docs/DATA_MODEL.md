@@ -283,6 +283,77 @@ Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pe
 
 Quadras (`venue_spaces`), vínculo esporte–quadra (`venue_sports`), agenda (`venue_availability`) e reservas (`bookings`) **não** existem nesta fase.
 
+## `queue_entries`
+
+Entrada persistente na fila. O usuário mantém no máximo uma entrada ativa por formato e modo.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK `users.id`, cascade |
+| `format_id` | UUID | FK `sport_formats.id`, cascade |
+| `mode` | varchar(10) | `casual` ou `ranked` |
+| `court_preference` | varchar(20) | preferência efetiva da entrada |
+| `level` | varchar(20) | nível no momento da entrada |
+| `status` | varchar(20) | `waiting`, `matched`, `cancelled`, `expired` |
+| `center_lat` / `center_lng` | double | centro aproximado copiado de `user_regions` |
+| `radius_km` | integer | 1 a 200 |
+| `lobby_id` | UUID | FK `lobbies.id`, `SET NULL` |
+| `created_at` / `updated_at` | timestamptz | default `now()` |
+| `matched_at` | timestamptz | opcional |
+| `expires_at` | timestamptz | TTL da entrada (24 h por padrão) |
+
+Índice `ix_queue_entries_waiting` (`format_id`, `mode`, `status`, `created_at`) e índice único parcial `uq_queue_entries_active` em (`user_id`, `format_id`, `mode`) quando `status = 'waiting'` — impede duplicidade ativa, inclusive sob concorrência.
+
+## `lobbies`
+
+Agrupamento formado pelo matchmaking, com horário concreto.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `format_id` | UUID | FK `sport_formats.id`, `RESTRICT` |
+| `format_version` | integer | versão do formato aplicada |
+| `origin` | varchar(20) | `matchmaking` ou `manual` |
+| `mode` | varchar(10) | `casual` ou `ranked` |
+| `status` | varchar(20) | `scheduled`, `cancelled`, `completed` |
+| `court_preference` | varchar(20) | interseção efetiva das preferências |
+| `scheduled_start_at` / `scheduled_end_at` | timestamptz | horário concreto; fim > início |
+| `duration_minutes` | integer | copiada do formato |
+| `center_lat` / `center_lng` | double | média geográfica dos centros aproximados |
+| `radius_km` | integer | menor raio informado, limitado a 30 km |
+| `venue_id` | UUID | FK `venues.id`, `SET NULL`; nulo nesta fase |
+| `algorithm_version` | varchar(40) | ex. `level_v1` |
+| `created_at` | timestamptz | default `now()` |
+
+## `lobby_participants`
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `lobby_id` | UUID | FK `lobbies.id`, cascade |
+| `user_id` | UUID | FK `users.id`, cascade |
+| `queue_entry_id` | UUID | FK `queue_entries.id`, `SET NULL`, único |
+| `team` | smallint | 1 ou 2 |
+| `level` | varchar(20) | nível usado no balanceamento |
+| `created_at` | timestamptz | default `now()` |
+
+Únicos: `(lobby_id, user_id)` e `queue_entry_id`.
+
+## `matchmaking_runs`
+
+Trilha de cada rodada do worker.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `status` | varchar(20) | `running`, `completed`, `failed` |
+| `algorithm_version` | varchar(40) | política aplicada |
+| `entries_expired` | integer | >= 0 |
+| `lobbies_formed` | integer | >= 0 |
+| `started_at` | timestamptz | default `now()` |
+| `finished_at` | timestamptz | opcional |
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
