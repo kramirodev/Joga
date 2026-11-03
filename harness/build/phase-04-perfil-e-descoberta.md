@@ -62,6 +62,7 @@ Permitir que o jogador configure perfil esportivo, modalidades/formatos, nível 
 
 - Disponibilidade: janelas recorrentes por dia da semana + faixa horária, com fuso padrão `America/Sao_Paulo`.
 - Visibilidade: nome de exibição, modalidades, nível e disponibilidade aproximada visíveis; telefone e coordenada exata privados.
+- **Centro do raio por CEP (2026-11-03):** o centro é o ponto retornado pelo BrasilAPI para o CEP, arredondado em duas casas (~1 km), e não o centroide do município. A cidade/UF exibida é apenas rótulo; a API não devolve `lat`/`lng` e não há histórico de pontos. Escolha explícita do responsável para preservar a precisão do raio de busca.
 
 ## Implementação entregue
 

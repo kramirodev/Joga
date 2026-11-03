@@ -355,3 +355,4 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Seleção em vez de digitação:** horários agora vêm de uma lista modal de 30 em 30 minutos (fim filtrado depois do início) e o raio virou chips de 5/10/20/50/100 km; no aparelho, Seg 19:00–19:30 foi adicionado pelos seletores e salvo, e a região por CEP foi refeita com raio 20 km (`São Paulo/SP · 20 km · cep`).
 - **Testes:** `test_profile_api.py` com 10 testes, incluindo várias faixas no mesmo dia e dias com quantidades diferentes; Ruff, formatação e Mypy verdes.
 - **Pendência conhecida:** o app faz polling em `/health` (sem `/api/v1`) e acumula 404 no log; corrigir em fase de hardening.
+- **Decisão sobre o centro do raio por CEP:** mantido o ponto retornado pelo BrasilAPI (nível de rua), arredondado em duas casas (~1 km), em vez do centroide do município; a cidade/UF é só rótulo e a API não devolve coordenadas.
