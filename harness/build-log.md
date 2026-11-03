@@ -6,7 +6,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 |---|---|---|---|---|
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
 | 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build) | Domínio/RP com arquivos reais e iOS/Xcode pendentes, por decisão de manter a fase em andamento |
-| 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 via Expo Go | — (build nativo não repetido nesta sessão; conclusão apoiada na CI e na prova nativa da Fase 1) |
+| 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 e no moto g(7) play (Android 10, 32 bits, APK nativo) | — |
 | 3 — Identidade e segurança | Not started | — | — | — |
 | 4 — Perfil e descoberta | Not started | — | — | — |
 | 5 — Filas e matchmaking | Not started | — | — | — |
@@ -210,3 +210,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Ficha e build log:** `harness/build/phase-02-fundacao-de-engenharia.md` marcada `Complete`; linha da Fase 2 na tabela atualizada. Itens não bloqueantes (repetir build nativo, Dockerfile, Dependabot, Redis) ficaram registrados como próximos passos.
 - **Fase 1:** continua `In progress`; o merge não alterou o status nem as pendências externas de domínio/RP e iOS.
 - **Limites:** nenhum segredo, custo, domínio, deploy ou serviço pago; nenhuma fase 3 iniciada.
+
+### 2026-11-02 — Validação em aparelho novo (Android 10, 32 bits)
+
+- **Aparelho:** troca de celular informada pelo usuário. Novo aparelho detectado por Platform-Tools 37.0.1 (`.tools/android-sdk/platform-tools/adb.exe`, ADB 1.0.41): `0062710182`, **moto g(7) play**, Motorola, **Android 10 (API 29)**, ABI **`armeabi-v7a`** (sem arm64), `pt-BR`, 8,5 GB livres.
+- **Incompatibilidade encontrada:** o APK existente tinha apenas `arm64-v8a` e não podia ser instalado no aparelho novo; nenhum pacote `com.anonymous.joga` ou Expo Go estava presente.
+- **Build 32 bits:** `gradlew.bat assembleDebug -PreactNativeArchitectures=armeabi-v7a --console=plain` em `mobile/android`, com `JAVA_HOME=.tools/temurin-17/jdk-17.0.20.1+1`, `ANDROID_HOME=.tools/android-sdk` e `GRADLE_USER_HOME=%TEMP%\joga-gradle-home`. Resultado: `BUILD SUCCESSFUL in 2m44s`, 232 tasks (76 executadas), APK de **33,3 MB** (33.254.887 bytes) com `native-code: 'armeabi-v7a'`, `minSdkVersion 24`, `targetSdkVersion 36`.
+- **Instalação:** `adb install -r app-debug.apk` concluiu; `dumpsys package com.anonymous.joga` confirma `versionName=1.0.0` e `primaryCpuAbi=armeabi-v7a`.
+- **Execução:** Metro iniciado com `pnpm exec expo start --dev-client --localhost --port 8081`; `adb reverse tcp:8081 tcp:8081` ativo. O aparelho estava bloqueado (AOD) e precisou de `KEYCODE_WAKEUP` + `wm dismiss-keyguard`. `MainActivity` ficou em foco, o logcat registrou `ReactNativeJS: Running "main" ... "fabric":true` e a captura de tela confirmou a tela de prova renderizada. Nenhum erro de JS.
+- **Limpeza:** Metro encerrado, porta 8081 liberada e `adb reverse --remove-all` executado.
+- **Estado:** Fase 2 permanece `Complete`; a evidência foi acrescentada à ficha da fase e ao RUNBOOK (build por ABI). Nenhuma alteração de código, nenhum commit de produto e nenhuma fase nova iniciada.

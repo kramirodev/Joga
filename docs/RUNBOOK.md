@@ -142,6 +142,21 @@ pnpm exec expo run:android --device <serial>
 
 `android/` e `ios/` são gerados por `expo prebuild` e não são versionados (ADR 0009).
 
+Em aparelhos 32 bits (`armeabi-v7a`, como o moto g(7) play com Android 10), compile a ABI do aparelho e instale o APK de debug:
+
+```powershell
+Set-Location C:\prog\joga\mobile\android
+$env:JAVA_HOME = "C:\prog\joga\.tools\temurin-17\jdk-17.0.20.1+1"
+$env:ANDROID_HOME = "C:\prog\joga\.tools\android-sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:GRADLE_USER_HOME = "$env:TEMP\joga-gradle-home"
+.\gradlew.bat assembleDebug -PreactNativeArchitectures=armeabi-v7a --console=plain
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb reverse tcp:8081 tcp:8081
+```
+
+Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte.
+
 ## 6. CI
 
 `.github/workflows/ci.yml` roda em push para `main`, `feat/**`, `fix/**`, `docs/**` e em pull requests:

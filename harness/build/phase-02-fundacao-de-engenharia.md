@@ -74,7 +74,7 @@ Criar a base de engenharia verificável do JOGA — estrutura de pastas, configu
 
 - **CI observada em execução.** O workflow rodou no GitHub Actions para o commit `3e6c692`: job `Backend (lint, tipos, migrações, testes)` e job `Mobile (lint, formatação, tipos)` concluíram com `success` (run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880)).
 - **Versão de Python diferente entre local e CI.** Local 3.14.7, CI 3.13. O `requirements.lock` foi conferido para 3.13 por `pip install --dry-run --python-version 3.13` e a CI instalou o lock com sucesso; a diferença está coberta.
-- **Android SDK ausente no ambiente atual.** A execução do app foi validada via Expo Go na rede local. O build nativo com `expo run:android` foi comprovado na Fase 1, mas não foi repetido nesta fase por falta de SDK; não confundir as duas evidências.
+- **Toolchain Android portátil.** O SDK está em `.tools/android-sdk`, o JDK 17 em `.tools/temurin-17` e o Platform-Tools 37.0.1 (ADB 1.0.41) no mesmo diretório. A primeira validação da fase usou Expo Go por não ter `ANDROID_HOME` configurado; depois o build nativo 32 bits foi executado com esse toolchain (ver resultados).
 - **Volume do PostgreSQL preservado.** A migração foi aplicada, revertida e reaplicada no container atual; o teste em banco realmente vazio depende de `down -v`, não executado para não perder o estado local.
 - **Redis desligado.** Permitido pelo `PLANS.md`; será introduzido quando existir uso real.
 - **Sem Dockerfile do backend.** A documentação técnica prevê o arquivo; a containerização da API não é necessária para o aceite da Fase 2 e fica para quando houver deploy.
@@ -128,13 +128,14 @@ Mobile (Node em `.tools/nodejs`):
 - **Banco:** container `joga-postgres-1` (`postgis/postgis:16-3.4`) saudável em 8 s, extensão `postgis` presente; `alembic upgrade head` aplicou `af763231ef2f`, `downgrade base` removeu, `upgrade head` reaplicou e `current` confirmou `af763231ef2f (head)`.
 - **API:** `GET /api/v1/health/live` → `200 {"status":"ok"}`; `GET /api/v1/health/ready` → `200 {"status":"ok","database":"ok"}` com o banco real; com o banco inacessível, `ready` → `503 {"detail":{"status":"unavailable","database":"unavailable"}}` e `live` continuou `200`.
 - **Mobile:** lint, formatação, `tsc --noEmit` e `expo install --check` passaram; app abriu no Moto G24 via Expo Go pela rede local e renderizou a tela de prova sem erro de JS no logcat.
+- **Mobile — segundo aparelho (32 bits):** build `assembleDebug -PreactNativeArchitectures=armeabi-v7a` concluiu em 2m44s (232 tasks, 76 executadas) e gerou APK de 33,3 MB; instalado em um **moto g(7) play, Android 10 (API 29), `armeabi-v7a`**. Com Metro por `adb reverse`, `ReactNativeJS: Running "main"` e `fabric: true`, `MainActivity` em foco e captura de tela confirmando a renderização. Nenhum erro de JS no logcat. MinSdk do APK é 24.
 - **Segurança:** nenhuma credencial real; `.env` fica fora do Git; readiness não expõe detalhes de conexão.
 - **CI:** run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880) concluída com `success`; backend e mobile verdes, incluindo aplicação e reversão da migração no serviço PostGIS da CI.
 
 ## Critérios de aceite
 
 - [x] Estrutura `mobile/`, `backend/`, `infra/`, `docs/`, `harness/` e `.github/` com versões fixadas. — Venv + `requirements.lock`; pnpm lock preservado; scripts de verificação.
-- [x] App abre em dispositivo/emulador. — Moto G24 (`0087722228`) via Expo Go em 2026-11-02; build nativo já comprovado na Fase 1.
+- [x] App abre em dispositivo/emulador. — Moto G24 (`0087722228`) via Expo Go e moto g(7) play (`0062710182`, Android 10, 32 bits) com APK de debug nativo em 2026-11-02.
 - [x] API sobe. — Uvicorn em `127.0.0.1:8000`, endpoints de health respondendo.
 - [x] Health check verifica dependências corretamente. — `live` independente; `ready` consulta o banco e falha fechado com 503 sem vazar detalhes.
 - [x] Migração inicial vazia aplica em banco descartável. — PostgreSQL/PostGIS em container; upgrade/downgrade/upgrade confirmados.
@@ -147,7 +148,7 @@ Mobile (Node em `.tools/nodejs`):
 
 A Fase 2 atende a todos os critérios de `PLANS.md`. Os itens abaixo não bloqueiam a conclusão e ficam para as próximas fases ou para hardening.
 
-1. **Repetir o build nativo Android no ambiente atual.** Exige Android SDK/Platform-Tools instalados; não foi possível nesta sessão. A abertura do app foi validada via Expo Go e o build nativo já foi comprovado na Fase 1.
+1. **Repetir o build nativo em outros aparelhos/ABIs quando necessário.** O build 32 bits foi validado no moto g(7) play; o Moto G24 usa `arm64-v8a`. Para um aparelho novo, conferir `ro.product.cpu.abilist` e usar `-PreactNativeArchitectures=<abi>`.
 2. **Decidir quando adicionar Dockerfile do backend.** Fora do escopo imediato; depende de deploy.
 3. **Configurar Dependabot e auditoria automatizada de dependências.** Lockfiles estão fixados; a automação mencionada na documentação técnica pode entrar no hardening.
 4. **Redis continua desligado.** Só deve ser introduzido quando existir uso real, conforme `PLANS.md`.
