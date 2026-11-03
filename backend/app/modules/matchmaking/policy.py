@@ -107,22 +107,32 @@ def _zone(name: str) -> ZoneInfo:
         return ZoneInfo("America/Sao_Paulo")
 
 
+def window_covers(window: AvailabilityWindow, start: datetime, end: datetime) -> bool:
+    """Verifica se o intervalo [start, end] cabe inteiro na janela local."""
+    zone = _zone(window.timezone)
+    local_start = start.astimezone(zone)
+    local_end = end.astimezone(zone)
+    if local_start.date() != local_end.date():
+        return False
+    if local_start.isoweekday() != window.weekday:
+        return False
+    return local_start.time() >= window.start_time and local_end.time() <= window.end_time
+
+
+def windows_cover(
+    windows: Sequence[AvailabilityWindow],
+    start: datetime,
+    end: datetime,
+) -> bool:
+    return any(window_covers(window, start, end) for window in windows)
+
+
 def _within_windows(
     windows: Sequence[AvailabilityWindow],
     start: datetime,
     end: datetime,
 ) -> bool:
-    for window in windows:
-        zone = _zone(window.timezone)
-        local_start = start.astimezone(zone)
-        local_end = end.astimezone(zone)
-        if local_start.date() != local_end.date():
-            continue
-        if local_start.isoweekday() != window.weekday:
-            continue
-        if local_start.time() >= window.start_time and local_end.time() <= window.end_time:
-            return True
-    return False
+    return windows_cover(windows, start, end)
 
 
 def select_start(

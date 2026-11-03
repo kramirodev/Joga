@@ -121,7 +121,11 @@ def test_discoverable_authentication_without_user(session: Session) -> None:
 
     options = service.begin_authentication(now=BASE_TIME + timedelta(seconds=2))
     assertion = authenticator.authentication_credential(options.public_key["challenge"])
-    authenticated = service.finish_authentication(options.challenge_id, assertion)
+    authenticated = service.finish_authentication(
+        options.challenge_id,
+        assertion,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
 
     assert authenticated.user_id == user.id
     assert authenticated.credential_id == credential_id
@@ -139,7 +143,12 @@ def test_registration_rejects_wrong_origin(session: Session) -> None:
     credential = authenticator.registration_credential(options.public_key["challenge"])
 
     with pytest.raises(PasskeyVerificationFailed):
-        service.finish_registration(user.id, options.challenge_id, credential)
+        service.finish_registration(
+            user.id,
+            options.challenge_id,
+            credential,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
 
 
 def test_registration_rejects_expired_challenge(session: Session) -> None:
@@ -164,10 +173,20 @@ def test_registration_rejects_replay(session: Session) -> None:
     service = build_service(session)
     options = service.begin_registration(user.id, now=BASE_TIME)
     credential = authenticator.registration_credential(options.public_key["challenge"])
-    service.finish_registration(user.id, options.challenge_id, credential)
+    service.finish_registration(
+        user.id,
+        options.challenge_id,
+        credential,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
 
     with pytest.raises(InvalidPasskeyChallenge):
-        service.finish_registration(user.id, options.challenge_id, credential)
+        service.finish_registration(
+            user.id,
+            options.challenge_id,
+            credential,
+            now=BASE_TIME + timedelta(seconds=2),
+        )
 
 
 def test_registration_rejects_duplicate_credential(session: Session) -> None:
@@ -176,12 +195,22 @@ def test_registration_rejects_duplicate_credential(session: Session) -> None:
     service = build_service(session)
     first = service.begin_registration(user.id, now=BASE_TIME)
     first_credential = authenticator.registration_credential(first.public_key["challenge"])
-    service.finish_registration(user.id, first.challenge_id, first_credential)
+    service.finish_registration(
+        user.id,
+        first.challenge_id,
+        first_credential,
+        now=BASE_TIME + timedelta(seconds=1),
+    )
 
     second = service.begin_registration(user.id, now=BASE_TIME + timedelta(seconds=2))
     second_credential = authenticator.registration_credential(second.public_key["challenge"])
     with pytest.raises(PasskeyAlreadyRegistered):
-        service.finish_registration(user.id, second.challenge_id, second_credential)
+        service.finish_registration(
+            user.id,
+            second.challenge_id,
+            second_credential,
+            now=BASE_TIME + timedelta(seconds=3),
+        )
 
 
 def test_registration_rejects_challenge_from_other_user(session: Session) -> None:
@@ -197,7 +226,12 @@ def test_registration_rejects_challenge_from_other_user(session: Session) -> Non
     credential = authenticator.registration_credential(options.public_key["challenge"])
 
     with pytest.raises(InvalidPasskeyChallenge):
-        service.finish_registration(other.id, options.challenge_id, credential)
+        service.finish_registration(
+            other.id,
+            options.challenge_id,
+            credential,
+            now=BASE_TIME + timedelta(seconds=1),
+        )
 
 
 def test_revoked_credential_cannot_authenticate(session: Session) -> None:
@@ -212,7 +246,11 @@ def test_revoked_credential_cannot_authenticate(session: Session) -> None:
     assertion = authenticator.authentication_credential(options.public_key["challenge"])
 
     with pytest.raises(PasskeyNotFound):
-        service.finish_authentication(options.challenge_id, assertion)
+        service.finish_authentication(
+            options.challenge_id,
+            assertion,
+            now=BASE_TIME + timedelta(seconds=3),
+        )
 
 
 def test_sign_count_regression_is_rejected(session: Session) -> None:
@@ -226,7 +264,11 @@ def test_sign_count_regression_is_rejected(session: Session) -> None:
         first.public_key["challenge"],
         sign_count=1,
     )
-    service.finish_authentication(first.challenge_id, first_assertion)
+    service.finish_authentication(
+        first.challenge_id,
+        first_assertion,
+        now=BASE_TIME + timedelta(seconds=3),
+    )
 
     second = service.begin_authentication(user_id=user.id, now=BASE_TIME + timedelta(seconds=3))
     repeated = authenticator.authentication_credential(
@@ -234,7 +276,11 @@ def test_sign_count_regression_is_rejected(session: Session) -> None:
         sign_count=1,
     )
     with pytest.raises(PasskeyVerificationFailed):
-        service.finish_authentication(second.challenge_id, repeated)
+        service.finish_authentication(
+            second.challenge_id,
+            repeated,
+            now=BASE_TIME + timedelta(seconds=4),
+        )
 
 
 def test_begin_registration_respects_ip_hourly_limit(session: Session) -> None:

@@ -354,6 +354,58 @@ Trilha de cada rodada do worker.
 | `started_at` | timestamptz | default `now()` |
 | `finished_at` | timestamptz | opcional |
 
+## `matches`
+
+Partida criada a partir de um lobby, com estado controlado pelo servidor.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `lobby_id` | UUID | FK `lobbies.id`, cascade, único |
+| `state` | varchar(24) | `PENDING_CONFIRMATION`, `READY`, `IN_PROGRESS`, `RESULT_PENDING`, `FINALIZED`, `DISPUTED`, `VOIDED`, `CANCELLED`, `EXPIRED` |
+| `scheduled_start_at` / `scheduled_end_at` | timestamptz | cópia do lobby; fim > início |
+| `confirmation_deadline` | timestamptz | `min(formado + 24 h, início − 45 min)` |
+| `check_in_opens_at` | timestamptz | início − 60 min |
+| `check_in_deadline` | timestamptz | início − 30 min |
+| `substitution_deadline` | timestamptz | início − 15 min |
+| `cancelled_reason` | varchar(40) | `declined`, `confirmation_deadline`, `no_substitute`, `missing_check_in` |
+| `started_at` | timestamptz | quando entrou em `IN_PROGRESS` |
+| `created_at` / `updated_at` | timestamptz | default `now()` |
+
+Constraints garantem a ordem dos prazos e que tudo acontece antes do início. A fase 6 só alcança `PENDING_CONFIRMATION → READY → IN_PROGRESS`, com saídas `CANCELLED`/`EXPIRED`.
+
+## `match_participants`
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `match_id` | UUID | FK `matches.id`, cascade |
+| `user_id` | UUID | FK `users.id`, cascade; único com `match_id` |
+| `team` | smallint | 1 ou 2 |
+| `level` | varchar(20) | nível usado no balanceamento |
+| `status` | varchar(20) | `invited`, `confirmed`, `declined`, `checked_in`, `no_show` |
+| `is_substitute` | boolean | suplente convidado após ausência |
+| `queue_entry_id` | UUID | FK `queue_entries.id`, `SET NULL` |
+| `invited_at` | timestamptz | default `now()` |
+| `confirmed_at` / `checked_in_at` | timestamptz | opcionais |
+| `updated_at` | timestamptz | default `now()` |
+
+Índice `(match_id, status)`. Suplente entra na vaga do ausente mantendo o time, e o ausente fica `no_show` sem contar como ativo.
+
+## `match_state_transitions`
+
+Trilha append-only das transições, com ator e motivo.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `match_id` | UUID | FK `matches.id`, cascade |
+| `from_state` | varchar(24) | nulo na criação |
+| `to_state` | varchar(24) | obrigatório |
+| `actor_user_id` | UUID | FK opcional `users.id`, `SET NULL` |
+| `reason` | text | motivo auditável |
+| `created_at` | timestamptz | default `now()` |
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
@@ -365,6 +417,8 @@ Trilha de cada rodada do worker.
 - Índices adicionais para consultas de sessões e eventos após os fluxos reais.
 - Migração de dados existentes não se aplica: o banco ainda não tem dados de produção.
 - Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
+- Penalidades por no-show (banimento temporário e reputação) ficam para as Fases 8/17; a Fase 6 só registra `no_show`.
+- Capitães adiados: dependem de Trust Factor, MMR e histórico de partidas.
 - Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); cache é por processo e some no restart.
 - Disponibilidade não trata feriados, exceções pontuais nem conversão de fuso por usuário.
 

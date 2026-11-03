@@ -14,6 +14,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import ensure_utc, utcnow
+from app.modules.matches.service import create_match_for_lobby
 from app.modules.matchmaking.models import Lobby, LobbyParticipant, MatchmakingRun, QueueEntry
 from app.modules.matchmaking.policy import (
     AvailabilityWindow,
@@ -363,19 +364,21 @@ class MatchmakingService:
                 for entry in entries
             ]
         )
+        participants: list[LobbyParticipant] = []
         for entry in entries:
-            self._session.add(
-                LobbyParticipant(
-                    lobby_id=lobby.id,
-                    user_id=entry.user_id,
-                    queue_entry_id=entry.id,
-                    team=teams[entry.user_id],
-                    level=entry.level,
-                )
+            participant = LobbyParticipant(
+                lobby_id=lobby.id,
+                user_id=entry.user_id,
+                queue_entry_id=entry.id,
+                team=teams[entry.user_id],
+                level=entry.level,
             )
+            participants.append(participant)
+            self._session.add(participant)
             entry.status = "matched"
             entry.lobby_id = lobby.id
             entry.matched_at = now
             entry.updated_at = now
         self._session.flush()
+        create_match_for_lobby(self._session, lobby, participants, now=now)
         return lobby

@@ -182,14 +182,14 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m pytest
 ```
 
-Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação). Na Fase 5: Mypy sem erros em 41 arquivos, 145 testes sem PostgreSQL e 158 com a variável, incluindo concorrência real de dois workers e reexecução idempotente.
+Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação). Na Fase 5: Mypy sem erros em 41 arquivos, 145 testes sem PostgreSQL e 158 com a variável, incluindo concorrência real de dois workers e reexecução idempotente. Na Fase 6: Mypy sem erros em 45 arquivos, 161 testes sem PostgreSQL e 175 com a variável, incluindo 10 confirmações concorrentes que geram uma única transição para `READY`.
 
 Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam schemas isolados `identity_test` e `profile_test`):
 
 ```powershell
 Set-Location C:\prog\joga\backend
 $env:JOGA_TEST_DATABASE_URL = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
-.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py tests\test_profile_postgres.py tests\test_matchmaking_postgres.py -v
+.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py tests\test_profile_postgres.py tests\test_matchmaking_postgres.py tests\test_matches_postgres.py -v
 ```
 
 Sem `JOGA_TEST_DATABASE_URL`, esses testes são ignorados; a CI define a variável e os executa após as migrações.
@@ -203,6 +203,16 @@ Set-Location C:\prog\joga\backend
 ```
 
 Cada rodada expira entradas vencidas, seleciona entradas compatíveis com `FOR UPDATE SKIP LOCKED`, revalida dentro da transação e cria `lobbies` + `lobby_participants`. A versão da política fica em `matchmaking_runs.algorithm_version`. Redis não participa da formação.
+
+### Worker de partidas
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.advance_matches
+.venv\Scripts\python.exe -m scripts.advance_matches --loop --interval 60
+```
+
+Avança o ciclo por tempo: dissolve partidas sem confirmação completa, marca ausentes no fechamento do check-in, convida suplentes, inicia partidas às quais todos fizeram check-in e cancela quando não há suplente. Reexecutar é seguro (idempotente).
 
 ### Limpeza de dados efêmeros
 

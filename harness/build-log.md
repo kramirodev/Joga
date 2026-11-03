@@ -357,6 +357,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Smoke real:** enfileirar 201, duplicado 409, ranqueada 400, estado `waiting`; worker gravou rodada `completed`/`level_v1` com 0 lobbies para um único jogador.
 - **Pendências:** notificações ao parear, app mobile da fila, política `mmr_v1` e quadra real (Fases 6/8/9/14).
 
+### 2026-11-03 — Fase 6: ciclo de partidas
+
+- **Decisões:** confirmação de 100% com prazo de `min(formado + 24 h, início − 45 min)`; sem tolerância após o início; recusa ou prazo vencido dissolvem a partida e devolvem quem confirmou à fila mantendo a prioridade; ausente no check-in gera suplente automático com 15 min; sem suplente, cancela; capitães e penalidades adiados.
+- **Modelo:** `matches`, `match_participants` e `match_state_transitions` (migração `d7f2b9c4e615`, aplicada/revertida/reaplicada). A formação da Fase 5 agora cria a partida em `PENDING_CONFIRMATION`.
+- **API:** `GET /matches`, `GET /matches/{id}` e `POST /matches/{id}/confirm|decline|check-in`, restritos a participantes.
+- **Worker:** `scripts/advance_matches.py` dissolve por prazo, marca `no_show`, convida suplentes, inicia com check-in completo e cancela sem suplente.
+- **Testes:** 161 sem PostgreSQL e 175 com a variável; inclui 10 confirmações concorrentes gerando uma única transição `READY`, suplente completo, dissolução com prioridade e autorização negativa.
+- **Correção fora do escopo:** testes de passkey dependiam do relógio real e passaram a falhar quando o horário avançou; passaram a usar `now` explícito em todas as verificações.
+- **Pendências:** notificação da partida, app mobile, penalidades de no-show (Fases 8/17), capitães e resultado (Fase 7).
+
 ### 2026-11-03 — Fase 4: validação no moto g24 e agenda semanal
 
 - **Build:** o APK da Fase 3 era `armeabi-v7a` e não instalava no moto g24 (arm64, Android 14); gerado debug `arm64-v8a` com o SDK local (`gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a`), instalado com `adb install -r` e `adb reverse` para 8000/8081.
