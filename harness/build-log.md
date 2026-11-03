@@ -5,7 +5,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | Fase | Status | Branch | Evidências | Bloqueios |
 |---|---|---|---|---|
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
-| 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build) | Domínio/RP com arquivos reais e iOS/Xcode pendentes, por decisão de manter a fase em andamento |
+| 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24 e no moto g(7) play; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build); associação Android publicada em `https://joga-passkeys.vercel.app` e reconhecida pela API Digital Asset Links; cerimônia de passkey Android executada via Credential Manager (criação + autenticação, `rpIdHashMatches: true`); ADR 0011 | iOS/Xcode e associação AASA pendentes, por decisão de manter a fase em andamento |
 | 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 e no moto g(7) play (Android 10, 32 bits, APK nativo) | — |
 | 3 — Identidade e segurança | Not started | — | — | — |
 | 4 — Perfil e descoberta | Not started | — | — | — |
@@ -220,3 +220,41 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Execução:** Metro iniciado com `pnpm exec expo start --dev-client --localhost --port 8081`; `adb reverse tcp:8081 tcp:8081` ativo. O aparelho estava bloqueado (AOD) e precisou de `KEYCODE_WAKEUP` + `wm dismiss-keyguard`. `MainActivity` ficou em foco, o logcat registrou `ReactNativeJS: Running "main" ... "fabric":true` e a captura de tela confirmou a tela de prova renderizada. Nenhum erro de JS.
 - **Limpeza:** Metro encerrado, porta 8081 liberada e `adb reverse --remove-all` executado.
 - **Estado:** Fase 2 permanece `Complete`; a evidência foi acrescentada à ficha da fase e ao RUNBOOK (build por ABI). Nenhuma alteração de código, nenhum commit de produto e nenhuma fase nova iniciada.
+
+### 2026-11-03 — Scaffold da associação de passkeys (Android)
+
+- **Objetivo:** preparar a parte de associação de domínio da Fase 1 antes da infraestrutura definitiva, sem criar site público e sem publicar nada.
+- **Ferramenta:** `harness/proofs/passkeys/scripts/passkeys_tool.py`, sem dependências externas, com `fingerprint` (lê o SHA-256 de um APK assinado via `apksigner`), `statement` (gera o `assetlinks.json`) e `verify` (confere status 200, `Content-Type`, redirecionamento, conteúdo e a API Digital Asset Links do Google).
+- **Impressão digital:** `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`, extraída do APK `mobile/android/app/build/outputs/apk/debug/app-debug.apk` assinado pelo keystore de debug em `mobile/android/app/debug.keystore`.
+- **Arquivo gerado:** `harness/proofs/passkeys/site/.well-known/assetlinks.json`, com `com.anonymous.joga` e a relação `delegate_permission/common.get_login_creds` (a relação `handle_all_urls` é de App Links e não habilita credenciais).
+- **Configurações de hospedagem:** `vercel.json` (header `application/json`), `_headers` (Cloudflare Pages), `.nojekyll` (GitHub Pages) e `README.md` com requisitos e comandos. GitHub Pages só atende em `<usuario>.github.io` na raiz; site de projeto não serve.
+- **Testes:** `python -X utf8 -m unittest discover -s harness\proofs\passkeys\scripts` executou **7 testes, todos aprovados**, com servidor HTTP local e sem rede externa. `ruff check` e `ruff format --check` passaram.
+- **Limites:** nada foi publicado; nenhuma conta, domínio, deploy, custo ou credencial foi acionado. O package é provisório e o certificado é a chave de debug padrão do template (SHA-1 `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`), não um segredo de produção; um build release/EAS usará outra impressão e exigirá regerar o arquivo.
+- **Próximo passo bloqueado por autorização:** escolher o host, publicar `site/` e rodar `verify --origin <url> --package com.anonymous.joga`. A cerimônia de passkey/RP ID exige uma implementação mínima de Credential Manager no Android e um novo build, fora deste scaffold.
+- **Estado:** Fase 1 continua `In progress`; nenhuma fase nova iniciada e nenhuma ação externa executada.
+
+### 2026-11-03 — Publicação e validação da associação Android (Vercel)
+
+- **Autorização:** o responsável criou a conta Vercel vinculada ao GitHub e autorizou o login pelo device flow. A CLI autenticou como `kramirodev`.
+- **Publicação:** deploy de produção a partir de `harness/proofs/passkeys/site` com `npx vercel --prod --yes --project joga-passkeys --create-if-missing`. Projeto `joga-passkeys`; URL de produção **`https://joga-passkeys.vercel.app`**; deployment `joga-passkeys-e1hasexek-joga10.vercel.app`. Nenhum arquivo do projeto Vercel foi criado no repositório e nenhum segredo foi publicado.
+- **Resposta HTTP:** `GET https://joga-passkeys.vercel.app/.well-known/assetlinks.json` → **HTTP 200**, `Content-Type: application/json; charset=utf-8`, `Cache-Control: public, max-age=300`, sem redirecionamento. A raiz responde 404, pois não existe site público.
+- **Validação pela ferramenta:** `python -X utf8 harness\proofs\passkeys\scripts\passkeys_tool.py verify --origin https://joga-passkeys.vercel.app --package com.anonymous.joga --fingerprint FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C` → `OK: com.anonymous.joga associado a https://joga-passkeys.vercel.app`.
+- **API Digital Asset Links:** `statements:list` retornou `packageName` `com.anonymous.joga` e `sha256Fingerprint` `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`, com source `https://joga-passkeys.vercel.app.`.
+- **Escopo:** a metade de associação Android do critério está resolvida. A cerimônia de passkey via Credential Manager, a associação iOS e o build iOS continuam pendentes; a Fase 1 permanece `In progress`.
+- **Git:** por decisão do responsável, nenhum commit ou push foi feito nesta etapa; o scaffold e as atualizações de documentação seguem locais.
+
+### 2026-11-03 — Cerimônia de passkey no Android (Credential Manager)
+
+- **Autorização:** o responsável autorizou a implementação mínima de Credential Manager e o deploy do arquivo atualizado.
+- **Módulo:** `mobile/modules/passkey-proof` (Expo local module, ADR 0011), `androidx.credentials:credentials:1.6.0` + `credentials-play-services-auth:1.6.0`; funções `createPasskeyAsync`, `getPasskeyAsync` e `getPlatformSummary`; desafio local com `SecureRandom`; retorno apenas de dados públicos.
+- **Integração:** `requireOptionalNativeModule('PasskeyProof')`; a tela `mobile/App.tsx` ganhou a seção "Passkey (Android)" com criação e autenticação.
+- **Build:** `pnpm exec expo prebuild --platform android --no-install` recriou `android/` e manteve o mesmo `debug.keystore`/fingerprint `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`; `gradlew.bat :app:assembleDebug -PreactNativeArchitectures=armeabi-v7a` concluiu em 3m05s; APK de 33.946.574 bytes; `:passkey-proof:compileDebugKotlin` sem erros.
+- **Instalação/execução:** `adb install -r`, Metro com `--dev-client --localhost --port 8081`, `adb reverse tcp:8081 tcp:8081`; moto g(7) play `0062710182`, Android 10 (API 29), `armeabi-v7a`.
+- **Falha 1 — RP ID:** o Google Password Manager recusou com `[50152] RP ID cannot be validated` mesmo com a associação reconhecida pela API do Google e o arquivo acessível pelo aparelho (HTTP 200, `application/json`). Correção: incluir `delegate_permission/common.handle_all_urls` junto de `get_login_creds`; arquivo regerado com `--app-links-relation`, republicado na Vercel e `verify` OK.
+- **Falha 2 — timeout:** com `timeout` de 60 s, o fluxo expirou (`[15] Flow has timed out.`) enquanto o PIN era digitado. Correção: 300 s no pedido de criação e de autenticação.
+- **Resultado da criação:** `clientData.type` `webauthn.create`; origem `android:apk-key-hash:-sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w`; `credentialId` `dKcZmRwJaD4crwZegBb6yw`.
+- **Resultado da autenticação:** `clientData.type` `webauthn.get`; mesma credencial; `rpIdHashMatches: true`; `userPresent: true`; `userVerified: true`.
+- **Evidências:** `harness/proofs/passkeys/evidence/android-create-result.png` e `android-get-result.png` (somente dados públicos; sem PIN nem e-mail).
+- **Testes/verificações:** 8 testes da ferramenta (`unittest`), ruff check/format e `git diff --check` verdes.
+- **Escopo:** a cerimônia Android está provada. Não há verificação no backend (desafio local) e o iOS continua pendente. A Fase 1 permanece `In progress`.
+- **Git:** nenhum commit ou push nesta etapa.

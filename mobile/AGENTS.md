@@ -5,8 +5,9 @@
 Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` é o protótipo mínimo da **Fase 1 (prova técnica mobile/nativa)** — não é o aplicativo de produto.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
-- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova de permissão de localização, sem navegação/funcionalidade.
+- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova, com as seções de permissão de localização e de passkey (Android), sem navegação/funcionalidade de produto.
 - A estratégia mobile foi decidida no **ADR 0009 (aprovado)**: Expo development build com `expo prebuild`, mantendo `android/` e `ios/` gerados e não versionados neste momento. EAS Build, distribuição e OTA continuam sem decisão; não presumir EAS. Não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
+- O módulo nativo local `mobile/modules/passkey-proof` foi criado para a prova de Credential Manager e está registrado no **ADR 0011**; é código de prova, não biblioteca de produção.
 
 ## Tooling real do projeto
 
@@ -21,8 +22,8 @@ pnpm exec expo start --localhost --go --clear
 pnpm exec expo prebuild --platform android --no-install   # apenas no contexto aprovado da Fase 1
 ```
 
-- `pnpm exec tsc --noEmit` deve passar antes de declarar qualquer tarefa concluída. Lint não está configurado; não instalá-lo exceto se aprovado para a fase.
-- Novo módulo nativo (ex.: passkeys, push) só mediante escopo aprovado da fase e `pnpm exec expo install`.
+- `pnpm exec tsc --noEmit` deve passar antes de declarar qualquer tarefa concluída. O lint existe via `pnpm exec eslint .`; não instalar novas ferramentas de lint sem aprovação da fase.
+- Novo módulo nativo (ex.: passkeys, push) só mediante escopo aprovado da fase, decisão registrada e build nativo correspondente; módulos locais ficam em `modules/` e são autolinkados pelo Expo.
 
 ## Expo muda entre versões — não confie em dados de treino
 

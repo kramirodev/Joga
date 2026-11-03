@@ -1,6 +1,6 @@
 # Fase 01 — Prova técnica mobile/nativa
 
-**Status:** Em andamento — build Android próprio gerado, instalado e executado no Moto G24; permissões precisa, aproximada e negada provadas no app; React Native CLI buildado e executado; OTP por SMS provado com adapter simulado; ADR 0009 aprovado; iOS e passkeys/domínio pendentes de ambiente e autorização
+**Status:** Em andamento - build Android próprio gerado, instalado e executado no Moto G24; permissões precisa, aproximada e negada provadas no app; React Native CLI buildado e executado; OTP por SMS provado com adapter simulado; ADR 0009 aprovado; associação Android publicada e reconhecida pela API Digital Asset Links; cerimônia de passkey Android executada via Credential Manager (ADR 0011); iOS pendente
 **Branch:** `feat/01-prova-mobile-nativa` em `kramirodev/Joga`
 
 ## Fontes e contexto
@@ -54,7 +54,7 @@ Obter evidência técnica em Android e iOS para escolher a estratégia React Nat
 ## Riscos e decisões pendentes
 
 - Ambiente verificado em 2026-11-02: Node 24.22.1 portable em `.tools/nodejs`, pnpm 11.25.0 via Corepack, JDK 17.0.20.1 portable em `.tools/temurin-17`; Platform-Tools 37.0.1 (ADB 1.0.41); Android SDK em `.tools/android-sdk` com plataformas 36 e 37.0, Build Tools 36.0.0 e 37.0.0, NDK 27.1.12297006 e licenças presentes. O Moto G24 (`0087722228`) está conectado e autorizado. `emulator`, macOS e `xcodebuild` continuam indisponíveis.
-- O scaffold Expo existente declara Expo `~58.0.22`, React Native `0.88.1`, React `19.3.0` e TypeScript `~6.0.3`; o lockfile foi instalado em modo frozen e o pacote compatível `expo-location ~58.0.20` foi adicionado. TypeScript e `expo install --check` passaram. Ainda não há development client nem integração de passkeys; execução em Expo Go não valida build nativo.
+- O scaffold Expo existente declara Expo `~58.0.22`, React Native `0.88.1`, React `19.3.0` e TypeScript `~6.0.3`; o lockfile foi instalado em modo frozen e o pacote compatível `expo-location ~58.0.20` foi adicionado. TypeScript e `expo install --check` passaram. Na inspeção inicial não havia development client nem integração de passkeys; o development client Android foi construído depois, e a associação de passkeys foi publicada. Execução em Expo Go não valida build nativo.
 - O Moto G24 foi autorizado; `adb devices -l` retornou `0087722228 device` (`moto_g24`).
 - ADB 1.0.41 confirmou novamente o Moto G24 como autorizado (`0087722228 device`) e o encaminhamento `tcp:8081 tcp:8081` ativo.
 - O Metro local respondeu HTTP 200, compilou o bundle Android (`index.ts`, 721 módulos), e a tela JOGA foi confirmada no Expo Go.
@@ -75,7 +75,9 @@ Obter evidência técnica em Android e iOS para escolher a estratégia React Nat
 - **Decisão aprovada:** `docs/ADR/0009-estrategia-react-native-expo-vs-cli.md` adota Expo development build com `expo prebuild` (aprovado em 2026-11-02). `docs/ADR/0006-...` foi marcado como substituído.
 - **SMS com adapter simulado (2026-11-02):** prova isolada em `harness/proofs/sms-otp/`, em Python sem dependências externas. Cobre normalização E.164, código de 6 dígitos, hash HMAC-SHA-256 com segredo de ao menos 32 bytes, validade de 5 minutos, uso único, 5 tentativas, reenvio com intervalo de 60 segundos e invalidação do desafio anterior. `python -X utf8 -m unittest discover -s harness/proofs/sms-otp -v` executou 12 testes, todos aprovados. Nenhum provedor, número real, credencial ou custo envolvido.
 - **Limite da prova de SMS:** não há persistência, HTTP, Redis ou rate limit por IP/dispositivo; o adapter guarda o código em memória apenas para o teste. A lógica deve ser portada ao backend na Fase 3, conforme §5.3 da documentação técnica.
-- **Bloqueios detalhados:** `harness/build/phase-01-bloqueios-passkeys-e-ios.md` registra requisitos de RP/domínio, `assetlinks.json`, `apple-app-site-association`, identificadores provisórios e o bloqueio de iOS por ausência de macOS/Xcode. Nenhum domínio, arquivo `.well-known`, conta Apple ou build iOS foi executado.
+- **Bloqueios detalhados:** `harness/build/phase-01-bloqueios-passkeys-e-ios.md` registra requisitos de RP/domínio, `assetlinks.json`, `apple-app-site-association`, identificadores provisórios e o bloqueio de iOS por ausência de macOS/Xcode. A associação Android foi publicada e a cerimônia executada; nenhuma conta Apple, `apple-app-site-association` ou build iOS foi executado.
+- **Associação Android publicada (2026-11-03):** `harness/proofs/passkeys/` contém `passkeys_tool.py` (`fingerprint`, `statement`, `verify`), 8 testes com servidor HTTP local e configurações para Vercel, Cloudflare Pages e GitHub Pages. O `assetlinks.json` foi publicado em `https://joga-passkeys.vercel.app` (Vercel, projeto `joga-passkeys`) com `com.anonymous.joga` e o SHA-256 do certificado de debug; o arquivo responde HTTP 200 e `application/json` sem redirecionamento, e a API Digital Asset Links do Google reconheceu a associação. `verify` retornou `OK: com.anonymous.joga associado a https://joga-passkeys.vercel.app`. O package e o certificado são provisórios; um build release/EAS exigirá regerar o arquivo.
+- **Cerimônia de passkey Android (2026-11-03):** módulo Expo local `mobile/modules/passkey-proof` (ADR 0011) com `androidx.credentials` 1.6.0, buildado para `armeabi-v7a` e executado no moto g(7) play (Android 10). Criação e autenticação concluídas com RP ID `joga-passkeys.vercel.app`; `rpIdHashMatches: true`, `userPresent: true`, `userVerified: true` e a mesma credencial nas duas etapas. Evidências em `harness/proofs/passkeys/evidence/`. Faltam a verificação no backend e o iOS.
 - Domínio técnico é necessário para associações de passkey conforme o fluxo escolhido; qualquer registro/hospedagem requer autorização.
 - Bibliotecas de passkeys, provedor de SMS e integração devem ser escolhidos apenas com evidências do protótipo.
 
@@ -122,14 +124,14 @@ Comandos executados na prova de viabilidade e no protótipo atual:
 - Inspeção de ABIs e permissões: leitura de `AndroidManifest.xml` de ambos os projetos e listagem de entradas `lib/<abi>` nos dois APKs
 - `python -X utf8 -m unittest discover -s harness\proofs\sms-otp -v` (12 testes, todos aprovados)
 
-Resultado atual: as 492 dependências foram instaladas offline em layout hoisted sem alterar o lockfile; `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` passam; o build Android de desenvolvimento concluiu, gerou APK de 47,6 MB, instalou e abriu o app no Moto G24 com Metro conectado; as três variações de permissão (precisa, aproximada, negada) foram exercitadas no app próprio e a tela recarregou com o texto corrigido. O React Native CLI foi criado, buildado em caminho curto (APK 125,3 MB, 2m59s) e executado no mesmo aparelho; a comparação foi registrada no ADR 0009, aprovado em 2026-11-02. O contrato de OTP por SMS foi provado com adapter simulado em 12 testes aprovados. `emulator`, macOS e Xcode continuam ausentes; iOS e validação de domínio/RP seguem pendentes.
+Resultado atual: as 492 dependências foram instaladas offline em layout hoisted sem alterar o lockfile; `pnpm exec tsc --noEmit` e `pnpm exec expo install --check` passam; o build Android de desenvolvimento concluiu, gerou APK de 47,6 MB, instalou e abriu o app no Moto G24 com Metro conectado; as três variações de permissão (precisa, aproximada, negada) foram exercitadas no app próprio e a tela recarregou com o texto corrigido. O React Native CLI foi criado, buildado em caminho curto (APK 125,3 MB, 2m59s) e executado no mesmo aparelho; a comparação foi registrada no ADR 0009, aprovado em 2026-11-02. O contrato de OTP por SMS foi provado com adapter simulado em 12 testes aprovados. A associação Android foi publicada em `https://joga-passkeys.vercel.app` e reconhecida pela API Digital Asset Links do Google; a ferramenta tem 8 testes aprovados. O módulo local `mobile/modules/passkey-proof` criou e autenticou uma passkey no Android 10 de 32 bits com `rpIdHashMatches: true`. `emulator`, macOS e Xcode continuam ausentes; a associação/build iOS segue pendente.
 
 ## Critérios de aceite
 
 - [x] ADR compara Expo development build e React Native CLI e decide com evidências e versões. — ADR 0009 **aprovado** pelo responsável do produto em 2026-11-02: Expo development build com `expo prebuild`.
 - [x] Protótipo mínimo builda e abre em Android e iOS, ou limitação/bloqueio de plataforma fica documentado sem declarar suporte completo. — Android comprovado (build, instalação e execução); iOS documentado como bloqueado por ausência de macOS/Xcode.
-- [x] Registro/autenticação de passkey é exercitado nos dois sistemas ou bloqueios são detalhados por sistema. — Bloqueios detalhados por sistema em `harness/build/phase-01-bloqueios-passkeys-e-ios.md`; nenhuma cerimônia WebAuthn executada.
-- [ ] Requisitos de domínio/RP e arquivos de associação são validados; não registrar/hospedar domínio sem autorização. — Requisitos documentados (assetlinks, AASA, RP ID/origem), mas a validação real depende de domínio autorizado; nenhum arquivo publicado. **Único critério ainda aberto.**
+- [x] Registro/autenticação de passkey é exercitado nos dois sistemas ou bloqueios são detalhados por sistema. — Android: criação e autenticação executadas via Credential Manager (ADR 0011 e evidências em `harness/proofs/passkeys/evidence/`). iOS: bloqueio detalhado em `harness/build/phase-01-bloqueios-passkeys-e-ios.md`; nenhuma cerimônia iOS executada.
+- [ ] Requisitos de domínio/RP e arquivos de associação são validados; não registrar/hospedar domínio sem autorização. — Android: **concluído** — `assetlinks.json` publicado em `https://joga-passkeys.vercel.app`, HTTP 200/`application/json`, reconhecido pela API Digital Asset Links e cerimônia com Credential Manager executada. Falta validar iOS/AASA. **Único critério ainda aberto.**
 - [x] Localização aproximada, precisa e negada é exercitada; busca manual permanece viável. — Provado no app próprio em Android: fine (32 m), coarse (2000 m) e negada, com leitura bloqueada.
 - [x] SMS funciona em sandbox autorizada ou adaptador simulado, sem custos não aprovados. — Adaptador simulado em `harness/proofs/sms-otp/`, 12 testes aprovados; nenhum provedor real contatado. Persistência/rate limit por IP ficam para a Fase 3.
 - [x] Versões, limitações, comandos e evidências estão registrados no ADR e build log. — ADR 0009 aprovado, build log e ficha da fase atualizados com comandos e resultados.
@@ -137,14 +139,15 @@ Resultado atual: as 492 dependências foram instaladas offline em layout hoisted
 
 ## Pendências para conclusão da Fase 1
 
-A Fase 1 permanece `In progress` por decisão do responsável do produto em 2026-11-02. Falta apenas o critério de validação real de domínio/RP; os itens abaixo descrevem o que precisa acontecer, sem autorizar nenhuma ação externa.
+A Fase 1 permanece `In progress` por decisão do responsável do produto em 2026-11-02. A associação e a cerimônia Android já foram executadas; faltam a associação/build iOS. Os itens abaixo descrevem o que precisa acontecer, sem autorizar nenhuma ação externa.
 
-1. **Domínio e associação Android**
-   - Decidir e autorizar um domínio técnico (apenas `.well-known`; sem site público para jogadores).
-   - Fixar `android.package` definitivo (hoje `com.anonymous.joga`, provisório).
-   - Publicar `https://<domínio>/.well-known/assetlinks.json` com `package_name` e `sha256_cert_fingerprints` do certificado real.
-   - Confirmar HTTP 200, `Content-Type: application/json` e ausência de redirecionamento.
-   - Evidência de aceite: associação reconhecida pelo Android e cerimônia de passkey concluída no aparelho.
+1. **Domínio e associação Android — concluído**
+   - [x] Host autorizado e publicado: Vercel, projeto `joga-passkeys`, URL `https://joga-passkeys.vercel.app`.
+   - [x] `android.package` mantido como `com.anonymous.joga` (provisório) para esta prova.
+   - [x] `https://joga-passkeys.vercel.app/.well-known/assetlinks.json` publicado com `package_name` e `sha256_cert_fingerprints` do certificado de debug.
+   - [x] Confirmado HTTP 200, `Content-Type: application/json` e ausência de redirecionamento.
+   - [x] Associação reconhecida pela API Digital Asset Links do Google.
+   - [x] Cerimônia de passkey concluída no aparelho via Credential Manager (`mobile/modules/passkey-proof`, ADR 0011).
 
 2. **Domínio e associação iOS**
    - Fixar `ios.bundleIdentifier` (ainda ausente em `mobile/app.json`).
@@ -159,14 +162,15 @@ A Fase 1 permanece `In progress` por decisão do responsável do produto em 2026
    - Evidência de aceite: log de build, app executando e passkey exercitada; sem isso, não declarar suporte iOS comprovado.
 
 4. **Biblioteca de passkeys**
-   - Escolher com ADR própria após necessidade concreta, validando Credential Manager (Android) e Authentication Services (iOS).
-   - Não adicionar dependência antes da decisão.
+   - Para a prova, o módulo local `mobile/modules/passkey-proof` foi registrado no ADR 0011; não é uma escolha de biblioteca de produção.
+   - A biblioteca de produção (ou a continuidade do módulo próprio) continua em aberto e exige ADR própria, com verificação no backend e Authentication Services (iOS).
+   - Não adicionar dependência de terceiros antes da decisão.
 
 5. **SMS real (opcional nesta fase)**
    - Só com sandbox/provedor autorizado e sem custo não aprovado. O adaptador simulado já atende ao critério da fase.
 
-**Condição para marcar `Complete`:** aprovação explícita do responsável do produto após os itens 1–3, ou aceite formal de que o bloqueio externo é suficiente para encerrar a fase sem declarar suporte completo. Nenhuma ação externa foi executada até aqui.
+**Condição para marcar `Complete`:** aprovação explícita do responsável do produto após a associação/build iOS e a decisão sobre identificadores definitivos, ou aceite formal de que o bloqueio externo é suficiente para encerrar a fase sem declarar suporte completo. A cerimônia de passkey Android já foi executada. A publicação na Vercel foi autorizada e executada; nenhuma outra ação externa foi realizada.
 
 ## Condição de parada
 
-Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. O build Android de desenvolvimento com módulos nativos próprios está comprovado (APK instalado e executado no Moto G24), as permissões de localização precisa, aproximada e negada foram exercitadas no app, a comparação Expo × React Native CLI foi executada e o ADR 0009 foi aprovado, e o OTP por SMS foi provado com adapter simulado. A Fase 1 permanece `In progress` por decisão do responsável do produto: falta validar domínio/RP com arquivos de associação reais e executar o protótipo no iOS, ambos dependentes de autorização externa e ambiente macOS/Xcode. Não iniciar a Fase 2 automaticamente.
+Fase 0 concluída. A prova está em andamento no workspace vinculado a `kramirodev/Joga`. O build Android de desenvolvimento com módulos nativos próprios está comprovado (APK instalado e executado no Moto G24), as permissões de localização precisa, aproximada e negada foram exercitadas no app, a comparação Expo × React Native CLI foi executada e o ADR 0009 foi aprovado, o OTP por SMS foi provado com adapter simulado, e a associação Android foi publicada em `https://joga-passkeys.vercel.app` e reconhecida pela API Digital Asset Links, com a cerimônia de criação e autenticação de passkey executada no Android 10 de 32 bits. A Fase 1 permanece `In progress` por decisão do responsável do produto: falta a associação/build iOS, dependente de conta Apple e ambiente macOS/Xcode. Não iniciar a Fase 2 automaticamente.

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import PasskeyProof from './modules/passkey-proof';
+
+const RP_ID = 'joga-passkeys.vercel.app';
+const RP_NAME = 'JOGA (prova técnica)';
+const PASSKEY_USER = 'prova-joga';
 
 function describePermission(permission: Location.LocationPermissionResponse): string {
   if (permission.status !== 'granted') {
@@ -16,12 +22,28 @@ function describePermission(permission: Location.LocationPermissionResponse): st
     : 'Autorizada em primeiro plano';
 }
 
+function describeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return 'Falha desconhecida durante a cerimônia de passkey.';
+}
+
 export default function App() {
   const [permissionMessage, setPermissionMessage] = useState('Consultando permissão…');
   const [locationMessage, setLocationMessage] = useState(
     'Nenhuma leitura de localização realizada.',
   );
   const [busy, setBusy] = useState(false);
+  const platformSummary = PasskeyProof
+    ? PasskeyProof.getPlatformSummary()
+    : 'Módulo nativo de passkey indisponível.';
+  const [passkeyMessage, setPasskeyMessage] = useState(
+    'Nenhuma cerimônia de passkey executada nesta instalação.',
+  );
+  const [passkeyDetail, setPasskeyDetail] = useState('');
+  const [credentialId, setCredentialId] = useState('');
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
 
   useEffect(() => {
     void Location.getForegroundPermissionsAsync()
@@ -69,8 +91,75 @@ export default function App() {
     }
   }
 
+  async function createPasskey() {
+    if (!PasskeyProof) {
+      setPasskeyMessage('O módulo nativo de passkey não está presente neste build.');
+      return;
+    }
+
+    setPasskeyBusy(true);
+    setPasskeyMessage('Abrindo o Credential Manager para criar a passkey…');
+    setPasskeyDetail('');
+    try {
+      const result = await PasskeyProof.createPasskeyAsync(RP_ID, RP_NAME, PASSKEY_USER);
+      setCredentialId(result.credentialId);
+      setPasskeyMessage('Passkey criada e registrada pelo Google Password Manager.');
+      setPasskeyDetail(
+        [
+          `clientData.type: ${result.clientDataType}`,
+          `clientData.origin: ${result.clientDataOrigin}`,
+          `credentialId: ${result.credentialId}`,
+        ].join('\n'),
+      );
+    } catch (error) {
+      setPasskeyMessage(describeError(error));
+      setPasskeyDetail('');
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
+  async function getPasskey() {
+    if (!PasskeyProof) {
+      setPasskeyMessage('O módulo nativo de passkey não está presente neste build.');
+      return;
+    }
+
+    setPasskeyBusy(true);
+    setPasskeyMessage('Abrindo o seletor de passkeys do sistema…');
+    setPasskeyDetail('');
+    try {
+      const result = await PasskeyProof.getPasskeyAsync(RP_ID, credentialId);
+      const sameCredential =
+        credentialId.length === 0 || credentialId === result.credentialId
+          ? 'sim'
+          : 'não (outra credencial foi escolhida)';
+      setPasskeyMessage(
+        result.rpIdHashMatches
+          ? 'Autenticação concluída: rpIdHash confere com o RP ID solicitado.'
+          : 'Autenticação retornou credencial, mas o rpIdHash NÃO confere.',
+      );
+      setPasskeyDetail(
+        [
+          `clientData.type: ${result.clientDataType}`,
+          `clientData.origin: ${result.clientDataOrigin}`,
+          `credentialId: ${result.credentialId}`,
+          `Mesma credencial criada nesta sessão: ${sameCredential}`,
+          `rpIdHashMatches: ${result.rpIdHashMatches}`,
+          `userPresent: ${result.userPresent}`,
+          `userVerified: ${result.userVerified}`,
+        ].join('\n'),
+      );
+    } catch (error) {
+      setPasskeyMessage(describeError(error));
+      setPasskeyDetail('');
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.eyebrow}>PROVA TÉCNICA • FASE 1</Text>
       <Text style={styles.title}>JOGA</Text>
       <Text style={styles.heading}>Permissão de localização</Text>
@@ -122,18 +211,75 @@ export default function App() {
         </Text>
       </View>
 
+      <View style={styles.divider} />
+
+      <Text style={styles.heading}>Passkey (Android)</Text>
+      <Text style={styles.body}>
+        Cria e usa uma passkey local com o Credential Manager. A associação do RP ID é verificada
+        pelo Android contra o assetlinks.json publicado; não há backend nesta prova.
+      </Text>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Ambiente</Text>
+        <Text style={styles.value}>{platformSummary}</Text>
+        <Text style={styles.mono}>RP ID: {RP_ID}</Text>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={passkeyBusy}
+        onPress={createPasskey}
+        style={({ pressed }) => [
+          styles.button,
+          pressed && styles.buttonPressed,
+          passkeyBusy && styles.buttonDisabled,
+        ]}
+      >
+        {passkeyBusy ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Criar passkey</Text>
+        )}
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        disabled={passkeyBusy}
+        onPress={getPasskey}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          pressed && styles.buttonPressed,
+          passkeyBusy && styles.buttonDisabled,
+        ]}
+      >
+        <Text style={styles.secondaryButtonText}>Entrar com passkey</Text>
+      </Pressable>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Resultado da passkey</Text>
+        <Text accessibilityLiveRegion="polite" style={styles.value}>
+          {passkeyMessage}
+        </Text>
+        {passkeyDetail.length > 0 ? (
+          <Text selectable style={styles.mono}>
+            {passkeyDetail}
+          </Text>
+        ) : null}
+      </View>
+
       <Text style={styles.footnote}>
-        Para repetir a prova com outra permissão, altere a localização do app JOGA nas configurações
-        do Android.
+        Para repetir a prova de localização com outra permissão, altere a localização do app JOGA
+        nas configurações do Android. Se a passkey já existir, use “Entrar com passkey”. Remova a
+        credencial pelo Google Password Manager para repetir a criação.
       </Text>
       <StatusBar style="auto" />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#f4f7f5',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -147,6 +293,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 6 },
   label: { color: '#52625a', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   value: { color: '#173b2a', fontSize: 15, lineHeight: 22 },
+  mono: { color: '#173b2a', fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
+  divider: { backgroundColor: '#d7e3db', height: 1, marginVertical: 6 },
   button: {
     alignItems: 'center',
     backgroundColor: '#26724a',
