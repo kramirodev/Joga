@@ -329,4 +329,5 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** 95 de unidade/API + 5 de integração PostgreSQL (100 com `JOGA_TEST_DATABASE_URL`); Ruff, formatação e Mypy (31 arquivos) verdes.
 - **Banco:** migração `a7c3e9f2b415` aplicada/revertida em PostgreSQL real; 11 tabelas no `public`.
 - **Encerramento:** ADR 0017 aceita formalmente o bloqueio iOS; a Fase 3 é marcada `Complete` para backend + Android, sem declarar suporte iOS.
-- **Git:** commit da Fase 3 realizado nesta etapa, sem push.
+- **CI:** runs [41599704881](https://github.com/kramirodev/Joga/actions/runs/41599704881) (Fase 1) e [41599705103](https://github.com/kramirodev/Joga/actions/runs/41599705103) (Fase 3), ambos `success`.
+- **Git:** commit `f77f77f`; `main` avançou por fast-forward de `489fe8d` para `f77f77f` e foi enviado para `origin/main`.

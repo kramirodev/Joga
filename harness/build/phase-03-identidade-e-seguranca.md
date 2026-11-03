@@ -6,6 +6,7 @@
 **Decisão de encerramento:** `docs/ADR/0017-encerramento-fase-3-com-ios-aceito.md`
 **Data de início:** 2026-11-03
 **Data de conclusão:** 2026-11-03
+**Integração:** CI verde nos runs [41599704881](https://github.com/kramirodev/Joga/actions/runs/41599704881) (Fase 1) e [41599705103](https://github.com/kramirodev/Joga/actions/runs/41599705103) (Fase 3); `main` em `f77f77f`.
 
 ## Fontes e contexto
 
