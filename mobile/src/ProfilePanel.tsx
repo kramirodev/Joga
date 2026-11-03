@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import * as Location from 'expo-location';
 
 import {
@@ -58,6 +67,16 @@ function sortWindows(windows: WindowDraft[]): WindowDraft[] {
   return [...windows].sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
 }
 
+const TIME_SLOTS: string[] = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2)
+    .toString()
+    .padStart(2, '0');
+  const minutes = index % 2 === 0 ? '00' : '30';
+  return `${hours}:${minutes}`;
+});
+
+const RADIUS_OPTIONS = [5, 10, 20, 50, 100];
+
 function weekdayLabel(value: number): string {
   return WEEKDAYS[value - 1] ?? '?';
 }
@@ -75,8 +94,9 @@ export function ProfilePanel() {
   const [startTime, setStartTime] = useState('18:00');
   const [endTime, setEndTime] = useState('20:00');
   const [windows, setWindows] = useState<WindowDraft[]>([]);
+  const [picker, setPicker] = useState<'start' | 'end' | null>(null);
   const [cep, setCep] = useState('01001000');
-  const [radius, setRadius] = useState('10');
+  const [radius, setRadius] = useState(10);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [message, setMessage] = useState('Entre na conta para editar o perfil.');
   const [busy, setBusy] = useState(false);
@@ -138,6 +158,29 @@ export function ProfilePanel() {
         })),
       ),
     );
+    if (loaded.region) {
+      setRadius(loaded.region.radius_km);
+      if (loaded.region.cep) {
+        setCep(loaded.region.cep);
+      }
+    }
+  }
+
+  function selectStart(slot: string) {
+    const next = TIME_SLOTS[TIME_SLOTS.indexOf(slot) + 1];
+    if (next && endTime <= slot) {
+      setEndTime(next);
+    }
+    setStartTime(slot);
+  }
+
+  function chooseTime(slot: string) {
+    if (picker === 'end') {
+      setEndTime(slot);
+    } else {
+      selectStart(slot);
+    }
+    setPicker(null);
   }
 
   async function run(action: () => Promise<void>, success?: string) {
@@ -242,13 +285,8 @@ export function ProfilePanel() {
     if (!accessToken) {
       return;
     }
-    const parsedRadius = Number.parseInt(radius, 10);
     await run(async () => {
-      const updated = await profileApi.setRegionByCep(
-        accessToken,
-        cep,
-        Number.isFinite(parsedRadius) ? parsedRadius : 10,
-      );
+      const updated = await profileApi.setRegionByCep(accessToken, cep, radius);
       applyProfile(updated);
     }, 'Região por CEP salva.');
   }
@@ -269,7 +307,7 @@ export function ProfilePanel() {
         accessToken,
         position.coords.latitude,
         position.coords.longitude,
-        Number.parseInt(radius, 10) || 10,
+        radius,
       );
       applyProfile(updated);
     }, 'Região aproximada por GPS salva.');
@@ -376,8 +414,8 @@ export function ProfilePanel() {
       <View style={styles.card}>
         <Text style={styles.label}>Disponibilidade semanal</Text>
         <Text style={styles.hint}>
-          Monte a agenda: escolha o dia, informe a faixa e adicione quantas quiser. Um dia pode ter
-          várias faixas e dias diferentes podem ter horários diferentes.
+          Monte a agenda: escolha o dia, os horários de 30 em 30 minutos e adicione quantas faixas
+          quiser. Um dia pode ter várias faixas e dias diferentes podem ter horários diferentes.
         </Text>
         <View style={styles.wrap}>
           {WEEKDAYS.map((label, index) => {
@@ -397,21 +435,27 @@ export function ProfilePanel() {
             );
           })}
         </View>
-        <View style={styles.row}>
-          <TextInput
-            onChangeText={setStartTime}
-            placeholder="18:00"
-            style={[styles.input, styles.timeInput]}
-            value={startTime}
-          />
-          <Text style={styles.value}>até</Text>
-          <TextInput
-            onChangeText={setEndTime}
-            placeholder="20:00"
-            style={[styles.input, styles.timeInput]}
-            value={endTime}
-          />
+        <View style={styles.timeRow}>
+          <Pressable
+            accessibilityLabel="Escolher horário inicial"
+            disabled={busy}
+            onPress={() => setPicker('start')}
+            style={styles.timeButton}
+          >
+            <Text style={styles.fieldLabel}>Início</Text>
+            <Text style={styles.timeValue}>{startTime}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Escolher horário final"
+            disabled={busy}
+            onPress={() => setPicker('end')}
+            style={styles.timeButton}
+          >
+            <Text style={styles.fieldLabel}>Fim</Text>
+            <Text style={styles.timeValue}>{endTime}</Text>
+          </Pressable>
         </View>
+
         <Pressable disabled={busy} onPress={addWindow} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>Adicionar faixa em {weekdayLabel(weekday)}</Text>
         </Pressable>
@@ -452,21 +496,33 @@ export function ProfilePanel() {
             ? `${profile.region.city ?? 'GPS'}${profile.region.state ? `/${profile.region.state}` : ''} · ${profile.region.radius_km} km · ${profile.region.source}`
             : 'Nenhuma região definida.'}
         </Text>
-        <View style={styles.row}>
-          <TextInput
-            keyboardType="number-pad"
-            onChangeText={setCep}
-            placeholder="CEP"
-            style={[styles.input, styles.grow]}
-            value={cep}
-          />
-          <TextInput
-            keyboardType="number-pad"
-            onChangeText={setRadius}
-            placeholder="Raio km"
-            style={[styles.input, styles.radiusInput]}
-            value={radius}
-          />
+        <Text style={styles.fieldLabel}>CEP</Text>
+        <TextInput
+          keyboardType="number-pad"
+          maxLength={8}
+          onChangeText={(value) => setCep(value.replace(/[^0-9]/g, ''))}
+          placeholder="00000000"
+          style={styles.input}
+          value={cep}
+        />
+        <Text style={styles.fieldLabel}>Raio de busca</Text>
+        <View style={styles.wrap}>
+          {(RADIUS_OPTIONS.includes(radius)
+            ? RADIUS_OPTIONS
+            : [...RADIUS_OPTIONS, radius].sort((a, b) => a - b)
+          ).map((option) => {
+            const active = radius === option;
+            return (
+              <Pressable
+                key={`radius-${option}`}
+                disabled={busy}
+                onPress={() => setRadius(option)}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={active ? styles.chipTextActive : styles.chipText}>{option} km</Text>
+              </Pressable>
+            );
+          })}
         </View>
         <Pressable disabled={busy} onPress={saveCepRegion} style={styles.button}>
           <Text style={styles.buttonText}>Buscar região por CEP</Text>
@@ -499,6 +555,43 @@ export function ProfilePanel() {
         </Text>
         {busy ? <ActivityIndicator color="#26724a" /> : null}
       </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPicker(null)}
+        transparent
+        visible={picker !== null}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.label}>
+              {picker === 'end' ? 'Horário final' : 'Horário inicial'}
+            </Text>
+            <Text style={styles.hint}>Intervalos de 30 minutos.</Text>
+            <ScrollView style={styles.modalList}>
+              {(picker === 'end' ? TIME_SLOTS.filter((slot) => slot > startTime) : TIME_SLOTS).map(
+                (slot) => {
+                  const active = (picker === 'end' ? endTime : startTime) === slot;
+                  return (
+                    <Pressable
+                      key={`slot-${slot}`}
+                      onPress={() => chooseTime(slot)}
+                      style={[styles.modalOption, active && styles.modalOptionActive]}
+                    >
+                      <Text style={active ? styles.modalOptionTextActive : styles.modalOptionText}>
+                        {slot}
+                      </Text>
+                    </Pressable>
+                  );
+                },
+              )}
+            </ScrollView>
+            <Pressable onPress={() => setPicker(null)} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Fechar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -536,10 +629,37 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   multiline: { minHeight: 64, textAlignVertical: 'top' },
-  row: { alignItems: 'center', flexDirection: 'row', gap: 8 },
-  grow: { flex: 1 },
-  timeInput: { flex: 1 },
-  radiusInput: { width: 90 },
+  fieldLabel: { color: '#52625a', fontSize: 12, fontWeight: '700' },
+  timeRow: { flexDirection: 'row', gap: 10 },
+  timeButton: {
+    backgroundColor: '#f4f7f5',
+    borderColor: '#d7e3db',
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  timeValue: { color: '#173b2a', fontSize: 18, fontWeight: '700' },
+  modalBackdrop: {
+    backgroundColor: 'rgba(11, 34, 24, 0.45)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    gap: 10,
+    maxHeight: '80%',
+    padding: 18,
+  },
+  modalList: { maxHeight: 360 },
+  modalOption: { borderBottomColor: '#e6ede8', borderBottomWidth: 1, paddingVertical: 12 },
+  modalOptionActive: { backgroundColor: '#e8f2ec' },
+  modalOptionText: { color: '#173b2a', fontSize: 16 },
+  modalOptionTextActive: { color: '#26724a', fontSize: 16, fontWeight: '700' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     borderColor: '#26724a',

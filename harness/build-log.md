@@ -352,5 +352,6 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Aparelho:** cadastro por OTP fixo contra a API local; CEP `01001000` salvou `São Paulo/SP · 10 km · cep`; descoberta retornou `0 local(is)`; GPS salvou `GPS · 10 km · gps`.
 - **Correção de produto:** disponibilidade era tratada como um único dia + faixa. O backend já aceitava várias janelas por dia; o painel virou uma agenda semanal com rascunho local, adicionar/remover faixas por dia, contador nos chips e validação de formato/ordem/sobreposição antes de salvar.
 - **Evidência da agenda:** 4 faixas em 3 dias (Seg 14–15, Ter 17–19, Sáb 14–15 e Sáb 18–19), remoção de uma e `PUT /me/availability` 200; o banco confirmou as 3 faixas restantes.
+- **Seleção em vez de digitação:** horários agora vêm de uma lista modal de 30 em 30 minutos (fim filtrado depois do início) e o raio virou chips de 5/10/20/50/100 km; no aparelho, Seg 19:00–19:30 foi adicionado pelos seletores e salvo, e a região por CEP foi refeita com raio 20 km (`São Paulo/SP · 20 km · cep`).
 - **Testes:** `test_profile_api.py` com 10 testes, incluindo várias faixas no mesmo dia e dias com quantidades diferentes; Ruff, formatação e Mypy verdes.
 - **Pendência conhecida:** o app faz polling em `/health` (sem `/api/v1`) e acumula 404 no log; corrigir em fase de hardening.

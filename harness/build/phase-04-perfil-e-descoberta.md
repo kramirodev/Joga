@@ -129,6 +129,8 @@ Evidências no aparelho:
 - contador por dia nos chips (`Sáb · 2`);
 - salvar envia a agenda inteira (lista vazia limpa a disponibilidade).
 
+**Seleção em vez de digitação:** horários e raio deixaram de ser campos de texto. Início e fim abrem uma lista modal com intervalos de 30 minutos (00:00–23:30), o fim lista apenas horários depois do início, e o raio usa chips de 5/10/20/50/100 km. Continuam digitáveis apenas dados do próprio usuário: CEP (somente dígitos), nome de exibição e bio.
+
 Teste de regressão adicionado em `backend/tests/test_profile_api.py` cobrindo várias faixas no mesmo dia e dias com quantidades diferentes.
 
 ## Pendências e limites conhecidos
