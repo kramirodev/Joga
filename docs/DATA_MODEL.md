@@ -241,7 +241,7 @@ Janelas semanais recorrentes de disponibilidade.
 | `timezone` | varchar(64) | IANA, padrão `America/Sao_Paulo` |
 | `created_at` | timestamptz | default `now()` |
 
-Índice `(user_id, weekday)`. Sobreposição no mesmo dia é rejeitada pelo serviço, não pelo banco.
+Índice `(user_id, weekday)`. Um mesmo dia pode ter **várias faixas** (por exemplo, sábado às 14h, 18h e 20h) e dias diferentes podem ter quantidades e horários distintos. Sobreposição no mesmo dia é rejeitada pelo serviço, não pelo banco.
 
 ## `user_regions`
 

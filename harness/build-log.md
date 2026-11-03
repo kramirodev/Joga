@@ -343,6 +343,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Mobile (Android):** `ProfilePanel.tsx`, tipos e `profileApi` em `api.ts`, renderização em `App.tsx`; `tsc --noEmit`, ESLint e Prettier verdes.
 - **Testes:** 112 sem PostgreSQL (6 ignorados) e 119 com `JOGA_TEST_DATABASE_URL`, incluindo o teste PostGIS de raio/ordenação/paginação; Ruff, formatação e Mypy (36 arquivos) verdes.
 - **Smoke HTTP real:** catálogo com as durações corretas; perfil, modalidade e disponibilidade persistidos; CEP `01001-000` resolvido para São Paulo/SP; descoberta `total = 0` por catálogo vazio; troca para GPS; rejeições `400 invalid_cep`, `422` para raio 500 e latitude 91.
-- **Limitação:** o painel mobile não foi validado no aparelho nesta rodada porque `adb devices` estava vazio.
 - **Escopo não incluído:** quadras (`venue_spaces`), vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
 - **Git:** branch `feat/04-perfil-e-descoberta`.
+
+### 2026-11-03 — Fase 4: validação no moto g24 e agenda semanal
+
+- **Build:** o APK da Fase 3 era `armeabi-v7a` e não instalava no moto g24 (arm64, Android 14); gerado debug `arm64-v8a` com o SDK local (`gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a`), instalado com `adb install -r` e `adb reverse` para 8000/8081.
+- **Aparelho:** cadastro por OTP fixo contra a API local; CEP `01001000` salvou `São Paulo/SP · 10 km · cep`; descoberta retornou `0 local(is)`; GPS salvou `GPS · 10 km · gps`.
+- **Correção de produto:** disponibilidade era tratada como um único dia + faixa. O backend já aceitava várias janelas por dia; o painel virou uma agenda semanal com rascunho local, adicionar/remover faixas por dia, contador nos chips e validação de formato/ordem/sobreposição antes de salvar.
+- **Evidência da agenda:** 4 faixas em 3 dias (Seg 14–15, Ter 17–19, Sáb 14–15 e Sáb 18–19), remoção de uma e `PUT /me/availability` 200; o banco confirmou as 3 faixas restantes.
+- **Testes:** `test_profile_api.py` com 10 testes, incluindo várias faixas no mesmo dia e dias com quantidades diferentes; Ruff, formatação e Mypy verdes.
+- **Pendência conhecida:** o app faz polling em `/health` (sem `/api/v1`) e acumula 404 no log; corrigir em fase de hardening.

@@ -1,6 +1,6 @@
 # Fase 04 — Perfil e descoberta
 
-**Status:** Complete (backend + Android) — painel mobile pendente de validação no aparelho
+**Status:** Complete (backend + Android) — validado no moto g24
 **Branch:** `feat/04-perfil-e-descoberta`
 **Decisão de sequenciamento:** `docs/ADR/0018-inicio-fase-4-com-pendencia-ios.md`
 **Data de início:** 2026-11-03
@@ -110,9 +110,30 @@ Detalhe do smoke: autenticação por OTP fixo local, `PUT /me/region` com CEP re
 - [x] Testes de autorização negativa, validação e fallback manual passam.
 - [x] Evidências, ADRs e build log atualizados.
 
+## Validação no aparelho e correção da agenda
+
+O APK anterior era `armeabi-v7a` e não instalava no moto g24 (arm64, Android 14). Foi gerado um debug `arm64-v8a` com o SDK local, instalado via `adb install -r`, com `adb reverse` para 8000 e 8081.
+
+Evidências no aparelho:
+
+- Login/cadastro por OTP fixo real contra a API local (conta criada, sessão persistida em `expo-secure-store`).
+- `PUT /me/region` com CEP `01001000` retornou São Paulo/SP e a tela exibiu `São Paulo/SP · 10 km · cep`.
+- `GET /discovery/venues` retornou `0 local(is) encontrado(s) no raio atual.`
+- `PUT /me/location` salvou `GPS · 10 km · gps` e a descoberta voltou a funcionar.
+- Agenda semanal: 4 faixas em 3 dias (Seg 14–15, Ter 17–19, Sáb 14–15 e Sáb 18–19), remoção de uma faixa e `PUT /me/availability` 200; o banco confirmou exatamente as 3 faixas restantes.
+
+**Correção descoberta na validação:** o painel tratava disponibilidade como um único dia + uma faixa. O backend já suportava várias janelas por dia; o painel passou a funcionar como agenda:
+
+- rascunho local de faixas, agrupadas por dia;
+- adicionar e remover faixas por dia, com validação local de formato, ordem e sobreposição;
+- contador por dia nos chips (`Sáb · 2`);
+- salvar envia a agenda inteira (lista vazia limpa a disponibilidade).
+
+Teste de regressão adicionado em `backend/tests/test_profile_api.py` cobrindo várias faixas no mesmo dia e dias com quantidades diferentes.
+
 ## Pendências e limites conhecidos
 
-- Validação no aparelho Android do `ProfilePanel` não foi executada nesta rodada: `adb devices` estava vazio. O painel foi validado apenas por `tsc`, ESLint e Prettier.
+- Validação no aparelho Android do `ProfilePanel` foi executada no moto g24 (arm64, Android 14); o build arm32 anterior continua não instalável nele.
 - Catálogo `venues` vazio por decisão; quadras, vínculo esporte–quadra, agenda e reservas ficam para as Fases 11/14.
 - BrasilAPI é dependência externa gratuita e sem SLA; falha retorna 503 `cep_unavailable`.
 - Cache de CEP é por processo e não sobrevive a restart; não há rate limiting dedicado ao endpoint de região além do já existente na autenticação.

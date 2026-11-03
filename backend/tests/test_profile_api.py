@@ -202,6 +202,35 @@ def test_availability_rejects_overlap(api: TestClient, db_session: Session) -> N
     assert overlap.json() == {"detail": {"code": "invalid_availability"}}
 
 
+def test_availability_accepts_multiple_windows_per_day(
+    api: TestClient,
+    db_session: Session,
+) -> None:
+    """Agenda semanal: cada dia pode ter várias faixas, e dias diferem entre si."""
+    access = make_user_with_tokens(db_session)
+
+    response = api.put(
+        "/api/v1/me/availability",
+        headers=bearer(access),
+        json={
+            "windows": [
+                {"weekday": 2, "start_time": "17:00:00", "end_time": "19:00:00"},
+                {"weekday": 2, "start_time": "20:00:00", "end_time": "22:00:00"},
+                {"weekday": 1, "start_time": "14:00:00", "end_time": "15:00:00"},
+                {"weekday": 6, "start_time": "14:00:00", "end_time": "15:00:00"},
+                {"weekday": 6, "start_time": "18:00:00", "end_time": "19:00:00"},
+                {"weekday": 6, "start_time": "20:00:00", "end_time": "21:00:00"},
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    windows = response.json()["availability"]
+    assert len(windows) == 6
+    assert len([item for item in windows if item["weekday"] == 2]) == 2
+    assert len([item for item in windows if item["weekday"] == 6]) == 3
+
+
 def test_region_by_cep_and_discovery(api: TestClient, db_session: Session) -> None:
     access = make_user_with_tokens(db_session)
     db_session.add_all(

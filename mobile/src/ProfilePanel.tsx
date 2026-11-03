@@ -42,6 +42,26 @@ function withSeconds(value: string): string {
   return value.length === 5 ? `${value}:00` : value;
 }
 
+type WindowDraft = { weekday: number; start: string; end: string };
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function toMinutes(value: string): number | null {
+  const match = TIME_PATTERN.exec(value);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function sortWindows(windows: WindowDraft[]): WindowDraft[] {
+  return [...windows].sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
+}
+
+function weekdayLabel(value: number): string {
+  return WEEKDAYS[value - 1] ?? '?';
+}
+
 export function ProfilePanel() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [formats, setFormats] = useState<FormatOption[]>([]);
@@ -54,6 +74,7 @@ export function ProfilePanel() {
   const [weekday, setWeekday] = useState(1);
   const [startTime, setStartTime] = useState('18:00');
   const [endTime, setEndTime] = useState('20:00');
+  const [windows, setWindows] = useState<WindowDraft[]>([]);
   const [cep, setCep] = useState('01001000');
   const [radius, setRadius] = useState('10');
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -108,12 +129,15 @@ export function ProfilePanel() {
       setLevel(firstSport.level as Level);
       setCourt(firstSport.court_preference as CourtPreference);
     }
-    const firstWindow = loaded.availability[0];
-    if (firstWindow) {
-      setWeekday(firstWindow.weekday);
-      setStartTime(firstWindow.start_time.slice(0, 5));
-      setEndTime(firstWindow.end_time.slice(0, 5));
-    }
+    setWindows(
+      sortWindows(
+        loaded.availability.map((item) => ({
+          weekday: item.weekday,
+          start: item.start_time.slice(0, 5),
+          end: item.end_time.slice(0, 5),
+        })),
+      ),
+    );
   }
 
   async function run(action: () => Promise<void>, success?: string) {
@@ -161,20 +185,57 @@ export function ProfilePanel() {
     }, 'Modalidade salva.');
   }
 
+  function addWindow() {
+    const startMinutes = toMinutes(startTime);
+    const endMinutes = toMinutes(endTime);
+    if (startMinutes === null || endMinutes === null) {
+      setMessage('Use horários no formato HH:MM.');
+      return;
+    }
+    if (startMinutes >= endMinutes) {
+      setMessage('O horário inicial precisa ser menor que o final.');
+      return;
+    }
+    const overlaps = windows.some((item) => {
+      if (item.weekday !== weekday) {
+        return false;
+      }
+      const itemStart = toMinutes(item.start);
+      const itemEnd = toMinutes(item.end);
+      return (
+        itemStart !== null && itemEnd !== null && startMinutes < itemEnd && itemStart < endMinutes
+      );
+    });
+    if (overlaps) {
+      setMessage(`Já existe uma faixa que se sobrepõe na ${weekdayLabel(weekday)}.`);
+      return;
+    }
+    setWindows((current) => sortWindows([...current, { weekday, start: startTime, end: endTime }]));
+    setMessage('Faixa adicionada à agenda. Salve para gravar.');
+  }
+
+  function removeWindow(index: number) {
+    setWindows((current) => current.filter((_, position) => position !== index));
+  }
+
   async function saveAvailability() {
     if (!accessToken) {
       return;
     }
-    await run(async () => {
-      const updated = await profileApi.replaceAvailability(accessToken, [
-        {
-          weekday,
-          start_time: withSeconds(startTime),
-          end_time: withSeconds(endTime),
-        },
-      ]);
-      applyProfile(updated);
-    }, 'Disponibilidade salva.');
+    await run(
+      async () => {
+        const updated = await profileApi.replaceAvailability(
+          accessToken,
+          windows.map((item) => ({
+            weekday: item.weekday,
+            start_time: withSeconds(item.start),
+            end_time: withSeconds(item.end),
+          })),
+        );
+        applyProfile(updated);
+      },
+      windows.length === 0 ? 'Agenda esvaziada.' : 'Agenda semanal salva.',
+    );
   }
 
   async function saveCepRegion() {
@@ -313,10 +374,15 @@ export function ProfilePanel() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Disponibilidade</Text>
+        <Text style={styles.label}>Disponibilidade semanal</Text>
+        <Text style={styles.hint}>
+          Monte a agenda: escolha o dia, informe a faixa e adicione quantas quiser. Um dia pode ter
+          várias faixas e dias diferentes podem ter horários diferentes.
+        </Text>
         <View style={styles.wrap}>
           {WEEKDAYS.map((label, index) => {
             const value = index + 1;
+            const count = windows.filter((item) => item.weekday === value).length;
             return (
               <Pressable
                 key={label}
@@ -325,7 +391,7 @@ export function ProfilePanel() {
                 style={[styles.chip, weekday === value && styles.chipActive]}
               >
                 <Text style={weekday === value ? styles.chipTextActive : styles.chipText}>
-                  {label}
+                  {count > 0 ? `${label} · ${count}` : label}
                 </Text>
               </Pressable>
             );
@@ -346,8 +412,36 @@ export function ProfilePanel() {
             value={endTime}
           />
         </View>
+        <Pressable disabled={busy} onPress={addWindow} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>Adicionar faixa em {weekdayLabel(weekday)}</Text>
+        </Pressable>
+
+        {windows.length === 0 ? (
+          <Text style={styles.value}>Nenhuma faixa na agenda.</Text>
+        ) : (
+          <View style={styles.agendaList}>
+            {windows.map((item, index) => (
+              <View key={`${item.weekday}-${item.start}-${item.end}`} style={styles.agendaRow}>
+                <Text style={styles.agendaDay}>{weekdayLabel(item.weekday)}</Text>
+                <Text style={styles.agendaTime}>
+                  {item.start} – {item.end}
+                </Text>
+                <Pressable
+                  accessibilityLabel={`Remover ${weekdayLabel(item.weekday)} das ${item.start} às ${item.end}`}
+                  disabled={busy}
+                  hitSlop={8}
+                  onPress={() => removeWindow(index)}
+                  style={styles.removeButton}
+                >
+                  <Text style={styles.removeText}>remover</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         <Pressable disabled={busy} onPress={saveAvailability} style={styles.button}>
-          <Text style={styles.buttonText}>Salvar disponibilidade</Text>
+          <Text style={styles.buttonText}>Salvar agenda</Text>
         </Pressable>
       </View>
 
@@ -416,6 +510,21 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 10 },
   label: { color: '#52625a', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   value: { color: '#173b2a', fontSize: 14, lineHeight: 20 },
+  hint: { color: '#66736b', fontSize: 13, lineHeight: 19 },
+  agendaList: { gap: 6 },
+  agendaRow: {
+    alignItems: 'center',
+    backgroundColor: '#f4f7f5',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  agendaDay: { color: '#173b2a', fontSize: 14, fontWeight: '700', width: 46 },
+  agendaTime: { color: '#173b2a', flex: 1, fontSize: 14 },
+  removeButton: { paddingHorizontal: 6, paddingVertical: 2 },
+  removeText: { color: '#a13737', fontSize: 12, fontWeight: '700' },
   input: {
     backgroundColor: '#f4f7f5',
     borderColor: '#d7e3db',
