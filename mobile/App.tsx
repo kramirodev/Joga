@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 
 import PasskeyProof from './modules/passkey-proof';
 import { IdentityPanel } from './src/IdentityPanel';
+import { ProfilePanel } from './src/ProfilePanel';
 
 const RP_ID = 'joga-passkeys.vercel.app';
 const RP_NAME = 'JOGA (prova técnica)';
@@ -271,6 +272,10 @@ export default function App() {
       <View style={styles.divider} />
 
       <IdentityPanel />
+
+      <View style={styles.divider} />
+
+      <ProfilePanel />
 
       <View style={styles.divider} />
 

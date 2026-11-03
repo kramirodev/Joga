@@ -1,6 +1,6 @@
 # Modelo de dados — JOGA
 
-Documento incremental. Nesta etapa cobre apenas o subconjunto de **identidade** da Fase 3; as demais entidades serão adicionadas nas fases correspondentes.
+Documento incremental. Cobre o subconjunto de **identidade** (Fase 3) e de **perfil, disponibilidade, região e locais** (Fase 4); as demais entidades serão adicionadas nas fases correspondentes.
 
 ## Convenções
 
@@ -164,6 +164,125 @@ Trilha append-only de ações sensíveis, com ator, recurso, motivo e data.
 | `metadata` | json | detalhes não sensíveis |
 | `created_at` | timestamptz | default `now()` |
 
+## `sports`
+
+Catálogo de modalidades.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `slug` | varchar(40) | único |
+| `name` | varchar(80) | nome exibido |
+| `active` | boolean | default `true` |
+| `created_at` | timestamptz | default `now()` |
+
+Seeds: `futebol` e `volei`.
+
+## `sport_formats`
+
+Configuração versionada do formato esportivo. Constraints garantem `total_participants = team_size * 2` e `duration_minutes = play_minutes + break_minutes`.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `sport_id` | UUID | FK `sports.id`, cascade |
+| `slug` | varchar(40) | único com `version` |
+| `name` | varchar(80) | nome exibido |
+| `team_size` | integer | > 0 |
+| `total_participants` | integer | = 2 × `team_size` |
+| `play_minutes` | integer | > 0 |
+| `break_minutes` | integer | >= 0 |
+| `duration_minutes` | integer | = `play_minutes` + `break_minutes` |
+| `version` | integer | default `1` |
+| `active` | boolean | default `true` |
+| `created_at` | timestamptz | default `now()` |
+
+Seeds ativos: `futebol-5x5` (5 por equipe, 10 participantes, 50 + 10 = 60 min) e `volei-6x6` (6 por equipe, 12 participantes, 60 + 0 = 60 min).
+
+## `user_profiles`
+
+Dados básicos do jogador. Público: nome de exibição e bio.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `user_id` | UUID | PK e FK `users.id`, cascade |
+| `display_name` | varchar(60) | opcional |
+| `bio` | varchar(280) | opcional |
+| `created_at` | timestamptz | default `now()` |
+| `updated_at` | timestamptz | default `now()` |
+
+## `user_sport_profiles`
+
+Nível autodeclarado e preferência de quadra por formato.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK `users.id`, cascade |
+| `format_id` | UUID | FK `sport_formats.id`, cascade |
+| `level` | varchar(20) | `beginner`, `intermediate`, `advanced` |
+| `court_preference` | varchar(20) | `PUBLIC_ONLY`, `PRIVATE_ONLY`, `ANY` (default) |
+| `created_at` | timestamptz | default `now()` |
+| `updated_at` | timestamptz | default `now()` |
+
+Constraint única `(user_id, format_id)`; a substituição do conjunto é transacional (apaga e regrava na mesma transação).
+
+## `availabilities`
+
+Janelas semanais recorrentes de disponibilidade.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK `users.id`, cascade |
+| `weekday` | smallint | 1 a 7 |
+| `start_time` | time | < `end_time` |
+| `end_time` | time | > `start_time` |
+| `timezone` | varchar(64) | IANA, padrão `America/Sao_Paulo` |
+| `created_at` | timestamptz | default `now()` |
+
+Índice `(user_id, weekday)`. Sobreposição no mesmo dia é rejeitada pelo serviço, não pelo banco.
+
+## `user_regions`
+
+Centro **aproximado** de busca. Guarda apenas o ponto arredondado (duas casas decimais), nunca a coordenada residencial exata, e nenhum histórico de deslocamento.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `user_id` | UUID | PK e FK `users.id`, cascade |
+| `source` | varchar(10) | `gps` ou `cep` |
+| `cep` | varchar(8) | obrigatório quando `source = 'cep'` |
+| `city` | varchar(120) | obrigatório quando `source = 'cep'` |
+| `state` | varchar(2) | obrigatório quando `source = 'cep'` |
+| `radius_km` | integer | 1 a 200 |
+| `center_lat` | double | -90 a 90, arredondado |
+| `center_lng` | double | -180 a 180, arredondado |
+| `updated_at` | timestamptz | default `now()` |
+
+Usar GPS substitui a região anterior e limpa `cep`/`city`/`state`; não há acúmulo de pontos.
+
+## `venues`
+
+Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pertence às Fases 11/14.
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `id` | UUID | PK |
+| `name` | varchar(120) | nome do local |
+| `kind` | varchar(20) | `public` ou `private` |
+| `city` | varchar(120) | município |
+| `state` | varchar(2) | UF |
+| `cep` | varchar(8) | opcional |
+| `address` | varchar(200) | opcional |
+| `lat` | double | -90 a 90 |
+| `lng` | double | -180 a 180 |
+| `active` | boolean | default `true` |
+| `created_at` | timestamptz | default `now()` |
+
+Índices: `ix_venues_city_state` (`city`, `state`) e `ix_venues_location_gist`, índice GiST sobre `ST_SetSRID(ST_MakePoint(lng, lat), 4326)` criado apenas no PostgreSQL. A busca usa `ST_DWithin` sobre `geography` com raio em metros, ordenada por `ST_Distance`.
+
+Quadras (`venue_spaces`), vínculo esporte–quadra (`venue_sports`), agenda (`venue_availability`) e reservas (`bookings`) **não** existem nesta fase.
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
@@ -174,9 +293,12 @@ Trilha append-only de ações sensíveis, com ator, recurso, motivo e data.
 - Recuperação assistida quando o usuário perde todas as passkeys e o telefone.
 - Índices adicionais para consultas de sessões e eventos após os fluxos reais.
 - Migração de dados existentes não se aplica: o banco ainda não tem dados de produção.
+- Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
+- Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); cache é por processo e some no restart.
+- Disponibilidade não trata feriados, exceções pontuais nem conversão de fuso por usuário.
 
 ## Referência
 
-- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py` e `d4a7f2c9e610_add_session_access_and_receipt.py`
-- Modelos: `backend/app/modules/identity/models.py`
-- Decisões: ADR 0012, ADR 0013, ADR 0014 e ADR 0015.
+- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py` e `b8d2f4a6c910_add_profile_and_discovery.py`
+- Modelos: `backend/app/modules/identity/models.py` e `backend/app/modules/profile/models.py`
+- Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015 e ADR 0019.

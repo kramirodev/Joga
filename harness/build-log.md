@@ -331,3 +331,18 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Encerramento:** ADR 0017 aceita formalmente o bloqueio iOS; a Fase 3 é marcada `Complete` para backend + Android, sem declarar suporte iOS.
 - **CI:** runs [41599704881](https://github.com/kramirodev/Joga/actions/runs/41599704881) (Fase 1), [41599705103](https://github.com/kramirodev/Joga/actions/runs/41599705103) (Fase 3), [41599901863](https://github.com/kramirodev/Joga/actions/runs/41599901863) (`main` em `f77f77f`) e [41600011091](https://github.com/kramirodev/Joga/actions/runs/41600011091) (`main` em `fdd7fe3`), todos `success`.
 - **Git:** commit da feature `f77f77f`; `main` avançou por fast-forward de `489fe8d` para `f77f77f`, recebeu o registro documental `fdd7fe3` e está sincronizado com `origin/main`.
+
+### 2026-11-03 — Fase 4: perfil, disponibilidade, região e descoberta
+
+- **Decisões de produto:** ADR 0019 registra futebol 5x5 (50 min + 10 de intervalo = 60), vôlei 6x6 (60 min), três níveis autodeclarados, preferência de quadra `PUBLIC_ONLY`/`PRIVATE_ONLY`/`ANY`, disponibilidade semanal com fuso `America/Sao_Paulo`, região por CEP + raio via BrasilAPI e catálogo de locais vazio nesta fase.
+- **Backend:** módulo `app/modules/profile` (modelos, serviço e resolvedor de CEP) e rotas `/sports`, `/me/profile`, `/me/sports`, `/me/availability`, `/me/region`, `/me/location` e `/discovery/venues`, todas autenticadas exceto o catálogo e validadas no servidor.
+- **Migração:** `b8d2f4a6c910` cria `sports`, `sport_formats`, `user_profiles`, `user_sport_profiles`, `availabilities`, `user_regions` e `venues`, com constraints de duração/participantes, índice GiST espacial e seeds `futebol-5x5`/`volei-6x6`. Aplicada, revertida e reaplicada em PostgreSQL real; 18 tabelas no `public`.
+- **Descoberta:** `ST_DWithin`/`ST_Distance` sobre `geography` com raio em metros e ordenação por distância no PostgreSQL; haversine apenas como fallback para SQLite nos testes. Raio máximo 100 km, página padrão 20 e limite de 50.
+- **Privacidade:** a região guarda apenas centro arredondado (duas casas) e substitui o anterior, sem histórico; a resposta do perfil não devolve `lat`/`lng`; GPS em primeiro plano é opcional e o CEP é a alternativa manual.
+- **Correções durante a validação:** `Settings` não é hashable e quebrava o `lru_cache` do resolvedor (teste de regressão adicionado); o BrasilAPI responde 403 ao `User-Agent` padrão do `urllib`, então o resolvedor envia agente próprio (teste de regressão adicionado).
+- **Mobile (Android):** `ProfilePanel.tsx`, tipos e `profileApi` em `api.ts`, renderização em `App.tsx`; `tsc --noEmit`, ESLint e Prettier verdes.
+- **Testes:** 112 sem PostgreSQL (6 ignorados) e 119 com `JOGA_TEST_DATABASE_URL`, incluindo o teste PostGIS de raio/ordenação/paginação; Ruff, formatação e Mypy (36 arquivos) verdes.
+- **Smoke HTTP real:** catálogo com as durações corretas; perfil, modalidade e disponibilidade persistidos; CEP `01001-000` resolvido para São Paulo/SP; descoberta `total = 0` por catálogo vazio; troca para GPS; rejeições `400 invalid_cep`, `422` para raio 500 e latitude 91.
+- **Limitação:** o painel mobile não foi validado no aparelho nesta rodada porque `adb devices` estava vazio.
+- **Escopo não incluído:** quadras (`venue_spaces`), vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
+- **Git:** branch `feat/04-perfil-e-descoberta`.

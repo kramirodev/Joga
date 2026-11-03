@@ -144,6 +144,13 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_PASSKEY_CHALLENGE_TTL_SECONDS` | `300` |
 | `JOGA_PASSKEY_MAX_PER_IP_PER_HOUR` | `30` |
 | `JOGA_DEV_FIXED_OTP` | vazio; apenas local, para testes manuais |
+| `JOGA_CEP_API_BASE_URL` | `https://brasilapi.com.br/api/cep/v2` |
+| `JOGA_CEP_TIMEOUT_SECONDS` | `5` |
+| `JOGA_DISCOVERY_MAX_RADIUS_KM` | `100` |
+| `JOGA_DISCOVERY_DEFAULT_RADIUS_KM` | `10` |
+| `JOGA_DISCOVERY_PAGE_SIZE` | `20` |
+| `JOGA_LOCATION_ROUND_DECIMALS` | `2` |
+| `JOGA_DEFAULT_TIMEZONE` | `America/Sao_Paulo` |
 
 Nunca versionar `.env`, credenciais reais ou segredos. `.env.example` só contém placeholders.
 
@@ -157,7 +164,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey.
+Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey. `b8d2f4a6c910` cria catálogo, perfil, disponibilidade, região e locais, e semeia `futebol-5x5` e `volei-6x6`.
 
 ### Verificações do backend
 
@@ -169,14 +176,14 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m pytest
 ```
 
-Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida).
+Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação).
 
-Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam um schema isolado `identity_test`):
+Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam schemas isolados `identity_test` e `profile_test`):
 
 ```powershell
 Set-Location C:\prog\joga\backend
 $env:JOGA_TEST_DATABASE_URL = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
-.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py -v
+.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py tests\test_profile_postgres.py -v
 ```
 
 Sem `JOGA_TEST_DATABASE_URL`, esses testes são ignorados; a CI define a variável e os executa após as migrações.

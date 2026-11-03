@@ -38,6 +38,82 @@ export type DeviceInfo = {
   platform: 'android' | 'ios' | 'web' | 'unknown';
 };
 
+export type SportFormat = {
+  id: string;
+  slug: string;
+  name: string;
+  team_size: number;
+  total_participants: number;
+  play_minutes: number;
+  break_minutes: number;
+  duration_minutes: number;
+  version: number;
+};
+
+export type Sport = {
+  id: string;
+  slug: string;
+  name: string;
+  formats: SportFormat[];
+};
+
+export type Catalog = {
+  sports: Sport[];
+};
+
+export type UserSport = {
+  format_id: string;
+  sport_slug: string;
+  sport_name: string;
+  format_name: string;
+  level: string;
+  court_preference: string;
+};
+
+export type Availability = {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  timezone: string;
+};
+
+export type Region = {
+  source: string;
+  cep: string | null;
+  city: string | null;
+  state: string | null;
+  radius_km: number;
+  updated_at: string;
+};
+
+export type Profile = {
+  user_id: string;
+  display_name: string | null;
+  bio: string | null;
+  sports: UserSport[];
+  availability: Availability[];
+  region: Region | null;
+};
+
+export type Venue = {
+  id: string;
+  name: string;
+  kind: string;
+  city: string;
+  state: string;
+  cep: string | null;
+  address: string | null;
+  lat: number;
+  lng: number;
+};
+
+export type VenuePage = {
+  items: Venue[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -193,5 +269,92 @@ export const identityApi = {
       },
       accessToken,
     );
+  },
+};
+
+export const profileApi = {
+  catalog(): Promise<Catalog> {
+    return call<Catalog>('/sports');
+  },
+
+  getProfile(accessToken: string): Promise<Profile> {
+    return call<Profile>('/me/profile', {}, accessToken);
+  },
+
+  updateProfile(
+    accessToken: string,
+    displayName: string | null,
+    bio: string | null,
+  ): Promise<Profile> {
+    return call<Profile>(
+      '/me/profile',
+      {
+        method: 'PUT',
+        body: JSON.stringify({ display_name: displayName, bio }),
+      },
+      accessToken,
+    );
+  },
+
+  replaceSports(
+    accessToken: string,
+    sports: {
+      format_id: string;
+      level: string;
+      court_preference: string;
+    }[],
+  ): Promise<Profile> {
+    return call<Profile>(
+      '/me/sports',
+      { method: 'PUT', body: JSON.stringify({ sports }) },
+      accessToken,
+    );
+  },
+
+  replaceAvailability(
+    accessToken: string,
+    windows: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      timezone?: string;
+    }[],
+  ): Promise<Profile> {
+    return call<Profile>(
+      '/me/availability',
+      { method: 'PUT', body: JSON.stringify({ windows }) },
+      accessToken,
+    );
+  },
+
+  setRegionByCep(accessToken: string, cep: string, radiusKm: number): Promise<Profile> {
+    return call<Profile>(
+      '/me/region',
+      {
+        method: 'PUT',
+        body: JSON.stringify({ cep, radius_km: radiusKm }),
+      },
+      accessToken,
+    );
+  },
+
+  setRegionByLocation(
+    accessToken: string,
+    lat: number,
+    lng: number,
+    radiusKm: number,
+  ): Promise<Profile> {
+    return call<Profile>(
+      '/me/location',
+      {
+        method: 'PUT',
+        body: JSON.stringify({ lat, lng, radius_km: radiusKm }),
+      },
+      accessToken,
+    );
+  },
+
+  discoverVenues(accessToken: string, page = 1, pageSize = 20): Promise<VenuePage> {
+    return call<VenuePage>(`/discovery/venues?page=${page}&page_size=${pageSize}`, {}, accessToken);
   },
 };

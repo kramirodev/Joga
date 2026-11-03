@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     passkey_challenge_ttl_seconds: int = Field(default=300, ge=60, le=600)
     passkey_max_per_ip_per_hour: int = Field(default=30, ge=1, le=300)
 
+    # Perfil e descoberta (Fase 4).
+    cep_api_base_url: str = Field(
+        default="https://brasilapi.com.br/api/cep/v2",
+        min_length=1,
+    )
+    cep_timeout_seconds: int = Field(default=5, ge=1, le=15)
+    discovery_max_radius_km: int = Field(default=100, ge=1, le=200)
+    discovery_default_radius_km: int = Field(default=10, ge=1, le=100)
+    discovery_page_size: int = Field(default=20, ge=1, le=50)
+    location_round_decimals: int = Field(default=2, ge=1, le=3)
+    default_timezone: str = Field(default="America/Sao_Paulo", min_length=1)
+
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")
