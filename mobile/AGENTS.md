@@ -5,9 +5,10 @@
 Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` é o protótipo mínimo da **Fase 1 (prova técnica mobile/nativa)** — não é o aplicativo de produto.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
-- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova, com as seções de permissão de localização e de passkey (Android), sem navegação/funcionalidade de produto.
+- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova, com localização, passkey e o painel de identidade (`src/IdentityPanel.tsx`), sem navegação/funcionalidade de produto.
 - A estratégia mobile foi decidida no **ADR 0009 (aprovado)**: Expo development build com `expo prebuild`, mantendo `android/` e `ios/` gerados e não versionados neste momento. EAS Build, distribuição e OTA continuam sem decisão; não presumir EAS. Não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
-- O módulo nativo local `mobile/modules/passkey-proof` foi criado para a prova de Credential Manager e está registrado no **ADR 0011**; é código de prova, não biblioteca de produção.
+- O módulo nativo local `mobile/modules/passkey-proof` foi criado para a prova de Credential Manager e está registrado no **ADR 0011**; na Fase 3 passou a aceitar as opções WebAuthn emitidas pelo backend. É código de prova, não biblioteca de produção.
+- O fluxo de identidade usa `expo-secure-store` para os tokens e `http://127.0.0.1:8000/api/v1`; no aparelho, as portas 8081 e 8000 precisam de `adb reverse`. `JOGA_DEV_FIXED_OTP` é apenas local e nunca deve ser usado em ambiente compartilhado.
 
 ## Tooling real do projeto
 

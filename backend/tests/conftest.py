@@ -1,11 +1,17 @@
-"""Fixtures compartilhadas dos testes da fundação."""
+"""Fixtures compartilhadas dos testes da fundação e da Fase 3."""
 
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from app.infrastructure.database.base import Base
 from app.main import create_app
+from app.modules.identity import models as identity_models  # noqa: F401
+from app.modules.identity.sms import RecordingSmsSender
 
 
 @pytest.fixture
@@ -19,3 +25,22 @@ def client() -> Iterator[TestClient]:
 def clear_dependency_overrides(client: TestClient) -> Iterator[None]:
     yield
     client.app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def db_session() -> Iterator[Session]:
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def sms_sender() -> RecordingSmsSender:
+    return RecordingSmsSender()

@@ -4,6 +4,8 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
+from app.infrastructure.database.base import Base
+from app.modules.identity import models as identity_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -18,7 +20,7 @@ settings = get_settings()
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

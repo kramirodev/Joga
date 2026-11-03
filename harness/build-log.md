@@ -7,7 +7,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | 0 — Repositório e governança | Complete | `main` | Documentação governada; remoto local e GitHub confirmam `kramirodev/Joga`; critérios da Fase 0 verificados | — |
 | 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24 e no moto g(7) play; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build); associação Android publicada em `https://joga-passkeys.vercel.app` e reconhecida pela API Digital Asset Links; cerimônia de passkey Android executada via Credential Manager (criação + autenticação, `rpIdHashMatches: true`); ADR 0011 | iOS/Xcode e associação AASA pendentes, por decisão de manter a fase em andamento |
 | 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 e no moto g(7) play (Android 10, 32 bits, APK nativo) | — |
-| 3 — Identidade e segurança | Not started | — | — | — |
+| 3 — Identidade e segurança | Complete | `feat/03-identidade-e-seguranca` | ADRs 0012–0017; backend de identidade com OTP, contas, sessões, passkeys, telefone, dispositivos, recuperação e retenção; app Android integrado (OTP, passkey real, troca de telefone); 95 testes unitários/API + 5 de integração PostgreSQL | iOS/AASA bloqueado e formalmente aceito no ADR 0017; SMS real e ratificação de produção pendentes |
 | 4 — Perfil e descoberta | Not started | — | — | — |
 | 5 — Filas e matchmaking | Not started | — | — | — |
 | 6 — Ciclo de partidas | Not started | — | — | — |
@@ -258,3 +258,75 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes/verificações:** 8 testes da ferramenta (`unittest`), ruff check/format e `git diff --check` verdes.
 - **Escopo:** a cerimônia Android está provada. Não há verificação no backend (desafio local) e o iOS continua pendente. A Fase 1 permanece `In progress`.
 - **Git:** nenhum commit ou push nesta etapa.
+
+### 2026-11-03 — Fase 3, iteração 1: identidade, migração e OTP simulado
+
+- **Abertura:** o ADR 0012 registra o início da Fase 3 com a pendência iOS da Fase 1; a fase permanece `In progress` e não declara suporte iOS. Branch `feat/03-identidade-e-seguranca`, empilhada sobre o commit `565f854` da Fase 1.
+- **ADRs propostos:** 0013 (JWT de acesso curto + refresh opaco rotativo; 10 min/30 dias/7 dias) e 0014 (`py_webauthn` para verificação WebAuthn). Ambos exigem aprovação antes dos blocos correspondentes; nenhuma dependência foi adicionada.
+- **Modelo:** `backend/app/modules/identity/models.py` e a migração `3c9d51a7e2b4_identity_foundation.py` criam `users`, `user_phones`, `phone_challenges`, `devices`, `passkey_credentials`, `sessions`, `security_events` e `audit_logs`, com UUID, `timestamptz`, índice único parcial de telefone ativo e constraints de estado/finalidade.
+- **OTP:** `PhoneChallengeService` normaliza E.164, guarda HMAC de telefone/IP/OTP, gera 6 dígitos com `secrets`, aplica TTL de 300 s, 5 tentativas, reenvio de 60 s e limite de 5 por hora; `RecordingSmsSender` é o adaptador simulado, sem provedor real.
+- **Configuração:** `JOGA_PHONE_HASH_SECRET` (placeholder local), TTL, tentativas, reenvio e limite por hora; o valor padrão é rejeitado fora de `local/test/development/ci`.
+- **Validações locais:** `ruff check`, `ruff format --check`, `mypy app` e `pytest` verdes — 30 testes. A migração foi gerada em SQL offline para PostgreSQL (`upgrade`/`downgrade`) e executada em SQLite descartável (`upgrade`/`downgrade`/`upgrade`).
+- **Limitações:** Docker local desligado, então a migração ainda não rodou em PostgreSQL real nesta máquina; a CI cobre `upgrade`/`downgrade`/`upgrade` com PostGIS. E.164 exige número já internacional; telefone cifrado, endpoints, sessões, passkeys no backend e mobile ficam para as próximas iterações.
+- **Git:** nenhum commit ou push nesta etapa; o working tree contém apenas os arquivos da iteração 1.
+
+### 2026-11-03 — Fase 3, validação em PostgreSQL real e concorrência
+
+- **Docker:** engine 29.6.2 ativa; `docker compose -f infra/compose.yaml up -d` subiu `joga-postgres-1` (`postgis/postgis:16-3.4`) na porta 5434, com healthcheck `healthy`.
+- **Migração:** `alembic upgrade head` aplicou `3c9d51a7e2b4` em PostgreSQL real; `alembic downgrade base` removeu as tabelas e `alembic upgrade head` reaplicou. A extensão PostGIS permaneceu habilitada.
+- **Schema verificado:** `users`, `user_phones`, `phone_challenges`, `devices`, `passkey_credentials`, `sessions`, `security_events`, `audit_logs`, `alembic_version` e `spatial_ref_sys`; índice único parcial `uq_user_phones_active_hash` e unicidades de `credential_id` e `refresh_token_hash` presentes.
+- **Testes de integração:** `tests/test_identity_postgres.py` usa o schema isolado `identity_test` no banco descartável. Validou o índice parcial, a persistência de hash HMAC e a concorrência de verificação: duas sessões verificam o mesmo desafio ao mesmo tempo e apenas uma tem sucesso (`FOR UPDATE`).
+- **CI:** `JOGA_TEST_DATABASE_URL` adicionado ao job de backend; o workflow já sobe PostgreSQL/PostGIS e aplica as migrações antes do pytest.
+- **Resultados:** 30 testes unitários + 3 testes de integração aprovados; Ruff, formatação e Mypy verdes; `git diff --check` limpo.
+- **Próximo passo:** endpoints de desafio/verificação, rate limiting por IP, eventos de segurança e recibo; sessões/passkeys dependem da aprovação dos ADRs 0013/0014.
+- **Git:** nenhum commit ou push nesta etapa.
+
+### 2026-11-03 — Fase 3, iteração 2: endpoints de OTP, limites e recibo
+
+- **Endpoints:** `POST /api/v1/auth/phone/challenges` (202) e `POST /api/v1/auth/phone/challenges/{id}/verify` (200), com schemas explícitos e OpenAPI automático. A resposta de criação não revela se o telefone tem conta; falhas de verificação usam `400 invalid_code_or_challenge` genérico.
+- **Limites:** por telefone (reenvio e hora) e por IP (hora, padrão 20). `Retry-After` nas respostas 429. Criação serializada por telefone/IP com `pg_advisory_xact_lock`; verificação usa `FOR UPDATE`.
+- **Eventos de segurança:** `otp.challenge_requested`, `otp.challenge_verified`, `otp.verification_failed` e `otp.rate_limited`, sem telefone, OTP ou IP em claro.
+- **Recibo:** o `challenge_id` consumido é o recibo de verificação (`verified_at` + `receipt_expires_at`, TTL de 600 s), documentado no ADR 0015; não é sessão.
+- **SMS:** somente adaptador simulado em `local/test/development/ci`; fora desses ambientes o endpoint responde `503 sms_provider_unavailable`.
+- **Configuração:** `JOGA_OTP_MAX_PER_IP_PER_HOUR` e `JOGA_OTP_RECEIPT_TTL_SECONDS`.
+- **Testes:** 38 testes de unidade/API + 4 de integração PostgreSQL (42 com `JOGA_TEST_DATABASE_URL`; 38 + 4 ignorados sem a variável). Inclui concorrência de criação (um sucesso e um `ResendTooSoon`) e de verificação (um sucesso).
+- **Smoke HTTP real:** uvicorn contra PostgreSQL 5434 — `POST` 202, repetição 429 com `Retry-After: 60` e telefone inválido 400; eventos `otp.challenge_requested` e `otp.rate_limited` persistidos; nenhum telefone em claro. Dados de fumaça removidos ao final.
+- **Correção de isolamento:** a primeira versão do teste de integração usava `search_path` via `options` e acabou criando/removendo tabelas no schema `public`. Corrigido para `schema_translate_map={None: "identity_test"}`; `alembic stamp base` + `upgrade head` restaurou o schema. O `public` permaneceu intacto após a suíte corrigida.
+- **Verificações:** Ruff, formatação, Mypy (23 arquivos) e `git diff --check` verdes.
+- **Pendências:** fluxo de conta/sessão, passkeys no backend, recuperação, mobile, limite de tentativas de verificação por IP e tratamento de proxy confiável.
+- **Git:** nenhum commit ou push nesta etapa.
+
+### 2026-11-03 — Fase 3, iteração 3: contas e sessões
+
+- **ADR 0013 ajustado:** access e refresh opacos (não JWT), armazenados apenas como HMAC; access de 10 min, refresh absoluto de 30 dias e inatividade de 7 dias. Revogação imediata com consulta por requisição. Status: aprovado para o MVP, pendente de ratificação para produção.
+- **Cadastro/login:** `POST /api/v1/auth/registration` e `/login` consomem o recibo de verificação de uso único, criam a conta/telefone ou localizam a conta ativa e emitem sessão.
+- **Sessões:** `/me`, `/refresh`, `/logout` e `/logout-all`; rotação invalida o refresh anterior; reutilização revoga toda a família; logout revoga access e refresh imediatamente.
+- **Migração:** `d4a7f2c9e610` adiciona `sessions.access_token_hash`, `sessions.access_expires_at` e `phone_challenges.receipt_used_at`, aplicada e revertida em PostgreSQL real.
+- **Testes:** 64 testes de unidade/API + 5 de integração PostgreSQL (69 com `JOGA_TEST_DATABASE_URL`). Inclui rotação, reutilização, logout, logout-all, expiração de access/refresh, recibo reutilizado e concorrência de rotação (um sucesso e uma detecção de reutilização).
+- **Smoke real em PostgreSQL:** challenge 202 → verify 200 → register 201 → me 200 → refresh 200 → access antigo 401 → logout 204 → me 401. Dados de fumaça removidos.
+- **Verificações:** Ruff, formatação, Mypy (26 arquivos) e `git diff --check` verdes.
+- **Pendências:** passkeys no backend (ADR 0014), recuperação/troca de telefone, integração mobile, vínculo de dispositivo, limpeza/retenção e rate limit de verificação por IP.
+- **Git:** nenhum commit ou push nesta etapa.
+
+### 2026-11-03 — Fase 3, iteração 4: troca de telefone
+
+- **Endpoints:** `POST /api/v1/auth/phone-change/challenges` (autenticado, 202) e `POST /api/v1/auth/phone-change` (autenticado, 204).
+- **Regras:** recusa telefone igual (`400 phone_unchanged`) e telefone de outra conta (`409 phone_already_registered`); exige desafio do próprio usuário com finalidade `phone_change`; o endpoint público de desafio agora aceita apenas `registration` e `login`.
+- **Efeito:** libera o telefone antigo, grava o novo como verificado/primário, marca o recibo como usado e revoga todas as sessões, incluindo a atual.
+- **ADR:** 0016 registra a decisão.
+- **Testes:** 72 de unidade/API + 5 de integração PostgreSQL (77 com `JOGA_TEST_DATABASE_URL`); cobre autenticação, telefone igual, telefone de outra conta, troca, revogação de sessões, código errado, outro usuário e finalidade pública.
+- **Verificações:** Ruff, formatação, Mypy (27 arquivos) e `git diff --check` verdes.
+- **Swagger local:** API reiniciada em `http://127.0.0.1:8000/api/docs`; OpenAPI com 12 rotas (10 de auth + 2 de health). Banco em `d4a7f2c9e610`, 10 tabelas no `public`.
+- **Pendências:** recuperação com segundo fator, passkeys no backend, mobile, vínculo de dispositivo, limpeza/retenção e rate limit de verificação por IP.
+- **Git:** nenhum commit ou push nesta etapa.
+
+### 2026-11-03 — Fase 3 concluída: passkeys, integração Android e hardening
+
+- **Passkeys no backend:** `webauthn==3.0.1`, desafios em `passkey_challenges` (migração `a7c3e9f2b415`), registro/autenticação/lista/revogação, RP ID `joga-passkeys.vercel.app`, origem Android do certificado de debug e limite de desafios por IP/hora.
+- **Integração Android:** `mobile/src/api.ts`, `session.ts` (tokens em `expo-secure-store`) e `IdentityPanel.tsx`; o módulo nativo passou a aceitar as opções JSON emitidas pelo backend.
+- **Evidência no aparelho (moto g(7) play, Android 10, 32 bits):** cadastro OTP 201; passkey real registrada no backend 201; login por passkey 200; troca de telefone 204; login no novo número 200; passkeys preservadas após a troca.
+- **Hardening:** dispositivos e revogação de sessões por dispositivo; limpeza/retenção (`scripts/cleanup_identity.py`); recuperação automatizada via passkey + troca de telefone; OTP fixo apenas local (`JOGA_DEV_FIXED_OTP`).
+- **Testes:** 95 de unidade/API + 5 de integração PostgreSQL (100 com `JOGA_TEST_DATABASE_URL`); Ruff, formatação e Mypy (31 arquivos) verdes.
+- **Banco:** migração `a7c3e9f2b415` aplicada/revertida em PostgreSQL real; 11 tabelas no `public`.
+- **Encerramento:** ADR 0017 aceita formalmente o bloqueio iOS; a Fase 3 é marcada `Complete` para backend + Android, sem declarar suporte iOS.
+- **Git:** commit da Fase 3 realizado nesta etapa, sem push.

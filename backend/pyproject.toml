@@ -10,6 +10,7 @@ dependencies = [
   "pydantic-settings==2.16.2",
   "SQLAlchemy==2.1.6",
   "uvicorn[standard]==0.54.0",
+  "webauthn==3.0.1",
 ]
 
 [project.optional-dependencies]

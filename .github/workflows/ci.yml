@@ -32,6 +32,7 @@ jobs:
           --health-retries 10
     env:
       JOGA_DATABASE_URL: postgresql+psycopg://joga:joga@localhost:5432/joga_test
+      JOGA_TEST_DATABASE_URL: postgresql+psycopg://joga:joga@localhost:5432/joga_test
       PGPASSWORD: joga
     defaults:
       run:

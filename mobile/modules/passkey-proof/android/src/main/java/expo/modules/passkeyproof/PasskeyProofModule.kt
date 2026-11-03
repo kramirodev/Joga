@@ -102,17 +102,27 @@ class PasskeyProofModule : Module() {
           throw IllegalStateException(describeCredentialError("Criação de passkey", error))
         }
 
-      val registration = JSONObject(response.registrationResponseJson)
-      val clientData = decodeClientData(registration.optJSONObject("response")?.optString("clientDataJSON"))
+      registrationResult(response)
+    }
 
-      mapOf(
-        "credentialId" to registration.optString("id"),
-        "rawId" to registration.optString("rawId"),
-        "clientDataType" to clientData.optString("type"),
-        "clientDataOrigin" to clientData.optString("origin"),
-        "clientDataChallenge" to clientData.optString("challenge"),
-        "registrationResponseJson" to response.registrationResponseJson,
-      )
+    AsyncFunction("createPasskeyFromRequestAsync") Coroutine { requestJson: String ->
+      val activity = appContext.currentActivity
+        ?: throw IllegalStateException("Nenhuma Activity ativa para abrir o Credential Manager.")
+
+      val credentialManager = CredentialManager.create(activity)
+      val response =
+        try {
+          credentialManager.createCredential(
+            activity,
+            CreatePublicKeyCredentialRequest(requestJson),
+          ) as CreatePublicKeyCredentialResponse
+        } catch (error: CreateCredentialCancellationException) {
+          throw IllegalStateException("Criação de passkey cancelada pelo usuário.")
+        } catch (error: CreateCredentialException) {
+          throw IllegalStateException(describeCredentialError("Criação de passkey", error))
+        }
+
+      registrationResult(response)
     }
 
     AsyncFunction("getPasskeyAsync") Coroutine { rpId: String, credentialId: String ->
@@ -162,29 +172,79 @@ class PasskeyProofModule : Module() {
         throw IllegalStateException("O Credential Manager não retornou uma credencial de chave pública.")
       }
 
-      val assertion = JSONObject(credential.authenticationResponseJson)
-      val clientData = decodeClientData(assertion.optJSONObject("response")?.optString("clientDataJSON"))
-      val authenticatorData =
-        decodeBase64Url(assertion.optJSONObject("response")?.optString("authenticatorData").orEmpty())
-
-      val expectedRpIdHash = MessageDigest.getInstance("SHA-256").digest(rpId.toByteArray(Charsets.UTF_8))
-      val rpIdHashMatches =
-        authenticatorData.size >= 32 &&
-          authenticatorData.copyOfRange(0, 32).contentEquals(expectedRpIdHash)
-
-      val flags = if (authenticatorData.size > 32) authenticatorData[32].toInt() and 0xFF else 0
-
-      mapOf(
-        "credentialId" to assertion.optString("id"),
-        "rawId" to assertion.optString("rawId"),
-        "clientDataType" to clientData.optString("type"),
-        "clientDataOrigin" to clientData.optString("origin"),
-        "rpIdHashMatches" to rpIdHashMatches,
-        "userPresent" to (flags and 0x01 != 0),
-        "userVerified" to (flags and 0x04 != 0),
-        "authenticationResponseJson" to credential.authenticationResponseJson,
-      )
+      authenticationResult(credential, rpId)
     }
+
+    AsyncFunction("getPasskeyFromRequestAsync") Coroutine { requestJson: String ->
+      val activity = appContext.currentActivity
+        ?: throw IllegalStateException("Nenhuma Activity ativa para abrir o Credential Manager.")
+
+      val credentialManager = CredentialManager.create(activity)
+      val response =
+        try {
+          credentialManager.getCredential(
+            activity,
+            GetCredentialRequest(listOf(GetPublicKeyCredentialOption(requestJson))),
+          )
+        } catch (error: GetCredentialCancellationException) {
+          throw IllegalStateException("Autenticação com passkey cancelada pelo usuário.")
+        } catch (error: NoCredentialException) {
+          throw IllegalStateException("Nenhuma passkey disponível para este RP ID neste aparelho.")
+        } catch (error: GetCredentialException) {
+          throw IllegalStateException(
+            describeCredentialError("Autenticação com passkey", error),
+          )
+        }
+
+      val credential = response.credential
+      if (credential !is PublicKeyCredential) {
+        throw IllegalStateException("O Credential Manager não retornou uma credencial de chave pública.")
+      }
+
+      authenticationResult(credential, JSONObject(requestJson).optString("rpId"))
+    }
+  }
+
+  private fun registrationResult(response: CreatePublicKeyCredentialResponse): Map<String, Any?> {
+    val registration = JSONObject(response.registrationResponseJson)
+    val clientData = decodeClientData(registration.optJSONObject("response")?.optString("clientDataJSON"))
+
+    return mapOf(
+      "credentialId" to registration.optString("id"),
+      "rawId" to registration.optString("rawId"),
+      "clientDataType" to clientData.optString("type"),
+      "clientDataOrigin" to clientData.optString("origin"),
+      "clientDataChallenge" to clientData.optString("challenge"),
+      "registrationResponseJson" to response.registrationResponseJson,
+    )
+  }
+
+  private fun authenticationResult(
+    credential: PublicKeyCredential,
+    rpId: String,
+  ): Map<String, Any?> {
+    val assertion = JSONObject(credential.authenticationResponseJson)
+    val clientData = decodeClientData(assertion.optJSONObject("response")?.optString("clientDataJSON"))
+    val authenticatorData =
+      decodeBase64Url(assertion.optJSONObject("response")?.optString("authenticatorData").orEmpty())
+
+    val expectedRpIdHash = MessageDigest.getInstance("SHA-256").digest(rpId.toByteArray(Charsets.UTF_8))
+    val rpIdHashMatches =
+      authenticatorData.size >= 32 &&
+        authenticatorData.copyOfRange(0, 32).contentEquals(expectedRpIdHash)
+
+    val flags = if (authenticatorData.size > 32) authenticatorData[32].toInt() and 0xFF else 0
+
+    return mapOf(
+      "credentialId" to assertion.optString("id"),
+      "rawId" to assertion.optString("rawId"),
+      "clientDataType" to clientData.optString("type"),
+      "clientDataOrigin" to clientData.optString("origin"),
+      "rpIdHashMatches" to rpIdHashMatches,
+      "userPresent" to (flags and 0x01 != 0),
+      "userVerified" to (flags and 0x04 != 0),
+      "authenticationResponseJson" to credential.authenticationResponseJson,
+    )
   }
 
   private fun describeCredentialError(prefix: String, error: Exception): String {

@@ -71,6 +71,49 @@ Endpoints:
 | `GET /api/v1/health/ready` (banco fora) | `503 {"detail":{"status":"unavailable","database":"unavailable"}}` |
 | `GET /api/docs` | OpenAPI/Swagger local |
 
+Endpoints de identidade (Fase 3):
+
+| Rota | Esperado |
+|---|---|
+| `POST /api/v1/auth/phone/challenges` | `202` com `challenge_id`, `expires_at` e `resend_after_seconds` |
+| `POST /api/v1/auth/phone/challenges/{id}/verify` | `200` com recibo (`challenge_id`, `purpose`, `verified_at`, `receipt_expires_at`) |
+| `POST /api/v1/auth/registration` | `201` com tokens e usuário; consome recibo de registro |
+| `POST /api/v1/auth/login` | `200` com tokens; consome recibo de login |
+| `POST /api/v1/auth/refresh` | `200` com novos tokens; rotaciona o refresh |
+| `GET /api/v1/auth/me` | `200` com usuário da sessão (`Authorization: Bearer`) |
+| `POST /api/v1/auth/logout` | `204`; revoga a sessão atual |
+| `POST /api/v1/auth/logout-all` | `204`; revoga todas as sessões |
+| `POST /api/v1/auth/phone-change/challenges` | `202`; envia OTP ao novo telefone (autenticado) |
+| `POST /api/v1/auth/phone-change` | `204`; troca o telefone e revoga todas as sessões |
+| `POST /api/v1/auth/passkeys/registration/options` | `200`; opções WebAuthn para adicionar passkey (autenticado) |
+| `POST /api/v1/auth/passkeys/registration/verify` | `201`; verifica atestação e grava credencial |
+| `POST /api/v1/auth/passkeys/authentication/options` | `200`; opções de login por passkey (público) |
+| `POST /api/v1/auth/passkeys/authentication/verify` | `200`; verifica asserção e emite sessão |
+| `GET /api/v1/auth/passkeys` | `200`; credenciais ativas |
+| `DELETE /api/v1/auth/passkeys/{credential_id}` | `204`; revoga credencial |
+| `GET /api/v1/auth/devices` | `200`; dispositivos ativos |
+| `DELETE /api/v1/auth/devices/{id}` | `204`; revoga dispositivo e sessões dele |
+| Telefone igual ao atual | `400 {"detail":{"code":"phone_unchanged"}}` |
+| Telefone de outra conta | `409 {"detail":{"code":"phone_already_registered"}}` |
+| Recibo inválido/expirado/usado | `400 {"detail":{"code":"invalid_receipt"}}` |
+| Telefone já cadastrado | `409 {"detail":{"code":"phone_already_registered"}}` |
+| Conta inexistente no login | `404 {"detail":{"code":"account_not_found"}}` |
+| Access/refresh inválido | `401 {"detail":{"code":"invalid_token"}}` ou `invalid_refresh_token` |
+| Desafio inválido/expirado/bloqueado | `400 {"detail":{"code":"invalid_code_or_challenge"}}` |
+| Telefone fora de E.164 | `400 {"detail":{"code":"invalid_phone"}}` |
+| Limite de reenvio/hora/IP | `429 {"detail":{"code":"rate_limited"}}` com `Retry-After` |
+
+Exemplo local (o código não é exposto pela API; em desenvolvimento ele fica no adaptador simulado em memória):
+
+```powershell
+$body = @{ phone = "+5511999999999"; purpose = "registration" } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8000/api/v1/auth/phone/challenges `
+  -ContentType "application/json" -Body $body
+```
+
+A resposta não revela se o telefone já possui conta. O recibo de verificação é de uso único e curto (ADR 0015) e é consumido pelos endpoints de registro/login; as sessões usam access/refresh opacos rotativos (ADR 0013).
+
 O readiness não devolve detalhes da falha de conexão; o erro completo fica no log do processo.
 
 ### Configuração
@@ -83,6 +126,24 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_DATABASE_URL` | `postgresql+psycopg://joga:joga@127.0.0.1:5434/joga` |
 | `JOGA_DATABASE_CONNECT_TIMEOUT_SECONDS` | `3` |
 | `JOGA_LOG_LEVEL` | `INFO` |
+| `JOGA_PHONE_HASH_SECRET` | placeholder local; obrigatório fora de `local`/`test`/`development`/`ci` |
+| `JOGA_OTP_TTL_SECONDS` | `300` |
+| `JOGA_OTP_MAX_ATTEMPTS` | `5` |
+| `JOGA_OTP_RESEND_COOLDOWN_SECONDS` | `60` |
+| `JOGA_OTP_MAX_PER_HOUR` | `5` |
+| `JOGA_OTP_MAX_PER_IP_PER_HOUR` | `20` |
+| `JOGA_OTP_RECEIPT_TTL_SECONDS` | `600` |
+| `JOGA_TOKEN_HASH_SECRET` | placeholder local; obrigatório fora de `local`/`test`/`development`/`ci` |
+| `JOGA_ACCESS_TOKEN_TTL_SECONDS` | `600` |
+| `JOGA_REFRESH_ABSOLUTE_TTL_DAYS` | `30` |
+| `JOGA_REFRESH_IDLE_TTL_DAYS` | `7` |
+| `JOGA_WEBAUTHN_RP_ID` | `joga-passkeys.vercel.app` |
+| `JOGA_WEBAUTHN_RP_NAME` | `JOGA` |
+| `JOGA_WEBAUTHN_ORIGIN_ANDROID` | `android:apk-key-hash:...` do certificado de debug |
+| `JOGA_WEBAUTHN_ORIGIN_WEB` | `https://joga-passkeys.vercel.app` |
+| `JOGA_PASSKEY_CHALLENGE_TTL_SECONDS` | `300` |
+| `JOGA_PASSKEY_MAX_PER_IP_PER_HOUR` | `30` |
+| `JOGA_DEV_FIXED_OTP` | vazio; apenas local, para testes manuais |
 
 Nunca versionar `.env`, credenciais reais ou segredos. `.env.example` só contém placeholders.
 
@@ -96,7 +157,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia.
+Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey.
 
 ### Verificações do backend
 
@@ -108,7 +169,27 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m pytest
 ```
 
-Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados.
+Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida).
+
+Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam um schema isolado `identity_test`):
+
+```powershell
+Set-Location C:\prog\joga\backend
+$env:JOGA_TEST_DATABASE_URL = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
+.venv\Scripts\python.exe -m pytest tests\test_identity_postgres.py -v
+```
+
+Sem `JOGA_TEST_DATABASE_URL`, esses testes são ignorados; a CI define a variável e os executa após as migrações.
+
+### Limpeza de dados efêmeros
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.cleanup_identity `
+  --challenge-days 1 --session-days 30 --event-days 90
+```
+
+Remove desafios OTP/passkey expirados, sessões antigas/revogadas e eventos de segurança acima da retenção. Não altera usuários, telefones nem credenciais. O agendamento em produção ainda é uma decisão operacional.
 
 ## 5. Mobile
 
@@ -126,13 +207,23 @@ O projeto usa Expo `~58.0.22`, React Native `0.88.1`, React `19.3.0`, TypeScript
 
 ### Abrir no aparelho
 
-Sem Android SDK, a via disponível é Expo Go pela rede local:
+O fluxo de identidade/passkey exige **development build** (Credential Manager, `expo-secure-store` e o módulo local não funcionam no Expo Go). O app usa `http://127.0.0.1:8000/api/v1`; faça a ponte das portas 8081 (Metro) e 8000 (API):
 
 ```powershell
 Set-Location C:\prog\joga\mobile
-pnpm exec expo start --lan
-adb shell am start -a android.intent.action.VIEW -d "exp://<ip-do-host>:8081" host.exp.exponent
+pnpm exec expo start --dev-client --localhost --port 8081
+adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8000 tcp:8000
 ```
+
+Para testar o OTP manualmente sem provedor real, suba a API com um código fixo **apenas em ambiente local**:
+
+```powershell
+$env:JOGA_DEV_FIXED_OTP = "123456"
+.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+```
+
+`JOGA_DEV_FIXED_OTP` é rejeitado fora de `local`/`test`/`development`; nunca usar em ambiente compartilhado.
 
 Com Android SDK configurado, o build de desenvolvimento é:
 
@@ -153,6 +244,7 @@ $env:GRADLE_USER_HOME = "$env:TEMP\joga-gradle-home"
 .\gradlew.bat assembleDebug -PreactNativeArchitectures=armeabi-v7a --console=plain
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8000 tcp:8000
 ```
 
 Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte.

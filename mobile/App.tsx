@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import PasskeyProof from './modules/passkey-proof';
+import { IdentityPanel } from './src/IdentityPanel';
 
 const RP_ID = 'joga-passkeys.vercel.app';
 const RP_NAME = 'JOGA (prova técnica)';
@@ -266,6 +267,12 @@ export default function App() {
           </Text>
         ) : null}
       </View>
+
+      <View style={styles.divider} />
+
+      <IdentityPanel />
+
+      <View style={styles.divider} />
 
       <Text style={styles.footnote}>
         Para repetir a prova de localização com outra permissão, altere a localização do app JOGA

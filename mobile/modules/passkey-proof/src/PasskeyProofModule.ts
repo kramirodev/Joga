@@ -23,11 +23,17 @@ export declare class PasskeyProofModule extends NativeModule {
    */
   createPasskeyAsync(rpId: string, rpName: string, userName: string): Promise<CreatePasskeyResult>;
 
+  /** Cria uma passkey usando as opções JSON emitidas pelo backend. */
+  createPasskeyFromRequestAsync(requestJson: string): Promise<CreatePasskeyResult>;
+
   /**
    * Autentica com uma passkey do RP ID informado. Com `credentialId` vazio, o
    * seletor de contas do sistema é aberto.
    */
   getPasskeyAsync(rpId: string, credentialId: string): Promise<GetPasskeyResult>;
+
+  /** Autentica usando as opções JSON emitidas pelo backend. */
+  getPasskeyFromRequestAsync(requestJson: string): Promise<GetPasskeyResult>;
 }
 
 export default requireOptionalNativeModule<PasskeyProofModule>('PasskeyProof');
