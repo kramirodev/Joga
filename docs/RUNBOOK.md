@@ -1,6 +1,6 @@
 # RUNBOOK — ambiente local do JOGA
 
-Instruções reproduzíveis para subir o backend, o PostgreSQL/PostGIS local, rodar as verificações e abrir o aplicativo no Android. Reflete o que foi executado na Fase 2; não descreve ambientes que ainda não existem (staging, produção, iOS).
+Instruções reproduzíveis para subir o backend, o PostgreSQL/PostGIS local, rodar as verificações e abrir o aplicativo no Android. Reflete o que foi executado nas Fases 1–6; não descreve ambientes que ainda não existem (staging, produção, iOS).
 
 ## 1. Pré-requisitos
 
@@ -10,10 +10,13 @@ Instruções reproduzíveis para subir o backend, o PostgreSQL/PostGIS local, ro
 | Docker Desktop | Engine 29.6.2, Compose v5.3.1 | Necessário para o PostgreSQL/PostGIS local |
 | Node.js | 24.22.1 | Em `.tools/nodejs/node-v24.22.1-win-x64` neste ambiente |
 | pnpm | 11.25.0 | Via Corepack; o lockfile é `mobile/pnpm-lock.yaml` |
-| Android SDK + adb | Platform-Tools 37.0.1 (ADB 1.0.41) | Somente para build/execução nativa; não é necessário para lint/tipos |
-| Dispositivo Android | Moto G24, Android 14 | Depuração USB autorizada |
+| JDK | Temurin 17.0.20.1 | Em `.tools/temurin-17/jdk-17.0.20.1+1` neste ambiente; necessário só para o APK |
+| Android SDK + adb | Platform-Tools 37.0.1 (ADB 1.0.41) | Em `.tools/android-sdk`; necessário só para build/aparelho |
+| Dispositivo Android | Moto G24, Android 14 (arm64) e Moto G7 Play, Android 10 (arm32) | Depuração USB autorizada |
 
 Nenhuma credencial real é necessária. Os valores padrão do Compose e do `.env.example` são locais e descartáveis.
+
+`.tools/` (Node, JDK, Android SDK, platform-tools) é local desta máquina e **não** está no Git. Em outro computador, instale as versões equivalentes e ajuste os caminhos nos comandos abaixo.
 
 ## 2. Portas locais
 
@@ -170,7 +173,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey. `b8d2f4a6c910` cria catálogo, perfil, disponibilidade, região e locais, e semeia `futebol-5x5` e `volei-6x6`.
+Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey; `b8d2f4a6c910` cria catálogo, perfil, disponibilidade, região e locais (com seeds `futebol-5x5` e `volei-6x6`); `c5e1a7d3f208` cria fila, lobbies, participantes e rodadas; `d7f2b9c4e615` cria partidas, participantes e transições.
 
 ### Verificações do backend
 
@@ -184,7 +187,7 @@ Set-Location C:\prog\joga\backend
 
 Resultado observado na Fase 2: Ruff sem achados, Mypy sem erros em 14 arquivos, 5 testes aprovados. Na Fase 3: Ruff e formatação sem achados, Mypy sem erros em 31 arquivos, 95 testes de unidade/API e 5 de integração PostgreSQL (100 com a variável definida). Na Fase 4: Ruff e formatação sem achados, Mypy sem erros em 36 arquivos, 112 testes sem PostgreSQL (119 com a variável definida, incluindo o teste PostGIS de raio/ordenação/paginação). Na Fase 5: Mypy sem erros em 41 arquivos, 145 testes sem PostgreSQL e 158 com a variável, incluindo concorrência real de dois workers e reexecução idempotente. Na Fase 6: Mypy sem erros em 45 arquivos, 161 testes sem PostgreSQL e 175 com a variável, incluindo 10 confirmações concorrentes que geram uma única transição para `READY`.
 
-Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam schemas isolados `identity_test` e `profile_test`):
+Testes de integração PostgreSQL (opcionais; exigem banco descartável e criam schemas isolados `identity_test`, `profile_test`, `matchmaking_test` e `matches_test`):
 
 ```powershell
 Set-Location C:\prog\joga\backend
@@ -280,7 +283,22 @@ adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8000 tcp:8000
 ```
 
-Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte.
+Para um aparelho **arm64** (como o moto g24, Android 14), troque a ABI. O `node` precisa estar no `PATH` do Gradle, e `android/local.properties` deve apontar para o SDK:
+
+```powershell
+Set-Location C:\prog\joga\mobile\android
+"sdk.dir=C\:\\prog\\joga\\.tools\\android-sdk" | Set-Content local.properties -Encoding ASCII
+$env:JAVA_HOME = "C:\prog\joga\.tools\temurin-17\jdk-17.0.20.1+1"
+$env:ANDROID_HOME = "C:\prog\joga\.tools\android-sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:PATH = "C:\prog\joga\.tools\nodejs\node-v24.22.1-win-x64;$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:PATH"
+.\gradlew.bat assembleDebug -PreactNativeArchitectures=arm64-v8a --console=plain
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8000 tcp:8000
+```
+
+Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte. O APK não é versionado e precisa ser gerado de novo em cada máquina.
 
 ## 6. CI
 
@@ -301,9 +319,66 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 | Build Android falha com `build.ninja still dirty` | pnpm com layout isolado e caminhos longos no Windows | confirmar `nodeLinker: hoisted` e caminho curto do repositório |
 | `expo install --check` falha | dependência fora da faixa esperada pelo SDK | `pnpm exec expo install <pacote>` e revisar o lockfile |
 | `adb reverse` indisponível | adb antigo (1.0.31) | usar Platform-Tools recente ou Expo Go via `--lan` |
+| App não carrega o bundle | Metro parado ou `adb reverse` ausente | subir Metro em 8081 e repetir `adb reverse tcp:8081 tcp:8081` |
+| `401 invalid_token` após ~10 min | access token vence e o app ainda não renova sozinho | entrar novamente; melhoria prevista para o hardening |
+| Log da API cheio de `GET /health 404` | o app consulta `/health` em vez de `/api/v1/health/live` | pendência de hardening registrada no build log |
+| Expo Go não abre o app | módulo nativo `passkey-proof` e `expo-secure-store` | usar development build (`expo run:android` ou APK de debug) |
 
 ## 8. Limites atuais
 
 - Redis não está configurado; o `PLANS.md` permite mantê-lo desligado até existir uso real.
 - Não há staging, produção, domínio, passkeys, iOS ou provedor de SMS.
 - O PostgreSQL local é descartável e não contém dados reais.
+- O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
+- Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
+- Fases 5 e 6 estão implementadas no backend; o worker precisa estar rodando para formar partidas e avançar estados.
+
+## 9. Retomada em outro computador
+
+Estado versionado no GitHub: `main` contém as Fases 0–6 (backend + docs). Nada essencial fica só na máquina antiga, exceto ferramentas e artefatos listados no fim desta seção.
+
+1. **Clonar e conferir**
+   ```powershell
+   git clone https://github.com/kramirodev/Joga.git
+   Set-Location Joga
+   git log --oneline -1     # esperado: 8bdc049 (Fase 6)
+   ```
+2. **Instalar ferramentas** (não versionadas): Python 3.12–3.14, Docker Desktop, Node 24 + pnpm 11.25, JDK 17 e Android SDK/platform-tools se for gerar APK.
+3. **Banco**
+   ```powershell
+   docker compose -f infra/compose.yaml up -d
+   docker exec joga-postgres-1 pg_isready -U joga -d joga
+   ```
+4. **Backend**
+   ```powershell
+   python -m venv backend\.venv
+   backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.lock
+   Set-Location backend
+   .venv\Scripts\python.exe -m alembic upgrade head
+   .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+   ```
+   Para testes manuais com OTP fixo, suba com `JOGA_DEV_FIXED_OTP=123456` e `JOGA_ENVIRONMENT=local` (nunca fora de ambiente local). `.env` não é versionado; copie de `.env.example` só se precisar mudar algo.
+5. **Verificações**
+   ```powershell
+   .venv\Scripts\python.exe -m ruff check .
+   .venv\Scripts\python.exe -m ruff format --check .
+   .venv\Scripts\python.exe -m mypy app
+   .venv\Scripts\python.exe -m pytest
+   ```
+6. **Mobile**
+   ```powershell
+   Set-Location C:\prog\joga\mobile
+   pnpm install --frozen-lockfile
+   pnpm exec expo prebuild --platform android --no-install
+   ```
+   Depois siga “Abrir no aparelho” com a ABI do novo celular.
+7. **Workers** (terminais separados, opcional)
+   ```powershell
+   python -m scripts.run_matchmaking --loop --interval 15
+   python -m scripts.advance_matches --loop --interval 60
+   ```
+8. **Dados**: não há seed de usuários. Crie uma conta pelo fluxo OTP local; o catálogo esportivo vem da migração.
+
+**Não está no Git** (precisa existir na máquina nova): `.env`, `backend/.venv`, `mobile/node_modules`, `mobile/android` e `mobile/ios` (gerados por prebuild), `android/local.properties`, o APK de debug e a pasta `.tools/` com Node/JDK/SDK.
+
+**Troca de celular**: confira a ABI (`adb shell getprop ro.product.cpu.abilist`), gere o APK para ela, autorize a depuração USB, faça `adb reverse` das portas 8000 e 8081 e entre novamente (a sessão anterior fica no aparelho antigo). Passkeys são por aparelho; cadastre uma nova no aparelho novo.
