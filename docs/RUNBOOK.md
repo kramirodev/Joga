@@ -332,6 +332,8 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
 - Fases 5 e 6 estão implementadas no backend; o worker precisa estar rodando para formar partidas e avançar estados.
+- Reservas de quadras, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados**. Não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
+- O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
 
 ## 9. Retomada em outro computador
 

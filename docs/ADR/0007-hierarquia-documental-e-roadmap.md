@@ -3,6 +3,8 @@
 - **Status:** Aprovado pelo responsável do produto nesta conversa.
 - **Data:** 2026-11-02
 
+> **Nota de vigência (2026-11-05):** os itens 3 e 4 abaixo descrevem o roadmap e o escopo da época. As Fases 11–19 foram reorganizadas pelo ADR 0022 e pelo `PLANS.md` vigente; a precificação e o fluxo financeiro foram definidos no ADR 0021. O restante deste ADR permanece como registro histórico.
+
 ## Contexto
 
 - A documentação conceitual foi revisada pela interface web do GitHub (`41a560a` → `42df97a`), divergindo do workspace local até a sincronização via fast-forward na mesma branch.

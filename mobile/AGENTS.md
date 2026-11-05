@@ -36,7 +36,7 @@ Expo entrega breaking changes a cada SDK. Antes de escrever código que toque AP
 
 ## Regras de escopo
 
-- Não avançar fase; não criar telas/features de produto (perfil, matchmaking, lobbies, chat, marketplace).
+- Não avançar fase; não criar telas/features de produto (perfil, matchmaking, lobbies, chat, reservas, pagamentos).
 - Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; o ADR 0009 mantém os projetos nativos gerados e não versionados e prevê reavaliar se surgir módulo nativo próprio.
 - Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
 - Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).

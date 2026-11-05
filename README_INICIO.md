@@ -1,6 +1,6 @@
 # JOGA — início do desenvolvimento com Codex
 
-Este guia complementar prepara o repositório para um desenvolvimento incremental. O ponto de entrada principal é `README.md`. Este pacote não contém código do aplicativo nem do backend.
+Este guia complementar prepara o repositório para um desenvolvimento incremental. O ponto de entrada principal é `README.md`. O repositório já contém código do aplicativo e do backend a partir da Fase 2.
 
 ## 1. Repositório da V2
 

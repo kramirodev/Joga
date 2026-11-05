@@ -263,7 +263,7 @@ Usar GPS substitui a região anterior e limpa `cep`/`city`/`state`; não há ac�
 
 ## `venues`
 
-Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pertence às Fases 11/14.
+Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pertence às Fases 12/13.
 
 | Coluna | Tipo | Regra |
 |---|---|---|
@@ -281,7 +281,7 @@ Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pe
 
 Índices: `ix_venues_city_state` (`city`, `state`) e `ix_venues_location_gist`, índice GiST sobre `ST_SetSRID(ST_MakePoint(lng, lat), 4326)` criado apenas no PostgreSQL. A busca usa `ST_DWithin` sobre `geography` com raio em metros, ordenada por `ST_Distance`.
 
-Quadras (`venue_spaces`), vínculo esporte–quadra (`venue_sports`), agenda (`venue_availability`) e reservas (`bookings`) **não** existem nesta fase.
+Quadras (`venue_spaces`), vínculo esporte–quadra (`venue_sports`), agenda (`venue_availability`), bloqueios (`venue_blackouts`), reservas (`bookings`), recebedor (`venue_payment_accounts`), cobranças, ledger, reembolsos e liberações **não** existem nesta fase; pertencem às Fases 12–15.
 
 ## `queue_entries`
 
@@ -416,7 +416,8 @@ Trilha append-only das transições, com ator e motivo.
 - Recuperação assistida quando o usuário perde todas as passkeys e o telefone.
 - Índices adicionais para consultas de sessões e eventos após os fluxos reais.
 - Migração de dados existentes não se aplica: o banco ainda não tem dados de produção.
-- Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda e reservas pertencem às Fases 11/14.
+- Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda, bloqueios, reservas, KYC do recebedor, cobranças e liberações pertencem às Fases 12–15.
+- Modelo financeiro de reservas (cobranças, ledger, reembolsos, liberações e MED) ainda não existe; será modelado na Fase 14 e detalhado na Fase 15.
 - Penalidades por no-show (banimento temporário e reputação) ficam para as Fases 8/17; a Fase 6 só registra `no_show`.
 - Capitães adiados: dependem de Trust Factor, MMR e histórico de partidas.
 - Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); cache é por processo e some no restart.
