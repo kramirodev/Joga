@@ -99,6 +99,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 8 — Sistema competitivo
 
+**Status:** 8A implementado em 2026-11-06 (motor Glicko-2, schema, worker e simulações); 8B e 8C pendentes.
+
 **Escopo:** rating inicial simples/versionado, histórico append-only, ranking e Trust Factor separado.
 
 **Não fazer:** rating editável pelo cliente ou painel; apagar histórico; denúncia isolada gerar punição definitiva.
