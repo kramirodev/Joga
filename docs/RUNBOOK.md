@@ -269,6 +269,18 @@ Padrões: contadores de rate limit 24 h; evidências 365 dias após o encerramen
 
 Nesta fase o WebSocket entrega apenas conexões do processo atual. Para reiniciar após queda, o cliente busca o histórico pela API; Redis e fan-out multi-processo ficam para hardening/escala.
 
+### Limpeza de comunicação (Fase 9)
+
+A retenção provisória está no `docs/ADR/0027-retencao-provisoria-comunicacao.md`. Comece pelo `--dry-run`:
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.cleanup_communication --dry-run
+.venv\Scripts\python.exe -m scripts.cleanup_communication
+```
+
+Padrões: mensagens de lobby 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. Eventos `PENDING`, convites pendentes/aceitos e tokens ativos são preservados.
+
 ## 5. Mobile
 
 ```powershell
@@ -285,7 +297,7 @@ O projeto usa Expo `~58.0.23`, React Native `0.88.1`, React `19.3.0`, TypeScript
 
 O painel **Competitivo** (Fase 8C) usa `GET /api/v1/ratings/me` e `GET /api/v1/rankings`. Ele mostra divisão, progresso, posição e top do formato; não exibe MMR bruto nem Trust Factor.
 
-O painel **Comunicação** (Fase 9B) usa `GET /api/v1/matches`, chat por lobby, amigos e convites. A atualização é manual/HTTP nesta versão; a integração WebSocket no app fica para uma etapa posterior.
+O painel **Comunicação** (Fase 9B/9C) usa `GET /api/v1/matches`, chat por lobby, amigos e convites. Ele abre um WebSocket autenticado para o lobby selecionado e reconcilia o histórico pela API após reconexão.
 
 ### Abrir no aparelho
 

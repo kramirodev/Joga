@@ -1,6 +1,6 @@
 # Fase 09 — Comunicação em tempo real
 
-**Status:** 9A e 9B implementados em 2026-11-06 (backend + painel mobile)
+**Status:** Fase 9 encerrada em 2026-11-06 (9A backend, 9B mobile e 9C retenção/WebSocket mobile)
 **Branch:** `feat/09-comunicacao-tempo-real`
 **Decisão:** `docs/ADR/0026-comunicacao-tempo-real-e-amigos.md`
 
@@ -165,3 +165,10 @@ Encerrar 9A com backend estável; não iniciar 9B sem autorização específica.
 - **Governança:** `mobile/AGENTS.md` atualizado para autorizar as telas da Fase 9B.
 - **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` e `expo install --check` passam. O backend ganhou `lobby_id` no resumo de partida para permitir o chat.
 - **Limite:** o app usa atualização manual/HTTP; a conexão WebSocket nativa no mobile ainda não foi integrada e não há teste automatizado de UI.
+
+## Implementação 9C
+
+- **WebSocket mobile:** `CommunicationPanel` abre `ws://.../api/v1/ws` com `Authorization`, assina o lobby selecionado, faz merge idempotente das mensagens recebidas e tenta reconectar após queda.
+- **Retenção:** ADR 0027 e `scripts/cleanup_communication.py`; mensagens 730 dias, convites 90 dias, Outbox 30 dias e tokens de push revogados 90 dias, com `--dry-run`.
+- **Testes:** limpeza de comunicação coberta em `test_communication_cleanup.py`; WebSocket mobile validado por `typecheck`/`lint` e smoke HTTP no aparelho.
+- **Limite:** o teste visual do WebSocket no aparelho depende de sessão válida e backend ativo; não há teste automatizado de UI.

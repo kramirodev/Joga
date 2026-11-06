@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
@@ -6,12 +6,29 @@ import {
   chatApi,
   matchesApi,
   socialApi,
+  WS_BASE_URL,
   type ChatMessage,
   type Friend,
   type LobbyInvite,
   type MatchSummary,
 } from './api';
 import { loadSession, type StoredSession } from './session';
+
+type SocketWithHeaders = new (
+  url: string,
+  protocols?: string | string[],
+  options?: { headers?: Record<string, string> },
+) => WebSocket;
+
+function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) {
+    byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((first, second) =>
+    first.created_at.localeCompare(second.created_at),
+  );
+}
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -46,6 +63,67 @@ export function CommunicationPanel() {
   const [draft, setDraft] = useState('');
   const [message, setMessage] = useState('Entre na conta para usar o chat e os convites.');
   const [busy, setBusy] = useState(false);
+  const [live, setLive] = useState(false);
+  const socketRef = useRef<WebSocket | null>(null);
+  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function closeSocket() {
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+    }
+    const socket = socketRef.current;
+    socketRef.current = null;
+    setLive(false);
+    if (socket) {
+      socket.onclose = null;
+      socket.close();
+    }
+  }
+
+  function connectSocket(stored: StoredSession, lobbyId: string) {
+    closeSocket();
+    const Socket = WebSocket as unknown as SocketWithHeaders;
+    const socket = new Socket(WS_BASE_URL, [], {
+      headers: { Authorization: `Bearer ${stored.accessToken}` },
+    });
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      setLive(true);
+      socket.send(JSON.stringify({ type: 'subscribe', lobby_id: lobbyId }));
+    };
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as {
+          type?: string;
+          data?: ChatMessage;
+        };
+        if (
+          payload.type === 'lobby.message.created' &&
+          payload.data &&
+          payload.data.lobby_id === lobbyId
+        ) {
+          setMessages((current) => mergeMessages(current, [payload.data as ChatMessage]));
+        }
+      } catch {
+        // Evento inválido é ignorado; o histórico continua na API.
+      }
+    };
+    socket.onerror = () => setLive(false);
+    socket.onclose = () => {
+      if (socketRef.current !== socket) {
+        return;
+      }
+      socketRef.current = null;
+      setLive(false);
+      reconnectRef.current = setTimeout(() => {
+        if (socketRef.current === null) {
+          connectSocket(stored, lobbyId);
+        }
+      }, 3000);
+    };
+  }
 
   useEffect(() => {
     let active = true;
@@ -79,7 +157,10 @@ export function CommunicationPanel() {
     })();
     return () => {
       active = false;
+      closeSocket();
     };
+    // A seleção inicial é feita uma única vez após carregar a sessão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function selectMatch(stored: StoredSession, match: MatchSummary) {
@@ -91,6 +172,7 @@ export function CommunicationPanel() {
       ]);
       setSelected(detail);
       setMessages(chat.messages);
+      connectSocket(stored, match.lobby_id);
     } catch (error) {
       setMessage(describeError(error));
     } finally {
@@ -221,6 +303,9 @@ export function CommunicationPanel() {
       <Text style={styles.body}>
         Mensagens são salvas no servidor antes da entrega. Atualize para reconciliar após
         reconectar.
+      </Text>
+      <Text style={[styles.live, live && styles.liveOn]}>
+        {live ? 'Tempo real conectado' : 'Tempo real desconectado — use atualizar'}
       </Text>
 
       <View style={styles.chips}>
@@ -377,6 +462,8 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#26724a', fontSize: 12, fontWeight: '700', letterSpacing: 1.2 },
   heading: { color: '#173b2a', fontSize: 21, fontWeight: '700' },
   body: { color: '#52625a', fontSize: 15, lineHeight: 22 },
+  live: { color: '#9a5b2d', fontSize: 13, fontWeight: '600' },
+  liveOn: { color: '#26724a' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     borderColor: '#b8cdc0',

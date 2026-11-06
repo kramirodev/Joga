@@ -514,3 +514,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Smoke test:** login local, chat exibindo mensagem semeada, envio de mensagem pelo app (`201`) e solicitação de amizade (`201`) observados no aparelho moto g(7) play.
 - **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` e `expo install --check` passam; backend com 281 passed/23 skipped sem PostgreSQL e 304 passed com a variável.
 - **Limite:** o app usa atualização manual/HTTP; WebSocket nativo no mobile e testes automatizados de UI ainda não existem.
+
+### 2026-11-06 — Fase 9C: WebSocket mobile e retenção de comunicação
+
+- **WebSocket mobile:** `CommunicationPanel` abre o socket com `Authorization`, assina o lobby, mescla mensagens por ID e tenta reconectar após queda; o histórico continua vindo da API.
+- **Retenção:** ADR 0027 e `scripts/cleanup_communication.py` com `--dry-run`; mensagens 730 dias, convites encerrados 90 dias, Outbox entregue/falha 30 dias e tokens revogados 90 dias. Eventos pendentes, convites ativos e tokens ativos são preservados.
+- **Testes:** `test_communication_cleanup.py` cobre remoção e preservação; backend segue com 281 passed/23 skipped sem PostgreSQL e 304 passed com a variável. Mobile: typecheck, lint, format e Expo check passam.
+- **Smoke:** chat HTTP e solicitação de amizade foram exercitados no aparelho; a validação visual do WebSocket depende de sessão válida e backend ativo.
+- **Fase 9:** encerrada. Redis/fan-out, push real, LGPD definitiva e hardening ficam para a Fase 10.

@@ -461,6 +461,8 @@ Implementado na migração `b4e8d1f6c752_add_social_chat_outbox.py`.
 
 O WebSocket serve apenas à entrega local do processo; o PostgreSQL continua sendo a fonte de verdade. Mensagens são persistidas antes da entrega, e a reconexão recupera o histórico pela API. Redis/fan-out multi-processo e provedor real de push ficam para a fase de hardening/escala.
 
+Retenção provisória (ADR 0027): mensagens 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. A limpeza é manual por `scripts/cleanup_communication.py`.
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
