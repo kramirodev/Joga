@@ -9,7 +9,7 @@ JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por 
 - PostgreSQL com PostGIS como fonte oficial da verdade; Redis somente para funções auxiliares e efêmeras.
 - Comunicação do aplicativo com o backend por contratos HTTP/WebSocket versionados.
 
-As Fases 0–8 do núcleo esportivo estão implementadas no backend e no mobile. A Fase 9 está em implementação: o backend (9A) cobre WebSocket, chat por lobby, amigos, bloqueios, convites, Outbox e tokens de push; a tela mobile (9B) depende de autorização de escopo. Reservas pagas, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados** e pertencem às Fases 11–19. O comércio de produtos está fora do escopo inicial (ADR 0022).
+As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile, incluindo comunicação em tempo real (backend), chat, amigos, convites e painel mobile. Reservas pagas, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados** e pertencem às Fases 11–19. O comércio de produtos está fora do escopo inicial (ADR 0022).
 
 ## Por onde começar
 

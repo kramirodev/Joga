@@ -504,3 +504,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Push:** tokens por dispositivo e adaptador de teste; nenhum provedor real configurado.
 - **Testes:** 25 novos testes (chat, API, social, push, Outbox, realtime e WebSocket). Sem PostgreSQL: **281 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **304 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Limite:** fan-out multi-processo/Redis e push real permanecem para hardening; 9B mobile não iniciado.
+
+### 2026-11-06 — Fase 9B: painel mobile de comunicação
+
+- **Governança:** `mobile/AGENTS.md` atualizado para autorizar chat, amigos e convites da Fase 9B.
+- **Backend de apoio:** `MatchSummary` passou a expor `lobby_id`, permitindo que o app selecione a sala de chat da partida.
+- **API mobile:** `matchesApi`, `chatApi` e `socialApi` em `mobile/src/api.ts`.
+- **Tela:** `mobile/src/CommunicationPanel.tsx`, integrada ao `App.tsx`, com seleção de partida/lobby, histórico, envio de mensagem, amigos, participantes para adicionar, convites pendentes e ações de aceitar/recusar.
+- **Smoke test:** login local, chat exibindo mensagem semeada, envio de mensagem pelo app (`201`) e solicitação de amizade (`201`) observados no aparelho moto g(7) play.
+- **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` e `expo install --check` passam; backend com 281 passed/23 skipped sem PostgreSQL e 304 passed com a variável.
+- **Limite:** o app usa atualização manual/HTTP; WebSocket nativo no mobile e testes automatizados de UI ainda não existem.

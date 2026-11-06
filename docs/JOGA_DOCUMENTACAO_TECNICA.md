@@ -1361,7 +1361,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–8 estão implementadas no backend e no mobile conforme `harness/build-log.md`. A Fase 9 está em implementação: 9A (backend) concluído; 9B (mobile) pendente de autorização. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–9 estão implementadas no backend e no mobile conforme `harness/build-log.md`. A Fase 9 cobre chat por lobby, amigos, bloqueios, convites, Outbox, WebSocket no backend e painel mobile de comunicação. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1461,7 +1461,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–8 do núcleo esportivo estão implementadas no backend e no mobile, conforme `harness/build-log.md`. A Fase 9 está em implementação: 9A (backend) concluído; 9B (mobile) pendente. Nenhuma fase comercial (11–19) está implementada.
+As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile, conforme `harness/build-log.md`. A Fase 9 cobre chat, amigos, convites, bloqueios, Outbox, WebSocket e painel mobile de comunicação. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 
