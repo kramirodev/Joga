@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import ensure_utc, utcnow
@@ -24,10 +24,10 @@ from app.modules.profile.models import Availability, SportFormat
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "PENDING_CONFIRMATION": {"READY", "CANCELLED", "EXPIRED"},
     "READY": {"IN_PROGRESS", "CANCELLED"},
-    "IN_PROGRESS": set(),
-    "RESULT_PENDING": set(),
+    "IN_PROGRESS": {"RESULT_PENDING"},
+    "RESULT_PENDING": {"FINALIZED", "DISPUTED", "VOIDED"},
     "FINALIZED": set(),
-    "DISPUTED": set(),
+    "DISPUTED": {"FINALIZED", "VOIDED", "DISPUTED"},
     "VOIDED": set(),
     "CANCELLED": set(),
     "EXPIRED": set(),
@@ -92,20 +92,71 @@ def create_match_for_lobby(
     )
     session.add(match)
     session.flush()
+    rows: list[MatchParticipant] = []
     for item in participants:
-        session.add(
-            MatchParticipant(
-                match_id=match.id,
-                user_id=item.user_id,
-                team=item.team,
-                level=item.level,
-                status="invited",
-                queue_entry_id=item.queue_entry_id,
-            )
+        row = MatchParticipant(
+            match_id=match.id,
+            user_id=item.user_id,
+            team=item.team,
+            level=item.level,
+            status="invited",
+            queue_entry_id=item.queue_entry_id,
         )
+        session.add(row)
+        rows.append(row)
     session.flush()
+    select_captains(session, match, lobby, rows, now=current)
     _record(session, match, None, "PENDING_CONFIRMATION", None, "match_formed")
     return match
+
+
+CAPTAIN_SELECTION_VERSION = "provisional_v1"
+
+
+def select_captains(
+    session: Session,
+    match: Match,
+    lobby: Lobby,
+    participants: Sequence[MatchParticipant],
+    *,
+    now: datetime,
+) -> None:
+    """Seleciona um capitão simbólico por equipe, de forma determinística.
+
+    Na Fase 7 o critério é o número de partidas ``FINALIZED`` do mesmo formato,
+    concluídas antes da partida atual, com UUID como desempate. Lobbies manuais
+    ficam sem capitão.
+    """
+    if lobby.origin != "matchmaking":
+        return
+    for team in (1, 2):
+        candidates = [item for item in participants if item.team == team and not item.is_substitute]
+        if not candidates:
+            continue
+        counts = {
+            item.id: int(
+                session.scalar(
+                    select(func.count(Match.id))
+                    .join(MatchParticipant, MatchParticipant.match_id == Match.id)
+                    .join(Lobby, Lobby.id == Match.lobby_id)
+                    .where(
+                        Match.state == "FINALIZED",
+                        Match.id != match.id,
+                        Match.scheduled_end_at < match.scheduled_start_at,
+                        MatchParticipant.user_id == item.user_id,
+                        MatchParticipant.status == "checked_in",
+                        Lobby.format_id == lobby.format_id,
+                    )
+                )
+                or 0
+            )
+            for item in candidates
+        }
+        best = sorted(candidates, key=lambda item: (-counts[item.id], str(item.user_id)))[0]
+        best.is_captain = True
+        best.captain_selection_version = CAPTAIN_SELECTION_VERSION
+        best.captain_selected_at = now
+    session.flush()
 
 
 def _record(

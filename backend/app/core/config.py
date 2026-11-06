@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     matchmaking_min_lead_minutes: int = Field(default=120, ge=0, le=1440)
     matchmaking_max_radius_km: int = Field(default=30, ge=1, le=200)
 
+    # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
+    # significa que nenhum operador está autorizado.
+    review_operators: str = ""
+
+    # Limite de POSTs de resultado por usuário em uma janela de 60 segundos.
+    results_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
+
+    @property
+    def review_operator_ids(self) -> frozenset[str]:
+        return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
+
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")

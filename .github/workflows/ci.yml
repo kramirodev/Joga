@@ -60,6 +60,8 @@ jobs:
         run: python -m alembic downgrade base
       - name: Reaplicar migração inicial
         run: python -m alembic upgrade head
+      - name: Verificar divergência entre modelos e migrações
+        run: python -m alembic check
       - name: Testes
         run: python -m pytest
 

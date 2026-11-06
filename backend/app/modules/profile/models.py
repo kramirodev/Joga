@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -115,7 +116,7 @@ class UserSportProfile(Base):
             "court_preference IN ('PUBLIC_ONLY', 'PRIVATE_ONLY', 'ANY')",
             name="court_preference_valid",
         ),
-        UniqueConstraint("user_id", "format_id", name="uq_user_sport_formats"),
+        UniqueConstraint("user_id", "format_id", name="uq_user_sport_profiles_user_format"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -212,6 +213,11 @@ class Venue(Base):
         CheckConstraint("lat BETWEEN -90 AND 90", name="lat_valid"),
         CheckConstraint("lng BETWEEN -180 AND 180", name="lng_valid"),
         Index("ix_venues_city_state", "city", "state"),
+        Index(
+            "ix_venues_location_gist",
+            text("(ST_SetSRID(ST_MakePoint(lng, lat), 4326))"),
+            postgresql_using="gist",
+        ).ddl_if(dialect="postgresql"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
