@@ -549,3 +549,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Carga autenticada:** 100 requisições em `/api/v1/matches`, concorrência 10, 0 falhas; p50 98,3 ms, p95 155,0 ms, p99 165,7 ms.
 - **Testes:** 288 passed/23 skipped sem PostgreSQL e 311 passed com a variável; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Piloto:** ainda bloqueado por provedores reais, orçamento, LGPD/jurídico e infraestrutura de produção. Nenhuma fase seguinte iniciada.
+
+### 2026-11-06 — Fase 11A: organizações, papéis, BOLA e auditoria
+
+- **Modelo:** `organizations`, `organization_memberships` e `organization_venues`; o catálogo `venues` da Fase 4 permanece intacto. A ligação entre catálogo e perfil comercial fica para a Fase 12.
+- **Autorização:** capacidades `organization:*`, `members:*`, `venues:*` e `audit:read` verificadas no servidor; `OWNER`, `ADMIN` e `OPERATOR`; último proprietário protegido; consultas sempre escopadas pela organização.
+- **Auditoria:** `audit_logs.organization_id` e helper `record_audit`; criação/alteração de organização, vínculos e estabelecimentos geram eventos append-only.
+- **Contratos:** endpoints versionados em `/api/v1/organizations`, com schemas explícitos e paginação de auditoria.
+- **Testes:** **296 passed, 25 skipped** sem PostgreSQL e **321 passed** com `JOGA_TEST_DATABASE_URL`; 8 testes HTTP de BOLA/papéis e 2 testes PostgreSQL de unicidade/concorrência.
+- **Migração:** `a1b2c3d4e5f6`; upgrade, downgrade e novo upgrade em banco descartável com PostGIS; `alembic check` sem operações pendentes.
+- **Painel web:** ADR 0028 proposto (React + TypeScript + Vite, cookie HttpOnly + CSRF); implementação da 11B bloqueada até confirmação.
+- **Fora do escopo:** reservas, agenda, pagamentos, KYC, clãs, moderação, publicidade, ERP e site público.

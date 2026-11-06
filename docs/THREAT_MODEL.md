@@ -50,11 +50,13 @@
 | Dependência vulnerável | Biblioteca com CVE | versões fixadas, CI, revisão de lockfile | auditoria automatizada de CVE ainda pendente |
 | Enumeração de usuários | Buscar usuários/perfis livremente | sem endpoint global de busca; dados sociais limitados às relações | ranking expõe nome/divisão; revisar privacidade |
 | Abuso de recursos | Payload grande, muitas conexões, carga | limites de tamanho, rate limiting parcial, timeouts | rate limit global e proteção de borda pendentes |
+| Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos ou auditoria de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | painel web e recursos de reservas/financeiro ainda não existem |
 
 ## Controles transversais
 
 - Autorização no servidor em cada recurso e operação.
 - IDs UUID não substituem autorização.
+- Consultas de organização filtram pelo vínculo do usuário e pela organização proprietária do recurso.
 - Validação e limites de entrada em todos os schemas.
 - Queries parametrizadas via SQLAlchemy.
 - Idempotência em operações críticas.

@@ -723,6 +723,8 @@ O modelo mínimo:
 - `venue_sports`: vínculo entre espaço e modalidade.
 - `venue_availability`: horários regulares, preços, duração e exceções.
 
+> **Nota de implementação da Fase 11:** o catálogo de locais descobertos da Fase 4 já usa a tabela `venues` (`kind`, `lat`, `lng`, endereço e estado ativo). Para não quebrar a descoberta nem tratar local público como estabelecimento reservável, o perfil comercial da Fase 11 usa `organization_venues`, vinculado à organização. A ligação/fusão com o catálogo de descoberta e os dados geográficos fica para a Fase 12.
+
 ### 13.2 Agenda e disponibilidade
 
 O estabelecimento define quadras, horários, preços, intervalos, bloqueios e regras. Deve poder registrar reservas feitas externamente para evitar que o JOGA anuncie um horário já indisponível.
