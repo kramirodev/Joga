@@ -598,7 +598,9 @@ Uma partida em `DISPUTED` não gera aplicação de rating.
 - Uma partida só pode gerar uma aplicação de rating por usuário/versão de cálculo.
 - Toda alteração gera evento imutável com valor anterior, delta, valor posterior e versão do algoritmo.
 - Correções geram eventos compensatórios, sem apagar histórico.
-- Começar com Elo simples por trás de interface `RatingEngine`; avaliar Glicko-2 ou outro método apenas quando houver dados que justifiquem.
+- **A Fase 8 usa Glicko-2 adaptado para equipes (`glicko2_team_v1`)** por trás de interface `RatingEngine`: rating inicial 1500, RD inicial 350, volatilidade 0.06, RD máximo 350, inatividade em períodos de 7 dias e delta máximo de ±100 por partida. A média de rating e de RD das equipes representa o adversário; cada jogador usa sua própria incerteza.
+- O rating bruto permanece oculto no app; a interface mostra divisão, progresso, posição e partidas de colocação.
+- Worker dedicado `scripts/apply_ratings.py` aplica o rating após `FINALIZED`, de forma idempotente.
 
 ### 11.2 Trust Factor esportivo
 
@@ -606,9 +608,24 @@ Trust Factor representa confiabilidade operacional em partidas, não habilidade 
 
 Sinais possíveis: ausências confirmadas e reincidentes, cancelamentos em cima da hora, disputas confirmadas após análise e padrões de abuso. Denúncia isolada não reduz automaticamente o indicador. Decisões relevantes devem permitir contestação e gerar `trust_events` auditáveis.
 
+Na Fase 8, o Trust Factor começa neutro (`100`), fica oculto e apenas registra eventos; nenhuma penalidade automática é aplicada. A aplicação de deltas e a contestação completa pertencem à Fase 17.
+
 ### 11.3 Separação de sistemas
 
 Compras, anúncios patrocinados, assinatura, gasto em quadras ou pagamento a estabelecimentos nunca alteram MMR, Trust Factor esportivo ou troféus de clã.
+
+### 11.4 Leitura competitiva e ranking
+
+- `GET /api/v1/ratings/me?format_id=...`: divisão, progresso, colocação, posição e última atualização; nunca retorna MMR bruto, RD, volatilidade ou Trust Factor.
+- `GET /api/v1/rankings?format_id=...&limit=...&offset=...`: top 100 de jogadores já colocados, com nome de exibição, divisão e partidas. Jogadores em colocação não entram no ranking público.
+- A fila ranqueada usa a política `mmr_v1`, com média de MMR e limite de dispersão interna de 800 pontos por equipe na v1.
+- O worker `apply_ratings.py` é separado do worker de partidas e pode ser reexecutado com segurança.
+
+### 11.5 Transparência
+
+- O app mostra divisão, progresso, posição e histórico competitivo, mas não o número bruto do MMR.
+- Trust Factor permanece oculto e não influencia MMR, divisão ou ranking na Fase 8.
+- A fórmula, os parâmetros e a versão `glicko2_team_v1` são documentados; mudanças futuras exigem nova versão.
 
 ## 12. Amigos, chat e clãs
 
@@ -1342,7 +1359,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 7 cobre relatos de resultado, quórum, segunda rodada, disputa, evidência textual, capitão provisório e revisão humana por CLI, sem MMR. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 8 está em implementação: 8A (Glicko-2, schema, worker e simulações) e 8B (fila ranqueada, divisão e ranking) concluídos; 8C (mobile) está pendente de decisão de escopo. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1442,7 +1459,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 (resultados e disputas) foi implementada e validada com PostgreSQL local, e depende de revisão/commit e configuração de `JOGA_REVIEW_OPERATORS`. A Fase 8 (MMR/rating) **não foi iniciada**. Nenhuma fase comercial (11–19) está implementada.
+As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local. A Fase 8 está em implementação: 8A e 8B concluídos; 8C pendente. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 

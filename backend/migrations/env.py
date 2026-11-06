@@ -11,6 +11,7 @@ from app.modules.matches import models as matches_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
 from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
+from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
 
 # this is the Alembic Config object, which provides

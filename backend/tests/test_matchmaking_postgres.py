@@ -26,6 +26,7 @@ from app.modules.profile.models import (
     UserRegion,
     UserSportProfile,
 )
+from app.modules.ratings.models import RatingAccount
 
 TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "matchmaking_test"
@@ -322,3 +323,48 @@ def test_concurrent_workers_never_duplicate_participants(
     assert len(participants) == 20
     assert len({item.user_id for item in participants}) == 20
     assert matched_entries == 20
+
+
+def test_ranked_lobby_uses_mmr_and_records_policy(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        sport_format = seed_format(session)
+        users = [add_player(session, sport_format) for _ in range(10)]
+        ratings = {user.id: 2000 - index * 100 for index, user in enumerate(users)}
+        for user_id, rating in ratings.items():
+            session.add(
+                RatingAccount(
+                    user_id=user_id,
+                    format_id=sport_format.id,
+                    rating=float(rating),
+                    rating_deviation=100.0,
+                    volatility=0.06,
+                    matches_played=10,
+                    algorithm_version="glicko2_team_v1",
+                )
+            )
+        for user in users:
+            service(session).enqueue(
+                user.id,
+                sport_format.id,
+                mode="ranked",
+                now=NOW,
+            )
+        session.commit()
+
+        result = service(session).run_once(NOW)
+        session.commit()
+
+        assert result.lobbies_formed == 1
+        lobby = session.scalar(select(Lobby))
+        assert lobby is not None
+        assert lobby.mode == "ranked"
+        assert lobby.algorithm_version == "mmr_v1"
+        participants = list(session.scalars(select(LobbyParticipant)))
+        assert len(participants) == 10
+        team_1 = [ratings[item.user_id] for item in participants if item.team == 1]
+        team_2 = [ratings[item.user_id] for item in participants if item.team == 2]
+        assert abs(sum(team_1) - sum(team_2)) <= 100
+        assert max(team_1) - min(team_1) <= 800
+        assert max(team_2) - min(team_2) <= 800

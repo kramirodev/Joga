@@ -454,3 +454,23 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Validação final na main:** 224 passed e 21 skipped sem PostgreSQL; 245 passed com `JOGA_TEST_DATABASE_URL`; `ruff check`, `ruff format --check`, `mypy app` e `alembic check` passam.
 - **Ambiente:** banco local na revisão `f2b5d8e1a7c3`; banco temporário de simulação da CI removido.
 - **Pendências:** configurar `JOGA_REVIEW_OPERATORS` para usar a CLI; revisar a retenção provisória do ADR 0024 na fase de LGPD; agendar a limpeza apenas após essa revisão. Nenhuma fase comercial ou MMR foi iniciada.
+
+### 2026-11-06 — Fase 8A: motor de rating Glicko-2 e Trust Factor oculto
+
+- **Decisão:** ADR 0025 aprovado com Glicko-2 adaptado para equipes, MMR oculto, divisão visível, fila ranqueada com `mmr_v1`, Trust Factor neutro e sem punição automática.
+- **Schema:** migração `a3f7c9e2d641_add_ratings_and_trust_events.py` cria `rating_accounts`, `rating_events`, `trust_accounts` e `trust_events`; aplicada, revertida e reaplicada no PostgreSQL local.
+- **Motor:** `glicko2_team_v1` com rating inicial 1500, RD 350, volatilidade 0.06, RD máximo 350, inatividade de 7 dias, delta máximo ±100 e 5 partidas de colocação. Validação contra o exemplo canônico do Glicko-2 passou.
+- **Worker:** `scripts/apply_ratings.py` aplica MMR somente em partidas `ranked`/`FINALIZED`, com constraint única por partida/usuário/versão; reexecução é idempotente.
+- **Trust Factor:** score neutro 100 e eventos auditáveis; nenhuma penalidade automática na Fase 8.
+- **Simulação:** 60 jogadores e 3.000 partidas produziram quartil inferior ≈1279 e superior ≈1666, mostrando convergência.
+- **Testes:** `test_ratings_engine.py` (11), `test_ratings_service.py` (10) e `test_ratings_postgres.py` (1). Sem PostgreSQL: **245 passed, 22 skipped**; com `JOGA_TEST_DATABASE_URL`: **267 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Pendente:** 8B (fila ranqueada, ranking e endpoints) e 8C (telas mobile). Nenhuma fase seguinte foi iniciada.
+
+### 2026-11-06 — Fase 8B: fila ranqueada, divisão e ranking
+
+- **Ranked:** `ranked` habilitado na fila; `ranked_not_available` removido. A política `mmr_v1` ordena candidatos por proximidade de MMR e limita a dispersão interna a 800 pontos por equipe.
+- **Team balance:** `balance_teams_by_rating` minimiza diferença de média e dispersão; grupos acima de 16 jogadores usam fallback guloso determinístico.
+- **API:** `GET /api/v1/ratings/me` retorna divisão, progresso, colocação, posição e partidas; `GET /api/v1/rankings` retorna top 100 paginado por formato. Jogadores em colocação não entram no ranking público. Nenhum endpoint expõe MMR bruto, RD, volatilidade ou Trust Factor.
+- **Testes:** `test_ratings_api.py` (6), casos de `mmr_v1` em `test_matchmaking_policy.py` (4) e caso ranked em `test_matchmaking_postgres.py` (1). Sem PostgreSQL: **256 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **279 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Conflito de escopo mobile:** `mobile/AGENTS.md` ainda declara o app como protótipo da Fase 1 e proíbe telas de produto. A tela competitiva (8C) não foi implementada; é necessário atualizar a governança mobile antes.
+- **Pendente:** 8C (mobile) e decisão de escopo correspondente. Nenhuma fase seguinte foi iniciada.

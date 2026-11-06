@@ -433,6 +433,19 @@ Implementado na migração `e1a4c7d9b230_add_match_results.py`. Todas as tabelas
 
 O worker `advance_matches.py` abre e fecha rodadas; a API rejeita votos após o prazo mesmo com worker atrasado. `signals` e `response_body` usam JSONB no PostgreSQL e JSON no SQLite de testes (variante do tipo).
 
+## Rating e Trust Factor (Fase 8)
+
+Implementado na migração `a3f7c9e2d641_add_ratings_and_trust_events.py`.
+
+| Tabela | Papel |
+|---|---|
+| `rating_accounts` | MMR atual por usuário e formato: rating, RD, volatilidade, partidas, última aplicação e versão do algoritmo |
+| `rating_events` | histórico append-only por partida/usuário/versão, com rating anterior/posterior, RD, volatilidade, expectativa, delta e resultado |
+| `trust_accounts` | score interno oculto, neutro em 100; não é exposto no app |
+| `trust_events` | sinais auditáveis de confiança, com tipo, severidade, metadados mínimos e timestamp |
+
+O worker `apply_ratings.py` processa partidas `ranked` em `FINALIZED`. A constraint única `(match_id, user_id, algorithm_version)` garante aplicação única. O Trust Factor não aplica penalidade automática na Fase 8; eventos ficam disponíveis para a Fase 17.
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
@@ -453,6 +466,6 @@ O worker `advance_matches.py` abre e fecha rodadas; a API rejeita votos após o 
 
 ## Referência
 
-- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py` e `f2b5d8e1a7c3_add_rate_limit_counters.py`
-- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py` e `backend/app/modules/ratelimit/models.py`
+- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py`, `f2b5d8e1a7c3_add_rate_limit_counters.py` e `a3f7c9e2d641_add_ratings_and_trust_events.py`
+- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py`, `backend/app/modules/ratelimit/models.py` e `backend/app/modules/ratings/models.py`
 - Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015, ADR 0019 e ADR 0023.
