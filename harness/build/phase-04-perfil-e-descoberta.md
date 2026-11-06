@@ -32,7 +32,7 @@ Permitir que o jogador configure perfil esportivo, modalidades/formatos, nível 
 ## Fora do escopo
 
 - Matchmaking, filas, formação de partidas e rating (Fase 5+).
-- Reservas pagas, agenda comercial e organizações (Fases 11 e 14).
+- Reservas pagas, agenda comercial e organizações (Fases 12–15).
 - Chat, amigos, clãs e moderação.
 - Rastreamento em segundo plano.
 - Ranking competitivo.
@@ -51,7 +51,7 @@ Permitir que o jogador configure perfil esportivo, modalidades/formatos, nível 
 2. **Vôlei:** **6x6**, 12 participantes, **60 minutos**.
 3. **Nível autodeclarado:** três níveis — `beginner`, `intermediate`, `advanced`; público no perfil, sem validação competitiva.
 4. **Região manual:** **CEP + raio em km**, resolvido pelo **BrasilAPI CEP v2** (público, sem chave), que retorna cidade/UF e coordenadas aproximadas; sem exigir coordenada residencial exata.
-5. **Locais:** modelo e endpoint de descoberta prontos, **catálogo vazio** nesta fase; cadastro público fica para Fase 11/14 e testes usam fixtures.
+5. **Locais:** modelo e endpoint de descoberta prontos, **catálogo vazio** nesta fase; cadastro público fica para Fases 12–15 e testes usam fixtures.
 
 ## Pendências resolvidas
 
@@ -137,11 +137,11 @@ Teste de regressão adicionado em `backend/tests/test_profile_api.py` cobrindo v
 ## Pendências e limites conhecidos
 
 - Validação no aparelho Android do `ProfilePanel` foi executada no moto g24 (arm64, Android 14); o build arm32 anterior continua não instalável nele.
-- Catálogo `venues` vazio por decisão; quadras, vínculo esporte–quadra, agenda e reservas ficam para as Fases 11/14.
+- Catálogo `venues` vazio por decisão; quadras, vínculo esporte–quadra, agenda e reservas ficam para as Fases 12–15.
 - BrasilAPI é dependência externa gratuita e sem SLA; falha retorna 503 `cep_unavailable`.
 - Cache de CEP é por processo e não sobrevive a restart; não há rate limiting dedicado ao endpoint de região além do já existente na autenticação.
 - Nenhum local real foi semeado; a descoberta permanece vazia até existir catálogo autorizado.
 
 ## Condição de parada
 
-Fase 4 encerrada no escopo backend + Android. Não iniciar a Fase 5 sem autorização. As Fases 11/14 permanecem responsáveis por quadras, vínculo esporte–quadra, agenda e reservas.
+Fase 4 encerrada no escopo backend + Android. Não iniciar a Fase 5 sem autorização. As Fases 12–15 permanecem responsáveis por quadras, vínculo esporte–quadra, agenda e reservas.

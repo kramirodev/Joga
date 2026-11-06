@@ -1,26 +1,48 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 2.0  
-**Status:** visão de produto atualizada  
-**Data:** 2 de novembro de 2026  
-**Nome principal:** JOGA  
-**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
+**Versão:** 3.2<br>
+**Status:** visão de produto atualizada — precificação e fluxo financeiro revisados; escopo sem comércio de produtos<br>
+**Data:** 5 de novembro de 2026<br>
+**Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
-> Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui a nomenclatura anterior e versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`.
+> Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
+
+## Controle de versão
+
+| Versão | Data | Alteração principal |
+|---|---|---|
+| 2.0 | 2 de novembro de 2026 | Visão inicial com quatro pilares, incluindo marketplace de produtos |
+| 3.0 | 5 de novembro de 2026 | Marketplace de produtos adiado; reservas de quadras por solicitação; Pix individual e coletivo; política de taxa com acréscimo de 80%; simulações financeiras; pendências separadas |
+| 3.1 | 5 de novembro de 2026 | Coeficiente 1,8 reposicionado como hipótese inicial de segurança; piso, preço variável e teto; PSP com múltiplos pagamentos individuais por reserva como condição de viabilidade |
+| 3.2 | 5 de novembro de 2026 | Fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`; 1,8 reinterpretado como fator de segurança de 95%; piso, preço variável e teto removidos; elegibilidade mínima; Pagar.me Flex como primeira opção; KYC, liberação após a partida e interface financeira do recebedor; comércio de produtos fora do escopo |
+
+## Como interpretar as decisões neste documento
+
+- **Decisão aprovada:** regra que deve fazer parte do produto.
+- **Parâmetro inicial:** valor de referência que poderá ser ajustado após testes.
+- **Proposta:** solução recomendada, ainda sujeita a validação.
+- **Pendência:** questão que precisa ser resolvida antes da implementação.
+- **Expansão futura:** funcionalidade deliberadamente fora do escopo inicial.
+
+As pendências não foram respondidas por suposição. Quando uma seção depende de uma definição ainda aberta, isso é indicado explicitamente.
 
 ---
 
 ## 1. Visão geral
 
-O **JOGA** é uma plataforma mobile para conectar pessoas que praticam ou desejam praticar esportes coletivos, organizar partidas presenciais, desenvolver comunidades esportivas e facilitar o acesso a espaços e produtos relacionados ao esporte.
+O **JOGA** é uma plataforma mobile para conectar pessoas que praticam ou desejam praticar esportes coletivos, organizar partidas presenciais, desenvolver comunidades esportivas e facilitar o acesso a espaços esportivos, com ênfase em **reservas de quadras particulares**.
 
-O projeto parte de um problema recorrente: pessoas interessadas em jogar muitas vezes não possuem um grupo fixo, não encontram participantes suficientes, têm dificuldade para conciliar horários e localização ou acabam participando de partidas pouco equilibradas.
+O projeto parte de um problema recorrente: pessoas interessadas em jogar muitas vezes não possuem um grupo fixo, não encontram participantes suficientes, têm dificuldade para conciliar horários e localização ou acabam participando de partidas pouco equilibradas. Além disso, mesmo quando o grupo existe, reservar uma quadra ainda depende de contatos dispersos, agendas manuais, mensagens em aplicativos de conversa e adiantamento do valor por uma única pessoa.
 
-O JOGA busca centralizar essa experiência. O usuário informa seus esportes, preferências, disponibilidade e localização. A plataforma utiliza essas informações para aproximar jogadores, formar grupos compatíveis, organizar partidas e facilitar a escolha de locais.
+O JOGA busca centralizar essa experiência. O usuário informa seus esportes, preferências, disponibilidade e localização. A plataforma utiliza essas informações para aproximar jogadores, formar grupos compatíveis, organizar partidas e conduzir a solicitação de reserva de um espaço adequado.
 
-A proposta também inclui uma camada social e comercial. Jogadores poderão manter contato por meio de lobbies e clãs, enquanto o aplicativo permitirá descobrir quadras, reservar espaços privados e comprar produtos esportivos. Lojas e estabelecimentos terão um painel web próprio para administrar exclusivamente as operações originadas pelo JOGA.
+A camada social continua sendo parte central do produto: lobbies, chat por contexto, lista de amigos, clãs e rankings. A camada comercial inicial é composta por **reservas de quadras originadas no JOGA, parcerias com estabelecimentos, patrocínios e publicidade contextual**, quando houver audiência suficiente.
 
-A visão de longo prazo é que o JOGA seja um ambiente recorrente para jogar, encontrar pessoas, participar de comunidades, descobrir espaços esportivos e consumir produtos relacionados às modalidades praticadas.
+A visão de longo prazo é que o JOGA seja um ambiente recorrente para jogar, encontrar pessoas, participar de comunidades, descobrir espaços esportivos e reservar quadras com segurança e transparência financeira.
+
+O produto dos jogadores é exclusivamente mobile, para Android e iOS. Não está previsto site público para jogadores. O painel web responsivo é destinado aos estabelecimentos e às operações originadas no JOGA.
+
+---
 
 ## 2. Problema identificado
 
@@ -32,29 +54,38 @@ A prática de esportes coletivos amadores enfrenta dificuldades que vão além d
 - **Diferença de habilidade:** partidas podem ficar desequilibradas quando os participantes possuem níveis muito diferentes.
 - **Distância geográfica:** jogadores podem precisar percorrer trajetos longos para encontrar partidas.
 - **Falta de continuidade:** depois de uma partida, frequentemente não existe uma estrutura que incentive o grupo a voltar a jogar.
-- **Dificuldade para encontrar espaços:** jogadores nem sempre sabem quais quadras existem, quanto custam ou quais horários estão disponíveis.
-- **Fragmentação comercial:** lojas, arenas e jogadores utilizam canais distintos para anúncios, reservas, vendas e comunicação.
+- **Dificuldade para encontrar espaços:** jogadores nem sempre sabem quais quadras existem, quanto custam, quais horários estão disponíveis ou como reservar.
+- **Fragmentação das reservas:** estabelecimentos usam agendas manuais, planilhas, telefone e mensagens; não há um fluxo único, rastreável e previsível para solicitar, bloquear e confirmar um horário.
+- **Coordenação financeira do grupo:** é comum uma pessoa adiantar o valor da quadra e depois cobrar os demais, criando atrito, esquecimentos e inadimplência.
+- **Falta de compromisso formal:** nem o jogador nem o estabelecimento têm um registro claro do que foi combinado, até quando e sob quais condições.
 
-O JOGA pretende reduzir essa fragmentação, sem transformar o produto em um sistema genérico de gestão empresarial.
+O JOGA pretende reduzir essa fragmentação, sem transformar o produto em um sistema genérico de gestão empresarial e sem substituir a operação cotidiana do estabelecimento.
+
+---
 
 ## 3. Proposta de solução
 
-O JOGA combina quatro pilares conectados:
+O JOGA combina três pilares conectados, com uma camada transversal de confiança operacional e financeira:
 
 1. **Competitividade:** matchmaking, partidas casuais e ranqueadas, MMR e rankings individuais.
-2. **Social:** lobbies, chat por lobby, lista de amigos, clãs e comunidades.
-3. **Infraestrutura esportiva:** descoberta de locais públicos e privados, disponibilidade e reservas de quadras particulares.
-4. **Comércio:** marketplace de produtos esportivos e ferramentas para estabelecimentos administrarem vendas e reservas originadas no JOGA.
+2. **Comunidade:** lobbies, chat por contexto, lista de amigos, clãs e comunidades.
+3. **Infraestrutura esportiva e reservas:** descoberta de locais públicos e privados, solicitação de reserva, bloqueio temporário do espaço, pagamentos individuais e confirmação da quadra.
 
-A plataforma deve facilitar a jornada completa: encontrar pessoas, definir quando jogar, localizar um espaço adequado, realizar a partida e manter contato com a comunidade.
+A camada transversal reúne identidade, autorização, auditoria, notificações, prazos controlados pelo servidor, prevenção de abuso e transparência de preços.
+
+A plataforma deve facilitar a jornada completa: encontrar pessoas, definir quando jogar, localizar um espaço adequado, solicitar a reserva, confirmar a participação, pagar individualmente, realizar a partida e manter contato com a comunidade.
+
+A jornada inicial não inclui comércio de produtos. Lojas esportivas poderão futuramente ser patrocinadoras ou anunciantes, mas não estarão habilitadas a vender produtos dentro do aplicativo.
+
+---
 
 ## 4. Estrutura de produtos e experiências
 
 O JOGA terá duas experiências principais, conectadas à mesma plataforma e ao mesmo backend.
 
-### 4.1 Aplicativo para jogadores e consumidores — JOGA y JOGA
+### 4.1 Aplicativo para jogadores — JOGA y JOGA
 
-O aplicativo Android/iOS será a experiência principal do consumidor. O nome de exibição pretendido na loja de aplicativos é **JOGA y JOGA**; a marca e o nome curto do produto continuam sendo **JOGA**.
+O aplicativo Android/iOS será a experiência principal do jogador. O nome de exibição pretendido na loja de aplicativos é **JOGA y JOGA**; a marca e o nome curto do produto continuam sendo **JOGA**.
 
 O aplicativo reunirá:
 
@@ -62,72 +93,83 @@ O aplicativo reunirá:
 - Modalidades esportivas, preferências e disponibilidade.
 - Matchmaking casual e ranqueado.
 - Lobbies abertos e fechados.
-- Chat de lobby e compartilhamento de conteúdo interno do JOGA.
+- Confirmação de participação em partidas que exigem reserva de quadra particular.
+- Chat de lobby e compartilhamento de referências internas do JOGA.
 - Lista de amigos e convites.
 - Clãs abertos e fechados, com chat e ranking competitivo.
 - Histórico, MMR e rankings individuais.
 - Descoberta de quadras e espaços esportivos.
-- Reserva e pagamento de quadras particulares, quando oferecidos pelo estabelecimento.
-- Marketplace de produtos esportivos, com compra integrada.
-- Acompanhamento de pedidos e reservas.
+- Solicitação de reserva de quadras particulares.
+- Acompanhamento do estado da solicitação, do bloqueio e dos pagamentos.
+- Pagamento individual por Pix, quando as cobranças forem abertas.
+- Notificações push sobre prazos, confirmações, substituições, cancelamentos e reembolsos.
+- Histórico de reservas e comprovantes.
 
-O Marketplace será uma área do aplicativo. **Não está previsto, no escopo inicial, um site público independente para consumidores.**
+### 4.2 Painel de gestão — JOGA y GESTÃO
 
-### 4.2 Site de gestão — JOGA y GESTÃO
+O JOGA terá um painel web responsivo destinado a proprietários, gerentes e funcionários autorizados de quadras, arenas e complexos esportivos admitidos na plataforma.
 
-O JOGA terá um painel web responsivo destinado exclusivamente a proprietários, gerentes e funcionários autorizados de lojas, arenas e outros estabelecimentos admitidos na plataforma.
-
-O gerente não precisará utilizar o aplicativo de jogadores para administrar seu negócio. Ele poderá acessar o painel pelo computador ou navegador do celular.
+O gerente não precisará utilizar o aplicativo de jogadores para administrar as operações originadas no JOGA. Ele poderá acessar o painel pelo computador ou pelo navegador do celular.
 
 O painel será voltado exclusivamente às operações originadas no JOGA. Não pretende substituir um ERP nem administrar automaticamente vendas presenciais, clientes externos, fornecedores ou toda a operação financeira do estabelecimento.
 
-**Módulo de lojas — JOGA y LOJA:**
-
-- Cadastro e administração da loja.
-- Cadastro de produtos, descrições, imagens, preços e variantes.
-- Definição da quantidade de estoque comprometida com o canal JOGA.
-- Consulta de pedidos recebidos pelo JOGA.
-- Atualização de preparação, disponibilidade para retirada e entrega pelo vendedor.
-- Consulta de comissões, pagamentos, cancelamentos e solicitações de devolução.
-- Configuração das condições de retirada e, quando oferecida, da entrega própria do vendedor.
-
 **Módulo de quadras — JOGA y QUADRA:**
 
-- Cadastro de estabelecimento, espaços e quadras.
-- Definição de preços, horários e regras de reserva.
-- Bloqueio de horários e registro de reservas originadas no JOGA.
-- Administração de reservas, cancelamentos e disponibilidade.
-- Consulta de pagamentos, comissões e relatórios básicos.
+- Receber solicitações de reserva.
+- Visualizar modalidade, data, horário, duração, quantidade de participantes e espaço físico solicitado.
+- Aceitar ou recusar solicitações.
+- Confirmar o bloqueio temporário do espaço específico.
+- Acompanhar o estado dos pagamentos.
+- Consultar reservas confirmadas, cancelamentos e histórico de solicitações.
+- Configurar horários de funcionamento, dias fechados, feriados e exceções.
+- Configurar prazos operacionais e a duração máxima do bloqueio, conforme o acordo comercial.
+- Consultar informações financeiras relacionadas às reservas originadas no JOGA.
+- Manter histórico das ações realizadas por seus usuários autorizados.
 
-**Administração comercial:**
+O painel não deverá se transformar em um ERP. Sua finalidade é administrar as operações originadas no JOGA, com simplicidade operacional e rastreabilidade.
+
+**Operação com agendas manuais:**
+
+O JOGA deverá conseguir operar com estabelecimentos que utilizam agendas manuais, planilhas, WhatsApp ou sistemas sem API. A integração com sistemas de terceiros não será exigida para o lançamento.
+
+Quando o estabelecimento aceitar uma solicitação, ele deverá confirmar que o horário foi efetivamente bloqueado em sua agenda operacional. Se utiliza WhatsApp, telefone, papel ou outro controle externo, o responsável deverá atualizar esse controle antes de confirmar o bloqueio no painel. A confirmação no painel representa um compromisso do estabelecimento.
+
+Integrações externas poderão ser avaliadas futuramente para consultar disponibilidade, bloquear horários, confirmar reservas, cancelar reservas e sincronizar agendas. A estrutura deverá permitir essas integrações sem tornar o produto dependente delas.
+
+**Administração e permissões:**
 
 - Cadastro de proprietários, funcionários e permissões.
-- Histórico das operações realizadas pelo JOGA.
-- Relatórios básicos de vendas, reservas e faturamento da plataforma.
+- Histórico das operações realizadas no JOGA.
+- Relatórios básicos de reservas e faturamento da plataforma.
 - Consulta de campanhas e ferramentas de publicidade, quando liberadas.
 
-A proposta inicial é oferecer ferramentas básicas gratuitamente e monetizar principalmente as transações originadas pelo JOGA. Planos opcionais de gestão poderão ser avaliados no futuro.
+A gestão básica deverá começar gratuita ou sem mensalidade obrigatória, reduzindo a barreira de entrada dos estabelecimentos. Planos opcionais de gestão poderão ser avaliados no futuro.
 
 ### 4.3 Estrutura compartilhada
 
-O aplicativo e o painel web utilizarão a mesma API, identidade central, banco de dados e infraestrutura comercial, com permissões diferentes conforme o papel do usuário e o estabelecimento ao qual está vinculado.
+O aplicativo e o painel web utilizarão a mesma API, identidade central, banco de dados e infraestrutura, com permissões diferentes conforme o papel do usuário e o estabelecimento ao qual está vinculado.
 
 Uma mesma pessoa poderá ser jogador, proprietário ou funcionário. Entretanto, um gerente poderá utilizar o painel sem criar perfil esportivo ou participar do matchmaking.
 
-O acesso a dados de estabelecimentos será isolado por organização e por permissão. Uma loja não poderá visualizar pedidos, estoque, reservas ou dados financeiros de outra.
+O acesso a dados de estabelecimentos será isolado por organização e por permissão. Um estabelecimento não poderá visualizar reservas, dados financeiros ou informações operacionais de outro.
+
+O aplicativo nunca acessará o banco de dados diretamente. Toda operação passará por contratos HTTP/WebSocket versionados, com autorização verificada no servidor em cada recurso e operação.
+
+Não haverá site público independente para jogadores ou para estabelecimentos. O painel é uma ferramenta autenticada de gestão, não uma vitrine pública.
 
 ### 4.4 Convenção de nomes
 
 - **JOGA:** marca principal e nome curto do produto.
 - **JOGA y JOGA:** nome de exibição pretendido do aplicativo.
 - **JOGA y GESTÃO:** painel web dos estabelecimentos.
-- **JOGA y LOJA:** módulo comercial de produtos e vendedores.
-- **JOGA y QUADRA:** módulo comercial de quadras e reservas.
+- **JOGA y QUADRA:** módulo de quadras e reservas.
 - **JOGA y CLÃ:** nome possível para a área de clãs, caso a nomenclatura seja utilizada na interface.
 
 O uso de “y” é intencional e faz parte da identidade verbal da marca. Os nomes derivados devem continuar subordinados à marca JOGA, sem criar produtos tecnicamente independentes sem necessidade.
 
 A disponibilidade jurídica da marca, dos nomes derivados e dos títulos nas lojas de aplicativos deve ser verificada antes do lançamento comercial.
+
+---
 
 ## 5. Público-alvo
 
@@ -138,16 +180,19 @@ A disponibilidade jurídica da marca, dos nomes derivados e dos títulos nas loj
 - Grupos pequenos que precisam completar equipes.
 - Pessoas que procuram partidas de nível técnico semelhante.
 - Jogadores que desejam competir sem integrar clubes formais.
-- Consumidores interessados em produtos e equipamentos esportivos.
+- Pessoas que precisam reservar uma quadra particular e dividir o pagamento entre os participantes.
+- Organizadores informais de partidas que hoje dependem de mensagens e cobranças manuais.
 
 **Público comercial:**
 
 - Proprietários e administradores de quadras particulares.
 - Arenas e complexos esportivos.
-- Lojas de artigos esportivos.
-- Vendedores de produtos esportivos aceitos na plataforma.
+- Gestores de estabelecimentos que utilizam agendas manuais ou sistemas sem integração.
+- Estabelecimentos interessados em divulgação, parcerias e patrocínios locais.
 
-Academias, clubes com gestão completa de matrículas, prestadores individuais e organizadores de torneios poderão ser avaliados em etapas futuras, mas não são prioridade do escopo inicial.
+Lojas de artigos esportivos poderão ser patrocinadoras ou anunciantes futuramente, mas não são público-alvo comercial do escopo inicial. Academias, clubes com gestão completa de matrículas, prestadores individuais e organizadores de torneios poderão ser avaliados em etapas futuras, mas não são prioridade do escopo inicial.
+
+---
 
 ## 6. Modalidades e formatos iniciais
 
@@ -161,6 +206,10 @@ Cada modalidade/formato terá uma duração padrão definida pelo produto. A dur
 Os parâmetros exatos de duração, composição do vôlei, tolerâncias de atraso e regras de encerramento deverão ser registrados antes da implementação do respectivo formato.
 
 Outras modalidades poderão ser adicionadas depois, sem assumir que suas regras sejam iguais às do futebol ou do vôlei.
+
+A quantidade de participantes de cada formato é a base para o cálculo da contribuição individual e das cobranças Pix. Não se deve inventar uma composição definitiva para modalidades cujo formato ainda não foi aprovado.
+
+---
 
 ## 7. Matchmaking
 
@@ -201,6 +250,14 @@ No matchmaking, o JOGA calcula automaticamente uma região de encontro considera
 
 A localização exata de cada participante não será exposta aos demais. O sistema deverá considerar distância, privacidade e viabilidade de deslocamento.
 
+### 7.4 Relação com a reserva
+
+Quando o lobby exigir uma quadra particular, a formação do grupo não garante a quadra. O espaço só será considerado reservado depois que o estabelecimento aceitar a solicitação e confirmar o bloqueio temporário do espaço específico, e depois que todos os participantes concluírem os pagamentos dentro do prazo.
+
+O fluxo completo está nas seções 10 a 14.
+
+---
+
 ## 8. Lobbies e organização das partidas
 
 O lobby é o espaço de organização de uma partida. Ele reúne participantes, horário, modalidade, preferências de local, chat e ações relacionadas à partida.
@@ -214,9 +271,9 @@ Origem e visibilidade são conceitos distintos: o sistema deve registrar quem/co
 
 ### 8.2 Chat do lobby
 
-Cada lobby terá um chat próprio para os participantes autorizados. A primeira versão será focada em texto e compartilhamento de referências internas do JOGA, como partidas, quadras, produtos e convites.
+Cada lobby terá um chat próprio para os participantes autorizados. A primeira versão será focada em texto e compartilhamento de referências internas do JOGA, como partidas, quadras e convites.
 
-Mensagens automáticas poderão informar entradas, saídas, votações, alterações de horário, reservas e outros eventos relevantes.
+Mensagens automáticas poderão informar entradas, saídas, votações, alterações de horário, solicitações de reserva, bloqueios, pagamentos e outros eventos relevantes.
 
 Não está previsto, no escopo inicial, envio livre de vídeos, áudios, arquivos ou imagens no chat.
 
@@ -238,6 +295,31 @@ A aprovação exige quórum mínimo de 50% dos participantes elegíveis e mais d
 A votação deve preservar a transparência entre os participantes: os votos poderão ser visualizados pelos demais jogadores, incentivando responsabilidade e reduzindo decisões aleatórias.
 
 A aprovação não substitui a confirmação da disponibilidade nem a conclusão de uma nova reserva. Uma reserva já paga não será cancelada automaticamente apenas porque uma votação foi aprovada. O sistema deverá apresentar os efeitos de cancelamento e reembolso antes de confirmar a mudança.
+
+### 8.4 Confirmação de participação para reservas privadas
+
+Quando a partida exigir reserva de quadra particular, após a formação do lobby os participantes deverão confirmar sua intenção de participar. O prazo inicial é de **1 hora**, contado pelo backend.
+
+O sistema deverá:
+
+- Enviar uma notificação inicial.
+- Permitir confirmar ou recusar a participação.
+- Registrar a confirmação no servidor.
+- Permitir substituições dentro da janela original.
+- Enviar lembretes sem excesso de notificações.
+- Encerrar a etapa no prazo estabelecido.
+
+O JOGA é pensado para ficar disponível no celular, inclusive em segundo plano. O usuário não precisa ficar olhando continuamente para a tela.
+
+Se um participante recusar ou não confirmar dentro do prazo, o sistema poderá procurar um substituto. A substituição deverá ocorrer dentro da janela original de uma hora, sem reiniciar ou estender o prazo geral. Se não houver participantes suficientes ao final da janela, o lobby será desfeito.
+
+**A quadra ainda não terá recebido nenhuma solicitação nesse momento.** O JOGA deve estabilizar o grupo antes de ocupar o tempo operacional do estabelecimento.
+
+Não haverá uma segunda etapa obrigatória de confirmação de prontidão de cinco minutos. A confirmação de participação de uma hora já cumpre essa função.
+
+A confirmação de participação é o primeiro dos três temporizadores independentes descritos na seção 11. Ela não se confunde com o prazo de resposta do estabelecimento nem com o prazo de bloqueio e pagamento.
+
+---
 
 ## 9. Partidas, equipes e resultados
 
@@ -341,70 +423,1008 @@ O JOGA deverá manter mecanismos independentes de detecção de padrões suspeit
 
 Resultados não confirmados ou em disputa não podem alterar o MMR. A plataforma deverá manter histórico auditável dos relatos originais e das decisões finais.
 
-## 10. Locais e infraestrutura esportiva
+---
 
-O JOGA contemplará:
+## 10. Locais, quadras e reservas
+
+O JOGA contemplará espaços públicos e privados, com regras diferentes de descoberta e reserva.
 
 **Espaços públicos:** quadras e espaços de acesso público. O aplicativo poderá ajudar a descobrir e combinar encontros nesses locais. A indicação de um espaço público não representa, por si só, garantia de disponibilidade ou direito de reserva. Só haverá reserva formal se existir autorização e integração operacional com o responsável pelo espaço.
 
-**Espaços privados:** quadras particulares, arenas e complexos esportivos. O estabelecimento poderá cadastrar espaços, preços, horários e regras. O usuário poderá consultar disponibilidade e reservar/pagar pelo aplicativo quando a reserva estiver habilitada.
+**Espaços privados:** quadras particulares, arenas e complexos esportivos. O estabelecimento poderá cadastrar espaços, preços, horários e regras. O usuário poderá solicitar uma reserva pelo aplicativo; a confirmação dependerá do aceite do estabelecimento e da conclusão dos pagamentos.
 
 A preferência de espaço público/particular acompanha a entrada na fila e o lobby. A troca de local deve respeitar a categoria permitida.
 
-## 11. Marketplace de produtos
+### 10.1 Descoberta de espaços
 
-O aplicativo terá um marketplace especializado em produtos esportivos, inicialmente com foco em artigos relacionados às modalidades suportadas.
+A descoberta deverá permitir:
 
-Categorias possíveis incluem bolas, chuteiras, uniformes, meias, acessórios e equipamentos esportivos.
+- Consultar estabelecimentos e espaços compatíveis com a modalidade e a região.
+- Visualizar informações operacionais relevantes, como endereço aproximado, horários de funcionamento, regras e faixa de preço.
+- Verificar se o espaço aceita solicitações pelo JOGA.
+- Identificar se o espaço é público ou particular.
+- Iniciar uma solicitação de reserva para um horário compatível.
 
-### 11.1 Estoque comprometido com o canal JOGA
+A disponibilidade exibida antes do aceite do estabelecimento é uma referência operacional, não uma garantia. A garantia nasce do bloqueio temporário confirmado pelo estabelecimento, nas condições da seção 10.4.
 
-A quantidade que o vendedor publica no JOGA será estoque alocado e comprometido para vendas realizadas pelo JOGA. O vendedor não deverá vender essas mesmas unidades por outro canal sem atualizar previamente a quantidade disponível no JOGA.
+### 10.2 Painel de gestão das quadras
 
-O produto continua pertencendo ao vendedor até a conclusão da venda, mas a quantidade anunciada fica comprometida com a operação do marketplace.
+O painel deverá permitir ao responsável pelo estabelecimento:
 
-O sistema controlará disponibilidade, reservas temporárias durante o checkout, vendas confirmadas e liberações após falha ou expiração do pagamento. O histórico de movimentações deverá ser auditável.
+- Receber solicitações de reserva.
+- Visualizar modalidade.
+- Visualizar data e horário.
+- Consultar duração da partida.
+- Consultar quantidade de participantes.
+- Consultar o espaço físico solicitado.
+- Aceitar ou recusar solicitações.
+- Confirmar bloqueios temporários.
+- Acompanhar o estado dos pagamentos.
+- Consultar reservas confirmadas.
+- Consultar cancelamentos.
+- Consultar histórico de solicitações.
+- Configurar horários de funcionamento.
+- Configurar dias fechados.
+- Cadastrar feriados e exceções.
+- Configurar prazos operacionais.
+- Consultar informações financeiras relacionadas às reservas do JOGA.
 
-### 11.2 Retirada e entrega pelo vendedor
+O gerente não precisa utilizar o aplicativo de jogadores para executar essas atividades. O painel deverá ser responsivo e acessível pelo computador ou navegador do celular.
 
-O JOGA não terá logística própria e não contratará transportadoras no escopo atual.
+O painel não deverá se transformar em um ERP. Sua finalidade é administrar as operações originadas no JOGA.
 
-As opções comerciais serão:
+### 10.3 Solicitação ao estabelecimento
 
-- **Retirada:** o comprador paga no aplicativo e retira o pedido no estabelecimento ou no local indicado pelo vendedor.
-- **Entrega pelo vendedor:** o próprio vendedor organiza e executa a entrega, definindo regiões atendidas, preço, prazo e condições. A execução e o cumprimento da entrega ficam sob responsabilidade do vendedor, sem que isso elimine as obrigações legais que possam caber à plataforma.
+O sistema de reservas funciona por meio de solicitações ao estabelecimento, inspirado no modelo operacional de plataformas de solicitação de serviço. A ideia é que o usuário consiga solicitar uma quadra sem depender da integração do JOGA com o software de gestão utilizado pelo estabelecimento.
 
-O JOGA não fará cotação de frete, emissão de etiqueta, contratação de transportadora, pagamento de transportadora ou rastreamento logístico próprio no escopo atual.
+O estabelecimento receberá a solicitação pelo próprio painel do JOGA.
 
-### 11.3 Código de confirmação de recebimento
+A solicitação deverá conter, no mínimo:
 
-Para retirada e entrega pelo vendedor, o JOGA poderá gerar um código único de confirmação. O código ficará disponível ao comprador e será informado ao vendedor/entregador somente quando o produto for efetivamente entregue ao consumidor.
+- Modalidade e formato.
+- Data e horário pretendidos.
+- Duração da partida.
+- Quantidade de participantes.
+- Espaço físico solicitado.
+- Identificação da reserva e do lobby.
+- Prazo de resposta do estabelecimento.
+- Condições comerciais aplicáveis.
 
-O backend validará o código, limitará tentativas, controlará expiração e impedirá reutilização. O código confirma a entrega física registrada, mas não comprova que o produto estava correto, sem defeitos ou de acordo com o anúncio. Ele não representa renúncia a direitos do consumidor.
+Antes de enviar a solicitação, o JOGA deverá calcular se ainda existe tempo suficiente para o estabelecimento responder, realizar o bloqueio e os jogadores pagarem antes da partida. Se não houver tempo suficiente, a solicitação não deverá ser enviada.
 
-### 11.4 Compras e aluguel
+O aceite do estabelecimento representa um compromisso condicional de honrar a reserva, desde que todos os participantes paguem dentro do prazo. Não deverá existir uma segunda aprovação manual após os pagamentos se o estabelecimento já confirmou o bloqueio.
 
-A compra de produtos integra o escopo comercial inicial, com limites operacionais definidos acima. O aluguel de equipamentos é uma possibilidade futura, pois exige controle de períodos, disponibilidade, retirada, devolução, atraso, danos e eventual caução.
+Em caso de recusa ou expiração da solicitação, o lobby poderá ser cancelado ou redirecionado para outra quadra compatível, se houver alternativa e tempo operacional. A regra definitiva sobre redirecionamento permanece pendente.
 
-## 12. Pagamentos, cancelamentos e devoluções
+### 10.4 Bloqueio temporário obrigatório
 
-O JOGA utilizará um provedor de pagamentos apropriado para marketplace, com recursos compatíveis com cadastro de vendedores, split quando disponível, webhooks, estornos, chargebacks e conciliação.
+Todas as quadras parceiras que receberem solicitações deverão trabalhar com um mecanismo de bloqueio temporário.
 
-O JOGA não construirá processador próprio nem carteira custodial. O status financeiro oficial deverá ser confirmado por eventos autenticados do provedor, nunca apenas pelo retorno visual do aplicativo.
+Esse bloqueio é obrigatório porque a quadra não pode aceitar uma solicitação, deixar o horário disponível em outros canais e vender o mesmo espaço para outra pessoa enquanto os participantes do JOGA realizam os pagamentos.
 
-O painel e o aplicativo deverão permitir registrar cancelamentos, solicitações de devolução, análise, instruções de retorno, recebimento e reembolso. A operação logística de devolução será conduzida pelo vendedor, mas o sistema deverá registrar os eventos e respeitar a legislação aplicável. O direito de arrependimento em compras à distância e os custos de logística reversa não podem ser afastados por termos da plataforma.
+Quando o estabelecimento aceitar uma solicitação, deverá confirmar que o horário foi efetivamente bloqueado em sua agenda operacional. Isso vale também para estabelecimentos que utilizam agendas manuais.
 
-Se o vendedor não conseguir cumprir o pedido, o consumidor deverá receber uma solução adequada e, quando o cancelamento for cabível, reembolso integral dos valores pagos, inclusive valores de entrega cobrados pelo vendedor.
+Se utiliza WhatsApp, telefone, papel ou outro sistema, o responsável deverá atualizar esse controle fora do JOGA antes de confirmar o bloqueio no painel. A confirmação de bloqueio pelo painel representa um compromisso do estabelecimento.
 
-## 13. Clãs, amizades e comunidade
+Se todos os participantes concluírem os pagamentos dentro do prazo, a reserva será efetivada sem precisar de uma segunda autorização comercial.
+
+A quadra não poderá aceitar, manter bloqueio e depois exigir uma nova aprovação sem motivo operacional previsto.
+
+O bloqueio deverá ser registrado com identificação do espaço, início, fim, reserva associada, responsável pela confirmação e histórico de alterações.
+
+### 10.5 Bloqueio de um espaço específico
+
+O bloqueio deverá identificar a quadra ou espaço físico específico.
+
+Uma arena pode possuir vários campos ou quadras. O sistema não poderá considerar que todo o estabelecimento está indisponível quando apenas um espaço foi reservado.
+
+Também deverá impedir sobreposição de bloqueios para o mesmo espaço e intervalo de tempo. A verificação deverá ser feita de forma transacional no backend, com constraints e proteção contra concorrência. Não basta uma checagem visual no painel.
+
+### 10.6 Duração e expiração do bloqueio
+
+A referência inicial será de **60 minutos**.
+
+Entretanto, cada estabelecimento poderá configurar a duração máxima do bloqueio conforme suas condições operacionais e o compromisso comercial acordado com o JOGA.
+
+Não haverá renovação automática. Se o bloqueio expirar sem a conclusão dos pagamentos, será liberado.
+
+O estabelecimento poderá continuar recebendo novas solicitações para outros horários disponíveis.
+
+A expiração do bloqueio não apaga o histórico. O sistema deverá registrar que o bloqueio existiu, quando expirou e quais pagamentos estavam pendentes naquele momento.
+
+### 10.7 Fluxo completo da reserva
+
+1. O lobby é formado pelo matchmaking ou criado manualmente.
+2. Quando a partida exige quadra particular, os participantes confirmam participação em até 1 hora.
+3. O backend identifica uma quadra compatível e verifica se há tempo operacional suficiente.
+4. A solicitação é enviada ao painel do estabelecimento.
+5. O estabelecimento aceita ou recusa dentro do prazo de resposta.
+6. Se aceitar, confirma o bloqueio temporário do espaço específico em sua agenda operacional e no painel do JOGA.
+7. As cobranças Pix dos participantes são abertas simultaneamente, com o mesmo prazo limite.
+8. Cada participante paga sua própria contribuição.
+9. Se todos os pagamentos necessários forem aprovados dentro do prazo, a reserva é confirmada sem segunda aprovação manual.
+10. Se alguém não pagar, o sistema poderá substituir a vaga dentro da janela original de pagamento.
+11. Se não houver substituto ou tempo suficiente, o lobby será cancelado, o bloqueio liberado e os valores pagos reembolsados.
+12. Se o estabelecimento cancelar ou descumprir o bloqueio depois de os participantes terem pago, o JOGA deverá cancelar a reserva e iniciar os reembolsos.
+13. Todos os eventos deverão ser registrados e auditáveis.
+
+### 10.8 Responsabilidade do estabelecimento
+
+Ao aceitar uma solicitação, a quadra deverá:
+
+1. Confirmar que o espaço físico está disponível.
+2. Bloquear o horário na agenda operacional que utiliza.
+3. Confirmar o bloqueio pelo painel do JOGA.
+4. Manter o horário reservado durante a janela de bloqueio.
+5. Honrar a reserva caso todos os pagamentos sejam concluídos no prazo.
+
+Se a quadra descumprir o compromisso depois de os participantes terem pago, o JOGA deverá cancelar a reserva e iniciar os reembolsos.
+
+O histórico do estabelecimento deverá registrar:
+
+- Solicitações aceitas.
+- Solicitações recusadas.
+- Tempo de resposta.
+- Bloqueios confirmados.
+- Reservas efetivadas.
+- Cancelamentos provocados pelo estabelecimento.
+- Falhas de disponibilidade.
+- Descumprimentos de reservas.
+
+Esses registros poderão contribuir para um indicador de confiabilidade comercial do estabelecimento. Não punir automaticamente por ocorrência isolada. Considerar contexto, gravidade e reincidência.
+
+---
+
+## 11. Os três temporizadores independentes
+
+O sistema deverá possuir três prazos diferentes. Eles não devem ser confundidos ou somados indiscriminadamente.
+
+| Temporizador | Início | Referência inicial | Quem controla | Efeito ao expirar |
+|---|---|---|---|---|
+| T1 — Confirmação de participação | Formação do lobby que exige quadra particular | 1 hora | Backend | Substituição dentro da janela ou dissolução do lobby; a quadra não é acionada |
+| T2 — Resposta do estabelecimento | Envio da solicitação, após todos confirmarem | 30 minutos de funcionamento + prazo máximo em tempo corrido | Backend, com horário de funcionamento do estabelecimento | Recusa/expiração; cancelamento ou redirecionamento, se houver tempo |
+| T3 — Bloqueio e pagamento | Aceite e confirmação do bloqueio pelo estabelecimento | 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos | Backend e PSP | Liberação do bloqueio e reembolso do que foi pago |
+
+Os prazos são independentes. O tempo total entre a formação do lobby e a confirmação da reserva pode ser maior do que a soma simples dos três, especialmente quando o prazo de resposta atravessa períodos de funcionamento ou dias fechados.
+
+### 11.1 T1 — Confirmação de participação dos jogadores
+
+Após a formação do lobby, os participantes deverão confirmar sua intenção de participar da partida, quando ela exigir reserva de quadra particular.
+
+O prazo inicial será de **1 hora**. Esse valor é uma decisão de produto para a primeira versão do fluxo.
+
+O sistema deverá enviar notificação, permitir confirmar ou recusar, registrar a confirmação no servidor, permitir substituições e encerrar a etapa no prazo.
+
+Se um participante recusar ou não confirmar, o sistema poderá procurar um substituto. A substituição deverá ocorrer dentro da janela original de uma hora, sem reiniciar ou estender o prazo geral.
+
+Se não houver participantes suficientes ao final da janela, o lobby será desfeito. A quadra ainda não terá recebido nenhuma solicitação nesse momento.
+
+Não criar uma segunda etapa obrigatória de confirmação de prontidão de cinco minutos. A confirmação de participação de uma hora já cumpre essa função.
+
+### 11.2 T2 — Prazo de resposta do estabelecimento
+
+Depois que todos os participantes necessários confirmarem, o JOGA enviará a solicitação à quadra.
+
+O estabelecimento terá um prazo para aceitar ou recusar. A referência inicial discutida é de **30 minutos de funcionamento**.
+
+A contagem deverá considerar o horário de funcionamento cadastrado:
+
+- Solicitação durante o expediente: começa imediatamente.
+- Solicitação próxima ao fechamento: a contagem continua no próximo período aberto.
+- Solicitação durante a madrugada: começa na próxima abertura.
+- Solicitação em dia fechado: começa no próximo período de funcionamento.
+
+O painel deverá permitir configurar os horários e períodos excepcionais.
+
+Além disso, haverá um prazo máximo em tempo corrido, para que uma solicitação não fique pendente indefinidamente.
+
+O JOGA deverá calcular se ainda existe tempo suficiente para a quadra responder, realizar o bloqueio e os jogadores pagarem antes da partida. Se não houver tempo suficiente, a solicitação não deverá ser enviada.
+
+A referência de 30 minutos é inicial e deverá ser validada com os primeiros estabelecimentos. Uma sugestão posterior de duas horas não deve ser tratada como decisão aprovada.
+
+### 11.3 T3 — Prazo de bloqueio e pagamento
+
+Quando o estabelecimento aceitar e confirmar o bloqueio, começa o prazo de bloqueio temporário.
+
+A referência inicial é de **60 minutos**, configurável por estabelecimento.
+
+As cobranças dos participantes serão disponibilizadas simultaneamente. Todos terão exatamente o mesmo horário limite.
+
+O pagamento deverá terminar antes da expiração do bloqueio, deixando um pequeno buffer operacional para conferir os eventos do PSP e concluir a reserva. Esse buffer poderá começar em **5 a 10 minutos**, sujeito a validação.
+
+Exemplo ilustrativo:
+
+| Evento | Horário |
+|---|---|
+| Estabelecimento aceita e bloqueia | 14:00 |
+| Cobranças disponibilizadas | 14:00 |
+| Prazo limite para pagamentos | 14:50 |
+| Buffer operacional | 10 minutos |
+| Expiração do bloqueio | 15:00 |
+
+Os horários são apenas ilustrativos.
+
+Não deverá existir prorrogação automática do bloqueio ou do prazo de pagamento.
+
+Os prazos antigos de 24 horas e 2 horas para pagamento deverão ser removidos desta etapa. Eles não são compatíveis com o novo modelo de bloqueio temporário.
+
+### 11.4 Independência, transparência e autoridade do servidor
+
+Os três temporizadores deverão ter estados, eventos e responsáveis distintos. O sistema não deve somar os prazos nem reiniciar um temporizador quando outro termina.
+
+O backend é a autoridade sobre todos os prazos. O aplicativo não deve usar tarefas locais, notificações ou o relógio do dispositivo como fonte oficial. Se o dispositivo estiver desligado ou sem conexão, o prazo continuará sendo controlado pelo servidor.
+
+A interface deverá exibir cada prazo com um nome claro, para evitar que o usuário interprete a confirmação de participação, a resposta da quadra e o pagamento como uma única etapa.
+
+---
+
+## 12. Pagamentos Pix individuais e fluxo financeiro
+
+### 12.1 Meio de pagamento inicial
+
+A primeira versão de pagamentos das reservas utilizará exclusivamente **Pix**.
+
+Débito e crédito serão avaliados posteriormente. Os benefícios do Pix deverão ser comunicados como vantagem econômica, sem apresentar o cartão como punição. Se futuramente houver cartão, o valor final deverá ser apresentado com transparência antes da confirmação.
+
+A tarifa do PSP não é presumidamente gratuita. O JOGA deverá negociar e medir:
+
+- Tarifa de recebimento Pix.
+- Tarifas de devolução e de estorno.
+- Tarifas de split e de repasse.
+- Tarifa de transferência/liberação por reserva.
+- Custos de manutenção e de cadastro de recebedores.
+- Webhooks, conciliação e suporte.
+
+### 12.2 Modelo de pagamentos individuais
+
+**Cada participante deverá realizar seu próprio pagamento Pix.**
+
+O JOGA não utilizará um modelo em que uma única pessoa paga a reserva inteira em nome do grupo. Esse modelo não corresponde à experiência planejada e não deverá ser sugerido como solução alternativa.
+
+Exemplo: uma reserva de R$ 180 com dez participantes exige dez pagamentos individuais.
+
+Cada pagamento deverá estar vinculado:
+
+- À reserva.
+- Ao lobby.
+- Ao participante.
+- À vaga ocupada.
+- À contribuição individual.
+- À taxa de serviço correspondente.
+- À transação registrada pelo PSP.
+
+Todas as cobranças deverão ser abertas simultaneamente depois que a quadra aceitar e confirmar o bloqueio. Todos terão o mesmo prazo de pagamento.
+
+### 12.3 Condição para confirmação
+
+A reserva será confirmada quando todos os participantes necessários tiverem pagamentos aprovados dentro do prazo.
+
+O aceite inicial da quadra já representa um compromisso condicional de honrar a reserva, desde que todos paguem.
+
+Não deverá existir uma segunda aprovação manual após os pagamentos se o estabelecimento já confirmou o bloqueio.
+
+### 12.4 Custódia, split e liberação
+
+O JOGA não construirá carteira própria nem custodiará valores de terceiros de forma informal. O desenho preferencial é o **split de pagamentos** com um PSP licenciado:
+
+- Cada estabelecimento é cadastrado como recebedor (`recipient`).
+- Cada participante paga sua cobrança Pix.
+- A cobrança é dividida entre a parte do estabelecimento e a taxa do JOGA.
+- O valor do estabelecimento permanece no saldo do recebedor até a liberação.
+- O JOGA solicita a liberação somente depois que **tudo estiver confirmado**, inclusive a realização da partida.
+- A liberação é idempotente e registrada no ledger interno.
+
+A liberação não pode depender de confirmação manual indefinida. Deve existir uma regra de liberação automática após `N` horas da partida, precedida de janela de disputa. O valor de `N` permanece pendente.
+
+Se o estabelecimento conseguir sacar o saldo por conta própria, a retenção deixa de ser técnica e passa a ser apenas contratual. Nesse caso, o JOGA precisa:
+
+1. Registrar a limitação no contrato.
+2. Aumentar a provisão de cauda `p_t` da fórmula de precificação.
+3. Rever a política de reembolso após a confirmação.
+
+Na alternativa centralizada, o valor fica na conta do JOGA e o repasse ao estabelecimento ocorre depois da confirmação. Essa custódia exige revisão jurídica, segregação contábil e não é presumida como permitida.
+
+### 12.5 Portão de KYC do estabelecimento
+
+Um estabelecimento recém-cadastrado pode levar até 24 horas para ter a identidade validada e o recebedor ativo.
+
+Regra obrigatória: **não abrir reserva paga para estabelecimento cujo recebedor não esteja ativo**. Se o KYC estiver pendente, a solicitação fica bloqueada e o jogador não é cobrado. Não se coleta Pix para uma quadra que ainda não pode receber.
+
+O cadastro do recebedor exige dados cadastrais, conta bancária na mesma titularidade, validação de identidade e, conforme o PSP, prova de vida por QR Code. O JOGA deverá acompanhar o estado do recebedor e refleti-lo no painel.
+
+### 12.6 Interface financeira do estabelecimento
+
+Quando houver split, o PSP pode não oferecer dashboard própria ao recebedor. A interface financeira do estabelecimento passa a ser **escopo obrigatório**, não conveniência:
+
+- Extrato por reserva e por cobrança.
+- Agenda de recebíveis e status de liberação.
+- Comprovantes e notas de repasse.
+- Dados contratuais do recebedor.
+- Canal de contestação de valores.
+- Histórico de estornos e ajustes.
+
+Essa interface atende às obrigações de transparência aplicáveis a facilitadores de pagamento (Res. 264/349) e deve ser tratada como parte do produto, com custo operacional próprio.
+
+### 12.7 Requisitos do PSP
+
+O provedor precisa suportar, direta ou contratualmente:
+
+- Diversas cobranças Pix individuais para uma única reserva.
+- Identificação de cada pagador.
+- Associação das cobranças a uma reserva comum.
+- Split por cobrança.
+- Saldo por recebedor e liberação controlada.
+- Estorno individual.
+- Webhooks autenticados e idempotentes.
+- Tratamento de pagamentos tardios.
+- Conciliação e relatórios.
+
+O ideal é que o PSP mantenha controle dos valores enquanto os pagamentos são concluídos e permita a distribuição somente depois da confirmação coletiva.
+
+**Se nenhum PSP conseguir oferecer um fluxo adequado de pagamentos individuais, split e liberação controlada, o lançamento das reservas com pagamento integrado deverá aguardar uma solução viável.** Essa capacidade é condição de viabilidade comercial, não um detalhe de integração.
+
+Não substituir o modelo de pagamentos individuais pelo modelo de um único pagador.
+
+### 12.8 Estados financeiros
+
+A reserva e os pagamentos individuais não deverão compartilhar um único estado financeiro simplificado.
+
+Cada participante deverá ter um estado financeiro individual, como:
+
+- `CREATED`
+- `PENDING`
+- `PAID`
+- `EXPIRED`
+- `REFUND_PENDING`
+- `REFUNDED`
+- `REFUND_FAILED`
+
+O estado agregado da reserva deverá ser derivado dos estados individuais e dos eventos do PSP, e não substituí-los. Uma reserva com dez participantes pode ter, por exemplo, oito pagamentos `PAID`, um `EXPIRED` e um `PENDING`, sem que isso seja representado como um único estado “pago” ou “não pago”.
+
+### 12.9 Webhooks, idempotência e pagamentos tardios
+
+O status financeiro oficial deverá ser confirmado por eventos autenticados do provedor, nunca apenas pelo retorno visual do aplicativo.
+
+O sistema deverá:
+
+- Validar a autenticidade dos webhooks.
+- Processar eventos de forma idempotente.
+- Impedir que o reenvio de um evento duplique pagamento, vaga, confirmação ou reembolso.
+- Conciliar o estado interno com o PSP por consulta server-to-server quando necessário.
+- Identificar pagamentos tardios.
+- Encaminhar pagamentos tardios de reservas canceladas para reembolso.
+- Encaminhar pagamentos de participantes já substituídos para reembolso.
+- Registrar todas as transições com horário e referência do evento.
+
+O aplicativo não poderá informar que um pagamento foi confirmado ou que um reembolso foi concluído enquanto o PSP não confirmar o resultado.
+
+---
+
+## 13. Substituição de participantes
+
+### 13.1 Quando a substituição é permitida
+
+A substituição continua sendo possível mesmo após a aceitação da quadra, para evitar cancelar toda a partida por causa de uma pessoa que não pagou.
+
+A substituição deve ocorrer dentro da janela original de pagamento. Ela não reinicia o prazo e não prorroga o bloqueio da quadra.
+
+### 13.2 Fonte de candidatos
+
+A fonte prioritária será a fila de espera. Também poderão ser considerados outros usuários elegíveis para aquela partida.
+
+### 13.3 Fluxo
+
+1. Um participante não paga dentro do prazo.
+2. O sistema identifica a vaga.
+3. Verifica o tempo restante.
+4. Seleciona um candidato elegível.
+5. Envia o convite.
+6. O candidato confirma sua participação.
+7. Recebe sua cobrança Pix.
+8. Realiza o pagamento dentro do prazo original.
+9. A vaga é ocupada pelo novo participante.
+
+O candidato deverá pagar exatamente a mesma contribuição prevista para aquela vaga, sem recalcular os valores dos demais participantes.
+
+### 13.4 Regras obrigatórias
+
+- A substituição não reinicia o prazo de pagamento.
+- O bloqueio da quadra não é prorrogado.
+- Apenas um candidato poderá ocupar uma vaga específica.
+- Uma pessoa substituída não poderá ser restaurada automaticamente.
+- Se houver pagamento tardio de uma pessoa já substituída, o JOGA deverá identificar a cobrança e iniciar o reembolso.
+- O sistema deverá manter o histórico de qual participante ocupou cada vaga e em qual momento.
+- As cobranças deverão estar associadas à versão correspondente da participação no lobby.
+
+Inicialmente, poderá existir apenas uma tentativa de substituição por vaga durante a janela de pagamento. Essa regra deverá ser validada operacionalmente e não é uma decisão definitiva.
+
+Se não houver substituto ou tempo suficiente, o lobby será cancelado. Os valores já pagos deverão ser devolvidos.
+
+### 13.5 Confiabilidade dos participantes
+
+O sistema poderá registrar padrões recorrentes de confirmação seguida de inadimplência.
+
+Uma ocorrência isolada não deverá gerar punição automática.
+
+Padrões repetidos poderão ser utilizados para avaliar a confiabilidade do cumprimento de compromissos, desde que existam critérios transparentes e tratamento de exceções. Esse indicador não deverá ser misturado automaticamente ao MMR.
+
+---
+
+## 14. Cancelamentos e reembolsos
+
+### 14.1 Falha na formação da reserva
+
+Se a reserva não for concluída por falta de pagamentos, indisponibilidade, falha de substituição ou expiração do bloqueio:
+
+1. O lobby será cancelado.
+2. O bloqueio será liberado.
+3. Nenhuma nova cobrança será emitida.
+4. Todos os participantes que pagaram receberão reembolso integral.
+5. O reembolso incluirá a contribuição da quadra e a taxa de serviço paga ao JOGA.
+6. As tarifas não recuperáveis do PSP serão custos operacionais do JOGA, cobertos pelo componente `C_c` da precificação.
+
+Não deduzir automaticamente as tarifas do PSP do reembolso dos participantes nesse fluxo.
+
+O valor principal devolvido não é prejuízo integral do JOGA quando está disponível para reembolso. O custo relevante é o que a plataforma efetivamente perde: tarifas não recuperáveis, atendimento, falhas de estorno e outros encargos. Esse custo é medido em `C_c`, nunca estimado como se o valor principal fosse perdido.
+
+### 14.2 Estados do reembolso
+
+O estado financeiro deverá distinguir:
+
+- Reembolso solicitado.
+- Reembolso em processamento.
+- Reembolso concluído.
+- Reembolso com falha.
+
+O aplicativo não poderá informar que o reembolso foi concluído enquanto o PSP não confirmar o resultado.
+
+### 14.3 Pagamentos tardios
+
+Pagamentos tardios de reservas canceladas também deverão passar pelo fluxo de devolução.
+
+O mesmo vale para pagamentos de participantes que já foram substituídos. O sistema deverá identificar a cobrança, impedir a reativação automática da reserva e iniciar o reembolso.
+
+### 14.4 Cancelamento depois da reserva confirmada
+
+As regras de cancelamento depois de uma reserva já confirmada precisam ser definidas separadamente, respeitando as condições contratuais e a legislação aplicável.
+
+O valor do estabelecimento só é liberado depois que tudo estiver confirmado, inclusive a realização da partida. Se houver cancelamento antes da liberação, o estorno deve ser feito no PSP e o ledger interno deve refletir a reversão.
+
+Se o estabelecimento já tiver sacado o valor, a recuperação deixa de ser automática. Esse é um evento de cauda, tratado por `p_t` e por cláusula contratual específica.
+
+### 14.5 Desistência individual após confirmação
+
+A política para desistência individual após a confirmação da reserva permanece pendente. Ela deverá considerar, no mínimo:
+
+- Se a vaga pode ser substituída.
+- Se o valor é reembolsável e em qual percentual.
+- Se a quadra sofre impacto operacional.
+- Se há prazo mínimo para desistência.
+- Se a taxa de serviço é devolvida.
+- Se a desistência afeta a confiabilidade do jogador.
+
+### 14.6 Descumprimento pelo estabelecimento
+
+Se o estabelecimento descumprir o compromisso depois de os participantes terem pago, o JOGA deverá cancelar a reserva e iniciar os reembolsos.
+
+O histórico do estabelecimento deverá registrar o evento e contribuir para o indicador de confiabilidade comercial, sem punição automática por ocorrência isolada.
+
+### 14.7 MED, chargeback e estorno sem saldo
+
+No Pix, o risco relevante não é apenas o chargeback de cartão. O **MED (Mecanismo Especial de Devolução)** pode debitar o valor do recebedor ou da plataforma, conforme a regra de responsabilidade e o saldo disponível.
+
+O JOGA deverá:
+
+- Confirmar com o PSP quem é debitado em caso de MED.
+- Definir o que acontece quando o recebedor não tem saldo.
+- Manter canal e prazo de contestação.
+- Provisionar o risco de cauda em `p_t·V`.
+- Registrar cada evento e sua resolução.
+
+O MED pode chegar depois da liberação. A retenção até a partida protege contra reserva frustrada; não protege contra fraude. Contra fraude existe provisão e contrato, não apenas bloqueio de saldo.
+
+### 14.8 Base financeira dos reembolsos
+
+A precificação separa três coisas:
+
+1. **Valor principal:** pertence ao jogador e é devolvido quando a reserva não se conclui.
+2. **Custo da reserva cancelada (`C_c`):** tarifas não recuperáveis, devolução e atendimento. É custo do JOGA e entra na fórmula.
+3. **Provisão de cauda (`p_t·V`):** eventos raros, como MED, estorno sem saldo e disputa após liberação.
+
+Não contar o valor principal como perda. Não contar `C_c` duas vezes. Não usar o markup de segurança como se fosse lucro livre.
+
+---
+
+## 15. Comércio de produtos — fora do escopo
+
+O comércio de produtos **não faz parte do escopo inicial** e não é especificado nesta versão.
+
+Não haverá, nesta etapa:
+
+- catálogo de produtos;
+- estoque;
+- pedidos;
+- cadastro de vendedores;
+- retirada ou entrega de produtos;
+- código de recebimento;
+- avaliações comerciais;
+- disputas de produtos;
+- pagamentos ou split de produtos.
+
+Lojas esportivas poderão participar apenas como patrocinadoras ou anunciantes, sem vender produtos dentro do aplicativo.
+
+Qualquer reintrodução exige nova decisão de produto, nova especificação técnica, revisão jurídica, definição de PSP e avaliação de capacidade operacional. Não reativar por documento antigo, código antigo ou fase antiga. A decisão está registrada no ADR 0022.
+
+---
+
+## 16. Publicidade e monetização
+
+### 16.1 Fontes de receita iniciais
+
+A monetização inicial deverá se concentrar principalmente em:
+
+1. **Taxas de serviço nas reservas de quadras** originadas e concluídas pelo JOGA.
+2. **Parcerias comerciais.**
+3. **Patrocínios.**
+4. **Publicidade contextual**, quando houver audiência suficiente.
+
+Funcionalidades essenciais de jogadores, matchmaking, partidas e comunidades continuarão predominantemente gratuitas.
+
+Assinaturas Premium poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+
+### 16.2 Comissão sobre reservas
+
+O JOGA poderá cobrar uma taxa de serviço sobre reservas originadas pela plataforma.
+
+A comissão não deverá incidir sobre reservas que o estabelecimento conseguiu de maneira independente.
+
+A receita deverá estar associada a uma reserva efetivamente concluída. Quando uma solicitação não se transforma em reserva, não existe receita comercial realizada com aquela reserva.
+
+A comissão `c·V` é a fonte de receita que cobre custo fixo da operação e lucro-alvo. O custo variável de cada reserva e a provisão de cancelamento entram como componentes explícitos da fórmula da seção 17. Não usar a comissão para financiar silenciosamente o custo variável já cobrado do jogador.
+
+### 16.3 Estabelecimentos parceiros
+
+As quadras particulares poderão participar do JOGA por meio de um painel próprio de gestão.
+
+O sistema deverá permitir administrar solicitações, horários bloqueados, reservas, pagamentos e histórico.
+
+Não será necessário que a quadra utilize um software externo específico. O JOGA deverá conseguir operar com estabelecimentos que utilizam agendas manuais, planilhas, WhatsApp ou sistemas sem API.
+
+Integrações externas serão desejáveis futuramente, mas não obrigatórias para o lançamento.
+
+### 16.4 Publicidade
+
+A publicidade deverá ser identificada como patrocinada. A posição paga não poderá alterar o MMR, o Trust Factor, a composição do matchmaking ou a justiça dos rankings. Recomendações patrocinadas deverão respeitar filtros e restrições relevantes do usuário.
+
+A publicidade avançada depende de audiência e volume de uso. Não deve ser tratada como receita garantida antes de existir tráfego suficiente.
+
+### 16.5 Assinaturas
+
+Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+
+### 16.6 Regras gerais de monetização
+
+- Nenhuma taxa oculta.
+- Nenhuma vantagem competitiva comprada.
+- Nenhuma alteração de MMR, Trust Factor, matchmaking ou ranking por pagamento.
+- Nenhuma comissão sobre reservas externas ao JOGA sem acordo explícito.
+- Nenhuma receita de comércio de produtos no escopo inicial.
+- Toda cobrança deverá ser explicável ao usuário antes do pagamento.
+
+---
+
+## 17. Política de precificação
+
+### 17.1 Princípio
+
+A taxa deve cobrir o custo real de operar a reserva, o risco de cancelamento e a margem necessária para manter o serviço, sem cobrar do jogador um coeficiente arbitrário sobre custos que não existem.
+
+A política não usa piso, preço variável nem teto percentual como mecanismos independentes. Usa uma fórmula com componentes explícitos e uma regra de elegibilidade.
+
+### 17.2 Fórmula
+
+```text
+TAXA = c·V + C_k + C_c·μ·S + p_t·V
+
+μ = (1 − q) / q
+S = 1 + z·√(φ / μ)
+```
+
+| Termo | Significado | Quem paga |
+|---|---|---|
+| `c·V` | Comissão comercial sobre o valor da quadra | Custo fixo da operação e lucro-alvo |
+| `C_k` | Custo variável de uma reserva concluída | Tarifas do PSP, split, transferência, operação |
+| `C_c` | Custo de uma reserva cancelada | Tarifas não recuperáveis, devolução e atendimento |
+| `μ` | Cancelamentos esperados por reserva concluída | — |
+| `S` | Fator de segurança para a variância dos cancelamentos | — |
+| `p_t·V` | Provisão de cauda | MED, estorno sem saldo, disputa após liberação |
+
+`q` é a taxa de conclusão: reservas pagas que efetivamente se confirmam e se realizam, divididas pelas tentativas de reserva paga abertas no período.
+
+O valor principal pago pelo jogador **não** entra em `C_c` nem em `p_t`. Ele é devolvido integralmente quando a reserva não se conclui.
+
+### 17.3 O que o 1,8 significava
+
+Com `q = 20%`, `μ = 4` e `φ = 1`:
+
+```text
+S = 1 + 1,645/√4 = 1,82
+μ·S = 7,29
+```
+
+O antigo coeficiente **1,8** é, na prática, o fator de segurança de 95% para a variância do número de cancelamentos no cenário de 80% de cancelamento. Ele **não** é markup sobre o custo total.
+
+Regras decorrentes:
+
+- O 1,8 não incide sobre `C_k`.
+- O 1,8 não incide sobre `CUSTOS + LUCRO_ALVO`.
+- O 1,8 não é lucro livre.
+- O 1,8 não é aplicado duas vezes.
+- A proteção de 95% aparece em `S`, apenas sobre a provisão de cancelamento.
+
+### 17.4 Componentes e medição
+
+**Comissão (`c·V`).** Parâmetro comercial. Cobre custo fixo da plataforma (produto, suporte, KYC, interface financeira do recebedor, infraestrutura) e lucro-alvo. O valor inicial de trabalho é `c = 10%`, a validar no piloto.
+
+**Custo da reserva concluída (`C_k`).** Agrega:
+
+- tarifa percentual do PSP sobre o valor total pago;
+- custo fixo por cobrança;
+- tarifa de split;
+- tarifa de transferência/liberação;
+- conciliação e operação variável.
+
+**Custo da reserva cancelada (`C_c`).** Agrega:
+
+- tarifa de recebimento não recuperada;
+- tarifa de devolução/estorno;
+- custo de atendimento;
+- custo de reprocessamento e falha de reembolso.
+
+Não inclui o valor principal devolvido.
+
+**Cancelamentos esperados (`μ`).** `(1 − q) / q`. Se 20% das tentativas concluem, há 4 cancelamentos esperados por reserva concluída.
+
+**Fator de segurança (`S`).** `1 + z·√(φ/μ)`. `z = 1,645` corresponde a 95% de confiança. `φ = 1` assume cancelamentos com dispersão de Poisson; `φ > 1` deve ser usado quando cancelamentos são correlacionados (chuva, feriado, horário).
+
+**Provisão de cauda (`p_t·V`).** Cobre eventos raros e de valor alto: MED, estorno sem saldo, disputa depois da liberação, falha de PSP. Valor inicial de trabalho: `p_t = 0,2%`.
+
+### 17.5 Base de cálculo e ponto fixo
+
+As tarifas percentuais do PSP incidem sobre o valor total pago (`V + TAXA`), não apenas sobre o valor da quadra. O cálculo deve ser resolvido como ponto fixo:
+
+```text
+S_total = V + TAXA
+C_k = a_k + p·S_total + τ
+C_c = a_c + p·S_total·(m/k)
+TAXA = c·V + C_k + C_c·μ·S + p_t·V
+```
+
+Onde:
+
+- `a_k` = custo fixo agregado da reserva concluída.
+- `p` = tarifa percentual do PSP.
+- `τ` = tarifa de transferência/liberação.
+- `a_c` = custo fixo por cancelamento.
+- `m` = cobranças médias pagas antes do cancelamento.
+- `k` = participantes/cobranças da reserva concluída.
+
+O valor exibido ao jogador é congelado quando a cobrança é aberta. Recalibrações valem apenas para reservas futuras.
+
+### 17.6 Parâmetros iniciais
+
+| Parâmetro | Valor inicial | Natureza |
+|---|---|---|
+| `q` | Medido em janela móvel de 90 dias | Dado operacional |
+| `c` | 10% | Hipótese comercial |
+| `z` | 1,645 | 95% de confiança |
+| `φ` | 1,0 | Poisson; revisar com dados |
+| `p_t` | 0,2% | Provisão inicial de cauda |
+| `C_k`, `C_c`, `τ` | Medidos por contrato e operação | Substituir hipóteses por dados reais |
+
+Nenhum desses valores é preço final aprovado. O piloto deve medir `q`, `C_k`, `C_c`, `τ` e `p_t` antes de qualquer promessa comercial.
+
+### 17.7 Elegibilidade mínima da quadra
+
+O antigo teto de 15%–20% é substituído por uma regra de elegibilidade.
+
+- Se a taxa calculada ultrapassar o limite operacional aceito para a faixa (referência inicial: **25% do valor da quadra**), a reserva paga não é oferecida.
+- Se o valor da quadra for baixo demais para diluir os custos fixos, o estabelecimento deve renegociar o preço da quadra ou operar sem pagamento integrado.
+- A decisão é registrada com valor calculado, faixa e motivo.
+
+A regra não é um desconto nem um subsídio. É uma recusa consciente de operar no prejuízo. Com `q = 20%`, a referência de **R$ 100** de valor mínimo mantém a taxa abaixo de 25%; esse número é ilustrativo e será recalibrado.
+
+### 17.8 Calibração e governança
+
+- `q` é medido por modalidade e faixa de preço, com janela móvel e amortecimento.
+- Não usar `q` por quadra sem amostra suficiente; isso gera seleção adversa.
+- A taxa não varia em tempo real. A variação por ciclo é limitada a ±10%.
+- A taxa de uma reserva não muda depois que o pagamento foi aberto.
+- Aumentos e reduções exigem justificativa econômica, simulação e versionamento.
+- `C_k`, `C_c`, `τ` e `p_t` são revisados quando o contrato do PSP ou o comportamento observado mudar.
+- A fórmula e os parâmetros aplicados ficam registrados por reserva, para auditoria.
+
+### 17.9 Divisão da taxa
+
+O valor total da taxa será distribuído entre os participantes conforme a regra de divisão financeira da reserva.
+
+Não cobrar a taxa integral de cada participante.
+
+A contribuição individual deverá ser transparente antes do pagamento.
+
+### 17.10 Exemplo ilustrativo
+
+Com `V = R$ 180`, `k = 10`, `c = 10%`, PSP a 0,90%, `C_k ≈ R$ 3,46`, `C_c ≈ R$ 2,18` e `p_t = 0,2%`:
+
+| `q` | `μ` | `S` | `μ·S` | Taxa | % da quadra |
+|---:|---:|---:|---:|---:|---:|
+| 20% | 4,00 | 1,82 | 7,29 | R$ 37,68 | 20,9% |
+| 40% | 1,50 | 2,34 | 3,51 | R$ 29,23 | 16,2% |
+| 80% | 0,25 | 4,29 | 1,07 | R$ 23,95 | 13,3% |
+
+O exemplo serve para explicar a fórmula. Não é uma tabela de preços aprovada.
+
+---
+
+## 18. Simulações financeiras e análise de viabilidade
+
+### 18.1 Objetivo e método
+
+Esta seção testa a fórmula aprovada em cenários de conclusão, custo de cancelamento, tarifa de transferência e valor de quadra. Também compara a fórmula com o antigo coeficiente 1,8 e registra a decisão de PSP.
+
+As simulações são **ilustrativas**. Não constituem tabela de preços nem promessa de margem.
+
+### 18.2 Hipóteses de simulação
+
+| Parâmetro | Valor adotado | Natureza |
+|---|---|---|
+| Valor da quadra (`V`) | R$ 180 | Exemplo para futebol 5x5; não é preço oficial |
+| Participantes (`k`) | 10 | Formato futebol 5x5 |
+| Comissão (`c`) | 10% | Hipótese de trabalho |
+| Tarifa percentual do PSP (`p`) | 0,90% | Hipótese; negociar no Flex |
+| Custo fixo da reserva concluída (`a_k`) | R$ 1,50 | Hipótese; substituir pelo contrato |
+| Custo fixo do cancelamento (`a_c`) | R$ 1,00 | Hipótese; substituir pelo contrato |
+| Cobranças pagas antes do cancelamento (`m`) | 6 | Média de trabalho |
+| Tarifa de transferência (`τ`) | R$ 0,00 no cenário-base | Testar sensibilidade |
+| Nível de confiança (`z`) | 1,645 | 95% |
+| Sobredispersão (`φ`) | 1,0 | Poisson |
+| Provisão de cauda (`p_t`) | 0,2% | Hipótese conservadora |
+| Impostos | Não modelados | Dependem do regime e do município; revisão fiscal necessária |
+| Divisão da taxa | Igual entre participantes | Regra conceitual; validar |
+
+Cenários de conclusão: **20%, 30%, 40%, 60%, 80% e 90%**. O cenário de 20% representa estresse e não deve ser tratado como previsão.
+
+### 18.3 Resultado por taxa de conclusão
+
+`V = R$ 180`, `k = 10`, `c = 10%`, PSP a 0,90%, `C_k ≈ R$ 3,46`, `C_c ≈ R$ 2,18`, `p_t = 0,2%`.
+
+| `q` | `μ` | `S` | `μ·S` | Taxa | % da quadra |
+|---:|---:|---:|---:|---:|---:|
+| 20% | 4,00 | 1,82 | 7,29 | R$ 37,68 | 20,9% |
+| 30% | 2,33 | 2,08 | 4,85 | R$ 32,17 | 17,9% |
+| 40% | 1,50 | 2,34 | 3,51 | R$ 29,23 | 16,2% |
+| 60% | 0,67 | 3,01 | 2,01 | R$ 25,96 | 14,4% |
+| 80% | 0,25 | 4,29 | 1,07 | R$ 23,95 | 13,3% |
+| 90% | 0,11 | 5,93 | 0,66 | R$ 23,07 | 12,8% |
+
+A taxa cai quando a conclusão melhora porque o custo esperado de cancelamento cai. Não é um desconto comercial: é o mesmo custo, distribuído sobre mais reservas concluídas.
+
+### 18.4 Comparação com o coeficiente 1,8
+
+A comparação usa `C = C_k + μ·C_c` e `TAXA = c·V + 1,8·C`, mantendo o PSP a 0,90%.
+
+| `q` | Fórmula aprovada | Referência 1,8 |
+|---:|---:|---:|
+| 20% | R$ 37,68 (20,9%) | R$ 40,02 (22,2%) |
+| 40% | R$ 29,23 (16,2%) | R$ 29,86 (16,6%) |
+| 80% | R$ 23,95 (13,3%) | R$ 24,97 (13,9%) |
+
+A fórmula aprovada fica levemente mais barata em todos os cenários e mais próxima do custo real. A diferença é o buffer que o 1,8 aplicava sobre a parte determinística.
+
+### 18.5 Sensibilidade ao custo de cancelamento
+
+`q = 20%`, `V = R$ 180`, variando o custo fixo por cancelamento (`a_c`).
+
+| `a_c` | Taxa | % da quadra |
+|---:|---:|---:|
+| R$ 0,50 | R$ 33,85 | 18,8% |
+| R$ 1,00 | R$ 37,68 | 20,9% |
+| R$ 2,00 | R$ 45,34 | 25,2% |
+| R$ 3,00 | R$ 53,00 | 29,4% |
+| R$ 5,00 | R$ 68,32 | 38,0% |
+
+`C_c` é o parâmetro mais sensível da fórmula. Um cancelamento com muitas cobranças pagas e devolução cara pode inviabilizar a faixa. Por isso a regra de elegibilidade existe.
+
+### 18.6 Sensibilidade à tarifa de transferência
+
+`q = 20%`, variando a tarifa de liberação por reserva (`τ`).
+
+| `τ` | Taxa | % da quadra |
+|---:|---:|---:|
+| R$ 0,00 | R$ 37,68 | 20,9% |
+| R$ 1,00 | R$ 38,73 | 21,5% |
+| R$ 3,67 | R$ 41,53 | 23,1% |
+
+O exemplo documentado de `POST /transfers` do Pagar.me retorna `fee: 367`. Se a liberação Pix custar algo nessa ordem, ela é custo **por reserva**, não por cobrança, e precisa entrar em `C_k`. A tarifa real deve ser confirmada em contrato.
+
+### 18.7 Quadras baratas e elegibilidade
+
+`q = 20%`, `k = 10`, demais parâmetros do cenário-base.
+
+| `V` | Taxa | % da quadra | Total por pessoa |
+|---:|---:|---:|---:|
+| R$ 60 | R$ 18,72 | 31,2% | R$ 7,87 |
+| R$ 90 | R$ 23,46 | 26,1% | R$ 11,35 |
+| R$ 120 | R$ 28,20 | 23,5% | R$ 14,82 |
+| R$ 180 | R$ 37,68 | 20,9% | R$ 21,77 |
+
+Abaixo de aproximadamente **R$ 100**, a taxa ultrapassa 25% no cenário de 20% de conclusão. A resposta correta não é subsidiar a reserva: é não oferecer pagamento integrado naquela faixa, renegociar o preço da quadra ou aumentar a conclusão operacional.
+
+### 18.8 PSP: Pagar.me Flex e alternativa centralizada
+
+A pesquisa comparou PSPs com foco em Pix individual, split, saldo por recebedor e liberação controlada.
+
+**Pagar.me Flex — primeira opção, condicionada.**
+
+A documentação V5 sustenta:
+
+- várias cobranças no mesmo `order`, enquanto o pedido estiver aberto;
+- Pix com split;
+- split por valor fixo (`flat`) ou percentual (`percentage`);
+- recebedor com conta digital e saldo próprio;
+- `POST /transfers` com `recipient_id` e `Idempotency-Key`;
+- `transfer_enabled=false` para desativar transferência automática;
+- estorno com regras de split.
+
+O Flex não publica tarifa Pix específica. Os 0,99% divulgados são da oferta Essencial e **não podem** ser tratados como tarifa garantida. A tarifa do Flex precisa ser negociada.
+
+**Inter — alternativa centralizada.**
+
+O Inter oferece Pix com tarifa pública de 0,90% por QR Code imediato (mínimo de R$ 0,10 e máximo de R$ 1,50 por transação, com faixas gratuitas mensais). O valor fica na conta do JOGA; a quadra não saca sozinha e o reembolso é operacionalmente mais simples. Em troca, aumenta a exposição jurídica e regulatória de custódia de recursos de terceiros.
+
+| Critério | Pagar.me Flex (split) | Inter (centralizado) |
+|---|---|---|
+| Quem custodia | PSP, no saldo do recebedor | JOGA |
+| Quadra saca antes | risco a confirmar | impossível |
+| Reembolso | estorno no PSP | do saldo do JOGA |
+| Inadimplência da quadra | risco no estorno | risco no repasse |
+| Fardo regulatório | obrigações de facilitador de pagamento | possível enquadramento como facilitador |
+| Interface financeira do recebedor | obrigatória | não se aplica |
+| Complexidade de código | ledger de liberação | ledger + repasse + conciliação |
+
+**PSPs com tarifa fixa alta por Pix foram excluídos como primeira opção:** Asaas (R$ 1,99 por Pix), AbacatePay (R$ 0,80 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50). Com dez cobranças por reserva, a tarifa fixa consome uma parte desproporcional do valor da quadra.
+
+A decisão e as perguntas abertas estão no ADR 0021. O JOGA não deve fechar contrato sem resposta formal sobre:
+
+1. aprovação como cliente PSP com split no Flex;
+2. tarifa Pix negociada;
+3. mensalidade, setup ou cobrança por recebedor;
+4. tarifa por split, transferência ou saque;
+5. saque autônomo do estabelecimento com `transfer_enabled=false`;
+6. liberação por `POST /transfers` somente após confirmação;
+7. disponibilidade imediata do Pix no saldo do recebedor;
+8. retenção de saldo para novos recebedores;
+9. comportamento do estorno Pix com split na V5;
+10. responsabilidade e efeito do MED sem saldo.
+
+### 18.9 Financiamento dos cancelamentos
+
+O custo esperado de cancelamento é explícito:
+
+```text
+custo esperado = μ·C_c
+buffer estatístico = μ·C_c·(S − 1)
+```
+
+Com `q = 20%`, `μ = 4`, `S = 1,82` e `C_c = R$ 2,18`:
+
+```text
+custo esperado = R$ 8,72
+buffer = R$ 7,15
+provisão total = R$ 15,87
+```
+
+O custo esperado de cancelamento é financiado pela parcela `C_c·μ·S` embutida na taxa de todas as reservas: as reservas que concluem pagam a provisão que cobre as que cancelam. A comissão `c·V` permanece separada, para custo fixo e lucro. O buffer `S` existe para a variância, não para o valor principal.
+
+Para continuidade histórica: no desenho antigo, a comissão mais o markup sobre a reserva concluída cobriam o custo dos cancelamentos. Com `V = R$ 180`, `c = 10%`, `C_k ≈ R$ 4,86` e markup de 80%, o ponto de equilíbrio ocorria com `C_c ≈ R$ 5,47`. Esse número continua útil como referência de quanto custo de cancelamento a comissão mais o buffer suportavam. Na fórmula nova, se `C_c` subir acima do previsto, a taxa sobe e a reserva pode se tornar inelegível; não há prejuízo silencioso.
+
+### 18.10 Custo fixo e suficiência da comissão
+
+A comissão também precisa pagar custo fixo: produto, suporte, KYC, interface financeira do recebedor e eventual cobrança por recebedor.
+
+Com `V = R$ 180`, `c = 10%` e `q = 20%`, o excedente esperado por reserva concluída depois de cobrir o custo esperado de cancelamento e a provisão de cauda fica em cerca de **R$ 23 a R$ 25**. Esse excedente é a contribuição disponível para custo fixo e lucro.
+
+| Custo fixo por estabelecimento/mês | Reservas/mês só para cobrir esse custo |
+|---:|---:|
+| R$ 30 | 1,3 |
+| R$ 60 | 2,6 |
+| R$ 100 | 4,3 |
+| R$ 200 | 8,6 |
+
+Se a interface financeira, o KYC e a taxa por recebedor custarem R$ 100 por quadra/mês e cada quadra fizer 5 reservas, são R$ 20 por reserva só nisso. A comissão de R$ 18 não paga. Esse é o item que decide se `c = 10%` é suficiente — e ele **não** entra em `C_k`.
+
+### 18.11 O que a fórmula não resolve
+
+- **Conclusão baixa.** A 20% de conclusão, a taxa é 21% da quadra em qualquer fórmula honesta. O que corrige isso é T1/T2/T3 e tempo de resposta do estabelecimento, não precificação.
+- **Quadra barata.** A `V = R$ 60`, a taxa chega a 31,2%. Isso pede elegibilidade mínima, não teto.
+- **Transparência.** A provisão de cancelamento é um subsídio dos 20% que concluem para os 80% que cancelam. Precisa estar explicada na seção 19.
+- **Custo fixo.** A fórmula não decide se a comissão é suficiente para operar; isso é uma decisão separada de negócio.
+
+### 18.12 Conclusão e plano de calibração
+
+A fórmula aprovada substitui o coeficiente fixo, o piso e o teto por componentes com significado econômico.
+
+| Parâmetro | Como medir | Inicial |
+|---|---|---|
+| `q` | Lobbies concluídos / tentativas de reserva paga, EWMA de 90 dias | medir |
+| `C_k` | Tarifa real por cobrança + transferência / reserva | medir |
+| `C_c` | Tarifa não recuperada + atendimento por devolução | medir |
+| `φ` | Variância / média dos cancelamentos por período | 1,0 |
+| `z` | Apetite de risco | 1,645 |
+| `p_t` | Perdas efetivas com MED e estorno sem saldo / `V` | 0,2% |
+
+Recomendações:
+
+1. Rodar piloto com poucos estabelecimentos antes de abrir pagamento integrado em escala.
+2. Medir `q`, `C_k`, `C_c`, `τ` e `p_t` por modalidade e faixa de preço.
+3. Não recalcular a taxa em tempo real.
+4. Não individualizar `q` por quadra sem amostra suficiente.
+5. Fixar a taxa no momento da abertura do pagamento.
+6. Revisar a elegibilidade mínima depois dos primeiros dados.
+
+### 18.13 Fontes consultadas
+
+- Pagar.me — Plano Flex: https://www.pagar.me/ofertas
+- Pagar.me — Documentação V5: https://docs.pagar.me/docs/overview-principal
+- Pagar.me — Incluir cobrança no pedido: https://docs.pagar.me/reference/incluir-cobrança-no-pedido
+- Pagar.me — Recebedores: https://docs.pagar.me/docs/recebedores
+- Pagar.me — Criando uma transferência: https://docs.pagar.me/reference/criando-uma-transferência
+- Pagar.me — Estorno parcial com split: https://docs.pagar.me/docs/estorno-parcial-com-split
+- Inter — Tarifas e Pix: https://bancointer.com.br/
+- Asaas — Preços e taxas: https://www.asaas.com/precos-e-taxas
+- AbacatePay — Preços: https://abacatepay.com/
+- OpenPix — Preços: https://openpix.com.br/
+
+Consulta em 5 de novembro de 2026. Tarifas públicas podem mudar e não substituem contrato comercial.
+
+---
+
+## 19. Experiência do usuário e transparência de preço
+
+A taxa do JOGA deverá ser apresentada de maneira transparente.
+
+Antes do pagamento, cada jogador deverá visualizar:
+
+- Valor da reserva.
+- Sua contribuição para a quadra.
+- Taxa de serviço do JOGA.
+- Valor total a pagar.
+- Meio de pagamento.
+- Prazo limite.
+
+A experiência deve ser simples. Não apresentar uma taxa individual que pareça maior do que realmente é por confundir o preço total da reserva com a contribuição de cada jogador. O sistema deverá calcular e apresentar o valor individual corretamente.
+
+Não utilizar taxas ocultas ou modificar valores depois que o usuário abriu o pagamento.
+
+A taxa inclui custo operacional, proteção contra cancelamento e provisão de cauda. O jogador não precisa ver os parâmetros internos, mas a explicação deve ser honesta: a taxa não é apenas “comissão”; ela também sustenta a devolução integral quando a reserva não se completa.
+
+Quando a reserva não for elegível para pagamento integrado, a interface deve explicar o motivo de forma simples, sem sugerir que o jogador foi cobrado indevidamente.
+
+Se a reserva for cancelada no fluxo de pagamento incompleto, todos os valores efetivamente pagos deverão ser devolvidos integralmente.
+
+O aplicativo poderá mostrar o progresso agregado dos pagamentos, como “8 de 10 pagamentos confirmados”, sem expor valores ou dados financeiros individuais de outros participantes. Cada participante deverá ver o próprio estado e o prazo, não a situação financeira detalhada dos demais.
+
+---
+
+## 20. Clãs, amizades e comunidade
 
 O JOGA não terá um chat global universal no escopo atual. A comunicação será organizada por contexto.
 
-### 13.1 Lista de amigos
+### 20.1 Lista de amigos
 
 Os usuários poderão adicionar amigos, consultar conexões, convidá-los para lobbies e controlar bloqueios e notificações.
 
-### 13.2 Clãs abertos e fechados — JOGA y CLÃ
+### 20.2 Clãs abertos e fechados — JOGA y CLÃ
 
 Os clãs serão comunidades permanentes dentro do JOGA:
 
@@ -415,7 +1435,7 @@ Cada clã poderá possuir nome, descrição, identidade visual, membros, adminis
 
 O chat de clã será inicialmente baseado em texto e compartilhamento de referências internas do JOGA.
 
-### 13.3 Troféus e ranking de clãs
+### 20.3 Troféus e ranking de clãs
 
 Cada modalidade terá seu próprio ranking de clãs. Futebol e vôlei não serão somados em uma pontuação única na primeira versão.
 
@@ -433,99 +1453,75 @@ Os pesos 50/30/20 constituem a fórmula-base aprovada para prototipação e bala
 
 O ranking poderá funcionar em temporadas de duração configurável, por exemplo 30 ou 60 dias. A duração definitiva ainda deverá ser definida. O histórico de temporadas será preservado.
 
-Troféus de clã não são MMR individual. Compras, assinaturas, publicidade, número bruto de membros e pagamento não concedem pontos competitivos.
+Troféus de clã não são MMR individual. Compras futuras, assinaturas, publicidade, número bruto de membros e pagamento não concedem pontos competitivos.
 
-## 14. Publicidade e monetização
+---
 
-O modelo de receita prevê principalmente:
+## 21. Integridade competitiva e operacional
 
-1. **Comissão por reserva:** sobre reservas de quadras originadas e concluídas pelo JOGA.
-2. **Comissão por venda:** sobre produtos vendidos pelo marketplace.
-3. **Publicidade:** produtos patrocinados, lojas em destaque, quadras em destaque e campanhas de marcas.
-
-A gestão básica deverá começar gratuita ou sem mensalidade obrigatória, reduzindo a barreira de entrada dos estabelecimentos. Planos opcionais com recursos avançados poderão ser avaliados depois da validação comercial.
-
-A publicidade deverá ser identificada como patrocinada. A posição paga não poderá alterar o MMR, o Trust Factor, a composição do matchmaking ou a justiça dos rankings. Recomendações patrocinadas deverão respeitar filtros e restrições relevantes do usuário.
-
-A publicidade avançada depende de audiência e volume de uso. Não deve ser tratada como receita garantida antes de existir tráfego suficiente.
-
-## 15. Integridade competitiva e comercial
+### 21.1 Separação de indicadores
 
 O JOGA manterá separados:
 
 - **MMR:** estimativa de habilidade competitiva por modalidade/formato.
-- **Trust Factor esportivo:** sinais de confiabilidade relacionados ao comportamento em partidas e ao cumprimento de compromissos.
-- **Reputação comercial:** avaliações e histórico de cumprimento de pedidos/reservas por estabelecimentos.
+- **Trust Factor esportivo:** sinais de confiabilidade relacionados ao comportamento em partidas e ao cumprimento de compromissos esportivos.
+- **Confiabilidade de reservas do jogador:** histórico de confirmações, faltas, cancelamentos e inadimplência em reservas.
+- **Confiabilidade comercial do estabelecimento:** histórico de aceitação, resposta, bloqueios, cancelamentos e cumprimento de reservas.
 - **Troféus de clã:** pontuação coletiva baseada em resultados competitivos válidos.
 
-Compras, publicidade, assinaturas e pagamentos não poderão alterar MMR, elegibilidade competitiva de forma oculta ou troféus de clã.
+Compras futuras, publicidade, assinaturas e pagamentos não poderão alterar MMR, elegibilidade competitiva de forma oculta ou troféus de clã.
 
-## 15.1 Prevenção de fraudes comerciais
+### 21.2 Integridade das reservas
 
-O JOGA deverá proteger compradores e vendedores contra fraudes, tanto durante a compra quanto após a confirmação do pedido.
+O sistema deverá evitar:
 
-Os principais riscos considerados incluem:
+- Duplo bloqueio do mesmo espaço.
+- Pagamento de vagas já substituídas.
+- Dupla ocupação de uma vaga.
+- Confirmação de reserva com pagamentos incompletos.
+- Reativação automática de reserva cancelada por webhook tardio.
+- Reembolso duplicado.
+- Solicitação para uma quadra sem tempo operacional suficiente.
+- Cobrança aberta antes do aceite e do bloqueio do estabelecimento.
+- Confirmação de reserva sem bloqueio confirmado.
 
-- Comprador alegar falsamente que não recebeu um produto.
-- Vendedor registrar entrega que não aconteceu.
-- Comprador utilizar comprovantes falsos.
-- Vendedor anunciar produtos inexistentes ou diferentes dos entregues.
-- Tentativas de obter reembolso indevido.
-- Uso de contas falsas ou múltiplas contas para manipular avaliações e transações.
-- Acordos entre comprador e vendedor para explorar o sistema de pagamentos ou reembolsos.
+As operações críticas deverão ser transacionais e idempotentes, com constraints no banco de dados e verificação de autorização no servidor.
 
-O sistema deverá manter registros auditáveis de pedidos, pagamentos, alterações de status, mensagens, códigos de recebimento e solicitações de suporte.
+### 21.3 Confiabilidade dos jogadores
 
-O código de confirmação de recebimento será uma evidência operacional, mas não será considerado prova absoluta de que o produto estava correto ou sem defeitos.
+O novo sistema gera compromissos de duas partes:
 
-### 15.2 Denúncia de transações
+- O jogador confirma que pretende participar.
+- A quadra confirma que bloqueou o espaço.
 
-O comprador e o vendedor poderão denunciar problemas relacionados a uma transação.
+O JOGA deverá preservar histórico dessas ações.
 
-O formulário de denúncia deverá permitir:
+Pode haver usuários que confirmam participação repetidamente, mas não pagam depois. Uma falta isolada não deve gerar punição automática. A reincidência poderá ser usada como sinal de risco e confiabilidade de cumprimento de compromissos, de maneira proporcional e transparente.
 
-- Selecionar o tipo de problema.
-- Descrever detalhadamente o ocorrido.
-- Anexar até três imagens como evidência.
-- Vincular automaticamente a denúncia ao pedido correspondente.
+Não misturar automaticamente esse indicador ao MMR. O jogador deverá ter acesso às regras e possibilidade de contestar medidas.
 
-As imagens e mensagens deverão possuir limites de tamanho e formatos permitidos, além de controles de segurança.
+### 21.4 Confiabilidade dos estabelecimentos
 
-A IA poderá auxiliar na classificação da denúncia, identificação de inconsistências e priorização de casos. Ela não deverá realizar decisões irreversíveis de reembolso ou penalização apenas com base em uma classificação automatizada.
+O JOGA deverá registrar:
 
-Casos com indícios relevantes de fraude, evidências conflitantes ou consequências financeiras significativas poderão ser encaminhados para revisão humana.
+- Taxa de aceitação.
+- Tempo médio de resposta.
+- Cancelamentos após aceite.
+- Problemas com disponibilidade.
+- Descumprimento de bloqueios.
+- Reincidência.
 
-### 15.3 Comunicação entre comprador e vendedor
+Essas informações poderão formar um indicador de confiabilidade comercial da quadra. Não punir automaticamente por uma ocorrência isolada. Considerar contexto, gravidade e reincidência.
 
-O JOGA deverá oferecer comunicação direta entre comprador e loja durante o processo comercial.
+O estabelecimento deverá ter acesso ao seu histórico e possibilidade de contestar informações incorretas.
 
-Além do contato relacionado ao pedido, haverá um espaço separado para negociação e propostas, permitindo que o comprador converse com a loja sobre condições do produto, defeitos identificados, alternativas ou possíveis soluções.
-
-Essa comunicação deverá permanecer vinculada ao contexto comercial correspondente, com histórico preservado para consulta em eventuais disputas.
-
-O recurso não deverá permitir que a conversa seja utilizada para contornar pagamentos ou controles de segurança da plataforma.
-
-### 15.4 Decisão de disputas comerciais
-
-As disputas comerciais deverão seguir um fluxo de análise progressiva:
-
-1. Coleta automática de dados do pedido, pagamento, mensagens e evidências.
-2. Classificação inicial e identificação de inconsistências por regras e IA.
-3. Tentativa de resolução entre comprador e vendedor, quando apropriado.
-4. Encaminhamento de casos complexos ou suspeitos para revisão humana.
-5. Registro da decisão, justificativa e ações executadas.
-
-A anulação, o cancelamento ou o reembolso deverão respeitar as condições comerciais e a legislação aplicável.
-
-O sistema deverá evitar tanto fraudes de compradores quanto práticas abusivas de vendedores. Nenhuma das partes deverá ser considerada culpada automaticamente apenas por abrir uma denúncia.
-
-## 15.5 Moderação de chats e denúncias de usuários
+### 21.5 Moderação de chats e denúncias de usuários
 
 A moderação deverá abranger os chats de lobby e de clãs, com prioridade para automação e revisão humana apenas quando necessária.
 
 Como o escopo inicial dos chats será limitado a texto e referências internas do JOGA, não haverá moderação de imagens, áudios ou vídeos enviados diretamente pelos usuários.
 
-### 15.5.1 Denúncia de perfil no lobby
+#### 21.5.1 Denúncia de perfil no lobby
 
 Cada participante poderá denunciar outro jogador diretamente pelo perfil disponível no lobby.
 
@@ -546,7 +1542,7 @@ A IA deverá analisar o contexto dessas mensagens e uma faixa limitada de mensag
 
 A denúncia deverá registrar o autor, o denunciado, o lobby, as mensagens selecionadas, o contexto autorizado e o horário dos eventos.
 
-### 15.5.2 Moderação automatizada por IA
+#### 21.5.2 Moderação automatizada por IA
 
 A IA será utilizada como primeira camada de moderação, auxiliando em:
 
@@ -564,7 +1560,7 @@ Suspensões permanentes e decisões graves deverão exigir critérios mais rigor
 
 A IA não deverá ser tratada como autoridade infalível. Suas classificações deverão possuir níveis de confiança e possibilidade de contestação.
 
-### 15.5.3 Revisão humana
+#### 21.5.3 Revisão humana
 
 No estágio inicial, o próprio responsável pelo JOGA poderá atuar como moderador humano.
 
@@ -579,7 +1575,7 @@ A revisão humana deverá ser reservada principalmente para:
 
 O sistema deverá fornecer uma interface de análise com histórico, mensagens relevantes, evidências, classificação automatizada e ações recomendadas.
 
-### 15.5.4 Medidas e histórico de moderação
+#### 21.5.4 Medidas e histórico de moderação
 
 As medidas possíveis poderão incluir:
 
@@ -594,7 +1590,7 @@ As medidas deverão ser proporcionais à gravidade e reincidência, com registro
 
 Denúncias não deverão reduzir automaticamente o Trust Factor. O sistema deverá considerar a confiabilidade da denúncia e a existência de evidências antes de aplicar penalidades.
 
-### 15.5.5 Privacidade e retenção
+#### 21.5.5 Privacidade e retenção
 
 O acesso às mensagens e evidências utilizadas na moderação deverá ser limitado às pessoas e processos autorizados.
 
@@ -602,24 +1598,46 @@ A plataforma deverá armazenar apenas o contexto necessário para analisar a den
 
 A automação deverá priorizar o processamento eficiente, evitando que toda conversa precise ser encaminhada continuamente para análise humana ou por IA.
 
-## 16. Escopo futuro e exclusões atuais
+### 21.6 Integridade financeira das reservas
+
+A integridade do fluxo financeiro de reservas é tratada separadamente da integridade competitiva.
+
+O sistema deverá evitar:
+
+- Cobrança aberta antes do aceite e do bloqueio do estabelecimento.
+- Reserva confirmada sem todos os pagamentos aprovados.
+- Liberação para a quadra antes da confirmação da reserva e da realização da partida.
+- Reembolso duplicado ou reembolso de valor principal contabilizado como perda.
+- Estorno sem saldo não tratado como evento de cauda.
+- Conciliação divergente entre PSP, ledger interno e reserva.
+
+As regras de fraude de produtos não se aplicam às reservas. São riscos e fluxos diferentes.
+
+---
+
+## 22. Escopo futuro e exclusões atuais
 
 Não fazem parte do escopo inicial:
 
+- Comércio de produtos, conforme a seção 15 e o ADR 0022.
 - Torneios organizados, chaves, fases de grupos, inscrições e premiações.
 - Competições presenciais próprias.
 - Gestão completa de academias e clubes, incluindo matrículas, mensalidades, catracas e frequência.
-- Marketplace de profissionais individuais, como personal trainers, árbitros e fotógrafos.
-- Logística própria, cálculo de frete, contratação de transportadoras, geração de etiquetas e rastreamento centralizado.
+- Intermediação de profissionais individuais, como personal trainers, árbitros e fotógrafos.
 - Aluguel de equipamentos com caução e fluxo completo de devolução.
 - ERP completo ou gestão das vendas externas do estabelecimento.
 - Chat global universal.
 - Envio livre de mídia/arquivos em chats.
 - Integrações genéricas com ERPs e pontos de venda no primeiro lançamento.
+- Pagamento com cartão de crédito ou débito no fluxo inicial de reservas; Pix é o meio inicial.
+- Carteira própria, custódia informal de valores ou processador de pagamentos próprio.
+- Rastreamento contínuo de localização em segundo plano.
 
-Esses itens poderão ser reavaliados após validação do núcleo esportivo e comercial.
+Os itens poderão ser reavaliados após validação do núcleo esportivo e do sistema de reservas, com decisão de produto e ADR próprios.
 
-## 17. Roadmap conceitual
+---
+
+## 23. Roadmap conceitual
 
 O roadmap abaixo representa uma visão de produto, não substitui a ordem técnica normativa de `PLANS.md`.
 
@@ -627,33 +1645,247 @@ O roadmap abaixo representa uma visão de produto, não substitui a ordem técni
 |---|---|
 | 1. Fundação do jogador | Identidade, perfil, modalidades e preferências |
 | 2. Matchmaking | Fila única, disponibilidade, localização e formação de grupos |
-| 3. Lobbies e partidas | Horário fixo, participantes, confirmações e ciclo de partida |
-| 4. Competitivo | Resultados validados, MMR, histórico e Trust Factor inicial |
-| 5. Integridade esportiva | Capitães, votação de resultados, detecção de divergências, disputas e prevenção de manipulação |
-| 6. Comunicação | Chat de lobby, lista de amigos e convites |
-| 7. Moderação | Denúncias de perfil, seleção de mensagens, análise contextual por IA e revisão humana |
-| 8. Quadras | Cadastro, descoberta, disponibilidade e reserva de espaços privados |
-| 9. Gestão web | Organizações, lojas, quadras e permissões comerciais |
-| 10. Marketplace | Produtos, estoque comprometido, pedidos, pagamentos, retirada e entrega pelo vendedor |
-| 11. Integridade comercial | Denúncias de pedidos, evidências, comunicação comprador-vendedor e análise de fraude |
-| 12. Clãs | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
-| 13. Publicidade | Produtos e estabelecimentos patrocinados após existir audiência |
-| 14. Expansões | Aluguel de equipamentos, academias, torneios e outros serviços |
+| 3. Lobbies e ciclo de partidas | Horário fixo, participantes, confirmação de participação e ciclo de partida |
+| 4. Competitivo e MMR | Resultados validados, MMR, histórico e Trust Factor inicial |
+| 5. Integridade esportiva | Capitães, votação de resultados, divergências, disputas e prevenção de manipulação |
+| 6. Comunicação e amizades | Chat de lobby, lista de amigos, convites e notificações |
+| 7. Moderação | Denúncias de perfil, análise contextual por IA e revisão humana |
+| 8. Descoberta de espaços | Espaços públicos e particulares, informações operacionais e compatibilidade |
+| 9. Painel de gestão de quadras | Organizações, espaços, permissões, horários, exceções e histórico |
+| 10. Onboarding e interface financeira | KYC do recebedor, agenda de recebíveis, contratos, comprovantes e contestação |
+| 11. Solicitação e confirmação de reservas | Solicitação ao estabelecimento, aceite, recusa e compromisso condicional |
+| 12. Bloqueio temporário e disponibilidade | Bloqueio do espaço específico, expiração e prevenção de sobreposição |
+| 13. Pagamentos Pix e split | Cobranças simultâneas, PSP, split, webhooks, conciliação e confirmação |
+| 14. Substituição, cancelamentos e reembolsos | Substituição dentro da janela, cancelamentos, reembolsos, MED e estados financeiros |
+| 15. Clãs e rankings | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
+| 16. Moderação e Trust & Safety | Denúncias de perfil, análise contextual por IA e revisão humana |
+| 17. Parcerias e publicidade | Estabelecimentos, patrocínios e publicidade contextual após audiência |
+| 18. Expansões futuras | Somente após validação das condições e decisão de produto própria |
 
-## 18. Princípios fundamentais
+Essa sequência é uma proposta conceitual. A ordem técnica normativa está em `PLANS.md`; não assumir que o roadmap conceitual substitui dependências técnicas.
+
+---
+
+## 24. Princípios fundamentais
 
 - **Acessibilidade:** praticar esportes não deve depender de possuir um grupo previamente organizado.
 - **Justiça competitiva:** o balanceamento prioriza partidas equilibradas.
 - **Proximidade:** deslocamentos e preferências geográficas são considerados.
 - **Horário concreto:** cada lobby representa uma partida com data e horário definidos.
-- **Confiabilidade:** resultados, reservas, pedidos e entregas precisam de registros auditáveis.
-- **Privacidade:** localização e dados pessoais são minimizados e protegidos.
+- **Confiabilidade:** resultados, reservas, bloqueios, pagamentos e reembolsos precisam de registros auditáveis.
+- **Confiabilidade operacional:** prazos, compromissos e estados devem ser controlados pelo servidor e resistir a falhas de notificação, conexão e dispositivos desligados.
+- **Transparência financeira:** o jogador deve saber quanto paga, por quê e em qual prazo; o estabelecimento deve saber quanto recebe e quando.
+- **Privacidade:** localização e dados pessoais são minimizados e protegidos. Dados financeiros individuais não devem ser expostos a outros participantes.
 - **Autonomia comercial:** estabelecimentos administram somente os dados e operações aos quais têm acesso.
-- **Sustentabilidade:** monetização não deve prejudicar a experiência esportiva.
+- **Sustentabilidade:** monetização não deve prejudicar a experiência esportiva nem criar vantagens competitivas compradas.
+- **Precificação sustentável:** a taxa deve cobrir custos e riscos reais, sem transformar ganhos de eficiência operacional em preço excessivo para o usuário.
 - **Comunidade:** o produto deve criar razões reais para voltar, por meio de partidas, amigos e clãs.
+- **Proporcionalidade:** uma ocorrência isolada de falha não deve gerar punição automática; decisões graves exigem contexto, evidência e possibilidade de contestação.
+- **Expansão disciplinada:** novas frentes de produto só devem ser abertas quando houver demanda, viabilidade financeira e capacidade operacional comprovadas.
 
-## 19. Visão de futuro
+---
 
-O JOGA pretende evoluir para uma plataforma na qual qualquer pessoa possa encontrar jogadores, organizar partidas, escolher espaços esportivos, comprar equipamentos e participar de comunidades.
+## 25. Visão de futuro
 
-O objetivo não é substituir clubes, arenas, lojas ou grupos existentes, mas conectar esses agentes a uma experiência esportiva mais organizada e acessível.
+O JOGA pretende evoluir para uma plataforma na qual qualquer pessoa possa encontrar jogadores, organizar partidas, escolher espaços esportivos, solicitar e confirmar reservas, pagar individualmente e participar de comunidades.
+
+O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar esses agentes a uma experiência esportiva mais organizada, acessível e financeiramente transparente.
+
+---
+
+## 26. Decisões aprovadas, parâmetros iniciais, propostas e pendências
+
+### 26.1 Decisões aprovadas
+
+1. A precificação usa a fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`, com `μ = (1 − q)/q` e `S = 1 + z·√(φ/μ)`.
+2. O antigo coeficiente 1,8 é o fator de segurança de 95% para a variância dos cancelamentos em `q = 20%`; não é markup sobre o custo total.
+3. O 1,8 não incide sobre `C_k`, não incide sobre custos + lucro e não é aplicado duas vezes.
+4. O piso, o preço variável e o teto `α` de 15%–20% foram removidos.
+5. O teto foi substituído por uma regra de elegibilidade: acima de 25% de taxa na faixa, a reserva paga não é oferecida.
+6. A comissão `c·V` cobre custo fixo e lucro-alvo; `C_k` e `C_c` são componentes explícitos e separados.
+7. O valor principal devolvido não é contabilizado como perda; o custo relevante é `C_c`.
+8. O marketplace de produtos está fora do escopo inicial e não será especificado nem implementado nesta etapa (ADR 0022).
+9. A monetização inicial se concentra em taxas de serviço sobre reservas de quadras, parcerias, patrocínios e publicidade contextual.
+10. Funcionalidades essenciais de jogadores, matchmaking, partidas e comunidades continuam predominantemente gratuitas.
+11. As reservas funcionam por solicitação ao estabelecimento, sem exigir integração com software externo.
+12. O painel do estabelecimento é responsivo, voltado às operações do JOGA e não é um ERP.
+13. O bloqueio temporário do espaço específico é obrigatório e confirmado pelo estabelecimento.
+14. Existem três temporizadores independentes: confirmação de participação, resposta do estabelecimento e bloqueio/pagamento.
+15. O prazo inicial de confirmação de participação é de 1 hora, controlado pelo backend.
+16. O prazo inicial de resposta do estabelecimento é de cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido.
+17. O prazo inicial de bloqueio e pagamento é de 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos.
+18. Os prazos antigos de 24 horas e 2 horas para pagamento foram removidos.
+19. Cada participante paga sua própria contribuição por Pix; não há um único pagador pelo grupo.
+20. Todas as cobranças são abertas simultaneamente e têm o mesmo prazo.
+21. A reserva é confirmada quando todos os participantes necessários pagam dentro do prazo; o aceite do estabelecimento é um compromisso condicional e não há segunda aprovação manual.
+22. A substituição é permitida após o aceite do estabelecimento, dentro da janela original de pagamento, sem reiniciar o prazo nem prorrogar o bloqueio.
+23. Se a reserva não se completa, todos os valores pagos são devolvidos integralmente, incluindo a contribuição da quadra e a taxa de serviço do JOGA.
+24. As tarifas não recuperáveis do PSP são custos do JOGA, cobertos por `C_c`, e não são deduzidas do reembolso dos participantes.
+25. O Pix é o meio de pagamento inicial; débito e crédito serão avaliados depois.
+26. O backend controla todos os prazos; notificações e o relógio do dispositivo não são fonte oficial.
+27. O JOGA não construirá carteira própria nem custódia financeira informal.
+28. Se nenhum PSP atender ao fluxo de pagamentos individuais, split e liberação controlada, o lançamento do pagamento integrado deverá aguardar.
+29. O Pagar.me Flex é a primeira opção de PSP, condicionada a confirmação contratual; o Inter é a alternativa centralizada.
+30. Um estabelecimento com recebedor em credenciamento não pode originar reserva paga; o KYC é portão de elegibilidade.
+31. A quadra só recebe a liberação depois que tudo estiver confirmado, inclusive a realização da partida; a liberação automática após `N` horas e a janela de disputa dependem de definição.
+32. A interface financeira do estabelecimento é escopo obrigatório quando houver split (Res. 264/349).
+33. Denúncias e falhas isoladas não geram punição automática; confiabilidade é separada de MMR.
+34. A taxa não deve ser reduzida automaticamente quando a conclusão melhorar; a revisão exige verificar se a margem cobre riscos reais.
+
+### 26.2 Parâmetros iniciais
+
+- Confirmação de participação: 1 hora.
+- Resposta do estabelecimento: cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido.
+- Bloqueio e pagamento: 60 minutos, configurável por estabelecimento.
+- Buffer de conciliação: 5 a 10 minutos.
+- Comissão inicial de trabalho: 10% do valor da quadra.
+- Nível de confiança: 95% (`z = 1,645`).
+- Sobredispersão: `φ = 1,0`.
+- Provisão de cauda: `p_t = 0,2%`.
+- Limite operacional de elegibilidade: 25% do valor da quadra (referência).
+- Valor mínimo de referência para a taxa ficar abaixo de 25% em `q = 20%`: cerca de R$ 100.
+- Tarifa percentual de PSP adotada nas simulações: 0,90%.
+- Meio de pagamento: Pix.
+- Quantidade de participantes do futebol 5x5: 10.
+- Formato do vôlei: ainda a definir.
+- Duração da partida: definida pelo formato esportivo, não pelo lobby.
+
+### 26.3 Propostas em validação
+
+1. Medir `q`, `C_k`, `C_c`, `τ` e `p_t` em piloto controlado antes de fixar a taxa.
+2. Manter a taxa estável por ciclo, com variação máxima de ±10%.
+3. Calcular `q` por modalidade e faixa de preço, não por quadra isolada.
+4. Permitir apenas uma tentativa de substituição por vaga durante a janela de pagamento.
+5. Redirecionar o lobby para outra quadra compatível em caso de recusa ou expiração, se houver tempo e alternativa.
+6. Manter reserva de contingência equivalente a três meses de custos não recuperáveis no cenário de 20%, ou 10% da receita de taxas, o que for maior.
+7. Divulgar o progresso agregado de pagamentos aos participantes, sem expor valores individuais de terceiros.
+8. Criar um indicador de confiabilidade comercial do estabelecimento, com direito de contestação.
+9. Criar um indicador de confiabilidade de reservas do jogador, separado do MMR e do Trust Factor esportivo.
+10. Formalizar as perguntas ao Pagar.me antes de qualquer contrato.
+11. Tratar a interface financeira do recebedor e o KYC como custo fixo coberto pela comissão.
+12. Revisar a política de cancelamento após confirmação junto com a regra de liberação.
+
+### 26.4 Pendências
+
+As questões abaixo continuam abertas. Este documento não as resolve por suposição.
+
+1. PSP escolhido em contrato.
+2. Tarifa Pix negociada e tarifas de split, transferência e saque.
+3. Possibilidade de controlar a liberação dos repasses e o saque autônomo do estabelecimento.
+4. Comportamento do estorno Pix com split na V5.
+5. Responsabilidade e efeito do MED sem saldo.
+6. Prazo final de resposta da quadra.
+7. Duração configurável dos bloqueios.
+8. Buffer exato para conciliação.
+9. Tempo concedido a um substituto.
+10. Limite definitivo de substituições.
+11. Valor de `N` para liberação automática após a partida.
+12. Janela de disputa antes da liberação.
+13. Política de cancelamento depois da reserva confirmada.
+14. Política para desistência individual após confirmação.
+15. Valor definitivo de `c`.
+16. Valores medidos de `q`, `C_k`, `C_c`, `τ` e `p_t`.
+17. Limite operacional de elegibilidade por faixa de preço.
+18. Reserva de contingência necessária.
+19. Contratos comerciais com quadras.
+20. Regras jurídicas e fiscais aplicáveis ao modelo de intermediação e à custódia.
+21. Regra definitiva para recusa ou expiração da solicitação: cancelar o lobby ou tentar outra quadra.
+22. Tratamento fiscal da taxa de serviço (ISS, retenções e município competente).
+23. Termos de uso, política de cancelamento e direito de arrependimento aplicáveis ao consumidor.
+24. Retenção de dados financeiros, comprovantes e histórico de reservas.
+25. Critérios e limites do indicador de confiabilidade de jogadores e estabelecimentos.
+26. Periodicidade e amostra mínima da recalibração.
+27. Metodologia de amortecimento para evitar oscilações bruscas de preço.
+28. Estratégia de onboarding e cobrança por recebedor.
+
+### 26.5 O que este documento não decide
+
+- Não escolhe PSP em definitivo.
+- Não define preço final.
+- Não define `c` definitivo.
+- Não define `q`, `C_k`, `C_c`, `τ` ou `p_t` medidos.
+- Não define `N` da liberação automática.
+- Não define política de cancelamento após confirmação.
+- Não define política de desistência individual.
+- Não define contratos com estabelecimentos.
+- Não afirma que o fluxo já está implementado.
+- Não substitui `PLANS.md` como ordem normativa de execução.
+- Não altera código, banco de dados ou infraestrutura.
+
+---
+
+## 27. Governança documental e próximos passos
+
+Esta versão 3.2 atualiza a documentação conceitual, `GOALS.md`, `PLANS.md`, a documentação técnica e os documentos operacionais. Nenhum código, migração, contrato ou infraestrutura foi alterado.
+
+Documentos alinhados nesta revisão:
+
+- `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`: fórmula, fluxo financeiro, escopo sem marketplace e transparência.
+- `GOALS.md`: três pilares, sem comércio de produtos.
+- `PLANS.md`: Fases 11–19 reorganizadas em torno de organizações, quadras, reservas, pagamentos, interface financeira, clubes, moderação, publicidade e lançamento.
+- `docs/JOGA_DOCUMENTACAO_TECNICA.md`: arquitetura, modelo de dados, contratos e testes sem marketplace.
+- `docs/ADR/0021-politica-de-precificacao-e-fluxo-financeiro.md`: decisão de precificação e PSP.
+- `docs/ADR/0022-remocao-do-marketplace-de-produtos-do-escopo.md`: decisão de escopo.
+
+Próximos passos recomendados, em ordem:
+
+1. Obter resposta formal do Pagar.me sobre as 15 perguntas do ADR 0021 e comparar com o Inter.
+2. Fazer revisão jurídica e fiscal do modelo de split, custódia, cancelamento, reembolso e retenção de valores.
+3. Especificar o domínio de reservas, a máquina de estados, as constraints de bloqueio e os contratos HTTP/WebSocket.
+4. Especificar o painel do estabelecimento, o onboarding/KYC e a interface financeira do recebedor.
+5. Executar piloto controlado com poucos estabelecimentos e medir os dados da seção 18.12.
+6. Somente depois disso, decidir o valor final de `c` e a expansão do pagamento integrado.
+
+---
+
+## Anexo A — Glossário mínimo
+
+- **Solicitação:** pedido de reserva enviado ao estabelecimento, ainda sem confirmação.
+- **Bloqueio temporário (hold):** reserva operacional temporária de um espaço específico, confirmada pelo estabelecimento, enquanto os pagamentos são concluídos.
+- **Lobby:** espaço de organização de uma partida, com participantes, horário, modalidade e ações relacionadas.
+- **Vaga:** posição individual de participante no lobby.
+- **Contribuição para a quadra:** parte do valor da reserva que corresponde ao espaço, dividida entre os participantes.
+- **Taxa de serviço do JOGA:** valor cobrado pela intermediação, calculado pela fórmula da seção 17.
+- **Taxa de conclusão (`q`):** proporção de tentativas de reserva paga que efetivamente se confirmam e se realizam.
+- **Cancelamento esperado (`μ`):** cancelamentos por reserva concluída, calculado como `(1 − q)/q`.
+- **Fator de segurança (`S`):** proteção estatística para a variância dos cancelamentos.
+- **Provisão de cauda (`p_t·V`):** reserva para MED, estorno sem saldo e disputas após liberação.
+- **PSP:** provedor de serviços de pagamento.
+- **Split:** divisão automática do valor recebido entre recebedores.
+- **Recebedor (`recipient`):** conta do estabelecimento no PSP, com saldo próprio.
+- **KYC:** verificação de identidade e cadastro do recebedor.
+- **Liquidação:** momento em que o PSP libera o valor para o recebedor.
+- **Repasse:** transferência do valor devido ao estabelecimento.
+- **Conciliação:** comparação entre os estados internos do JOGA e os eventos do PSP.
+- **Webhook:** notificação enviada pelo PSP ao backend sobre um evento de pagamento.
+- **Idempotência:** propriedade que impede que o reprocessamento do mesmo evento duplique efeitos.
+- **MED:** Mecanismo Especial de Devolução do Pix.
+- **Pagamento tardio:** pagamento confirmado depois do prazo ou depois do cancelamento/substituição.
+- **Reembolso:** devolução do valor pago ao participante.
+- **Reserva confirmada:** reserva com bloqueio confirmado e todos os pagamentos necessários aprovados dentro do prazo.
+
+---
+
+## Anexo B — Resumo das mudanças em relação às versões anteriores
+
+- O marketplace de produtos saiu do escopo inicial e deixou de ser um pilar do produto.
+- Os quatro pilares foram substituídos por três pilares: competitividade, comunidade e infraestrutura esportiva/reservas, com camada transversal de confiança.
+- O aplicativo deixou de listar compra de produtos, pedidos e marketplace.
+- O painel de gestão deixou de tratar lojas, catálogo, estoque e vendas; passou a priorizar quadras, solicitações, bloqueios e reservas.
+- O público-alvo deixou de incluir compradores e vendedores de produtos.
+- Foi criado o fluxo de solicitação de reserva ao estabelecimento, com bloqueio temporário obrigatório.
+- Foram definidos três temporizadores independentes: 1 hora de confirmação de participação; cerca de 30 minutos de funcionamento para resposta do estabelecimento; 60 minutos de bloqueio e pagamento, com buffer de 5 a 10 minutos.
+- Foram removidos os prazos antigos de 24 horas e 2 horas para pagamento.
+- O modelo de pagamento passou a ser Pix individual por participante, com cobranças simultâneas e mesmo prazo.
+- Foi detalhado o fluxo de substituição de participantes.
+- Foram detalhados cancelamentos, reembolsos, MED e estados financeiros.
+- Na versão 3.0, a política de taxa passou a ser `1,8 × (custos + lucro)`.
+- Na versão 3.1, o coeficiente 1,8 foi reposicionado como hipótese inicial de segurança.
+- Na versão 3.2, o 1,8 foi reinterpretado como fator de segurança estatístico de 95% para cancelamentos em `q = 20%`.
+- A fórmula passou a ser `TAXA = c·V + C_k + C_c·μ·S + p_t·V`, com `μ = (1 − q)/q` e `S = 1 + z·√(φ/μ)`.
+- O piso, o preço variável e o teto `α` foram removidos; a proteção contra prejuízo passou a ser uma regra de elegibilidade.
+- A comissão passou a ser a fonte explícita de custo fixo e lucro; `C_k` e `C_c` são componentes separados.
+- Foi adotado o Pagar.me Flex como primeira opção de PSP, condicionado a confirmação contratual, com o Inter como alternativa centralizada.
+- Foram incluídos o portão de KYC do recebedor, a liberação após a partida e a interface financeira obrigatória do estabelecimento.
+- Foram incluídas simulações para 20%, 30%, 40%, 60%, 80% e 90% de conclusão, sensibilidade a `C_c` e `τ`, quadras baratas e custo fixo.
+- Foram separadas decisões aprovadas, parâmetros iniciais, propostas e pendências.

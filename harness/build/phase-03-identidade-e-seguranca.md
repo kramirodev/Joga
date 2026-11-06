@@ -55,7 +55,7 @@ Entregar identidade e autenticação verificáveis no backend: telefone E.164, O
 
 - Perfil esportivo, modalidades, disponibilidade, matchmaking, partidas, ranking, chat e clãs.
 - Provedor real de SMS, envio de mensagens, custos e contratos.
-- Painel web, lojas, marketplace, pagamentos e reservas.
+- Painel web, comércio de produtos, pagamentos e reservas.
 - EAS Build, publicação em loja e OTA.
 - SMS como único fator de recuperação.
 - OTP, token de refresh ou telefone em texto puro.

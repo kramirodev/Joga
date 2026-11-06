@@ -1,6 +1,6 @@
 # JOGA
 
-JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por região, formação de partidas e resultados competitivos auditáveis. É um projeto independente, desenvolvido do zero.
+JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por região, formação de partidas, resultados competitivos auditáveis, descoberta de espaços e reserva de quadras com pagamento individual. É um projeto independente, desenvolvido do zero.
 
 ## Arquitetura em alto nível
 
@@ -9,7 +9,7 @@ JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por 
 - PostgreSQL com PostGIS como fonte oficial da verdade; Redis somente para funções auxiliares e efêmeras.
 - Comunicação do aplicativo com o backend por contratos HTTP/WebSocket versionados.
 
-A Fase 0 foi documental e está concluída. A Fase 1 (prova técnica mobile/nativa) permanece em andamento por pendências externas de domínio/passkeys e iOS. A Fase 2 (fundação de engenharia) foi concluída: há uma API FastAPI mínima com health checks, PostgreSQL/PostGIS local por container, migração baseline reversível e CI verde nos dois projetos; não há painel web, funcionalidades de produto nem dados reais.
+As Fases 0–6 do núcleo esportivo estão implementadas no backend (identidade, perfil/descoberta, fila/matchmaking e ciclo de partidas), com CI verde. Reservas pagas, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados** e pertencem às Fases 11–19. O comércio de produtos está fora do escopo inicial (ADR 0022).
 
 ## Por onde começar
 

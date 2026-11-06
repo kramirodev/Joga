@@ -1,9 +1,9 @@
 # JOGA — Documentação Técnica
 
-**Versão:** 2.0  
-**Status:** especificação técnica-alvo; não representa implementação concluída  
-**Data:** 2 de novembro de 2026  
-**Escopo:** aplicativo Android/iOS, painel web de gestão, API, PostgreSQL/PostGIS, Redis, workers e integrações comerciais  
+**Versão:** 2.1<br>
+**Status:** especificação técnica-alvo; não representa implementação concluída<br>
+**Data:** 5 de novembro de 2026<br>
+**Escopo:** aplicativo Android/iOS, painel web de gestão, API, PostgreSQL/PostGIS, Redis, workers e fluxo financeiro de reservas de quadras<br>
 **Nome do produto:** JOGA
 
 > Este documento consolida a arquitetura-alvo do JOGA. Ele não afirma que os componentes especificados já estejam implementados. A ordem normativa e os limites de cada fase permanecem definidos em `PLANS.md`. O projeto é independente e não pressupõe migração de código, dados ou infraestrutura de um repositório anterior.
@@ -12,14 +12,16 @@
 
 ## 1. Visão técnica do produto
 
-O JOGA é uma plataforma esportiva e comercial composta por duas experiências de usuário:
+O JOGA é uma plataforma esportiva com duas experiências de usuário:
 
-1. **Aplicativo mobile do consumidor:** matchmaking, partidas, lobbies, chat, amigos, clãs, descoberta de quadras, reservas e marketplace de produtos.
-2. **Painel web de gestão:** ambiente autenticado para lojas, arenas e estabelecimentos administrarem exclusivamente produtos, estoque, pedidos, quadras e reservas originados no JOGA.
+1. **Aplicativo mobile do jogador:** matchmaking, partidas, lobbies, chat, amigos, clãs, descoberta de quadras, reservas e pagamentos individuais.
+2. **Painel web de gestão:** ambiente autenticado para estabelecimentos esportivos administrarem quadras, agenda, reservas e informações financeiras originadas no JOGA.
 
-As duas experiências compartilham API, identidade, banco de dados e infraestrutura. O painel web não é um ERP e não administra automaticamente vendas presenciais ou operações externas ao JOGA. Não está previsto um site público independente para consumidores no escopo inicial; o Marketplace fica dentro do aplicativo.
+As duas experiências compartilham API, identidade, banco de dados e infraestrutura. O painel web não é um ERP e não administra automaticamente vendas presenciais ou operações externas ao JOGA. Não está previsto um site público independente para consumidores no escopo inicial.
 
-O sistema deve manter domínios esportivos, sociais e comerciais separados logicamente dentro de um monólito modular. A integração entre eles ocorre por contratos explícitos e eventos auditáveis, sem permitir que transações comerciais influenciem o resultado competitivo.
+O sistema deve manter domínios esportivos, sociais e financeiros separados logicamente dentro de um monólito modular. A integração entre eles ocorre por contratos explícitos e eventos auditáveis, sem permitir que transações financeiras influenciem o resultado competitivo.
+
+O comércio de produtos está fora do escopo inicial (ADR 0022). A camada comercial é composta por reservas de quadras, parcerias, patrocínios e publicidade contextual.
 
 ## 1.1 Decisões de produto e arquitetura
 
@@ -28,10 +30,10 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 | Marca | JOGA; “y” é elemento intencional da identidade verbal |
 | Nome de exibição pretendido do app | JOGA y JOGA |
 | Painel web | JOGA y GESTÃO, responsivo e autenticado |
-| Módulos comerciais | JOGA y LOJA e JOGA y QUADRA |
-| Aplicativo do consumidor | Android e iOS |
-| Marketplace | Dentro do aplicativo mobile; sem site público de consumidor no escopo inicial |
-| Gestão | Site separado para lojistas, proprietários e funcionários |
+| Módulo de reservas | JOGA y QUADRA |
+| Aplicativo do jogador | Android e iOS |
+| Comércio de produtos | Fora do escopo inicial; não especificado nesta versão (ADR 0022) |
+| Gestão | Site separado para proprietários, gerentes e funcionários de estabelecimentos |
 | Escopo do painel | Somente operações originadas no JOGA; não é ERP geral |
 | Esportes iniciais | Futebol 5x5 (10 jogadores no total) e vôlei |
 | Duração de partida | Definida por configuração de esporte/formato; não livre por lobby |
@@ -41,11 +43,11 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 | Quadras privadas | Cadastro, agenda, reserva e pagamento quando habilitados |
 | Chat | Por lobby e por clã; sem chat global universal no escopo atual |
 | Clãs | Abertos ou fechados, com ranking de troféus por modalidade |
-| Lojas | Produtos com estoque alocado ao canal JOGA |
-| Entrega | Retirada ou entrega organizada e executada pelo vendedor |
-| Logística do JOGA | Sem transportadora própria, cotação, etiqueta ou rastreamento logístico centralizado no escopo atual |
-| Confirmação de recebimento | Código de uso único gerado pelo backend e apresentado pelo comprador ao vendedor/entregador |
-| Pagamentos | Provedor externo apropriado para marketplace; sem processador ou carteira própria |
+| Reservas | Solicitação ao estabelecimento, bloqueio temporário e confirmação com pagamentos completos |
+| Pagamentos | Pix individual por participante; PSP externo com split ou custódia centralizada |
+| Custódia | Sem carteira própria; liberação ao estabelecimento somente após a reserva e a partida |
+| KYC do recebedor | Obrigatório antes de abrir reserva paga |
+| Interface financeira | Obrigatória para o estabelecimento quando houver split (Res. 264/349) |
 | Dados oficiais | PostgreSQL como fonte da verdade |
 | Backend | FastAPI em monólito modular |
 | Redis | Cache, limites, presença e distribuição efêmera; não fonte oficial |
@@ -54,22 +56,23 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 ## 1.2 Princípios inegociáveis
 
 - Toda mudança relevante de estado é validada no servidor.
-- O cliente nunca determina MMR, Trust Factor, troféus, resultado oficial, estoque confirmado, status financeiro ou permissões.
-- PostgreSQL é a fonte da verdade para estado esportivo, social e comercial.
-- Redis não é fonte oficial de filas, partidas, reservas, pedidos, estoque ou rating.
-- Requisições repetidas não podem duplicar reservas, pedidos, pagamentos, movimentações de estoque, mensagens de sistema ou aplicações de rating.
-- Dados de telefone e localização são minimizados e protegidos.
-- Permissões comerciais devem ser isoladas por organização/estabelecimento.
+- O cliente nunca determina MMR, Trust Factor, troféus, resultado oficial, disponibilidade, estado de reserva, status financeiro ou permissões.
+- PostgreSQL é a fonte da verdade para estado esportivo, social, de reservas e financeiro.
+- Redis não é fonte oficial de filas, partidas, reservas, pagamentos ou rating.
+- Requisições repetidas não podem duplicar reservas, pagamentos, estornos, mensagens de sistema ou aplicações de rating.
+- Dados de telefone, localização e dados financeiros são minimizados e protegidos.
+- Permissões de estabelecimento devem ser isoladas por organização.
 - Falhas de SMS, push, Redis, WebSocket ou provedor de pagamento não podem corromper o estado oficial.
 - O sistema deve registrar eventos financeiros e competitivos de forma auditável.
-- O escopo precisa ser entregue por etapas; não construir todo o ecossistema durante a prova técnica inicial.
+- A liberação de valor ao estabelecimento só ocorre depois da confirmação da reserva e da realização da partida.
+- Estabelecimento sem recebedor ativo não pode originar reserva paga.
 
 ## 2. Escopo e exclusões
 
 ### 2.1 Incluído na arquitetura-alvo
 
-- Aplicativo mobile Android/iOS para consumidores e jogadores.
-- Painel web responsivo e autenticado para gerenciadores.
+- Aplicativo mobile Android/iOS para jogadores.
+- Painel web responsivo e autenticado para estabelecimentos.
 - Identidade central, telefone verificado, passkeys e sessões seguras.
 - Perfis, esportes e formatos.
 - Preferências de quadra pública/particular/indiferente.
@@ -80,17 +83,17 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 - Clãs abertos/fechados e ranking de troféus por modalidade.
 - Resultados, disputas, MMR individual e Trust Factor esportivo.
 - Cadastro de estabelecimentos, quadras e agenda.
-- Reserva/pagamento de quadras privadas.
-- Catálogo comercial, variantes e estoque alocado ao canal JOGA.
-- Pedidos, pagamentos, comissões, retirada e entrega pelo vendedor.
-- Código de confirmação de recebimento.
-- Cancelamentos, devoluções e reembolsos com trilha de auditoria.
-- Denúncias e disputas comerciais, com comunicação pré-compra (loja/produto) e pós-compra (pedido) vinculadas ao contexto.
+- Solicitação de reserva, bloqueio temporário e máquina de estados.
+- Pagamento Pix individual, split ou custódia centralizada e reembolsos.
+- Onboarding/KYC do recebedor e portão de elegibilidade.
+- Interface financeira do estabelecimento, liberação e conciliação.
+- Cancelamentos e reembolsos com trilha de auditoria.
 - Denúncias de usuários e moderação de chats de lobby e clã, com revisão humana.
 - Publicidade patrocinada como módulo posterior, sem impacto competitivo.
 
 ### 2.2 Fora do escopo atual
 
+- Comércio de produtos: catálogo, estoque, pedidos, vendedores, entregas, código de recebimento, avaliações e disputas de produtos.
 - Site público independente para consumidores.
 - App nativo separado para gerenciadores.
 - ERP completo ou gestão de vendas presenciais/externas.
@@ -99,7 +102,7 @@ O sistema deve manter domínios esportivos, sociais e comerciais separados logic
 - Carteira custodial ou processador de pagamentos próprio.
 - Aluguel de equipamentos com caução, ciclo de devolução e controle de danos.
 - Gestão completa de academias/clubes, matrículas, mensalidades, catracas e frequência.
-- Marketplace de profissionais individuais.
+- Intermediação de profissionais individuais.
 - Torneios, chaves, fases, inscrições e premiações.
 - Chat global universal.
 - Upload livre de imagens, vídeos, áudios e arquivos nos chats.
@@ -121,7 +124,7 @@ flowchart TB
     DB[(PostgreSQL + PostGIS)]
     REDIS[(Redis)]
     WORKER[Workers Python]
-    PSP[Provedor de pagamentos\nMarketplace / Split]
+    PSP[Provedor de pagamentos\nSplit ou custódia]
     SMS[Provedor SMS]
     PUSH[FCM / APNs]
     STORAGE[Armazenamento privado\nEvidências e mídias futuras]
@@ -143,42 +146,43 @@ O painel web pode ser desenvolvido em React + TypeScript, mas o framework final 
 ### 3.2 Responsabilidades
 
 **Aplicativo React Native**
-- Interface de jogador/consumidor.
-- Matchmaking, lobbies, chat, clãs, marketplace e reservas.
+- Interface de jogador.
+- Matchmaking, lobbies, chat, clãs, descoberta de quadras, reservas e pagamentos.
 - Integração nativa com passkeys, localização, armazenamento seguro e push.
-- Não contém regras autoritativas de MMR, estoque, preço final, pagamento ou permissão.
+- Não contém regras autoritativas de MMR, disponibilidade, preço final, estado de reserva, pagamento ou permissão.
 
 **Painel web de gestão**
-- Interface autenticada para proprietários e funcionários.
-- Cadastro de loja/estabelecimento, produtos, variantes, estoque JOGA, quadras, horários, pedidos e reservas.
-- Consulta de comissões, status e relatórios básicos.
+- Interface autenticada para proprietários, gerentes e funcionários.
+- Cadastro de estabelecimento, quadras, horários, preços, bloqueios, solicitações, reservas e informações financeiras.
+- Consulta de liberações, recebíveis, comissões, status e relatórios básicos.
 - Não administra vendas externas ao JOGA no escopo inicial.
 - Não acessa dados de outra organização sem autorização explícita.
 
 **API FastAPI**
 - Autenticação, autorização e isolamento multi-tenant.
 - Casos de uso e transições de estado.
-- Transações de banco, controle de estoque e reserva.
-- Integração com provedor de pagamento.
-- Verificação de webhooks e códigos de recebimento.
+- Transações de banco, controle de agenda e reserva.
+- Integração com provedor de pagamento e KYC do recebedor.
+- Verificação de webhooks, eventos financeiros e idempotência.
 - Outbox, rate limits, paginação, validação e contratos OpenAPI.
 
 **PostgreSQL + PostGIS**
-- Fonte da verdade de identidade, organizações, produtos, estoque, pedidos, pagamentos, quadras, reservas, lobbies, mensagens, clãs, partidas, resultados e ratings.
+- Fonte da verdade de identidade, organizações, recebedores, quadras, agenda, reservas, pagamentos, reembolsos, lobbies, mensagens, clãs, partidas, resultados e ratings.
 - Constraints, índices e transações para proteger invariantes.
 - Consultas geoespaciais de jogadores e locais.
 
 **Redis**
 - Cache não autoritativo.
 - Rate limiting distribuído, presença, Pub/Sub e dados efêmeros com TTL.
-- Nunca será a única cópia de mensagens, lobbies, pedidos, reservas, estoque, partidas ou rating.
+- Nunca será a única cópia de mensagens, lobbies, reservas, pagamentos, partidas ou rating.
 
 **Workers Python**
 - Matchmaking e expiração de entradas.
 - Processamento da Outbox.
 - Notificações e push.
-- Reconciliação de pagamentos e operações comerciais.
-- Expiração de reservas temporárias de estoque e de horários.
+- Expiração de bloqueios e prazos de reserva.
+- Reconciliação de pagamentos, liberações e reembolsos.
+- Liberação automática após a partida, com janela de disputa.
 - Processamento de rating e troféus após validação.
 
 ## 4. Organização do código
@@ -203,8 +207,7 @@ mobile/
       rankings/
       venues/
       bookings/
-      marketplace/
-      orders/
+      payments/
     shared/
     services/
     navigation/
@@ -218,14 +221,11 @@ management-web/
       authentication/
       organizations/
       staff/
-      stores/
-      catalog/
-      inventory/
-      orders/
-      fulfillment/
       venues/
+      availability/
       bookings/
       payments/
+      financial/
       reports/
     shared/
 
@@ -245,6 +245,7 @@ backend/
       sms/
       push/
       payments/
+      kyc/
       storage/
       telemetry/
     modules/
@@ -257,7 +258,12 @@ backend/
       availability/
       locations/
       venues/
+      venue_availability/
       bookings/
+      booking_timers/
+      payments/
+      payouts/
+      financial/
       matchmaking/
       lobbies/
       chat/
@@ -269,13 +275,6 @@ backend/
       ratings/
       reputation/
       moderation/
-      marketplace_catalog/
-      inventory/
-      orders/
-      payments/
-      merchant_conversations/
-      commerce_disputes/
-      fulfillment/
       advertising/
       notifications/
     api/
@@ -329,11 +328,11 @@ Modelar organizações/estabelecimentos e seus membros explicitamente:
 - `organizations`: entidade comercial.
 - `organization_memberships`: vínculo entre usuário e organização.
 - `organization_roles` ou permissões equivalentes: proprietário, administrador, operador e permissões específicas.
-- `stores` e `venues`: perfis comerciais vinculados à organização, conforme o tipo de negócio.
+- `venues`: perfil do estabelecimento esportivo, vinculado à organização.
 
-Toda consulta ou mutação comercial deve validar organização, associação do usuário, papel e recurso específico. UUID difícil de adivinhar não substitui autorização.
+Toda consulta ou mutação deve validar organização, associação do usuário, papel e recurso específico. UUID difícil de adivinhar não substitui autorização.
 
-Um operador de uma loja só pode ver produtos, estoque, pedidos, pagamentos e dados necessários daquela loja. Um funcionário de uma arena só pode administrar quadras e reservas autorizadas.
+Um operador de um estabelecimento só pode ver quadras, agenda, reservas, pagamentos e dados necessários daquela organização. Um funcionário de uma arena só pode administrar quadras e reservas autorizadas.
 
 ### 5.3 Telefone e OTP
 
@@ -608,7 +607,7 @@ Não haverá chat global universal no escopo atual. Conversas permitidas:
 - Chat associado a lobby, acessível somente a participantes autorizados.
 - Chat permanente de clã, acessível somente a membros autorizados.
 
-A primeira versão permite texto e referências internas do JOGA (links/objetos de partidas, quadras, produtos e lobbies). Não permitir upload livre de áudio, vídeo, imagem ou arquivo no MVP.
+A primeira versão permite texto e referências internas do JOGA (links/objetos de partidas, quadras e lobbies). Não permitir upload livre de áudio, vídeo, imagem ou arquivo no MVP.
 
 Mensagens devem ser persistidas no PostgreSQL. WebSocket serve à entrega em tempo real, não à persistência. Redis pode distribuir eventos e presença entre processos. Push notifica usuários desconectados.
 
@@ -622,7 +621,7 @@ O vínculo do jogador ao clã na data de uma partida deve ser registrado para at
 
 ### 12.4 Moderação, denúncias de usuários e Trust & Safety
 
-Módulo dedicado (fase 17 do `PLANS.md`). Especificação alvo traduzida do conceito (seções 15.5 e 15.5.1–15.5.5); políticas e parâmetros pendentes de decisão (seção 26). Escopo inicial: chats de lobby e de clã, limitados a texto e referências internas do JOGA; não há moderação de mídia enviada por usuários, pois o MVP não admite upload livre.
+Módulo dedicado (fase 17 do `PLANS.md`). Especificação alvo traduzida do conceito (seções 21.5 e 21.5.1–21.5.5); políticas e parâmetros pendentes de decisão (seção 26). Escopo inicial: chats de lobby e de clã, limitados a texto e referências internas do JOGA; não há moderação de mídia enviada por usuários, pois o MVP não admite upload livre.
 
 #### 12.4.1 Denúncia de perfil no lobby
 
@@ -641,7 +640,7 @@ A IA é camada auxiliar, com níveis de confiança e possibilidade de contestaç
 
 #### 12.4.3 Revisão humana e medidas
 
-- No estágio inicial, o próprio responsável pelo JOGA pode atuar como moderador humano. A ferramenta de revisão é interna e separada do painel de lojas (JOGA y GESTÃO); deve apresentar histórico, mensagens relevantes, evidências, classificação automatizada e ações recomendadas.
+- No estágio inicial, o próprio responsável pelo JOGA pode atuar como moderador humano. A ferramenta de revisão é interna e separada do painel de gestão (JOGA y GESTÃO); deve apresentar histórico, mensagens relevantes, evidências, classificação automatizada e ações recomendadas.
 - Revisão humana é reservada principalmente para casos graves; denúncias com evidências conflitantes; risco à segurança de usuários; recursos contra medidas automatizadas; casos de baixa confiança da IA; possíveis fraudes ou denúncias coordenadas.
 - Medidas possíveis: aviso; remoção ou ocultação de mensagens; restrição temporária de envio; restrição de participação em lobbies; suspensão temporária da conta; suspensão permanente em casos graves ou reincidentes. Medidas são proporcionais à gravidade e reincidência, com justificativa e possibilidade de contestação, em registro append-only.
 - Denúncia isolada não reduz automaticamente o Trust Factor esportivo; o sistema considera a confiabilidade da denúncia e a existência de evidências antes de aplicar penalidades (seção 11.2).
@@ -673,196 +672,306 @@ Os pesos 50/30/20 são a fórmula-base aceita para prototipação, não devem se
 
 Troféus de clã são uma classificação coletiva própria, independente do MMR individual. Nenhum ponto pode ser comprado ou concedido por publicidade.
 
-## 13. Organizações, quadras e reservas
+## 13. Organizações, quadras e onboarding do recebedor
 
 ### 13.1 Organizações e estabelecimentos
 
-Uma organização pode administrar uma ou mais lojas e/ou espaços esportivos. Cada recurso comercial deve estar vinculado à organização proprietária e ter permissões explícitas.
+Uma organização pode administrar um ou mais espaços esportivos. Cada recurso deve estar vinculado à organização proprietária e ter permissões explícitas.
 
-### 13.2 Agenda de quadras
+O modelo mínimo:
+
+- `organizations`: entidade comercial.
+- `organization_memberships`: vínculo entre usuário e organização.
+- `organization_roles`: proprietário, administrador e operador, com permissões por recurso.
+- `venues`: perfil do estabelecimento, endereço, geografia, contato e estado operacional.
+- `venue_spaces`: quadras ou espaços reserváveis de um estabelecimento.
+- `venue_sports`: vínculo entre espaço e modalidade.
+- `venue_availability`: horários regulares, preços, duração e exceções.
+
+### 13.2 Agenda e disponibilidade
 
 O estabelecimento define quadras, horários, preços, intervalos, bloqueios e regras. Deve poder registrar reservas feitas externamente para evitar que o JOGA anuncie um horário já indisponível.
 
-A reserva de quadra particular deve controlar conflitos de intervalo, não apenas igualdade de horário de início. O bloqueio do horário e a confirmação do pedido/reserva precisam ocorrer de forma transacional ou por mecanismo de hold com expiração.
+A reserva deve controlar conflitos de intervalo, não apenas igualdade de horário de início. O bloqueio e a confirmação precisam ocorrer de forma transacional ou por mecanismo de hold com expiração.
 
-Para reservas comerciais, registrar:
+A agenda deve considerar:
 
-- Estabelecimento e quadra.
+- Fuso do estabelecimento.
+- Duração definida pelo formato esportivo.
+- Intervalo de manutenção entre reservas.
+- Feriados, dias fechados e exceções.
+- Reservas externas e bloqueios manuais.
+- Preço por faixa de horário, quando existir.
+
+### 13.3 Recebedor e KYC
+
+Cada estabelecimento que recebe pagamento precisa de um recebedor no PSP:
+
+- Dados cadastrais de CPF/CNPJ.
+- Conta bancária na mesma titularidade.
+- Validação de identidade e, conforme o PSP, prova de vida.
+- Estado de credenciamento: `PENDING`, `ACTIVE`, `REJECTED`, `SUSPENDED`.
+- Referência do recebedor no PSP.
+
+Regra: **reserva paga só pode ser aberta para recebedor `ACTIVE`**. O estado é consultado no backend e registrado no momento da abertura da cobrança. KYC pendente não é contornado por promessa comercial.
+
+### 13.4 Permissões
+
+Toda consulta ou mutação deve validar organização, associação do usuário, papel e recurso específico.
+
+- Um operador de um estabelecimento só vê quadras, agenda, reservas e dados financeiros daquela organização.
+- Um funcionário de arena só administra quadras e reservas autorizadas.
+- Dados bancários e de KYC têm acesso restrito.
+- Ações administrativas e financeiras geram auditoria.
+
+---
+
+## 14. Reservas, bloqueio e temporizadores
+
+### 14.1 Solicitação e aceite
+
+O fluxo começa com uma solicitação de reserva vinculada a:
+
+- Lobby e participantes.
+- Estabelecimento e espaço.
 - Data/hora inicial e final.
-- Preço e condições aplicadas no momento da compra.
-- Participante/consumidor responsável.
-- Estado de pagamento.
-- Estado da reserva.
+- Preço e condições aplicadas no momento da solicitação.
+- Origem `JOGA`.
 - Política de cancelamento/reembolso.
-- Origem da reserva (`JOGA`), para cálculo de comissão.
 
-Não cobrar comissão sobre reservas externas que não tenham sido originadas pelo JOGA, salvo acordo comercial separado e explícito.
+O estabelecimento aceita ou recusa. O aceite é um compromisso condicional de honrar a reserva se todos pagarem dentro do prazo.
 
-## 14. Marketplace, catálogo e estoque
+### 14.2 Bloqueio temporário
 
-### 14.1 Catálogo
+O bloqueio deve ser transacional e vinculado ao intervalo específico:
 
-Produtos podem possuir variantes (tamanho, cor, modelo), imagens, descrição, preço e atributos comerciais. A primeira implementação deve limitar campos e categorias ao que for necessário para os produtos suportados.
+- Impedir sobreposição com outra reserva ou bloqueio.
+- Ter expiração explícita.
+- Ser liberado quando o prazo termina, a reserva é recusada ou o lobby é cancelado.
+- Não ser prorrogado por substituição de participante.
 
-### 14.2 Estoque comprometido com JOGA
+Em PostgreSQL, a proteção pode usar constraint de exclusão por intervalo (`tstzrange` + GiST/`btree_gist`) ou verificação transacional equivalente. A verificação apenas no cliente não é suficiente.
 
-A quantidade anunciada e disponibilizada pelo vendedor no JOGA representa estoque alocado ao canal JOGA. O vendedor não deve vender essas unidades em outro canal sem atualizar o estoque do JOGA ou manter alocação física suficiente.
+### 14.3 Três temporizadores independentes
 
-O produto continua sendo propriedade do vendedor até a transferência decorrente da venda. “Estoque do JOGA” significa estoque reservado comercialmente para cumprir pedidos do JOGA, não transferência automática de propriedade para a plataforma.
+**T1 — confirmação de participação.** Prazo inicial de 1 hora para os jogadores confirmarem que pretendem participar. Controlado pelo backend.
 
-Modelo lógico sugerido:
+**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio.
 
-- Quantidade alocada ao canal JOGA.
-- Quantidade disponível para compra.
-- Quantidade temporariamente reservada em checkouts ativos.
-- Quantidade vendida/comprometida em pedidos pagos.
-- Movimentações de entrada, ajuste, reserva, liberação, venda e devolução.
+**T3 — bloqueio e pagamento.** 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos para conciliação. As cobranças são abertas depois do aceite e do bloqueio.
 
-Usar uma tabela de movimentações auditáveis e, se houver saldo materializado, mantê-lo consistente por transação. Não sobrescrever quantidade sem registrar a razão.
+Os prazos são independentes. O backend é a autoridade; notificação, relógio do dispositivo e conexão não são fonte oficial.
 
-### 14.3 Checkout e concorrência
-
-- Ao iniciar checkout, reservar temporariamente as unidades por TTL.
-- A reserva de estoque deve bloquear a quantidade dentro de transação.
-- Pagamento aprovado converte a reserva temporária em venda confirmada.
-- Pagamento recusado, cancelado ou expirado libera a quantidade.
-- Webhooks repetidos não podem duplicar venda ou movimentação.
-- O sistema não deve aceitar estoque negativo.
-
-Como o estoque anunciado é dedicado ao JOGA, não exigir integração com ERP/PDV no MVP. O vendedor deve manter a alocação física e as quantidades publicadas confiáveis.
-
-## 15. Retirada, entrega pelo vendedor e código de recebimento
-
-### 15.1 Modos de cumprimento
-
-- `PICKUP`: comprador retira no local definido.
-- `SELLER_DELIVERY`: vendedor organiza e executa a entrega.
-
-Não existe entrega operada pelo JOGA no escopo atual. A plataforma não cota frete, contrata transportadora, paga transportadora, gera etiqueta ou mantém rastreamento logístico centralizado.
-
-No modo `SELLER_DELIVERY`, o vendedor informa preço, região atendida, prazo estimado e condições. Essas informações compõem a oferta e precisam ser claras antes da compra. O vendedor é responsável pela execução da entrega, sem que contratos privados afastem eventuais responsabilidades legais da plataforma.
-
-O vendedor/estabelecimento atualiza os estados operacionais no painel. O JOGA registra eventos, comunica o comprador e disponibiliza o código de confirmação.
-
-### 15.2 Código de confirmação
-
-O backend gera código aleatório, de uso único e vinculado ao pedido. Requisitos:
-
-- Código mostrado somente ao comprador no momento definido pelo fluxo.
-- Vendedor/entregador não deve ter acesso antecipado ao código.
-- Código armazenado como hash/HMAC, não em texto puro.
-- Limite de tentativas e proteção contra adivinhação.
-- Expiração e reemissão controladas.
-- Uso único e associação ao pedido/entrega correta.
-- Evento auditável com ator e timestamp.
-- Possibilidade de contestação/atendimento se o comprador não recebeu ou não puder confirmar.
-
-O código comprova que o comprador forneceu uma confirmação de recebimento. Não comprova qualidade, integridade ou conformidade do produto e não elimina direito de arrependimento, garantia, devolução ou reclamação.
-
-### 15.3 Estados de cumprimento sugeridos
+### 14.4 Máquina de estados da reserva
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PAID
-    PAID --> PREPARING
-    PREPARING --> READY_FOR_PICKUP: retirada
-    PREPARING --> OUT_FOR_DELIVERY: entrega do vendedor
-    READY_FOR_PICKUP --> COMPLETED: codigo validado
-    OUT_FOR_DELIVERY --> COMPLETED: codigo validado
-    PAID --> CANCEL_REQUESTED
-    PREPARING --> CANCEL_REQUESTED
-    READY_FOR_PICKUP --> CANCEL_REQUESTED
-    OUT_FOR_DELIVERY --> ISSUE_REPORTED
-    ISSUE_REPORTED --> COMPLETED: resolvido
-    ISSUE_REPORTED --> REFUNDED: reembolso
-    CANCEL_REQUESTED --> REFUNDED: cancelamento aprovado
-    COMPLETED --> RETURN_REQUESTED: solicitação de devolução
-    RETURN_REQUESTED --> RETURN_IN_REVIEW
-    RETURN_IN_REVIEW --> REFUNDED
-    RETURN_IN_REVIEW --> COMPLETED: solicitação não aprovada
+    [*] --> REQUESTED
+    REQUESTED --> ACCEPTED: estabelecimento aceita
+    REQUESTED --> DECLINED: estabelecimento recusa
+    REQUESTED --> EXPIRED: T2 encerrado
+    ACCEPTED --> HOLD_CONFIRMED: bloqueio transacional
+    HOLD_CONFIRMED --> PAYMENT_PENDING: cobranças abertas
+    PAYMENT_PENDING --> CONFIRMED: todos os pagamentos aprovados
+    PAYMENT_PENDING --> CANCELLED: T3 encerrado sem todos os pagamentos
+    PAYMENT_PENDING --> SUBSTITUTING: vaga em substituição
+    SUBSTITUTING --> PAYMENT_PENDING: substituto paga
+    SUBSTITUTING --> CANCELLED: sem substituto ou tempo
+    CONFIRMED --> COMPLETED: partida realizada
+    CONFIRMED --> CANCELLED_BY_VENUE: descumprimento
+    CONFIRMED --> CANCELLED_BY_PLAYER: cancelamento após confirmação
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+    CANCELLED_BY_VENUE --> [*]
+    CANCELLED_BY_PLAYER --> [*]
+    DECLINED --> [*]
+    EXPIRED --> [*]
 ```
 
-A máquina de estados final deve ser revisada com regras de pagamento e legislação. O status comercial não substitui o estado financeiro.
+As transições são implementadas em serviço de domínio central. Não permitir alteração livre de status por endpoint. Cada transição registra ator, motivo, timestamp e estado anterior.
 
-## 16. Pedidos, pagamentos, cancelamentos e devoluções
+### 14.5 Substituição de participantes
 
-### 16.1 Provedor de pagamentos
+A substituição é permitida após o aceite, dentro da janela original de pagamento. Não reinicia o prazo nem prorroga o bloqueio.
 
-Utilizar provedor externo com recursos adequados a marketplace, cadastro/verificação de vendedores, split quando disponível, webhooks, estornos, chargebacks e relatórios de conciliação.
+Regras:
 
-Não construir processador próprio, armazenar dados completos de cartão ou criar carteira custodial. A disponibilidade real de split, prazo de repasse, responsabilidade por chargeback e regras de reembolso devem ser validadas com o provedor escolhido.
+- Apenas um candidato ocupa uma vaga específica.
+- A contribuição do substituto é a mesma da vaga, sem recalcular os demais.
+- O histórico de qual participante ocupou cada vaga é preservado.
+- Pagamento tardio de participante substituído vai para reembolso.
+- Se não houver substituto ou tempo, o lobby é cancelado e os valores pagos são devolvidos.
 
-### 16.2 Eventos financeiros
+### 14.6 Cancelamento e reembolso
+
+Se a reserva não se completa por falta de pagamento, indisponibilidade, falha de substituição ou expiração:
+
+1. O lobby é cancelado.
+2. O bloqueio é liberado.
+3. Nenhuma nova cobrança é emitida.
+4. Todos os valores pagos são devolvidos integralmente, incluindo a taxa de serviço.
+5. As tarifas não recuperáveis são custo do JOGA (`C_c`), não desconto no reembolso.
+
+O valor principal devolvido não é perda integral. O custo relevante é a tarifa não recuperável, a devolução e o atendimento.
+
+### 14.7 Conclusão e liberação
+
+A reserva passa a `COMPLETED` quando a partida é realizada e confirmada conforme as regras do ciclo de partida.
+
+A liberação ao estabelecimento só ocorre depois de `COMPLETED`, dentro da janela de disputa. A liberação automática após `N` horas existe para impedir que a quadra fique refém de confirmação de jogador. `N` permanece pendente.
+
+---
+
+## 15. Pagamentos Pix, split e custódia
+
+### 15.1 Provedor
+
+Utilizar provedor externo com recursos adequados a:
+
+- várias cobranças Pix no mesmo pedido;
+- split por cobrança;
+- saldo por recebedor;
+- transferência/liberação controlada;
+- estorno individual;
+- webhooks autenticados;
+- conciliação.
+
+O Pagar.me Flex é a primeira opção, condicionada a contrato e às respostas do ADR 0021. O Inter é a alternativa centralizada.
+
+Não construir processador próprio, carteira custodial ou custódia informal.
+
+### 15.2 Modelo de cobrança
+
+- Um `order` por reserva.
+- Uma cobrança Pix por participante.
+- Cada cobrança vinculada a reserva, lobby, participante e vaga.
+- Todas as cobranças abertas simultaneamente após o bloqueio.
+- Mesmo prazo para todas.
+- Valor individual calculado pelo backend e congelado na abertura.
+
+O `order_id` do PSP é a referência externa da reserva. O ledger interno mantém a associação entre cobranças, participantes e reserva.
+
+### 15.3 Split e custódia
+
+**Split (Pagar.me Flex).** Cada estabelecimento é um recebedor. A cobrança é dividida entre a parte do estabelecimento e a taxa do JOGA. O saldo fica no recebedor até a liberação. `transfer_enabled=false` desativa a transferência automática; o JOGA usa `POST /transfers` com `Idempotency-Key` para liberar. Se o recebedor puder sacar por conta própria, a retenção deixa de ser técnica e passa a ser contratual; o risco sobe e `p_t` deve refletir isso.
+
+**Custódia centralizada (Inter).** O valor fica na conta do JOGA. A quadra não saca sozinha. O repasse é feito depois da confirmação. Exige revisão jurídica e segregação contábil.
+
+Em ambos os casos, o backend mantém um ledger financeiro interno auditável. O ledger não é custódia; é registro de direitos e obrigações.
+
+### 15.4 Eventos financeiros
 
 - Confirmar pagamento somente por webhook autenticado ou consulta server-to-server confiável.
 - Validar assinatura/autenticidade do webhook.
 - Aplicar idempotência por evento/transação.
-- Registrar bruto, taxas, comissão, valor do vendedor, estornos e ajustes.
-- Manter ledger/registro financeiro interno auditável, sem confundir esse registro com custódia de dinheiro.
-- Executar conciliação periódica entre pedidos, pagamentos, reembolsos e repasses.
+- Registrar bruto, taxas, comissão, valor do estabelecimento, estornos e ajustes.
+- Manter `payment_events` append-only.
+- Executar conciliação periódica entre reservas, cobranças, reembolsos e liberações.
 
-### 16.3 Vendedor não consegue cumprir
+### 15.5 Reembolsos e MED
 
-Se o vendedor não consegue cumprir o pedido, o sistema deve permitir cancelamento e reembolso adequado. Quando o cancelamento for devido à impossibilidade de entrega, o consumidor não deve perder o valor pago por produto ou entrega oferecida pelo vendedor.
+- Reembolso integral quando a reserva não se completa.
+- Reembolso individual por cobrança.
+- Pagamento tardio entra no fluxo de reembolso.
+- Estorno Pix com split deve ser validado no PSP: quem absorve a devolução e as tarifas.
+- MED pode debitar o recebedor ou a plataforma; o evento precisa ser registrado e tratado.
+- Estorno sem saldo é evento de cauda, coberto por `p_t·V` e por contrato.
 
-### 16.4 Devolução e direito do consumidor
+### 15.6 Precificação no backend
 
-O sistema deve permitir solicitação, registro, instruções, acompanhamento, decisão, retorno e reembolso. A operação física de retorno pode ser conduzida pelo vendedor, mas custos e prazos legais devem ser respeitados.
+A taxa aplicada é calculada pela fórmula do documento conceitual §17:
 
-Em compras à distância, o artigo 49 do Código de Defesa do Consumidor prevê direito de arrependimento no prazo legal de sete dias, conforme o caso, com devolução dos valores pagos. O fluxo não pode exigir que o consumidor arque com custo de retorno quando a lei atribuir esse custo ao fornecedor. Defeitos, produto divergente, não entrega e outras hipóteses têm regras próprias.
+```text
+TAXA = c·V + C_k + C_c·μ·S + p_t·V
+μ = (1 − q)/q
+S = 1 + z·√(φ/μ)
+```
 
-A plataforma deve passar por revisão jurídica antes do lançamento. Definir papéis e responsabilidades contratuais não elimina automaticamente possíveis responsabilidades legais do marketplace.
+O cálculo é resolvido como ponto fixo porque as tarifas percentuais incidem sobre `V + TAXA`. Os parâmetros aplicados ficam registrados por reserva, com versão da fórmula e data de calibração. Se a taxa resultante ultrapassar o limite de elegibilidade da faixa (conceito §17.7), a reserva paga não é oferecida.
 
-### 16.5 Denúncias de transações e antifraude comercial
+O valor é congelado na abertura da cobrança e não muda por recalibração posterior.
 
-Módulo dedicado (fase 15 do `PLANS.md`). Tradução técnica do conceito (seções 15.1–15.4). O sistema protege compradores e vendedores tanto na compra quanto após a confirmação do pedido, sem presunção de culpa de qualquer parte e sem decisões irreversíveis automatizadas.
+### 15.7 Pré-requisitos para abrir pagamento integrado
 
-#### 16.5.1 Denúncia de transação
+- Recebedor ativo (KYC).
+- Contrato de PSP com tarifas e responsabilidades definidas.
+- Capacidade de várias cobranças no mesmo pedido.
+- Capacidade de split ou custódia centralizada aprovada.
+- Estorno individual testado.
+- Webhooks autenticados e idempotentes.
+- Interface financeira do recebedor especificada.
+- Revisão jurídica do modelo.
 
-- Aberta por comprador ou vendedor, vinculada automaticamente ao pedido correspondente. Não permitir denúncia por quem não é comprador/vendedor daquele pedido.
-- Formulário: tipo de problema; descrição detalhada; até três imagens de evidência com limites de tamanho/formato e controles de segurança (armazenamento privado, allowlist, autorização por papel).
-- A IA pode auxiliar na classificação, identificação de inconsistências e priorização de casos. Casos com indícios relevantes de fraude, evidências conflitantes ou consequências financeiras significativas vão para revisão humana.
-- Junto da denúncia, registrar referência às mensagens do contexto comercial existentes; mensagens e imagens seguem os limites e a autorização definidos.
+---
 
-#### 16.5.2 Fluxo de decisão de disputa
+## 16. Interface financeira, liberação e conciliação
 
-Análise progressiva, com histórico append-only em cada etapa:
+### 16.1 Conteúdo obrigatório
 
-1. Coleta automática de dados do pedido, pagamento, mensagens, códigos de recebimento e evidências.
-2. Classificação inicial e identificação de inconsistências por regras e IA.
-3. Tentativa de resolução entre comprador e vendedor, quando apropriado, inclusive por propostas de solução (condições, defeitos, alternativas, possíveis soluções).
-4. Encaminhamento de casos complexos ou suspeitos para revisão humana.
-5. Registro da decisão, justificativa e ações executadas.
+Quando houver split, o estabelecimento precisa de uma interface financeira com:
 
-- Anulação, cancelamento e reembolso seguem as condições comerciais, o fluxo da seção 16.4 e os eventos autenticados do PSP (seção 16.2); a disposição financeira nunca decorre apenas da classificação da IA.
-- O código de confirmação de recebimento é evidência operacional, não prova absoluta de conformidade do produto (seção 15.2).
+- Extrato por reserva e por cobrança.
+- Agenda de recebíveis.
+- Status de liberação (`PENDING`, `RELEASED`, `FAILED`, `REVERSED`).
+- Comprovantes e notas de repasse.
+- Dados contratuais do recebedor.
+- Histórico de estornos e ajustes.
+- Canal de contestação de valores.
+- Relatório de taxas e comissão do JOGA.
 
-#### 16.5.3 Proteções antifraude
+A interface atende às obrigações de transparência aplicáveis a facilitadores de pagamento (Res. 264/349) e não é opcional.
 
-- Riscos previstos: alegação falsa de não recebimento; registro de entrega inexistente; comprovantes falsos; anúncios de produtos inexistentes ou divergentes; tentativa de reembolso indevido; contas falsas ou múltiplas para manipular avaliações e transações; acordos entre comprador e vendedor para explorar pagamentos/reembolsos.
-- O sistema mantém registros auditáveis de pedidos, pagamentos, alterações de status, mensagens, códigos de recebimento e solicitações de suporte, e protege os códigos contra manipulação (seção 15.2/20.5).
-- Indicadores permanecem separados: denúncia ou disputa comercial não altera MMR, Trust Factor esportivo nem troféus de clã (seções 11.3 e 12.5). Sinais de confiabilidade comercial são tratados como indicador próprio do estabelecimento/vendedor, sem mistura com o esportivo.
+### 16.2 Regra de liberação
 
-### 16.6 Comunicação entre comprador e vendedor
+- Liberar somente após `COMPLETED`.
+- Respeitar a janela de disputa.
+- Liberar automaticamente após `N` horas da partida.
+- Registrar a liberação no ledger com idempotência.
+- Não liberar reserva cancelada, em disputa ou com pagamento incompleto.
+- Não permitir que a liberação dependa de aprovação manual indefinida.
 
-- Estruturada por contexto: pré-compra vinculada à loja e ao produto (condições, disponibilidade, dúvidas e possibilidades de solução); pós-compra vinculada ao pedido (status, cumprimento, defeitos, alternativas e propostas).
-- Histórico preservado e associado à denúncia/disputa quando existente.
-- Autorização: comprador do pedido (ou interessado pré-compra autenticado) e membros autorizados da loja daquele contexto; nada de acesso cruzado entre lojas.
-- Não permitir uso da conversa para contornar pagamentos ou controles da plataforma (sem troca de dados sensíveis de pagamento, sem redirecionamento fora do JOGA para transações de pedido). Moderação desse canal segue as regras da seção 12.4, adaptadas na fase comercial.
-- Controles de tamanho, frequência, idempotência e retenção equivalentes ao chat de lobby. Diferenciação detalhada de papéis para pré-compra é pendência de detalhamento (seção 26).
+### 16.3 Contestação
+
+O estabelecimento pode contestar valores, taxas e estados de liberação. A contestação registra:
+
+- Reserva/cobrança.
+- Valor contestado.
+- Motivo.
+- Evidências.
+- Decisão e justificativa.
+- Ator e timestamp.
+
+A decisão é auditável e não pode ser apagada.
+
+### 16.4 Conciliação
+
+Tarefas periódicas comparam:
+
+- Cobranças do PSP e `payment_charges`.
+- Eventos do PSP e `payment_events`.
+- Reembolsos e `refunds`.
+- Liberações e `payouts`.
+- Saldo do recebedor e ledger interno.
+- Reservas confirmadas sem cobrança correspondente.
+- Cobranças pagas sem reserva correspondente.
+
+Divergências geram alerta e tarefa de investigação. Não corrigir saldo por edição manual silenciosa.
+
+---
 
 ## 17. Publicidade
 
 Módulo posterior para:
 
-- Produtos patrocinados.
-- Lojas em destaque.
-- Quadras em destaque.
+- Estabelecimentos e quadras em destaque.
 - Campanhas de marcas.
+- Conteúdo patrocinado.
 
-Anúncios precisam ser identificados. Posições patrocinadas não podem alterar MMR, Trust Factor, formação de equipes ou troféus de clã. Filtros obrigatórios do usuário, como tipo de quadra, distância e disponibilidade, não podem ser ignorados por pagamento.
+Anúncios precisam ser identificados. Posições patrocinadas não podem alterar MMR, Trust Factor, formação de equipes, matchmaking ou troféus de clã. Filtros obrigatórios do usuário, como tipo de quadra, distância e disponibilidade, não podem ser ignorados por pagamento.
 
-Registrar impressões, cliques e conversões com minimização de dados e observância da LGPD. Publicidade avançada depende de volume de usuários e deverá ser lançada após validação de audiência.
+Registrar impressões, cliques e conversões com minimização de dados e observância da LGPD. Publicidade avançada depende de volume de usuários e deve ser lançada após validação de audiência.
+
+---
 
 ## 18. Modelo de dados inicial
 
@@ -876,13 +985,26 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `passkey_credentials` | Credenciais públicas e revogação |
 | `devices` | Dispositivos vinculados e sinais mínimos |
 | `sessions` | Sessões e refresh token hash |
-| `organizations` | Lojas, arenas e organizações comerciais |
+| `organizations` | Estabelecimentos e organizações |
 | `organization_memberships` | Usuários e papéis em cada organização |
-| `stores` | Perfil comercial de loja |
-| `venues` | Locais públicos/privados e geografia |
+| `venues` | Estabelecimentos esportivos e geografia |
 | `venue_spaces` | Quadras/espaços de um estabelecimento |
-| `venue_availability` | Horários e bloqueios |
+| `venue_sports` | Vínculo entre espaço e modalidade |
+| `venue_availability` | Horários, preços, duração e exceções |
+| `venue_blackouts` | Bloqueios manuais e reservas externas |
+| `venue_payment_accounts` | Referência do recebedor, KYC e estado |
 | `bookings` | Reservas originadas no JOGA |
+| `booking_participants` | Participantes, vagas e contribuições |
+| `booking_holds` | Bloqueios temporários e expiração |
+| `booking_state_transitions` | Histórico auditável de estados |
+| `booking_substitutions` | Substituições e vínculo com a vaga |
+| `payment_orders` | Pedido de pagamento por reserva |
+| `payment_charges` | Cobrança Pix por participante |
+| `payment_events` | Eventos do PSP append-only |
+| `payment_ledger_entries` | Direitos e obrigações financeiras |
+| `payouts` | Liberações ao estabelecimento |
+| `refunds` | Estornos e reembolsos |
+| `financial_disputes` | Contestações do estabelecimento |
 | `sports` | Modalidades |
 | `sport_formats` | Composição e duração fixa por formato |
 | `user_sport_profiles` | Perfil e preferências esportivas |
@@ -907,25 +1029,9 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `rating_accounts` | MMR por usuário/modalidade/formato |
 | `rating_events` | Histórico imutável de rating |
 | `trust_events` | Sinais auditáveis do Trust Factor |
-| `moderation_cases` | Casos de moderação consolidados (denúncia, classificação, decisão e recurso) |
+| `moderation_cases` | Casos de moderação consolidados |
 | `moderation_actions` | Medidas aplicadas, justificativa, reversibilidade e contestação |
-| `moderation_message_refs` | Mensagens selecionadas como contexto de denúncia (até cinco) |
-| `commerce_disputes` | Denúncias/disputas comerciais vinculadas a pedidos |
-| `commerce_dispute_evidences` | Evidências de denúncia comercial (até três imagens) |
-| `commercial_threads` | Conversas pré-compra (loja/produto) e pós-compra (pedido) |
-| `products` | Anúncios de produtos |
-| `product_variants` | Tamanho/cor/modelo e SKU |
-| `inventory_balances` | Saldo alocado ao canal JOGA, se materializado |
-| `inventory_movements` | Movimentações auditáveis de estoque |
-| `inventory_holds` | Reservas temporárias de checkout |
-| `orders` | Pedidos do marketplace |
-| `order_items` | Produtos, variantes, preço e quantidade no momento da compra |
-| `fulfillments` | Retirada ou entrega pelo vendedor |
-| `receipt_codes` | Código de recebimento armazenado como hash e estado |
-| `payment_accounts` | Referências do vendedor no provedor de pagamento |
-| `payment_transactions` | Transações, taxas, split e referências do provedor |
-| `refunds` | Estornos e reembolsos |
-| `returns` | Solicitações e eventos de devolução |
+| `moderation_message_refs` | Mensagens selecionadas como contexto de denúncia |
 | `advertising_campaigns` | Campanhas patrocinadas futuras |
 | `idempotency_records` | Idempotência de operações críticas |
 | `outbox_events` | Eventos transacionais pendentes |
@@ -943,19 +1049,21 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 - Um usuário não participa de partidas simultâneas incompatíveis.
 - Apenas uma votação ativa por lobby.
 - Um voto por participante/proposta.
-- Um hold de estoque não pode ultrapassar saldo disponível.
-- Estoque não pode ficar negativo.
-- Operações de pagamento e webhook são idempotentes.
 - Reserva de quadra não pode sobrepor intervalo bloqueado/reservado.
-- Código de recebimento é de uso único e vinculado ao pedido.
+- Um único bloqueio ativo por espaço/intervalo.
+- Reserva só pode ser confirmada com todas as cobranças pagas.
+- Cobrança única por participante/vaga/versão da reserva.
+- Evento de pagamento e liberação são idempotentes.
+- Liberação só existe para reserva `COMPLETED` e dentro da política.
+- Reembolso não pode exceder a cobrança original.
 - Rating aplicado uma única vez por partida/usuário/versão.
-- Desempate em 50%: a segunda rodada nunca sobrescreve o relato original; todo histórico de relato e alteração é append-only.
-- Partidas em segunda rodada de desempate ou em análise de confiabilidade não podem gerar aplicação de rating (MMR congelado até decisão final).
+- Desempate em 50%: a segunda rodada nunca sobrescreve o relato original.
+- Partidas em segunda rodada ou análise de confiabilidade não geram rating.
 - Troféus de clã sempre associados a eventos competitivos válidos e versão do algoritmo.
 - Denúncia de perfil só pode ser criada por participante do lobby e referenciar mensagens da própria conversa.
-- Denúncia comercial só pode ser criada pelo comprador ou vendedor do pedido e fica vinculada a ele.
-- Conversa comercial só é acessível ao comprador/vendedor do contexto autorizado (loja/produto ou pedido).
 - Medida de moderação exige ator, justificativa e estado de recurso; medida automatizada é reversível.
+
+---
 
 ## 19. API e contratos
 
@@ -968,8 +1076,15 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Autenticação | Desafios de telefone, OTP, passkeys, sessões e logout |
 | Usuários | Perfil, esportes, disponibilidade e preferências |
 | Organizações | Cadastro, membros, papéis e permissões |
-| Quadras | Locais próximos, espaços, horários e disponibilidade |
-| Reservas | Cotação interna de horário, hold, reserva, cancelamento e histórico |
+| Estabelecimentos | Cadastro, perfil, endereço e estado |
+| Quadras | Espaços, modalidades, horários e disponibilidade |
+| KYC/recebedor | Onboarding, estado e dados contratuais |
+| Reservas | Solicitação, aceite, recusa, bloqueio, confirmação e histórico |
+| Temporizadores | T1, T2 e T3; expiração e transições |
+| Substituição | Convidar, aceitar e vincular substituto |
+| Pagamentos | Cobranças, estado, webhooks e conciliação interna |
+| Liberações | Recebíveis, liberação, comprovantes e contestação |
+| Reembolsos | Solicitar, acompanhar e concluir |
 | Matchmaking | Entrar/sair da fila e consultar estado |
 | Lobbies | Criar, listar, entrar, sair, horário e participantes |
 | Votação | Propor quadra, votar e consultar resultado |
@@ -980,15 +1095,7 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Resultados | Relatar, contestar e consultar decisão |
 | Ratings | Consultar histórico individual |
 | Moderação | Denunciar perfil no lobby, acompanhar denúncia e recurso |
-| Moderação interna | Fila de casos, mensagens/evidências, aplicar medida, revisar recurso (staff autorizado) |
-| Disputas comerciais | Abrir denúncia de pedido, responder, propor solução e acompanhar decisão |
-| Conversa comercial | Pré-compra por loja/produto e pós-compra por pedido, paginada |
-| Produtos | Catálogo, variantes e busca |
-| Estoque | Alocar, ajustar e consultar estoque do canal JOGA |
-| Pedidos | Checkout, histórico, status e cancelamento |
-| Cumprimento | Retirada/entrega pelo vendedor, código e confirmação |
-| Pagamentos | Webhooks, estado, estorno e conciliação interna |
-| Devoluções | Solicitar, analisar, registrar retorno e reembolsar |
+| Moderação interna | Fila de casos, mensagens/evidências, aplicar medida e revisar recurso |
 | Publicidade | Campanhas e métricas, quando habilitado |
 
 ### 19.1 Autorização
@@ -1000,12 +1107,14 @@ Toda rota que recebe IDs deve validar propriedade, participação ou papel no re
 - Apenas participantes consultam o chat de um lobby.
 - Gerente só acessa organizações às quais está vinculado.
 - Funcionário só executa ações permitidas pelo papel.
-- Vendedor só consulta seus pedidos e estoque.
-- Somente o comprador autorizado visualiza o código de recebimento.
+- Estabelecimento só consulta reservas, extrato e recebíveis próprios.
+- Somente o participante vê o próprio estado financeiro detalhado.
 - Somente ações do servidor e eventos do provedor alteram status financeiro.
-- Campos internos como MMR, Trust Factor, troféus, papéis, estoque vendido, pagamento e verificação nunca podem ser alterados por mass assignment do cliente.
+- Campos internos como MMR, Trust Factor, troféus, papéis, estado de KYC, preço aplicado e pagamento nunca podem ser alterados por mass assignment do cliente.
 
-## 20. Segurança da API, chat e operações comerciais
+---
+
+## 20. Segurança da API, chat e operações financeiras
 
 ### 20.1 Controles obrigatórios
 
@@ -1016,13 +1125,14 @@ Toda rota que recebe IDs deve validar propriedade, participação ou papel no re
 - Privilégio mínimo no banco.
 - Validação de entrada, limites de tamanho, paginação e rate limiting.
 - Proteção contra enumeração, abuso de SMS, spam e automação.
-- Logs sem tokens, OTP, telefone completo, códigos de recebimento ou coordenadas precisas.
+- Logs sem tokens, OTP, telefone completo, dados bancários ou coordenadas precisas.
 - Backups criptografados e testes de restauração.
 - Uploads privados com allowlist e limites, embora upload em chat não faça parte do MVP.
+- Dados de KYC e conta bancária com acesso restrito e auditoria.
 
 ### 20.2 Multi-tenancy e BOLA
 
-Toda consulta comercial deve filtrar por organização e aplicar autorização por objeto. Testar acesso cruzado entre lojas, arenas, funcionários, pedidos, reservas, catálogo e pagamentos. Não confiar em identificadores enviados pelo cliente.
+Toda consulta de estabelecimento deve filtrar por organização e aplicar autorização por objeto. Testar acesso cruzado entre estabelecimentos, funcionários, reservas, agenda, pagamentos, recebíveis e contestações. Não confiar em identificadores enviados pelo cliente.
 
 ### 20.3 Chat e WebSocket
 
@@ -1035,31 +1145,24 @@ Toda consulta comercial deve filtrar por organização e aplicar autorização p
 - Usar Redis somente para distribuição/presença.
 - Encerrar/restringir conexão quando sessão ou vínculo for revogado.
 
-### 20.4 Estoque, pedidos e pagamentos
+### 20.4 Reservas e pagamentos
 
-- Bloquear/validar saldo de estoque em transação.
-- Impedir reserva temporária superior ao saldo.
+- Bloquear/validar intervalo em transação.
+- Impedir reserva sobreposta.
 - Liberar hold expirado de forma idempotente.
 - Validar webhook do provedor e impedir replay.
 - Não confiar em redirect/retorno do checkout para confirmar pagamento.
-- Registrar split, taxas, comissão, estorno e conciliação.
+- Registrar split, taxas, comissão, estorno, liberação e conciliação.
 - Não armazenar dados completos de cartão.
-- Proteger operações de cancelamento e reembolso por permissão e auditoria.
+- Proteger operações de cancelamento, reembolso e liberação por permissão e auditoria.
+- Bloquear abertura de cobrança para recebedor sem KYC ativo.
+- Não liberar valor antes da confirmação da reserva e da realização da partida.
 
-### 20.5 Código de recebimento
+### 20.5 Baseline
 
-- Código aleatório de entropia adequada, não sequencial.
-- Armazenamento apenas como hash/HMAC.
-- Código visível somente ao comprador.
-- Limite de tentativas e bloqueio temporário contra adivinhação.
-- Uso único, expiração e associação ao pedido.
-- Ação de confirmação auditável.
-- Fluxo alternativo de disputa quando não houver recebimento.
-- A confirmação não elimina direito de arrependimento, garantia ou reclamação sobre o produto.
+Usar OWASP ASVS 5.0.0 Level 2 como baseline e controles reforçados selecionados de Level 3 para autenticação, áreas administrativas, reservas, pagamentos e rating. Usar OWASP API Security Top 10 como checklist. Usar NIST SP 800-63B-4 como referência técnica de gestão de autenticadores, sem tratar o JOGA como sistema governamental dos EUA. Isso não equivale a certificação formal.
 
-### 20.6 Baseline
-
-Usar OWASP ASVS 5.0.0 Level 2 como baseline e controles reforçados selecionados de Level 3 para autenticação, áreas administrativas, pedidos, pagamentos, estoque e rating. Usar OWASP API Security Top 10 como checklist. Usar NIST SP 800-63B-4 como referência técnica de gestão de autenticadores, sem tratar o JOGA como sistema governamental dos EUA. Isso não equivale a certificação formal.
+---
 
 ## 21. Consistência, eventos e reconciliação
 
@@ -1071,24 +1174,28 @@ Alterações que exijam notificação ou processamento assíncrono gravam o even
 
 Operações críticas armazenam escopo, chave, hash do corpo, estado e referência do resultado. A mesma chave com corpo diferente é rejeitada. Repetição válida retorna resultado original ou estado equivalente.
 
-Aplicar em: entrada de fila, criação de lobby, votação, reserva, checkout, pagamento, webhook, movimentação de estoque, código de recebimento, cancelamento, reembolso, resultado e rating.
+Aplicar em: entrada de fila, criação de lobby, votação, solicitação de reserva, aceite, bloqueio, cobrança, webhook, liberação, reembolso, resultado e rating.
 
 ### 21.3 Reconciliação
 
 Tarefas periódicas devem detectar:
 
-- Holds de estoque expirados ainda ativos.
-- Pedidos pagos sem estado de cumprimento coerente.
+- Holds de reserva expirados ainda ativos.
+- Reservas confirmadas sem todas as cobranças pagas.
+- Cobranças pagas sem reserva correspondente.
 - Webhooks pendentes/repetidos.
-- Diferenças entre pedido, pagamento, estorno e repasse.
+- Diferenças entre reserva, cobrança, estorno, liberação e repasse.
 - Reservas de quadra expiradas ou conflitantes.
-- Códigos de recebimento vencidos ou tentativas suspeitas.
+- Liberações pendentes ou duplicadas.
+- Eventos de MED e estorno sem saldo abertos.
 - Lobbies sem transição esperada.
 - Votações expiradas sem fechamento.
 - Eventos da Outbox antigos.
 - Rating/troféus não aplicados ou aplicados em duplicidade.
 
-Reconciliação não deve adivinhar resultado esportivo nem confirmar entrega sem evidência prevista pelo fluxo.
+Reconciliação não deve adivinhar resultado esportivo nem confirmar pagamento ou liberação sem evidência prevista pelo fluxo.
+
+---
 
 ## 22. Observabilidade e operação
 
@@ -1102,12 +1209,13 @@ Métricas prioritárias:
 - Falhas de confirmação e disputas.
 - Latência de chat, mensagens rejeitadas e conexões WebSocket.
 - Entrada/saída de clãs e abuso de convites.
-- Reservas iniciadas, pagas, canceladas e concluídas.
+- Reservas solicitadas, aceitas, bloqueadas, pagas, canceladas e concluídas.
 - Conflitos de agenda e tentativas de dupla reserva.
-- Estoque disponível, reservado, vendido e ajustado.
-- Checkout, aprovação de pagamento, estornos e chargebacks.
-- Pedidos sem cumprimento e códigos de recebimento contestados.
-- Receita líquida por reserva/venda após custos variáveis.
+- Cobranças abertas, pagas, expiradas e reembolsadas.
+- Webhooks recebidos, repetidos e rejeitados.
+- Liberações pendentes, concluídas e revertidas.
+- Receita líquida por reserva após custos variáveis.
+- KYC pendente, aprovado e rejeitado.
 - Atraso da Outbox, workers e latência da API.
 
 Logs estruturados devem usar request_id/trace_id e IDs internos quando necessários, sem PII desnecessária.
@@ -1116,6 +1224,8 @@ Ambientes: local, test, staging e production, com credenciais separadas. Produç
 
 Backups automáticos criptografados, retenção definida, RPO/RTO e teste documentado de restauração antes do lançamento.
 
+---
+
 ## 23. Estratégia de testes
 
 ### 23.1 Unitários
@@ -1123,56 +1233,57 @@ Backups automáticos criptografados, retenção definida, RPO/RTO e teste docume
 - OTP, passkeys, sessão e permissões.
 - Compatibilidade de preferências de quadra.
 - Cálculo de horário e duração do formato.
-- Transições de lobby e partida.
+- Transições de lobby, partida e reserva.
 - Quórum e maioria da votação.
-- Tolerância de divergência, relatos anulados e prazo do relato de resultado (faixa de 5 a 10 minutos).
-- Desempate em 50%: segunda rodada, preservação de histórico e regras da análise de confiabilidade individual.
+- Tolerância de divergência, relatos anulados e prazo do relato de resultado.
+- Desempate em 50%: segunda rodada, preservação de histórico e análise de confiabilidade individual.
 - Denúncia de perfil no lobby: categorias, até cinco mensagens e limites de contexto.
 - Medidas de moderação e fluxo de recurso.
-- Denúncia comercial com até três imagens, vínculo ao pedido e fluxo de decisão.
 - Cálculo de MMR e troféus.
 - Regras de clãs e elegibilidade.
-- Estoque, hold, expiração e movimentações.
-- Código de recebimento.
-- Estados de pedido, cancelamento e devolução.
+- Fórmula de precificação, ponto fixo e elegibilidade.
+- Janelas de T1, T2 e T3.
+- Regras de substituição e reembolso.
+- Estados financeiros individuais e agregados.
+- Regra de liberação após a partida e janela de disputa.
 
 ### 23.2 Integração
 
-Executar com PostgreSQL/PostGIS e Redis reais em containers. Testar migrações, transações, Outbox, workers, WebSocket, permissões multi-tenant, PSP sandbox, webhooks e fluxos comerciais.
+Executar com PostgreSQL/PostGIS e Redis reais em containers. Testar migrações, transações, Outbox, workers, WebSocket, permissões multi-tenant, PSP sandbox, webhooks, split, liberação e fluxos de reserva.
 
 ### 23.3 Concorrência
 
 - Dois workers tentam consumir as mesmas entradas de fila.
 - Vários jogadores entram simultaneamente na fila.
 - Dois usuários tentam reservar a mesma quadra/horário.
-- Dois checkouts tentam comprar as últimas unidades.
+- Dois estabelecimentos aceitam o mesmo intervalo.
 - Webhook de pagamento é repetido.
 - Hold expira ao mesmo tempo em que pagamento é aprovado.
 - Dois participantes tentam abrir votação simultaneamente.
 - Participante envia voto repetido.
-- Código de recebimento é utilizado simultaneamente ou repetido.
-- Denúncia comercial é aberta simultaneamente pelo comprador e pelo vendedor do mesmo pedido.
-- Segunda rodada de desempate é aberta simultaneamente por dois participantes; confirmação repetida não duplica histórico.
-- Um processo tenta aplicar rating durante a segunda rodada de desempate ou a análise de confiabilidade, antes de decisão final validada.
+- Duas liberações são solicitadas para a mesma reserva.
+- Reembolso é solicitado duas vezes para a mesma cobrança.
+- Segunda rodada de desempate é aberta simultaneamente por dois participantes.
+- Um processo tenta aplicar rating durante a segunda rodada ou análise de confiabilidade.
 - Dois processos tentam aplicar MMR/troféus para o mesmo resultado validado.
 
-Critério: nenhuma dupla reserva, estoque negativo, pedido duplicado, confirmação duplicada ou aplicação competitiva dupla.
+Critério: nenhuma dupla reserva, cobrança duplicada, liberação duplicada, confirmação duplicada ou aplicação competitiva dupla.
 
 ### 23.4 Segurança
 
-- BOLA/IDOR em recursos esportivos e comerciais.
+- BOLA/IDOR em recursos esportivos, de reserva e financeiros.
 - Acesso cruzado entre organizações.
 - Escalada de privilégio e mass assignment.
 - Abuso de OTP, sessões e passkeys.
 - Acesso indevido a chats, lobbies e clãs.
-- Manipulação de votos, MMR, troféus, estoque, preço e pagamento pelo cliente.
-- BOLA/IDOR em denúncias, casos de moderação, relatos de resultado e conversas comerciais.
+- Manipulação de votos, MMR, troféus, preço, estado de reserva e pagamento pelo cliente.
+- BOLA/IDOR em denúncias, casos de moderação e relatos de resultado.
 - Mass assignment em medidas de moderação, classificação de denúncia e status de disputa.
-- Denúncia comercial ou abertura de disputa alterando Trust Factor, MMR ou troféus.
-- Replay de webhook e código de recebimento.
-- Enumeração de pedidos e códigos.
+- Replay de webhook, cobrança e liberação.
+- Enumeração de reservas, cobranças e recebedores.
+- Abertura de cobrança para recebedor sem KYC.
 - Spam, flooding e abuso de convites.
-- Vazamento de PII/segredos em logs.
+- Vazamento de PII, dados bancários ou segredos em logs.
 
 ### 23.5 Qualidade automatizada
 
@@ -1184,6 +1295,8 @@ Pipeline recomendado:
 - Build, testes e migrações em pull requests.
 - Bloquear merge quando lint, tipos, testes críticos ou verificações de segredo falharem.
 
+---
+
 ## 24. Roadmap técnico e relação com as fases
 
 `PLANS.md` é a fonte normativa da ordem, escopo e critérios de saída das fases. Este resumo técnico não autoriza avanço automático.
@@ -1191,7 +1304,7 @@ Pipeline recomendado:
 | Fase | Objetivo técnico | Limite principal |
 |---|---|---|
 | 0. Governança e documentação | Repositório, regras, ADRs, objetivos e planos | Sem implementação de produto |
-| 1. Prova técnica mobile | Comparar Expo Development Builds/React Native CLI; testar builds, passkeys, SMS e localização em Android/iOS | Protótipos mínimos; sem aplicativo completo ou backend comercial definitivo |
+| 1. Prova técnica mobile | Comparar Expo Development Builds/React Native CLI; testar builds, passkeys, SMS e localização em Android/iOS | Protótipos mínimos; sem aplicativo completo |
 | 2. Fundação de engenharia | Monorepo, backend, mobile, CI, configuração, banco, Redis, logs e health checks | Sem expandir funcionalidades de negócio antes da fundação |
 | 3. Identidade e segurança | OTP, telefone protegido, passkeys, sessões, dispositivos e permissões base | Sem matchmaking até identidade/autorização testadas |
 | 4. Perfil, modalidades e locais | Esportes, formatos, durações, disponibilidade, preferências e locais | Incluir apenas futebol 5x5 e vôlei inicialmente |
@@ -1201,17 +1314,19 @@ Pipeline recomendado:
 | 8. Competitivo | MMR versionado, ranking e Trust Factor separados | Nenhum resultado em disputa altera MMR; casual não altera ranqueado |
 | 9. Comunidade em tempo real | Chat de lobby, amigos, convites, WebSocket, Outbox e push | Texto e links internos; sem chat global ou mídia livre |
 | 10. Hardening e piloto (núcleo esportivo) | Segurança, carga, observabilidade, backup/restore e piloto | Go-live comercial fica na fase 19 |
-| 11. Organizações e gestão web | Organizações, papéis, BOLA e painel web (JOGA y GESTÃO) | Framework web com ADR; sem operações de negócio |
-| 12. Catálogo e estoque comprometido | Produtos, variantes e movimentações auditáveis do estoque JOGA | Sem pedidos pagos ou logística |
-| 13. Pedidos, pagamentos e cumprimento | PSP, webhooks, ledger interno, retirada/entrega pelo vendedor, código de recebimento, devoluções | Sem logística operada pelo JOGA |
-| 14. Quadras e reservas | Agenda, disponibilidade e reserva paga de quadras privadas | Espaços públicos não reserváveis sem autorização |
-| 15. Integridade comercial | Denúncias de pedidos, evidências, conversas pré/pós-compra, disputas e antifraude | Decisão financeira irreversível nunca automática |
+| 11. Organizações e painel de gestão | Organizações, papéis, BOLA e painel web (JOGA y GESTÃO) | Framework web com ADR; sem reservas pagas |
+| 12. Quadras, agenda e KYC | Espaços, agenda, preços, bloqueios e onboarding do recebedor | Reserva paga bloqueada sem recebedor ativo |
+| 13. Reservas e temporizadores | Solicitação, aceite, hold, T1/T2/T3, substituição e estados | Sem cobrança antes do aceite e do bloqueio |
+| 14. Pagamentos Pix e reembolsos | Cobranças individuais, split/custódia, webhooks, ledger e reembolsos | Sem carteira própria; status só por evento do PSP |
+| 15. Interface financeira e conciliação | Extrato, recebíveis, liberação, contestação e conciliação | Sem liberação antes da partida; Res. 264/349 |
 | 16. Clãs e troféus | Clãs, chat de clã, troféus por modalidade e temporadas | Fórmula validada por simulações e controles antiabuso |
-| 17. Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | Denúncia isolada não altera Trust Factor; medidas graves exigem revisão humana |
+| 17. Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | Denúncia isolada não altera Trust Factor |
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-A Fase 1 está autorizada como prova técnica. Não iniciar Fase 2 ou qualquer implementação ampla sem cumprir os critérios da Fase 1 e obter a aprovação prevista no processo do projeto.
+As Fases 0–6 estão implementadas no backend conforme `harness/build-log.md`. A Fase 7 é a próxima do núcleo esportivo, mas não deve ser iniciada sem pedido explícito. Nenhuma fase comercial (11+) está implementada.
+
+---
 
 ## 25. Critérios de aceite para produção
 
@@ -1221,52 +1336,58 @@ O JOGA não deve ser considerado pronto enquanto itens críticos estiverem pende
 - Passkeys verificadas integralmente ou alternativa segura aprovada.
 - Autorização por objeto e isolamento entre organizações.
 - PostgreSQL como fonte da verdade.
-- Matchmaking e reservas protegidos contra concorrência.
+- Matchmaking, reservas e agenda protegidos contra concorrência.
 - Horário e duração fixos por lobby/formato.
 - Votação de quadra respeita origem/visibilidade, quórum, maioria e categoria.
 - Chat limitado a membros autorizados.
-- Estoque não fica negativo e holds são idempotentes.
 - Webhooks são autenticados e idempotentes.
-- Status de pedido/pagamento não depende de dados enviados pelo cliente.
-- Código de recebimento é secreto, de uso único e auditável.
-- Cancelamento/devolução respeita direitos do consumidor.
+- Status de reserva/pagamento não depende de dados enviados pelo cliente.
+- Recebedor sem KYC ativo não origina reserva paga.
+- Liberação só ocorre após a reserva confirmada e a partida realizada.
+- Reembolso devolve principal e taxa quando a reserva não se completa.
+- Extrato do estabelecimento concilia com o PSP.
 - MMR e troféus são calculados no servidor e têm histórico.
 - Publicidade não altera critérios competitivos.
-- Relatos de resultado são visíveis apenas aos participantes da partida; relatos anulados são contados e exibidos separadamente.
-- O desempate exato em 50% segue o fluxo de segunda confirmação e análise de confiabilidade individual (sem média de grupo), com histórico preservado e MMR congelado até decisão final; indicadores internos nunca são expostos aos participantes.
-- Denúncias de usuários e medidas de moderação têm justificativa, recurso e registro auditável; denúncia isolada não reduz Trust Factor.
-- Denúncias e disputas comerciais ficam vinculadas ao pedido, com evidências autorizadas e decisão humana em casos sensíveis; nenhuma decisão financeira irreversível decorre apenas de IA.
+- Relatos de resultado são visíveis apenas aos participantes da partida.
+- Desempate exato em 50% segue segunda confirmação e análise individual, com MMR congelado.
+- Denúncias de usuários e medidas de moderação têm justificativa, recurso e registro auditável.
 - Dados sensíveis não aparecem em logs/traces/analytics.
 - Backups foram restaurados em teste.
-- Testes cobrem concorrência, autorização, pagamentos, estoque, chats e fluxos críticos.
+- Testes cobrem concorrência, autorização, reservas, pagamentos e fluxos críticos.
 - Avisos, retenção, bases legais e contratos de dados foram revisados para LGPD.
+
+---
 
 ## 26. Riscos e decisões pendentes
 
 Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 
-1. **React Native:** estratégia decidida — Expo development build com `expo prebuild` (ADR 0009). Pendentes: biblioteca de passkeys validada em Android e iOS, build iOS e domínio/RP.
+1. **React Native:** Expo development build com `expo prebuild` (ADR 0009). Pendentes: biblioteca de passkeys validada em Android e iOS, build iOS e domínio/RP.
 2. **Painel web:** framework, autenticação web e estratégia de deploy.
 3. **Esportes:** duração oficial de futebol 5x5 e vôlei; composição definitiva do vôlei; regras específicas por formato.
 4. **Matchmaking:** tolerância de MMR, janelas de disponibilidade, raio, cálculo de região de encontro e timeout.
 5. **Lobbies:** prazos de confirmação, prazo de votação e comportamento em caso de participantes desconectados.
-6. **Quadras:** regras de cancelamento, janela de reserva, pagamentos, reembolsos e bloqueios externos.
-7. **Pagamento:** PSP, split disponível, taxas, prazos de repasse, chargebacks, reembolsos e onboarding de vendedores.
-8. **Marketplace:** política de alocação física de estoque e ajustes feitos pelo vendedor.
-9. **Cumprimento:** prazo para vendedor atualizar status; validade e quantidade de tentativas do código; procedimento alternativo de disputa.
-10. **Clãs:** normalização dos componentes 50/30/20, limite de participação, tempo mínimo de vínculo e duração da temporada.
-11. **Moderação:** equipe/processo, prazos e política de conteúdo para chat e clãs.
-12. **LGPD:** retenção de mensagens, localização, eventos, dados financeiros e contas excluídas.
-13. **Infraestrutura:** provedor, região, secrets manager, backup, RPO/RTO e custos.
-14. **Marca:** busca de disponibilidade de JOGA e nomes derivados antes de divulgação/registro.
-15. **Identificador do aplicativo:** package/bundle ID definitivo (hoje `com.anonymous.joga` é provisório) e nome de exibição (`JOGA y JOGA`).
-16. **Capitães:** desempate final, substituição/ausência do capitão e comportamento em lobbies manuais.
-17. **Resultados:** tolerância de divergência por modalidade; valor efetivo do prazo de relato (na faixa de 5 a 10 minutos) e prazo da segunda rodada de desempate. O tratamento de divergência exatamente em 50% está definido (seção 10.4; ADR 0008).
-18. **Votação de troca de quadra:** definição explícita de abstenções e de o que conta como voto válido para o quórum.
-19. **Moderação:** política de conteúdo, limites de contexto das denúncias, ferramenta/provedor de IA, retenção de mensagens e acesso da revisão humana.
-20. **Integridade comercial:** participante e forma da conversa pré-compra, prazos de resposta de vendedores e integração detalhada com o PSP nas disputas.
+6. **Quadras:** regras de cancelamento, janela de reserva, bloqueios externos e política de preço.
+7. **Pagamento:** PSP, split, custódia, taxas, prazos de liberação, MED, reembolsos e onboarding de recebedores.
+8. **KYC:** documentação exigida, prazos, tratamento de rejeição e reavaliação.
+9. **Liberação:** valor de `N`, janela de disputa e tratamento de saque autônomo pelo estabelecimento.
+10. **Interface financeira:** escopo mínimo da Res. 264/349, layout, comprovantes e contestação.
+11. **Clãs:** normalização dos componentes 50/30/20, limite de participação, tempo mínimo de vínculo e duração da temporada.
+12. **Moderação:** equipe/processo, prazos e política de conteúdo para chat e clãs.
+13. **LGPD:** retenção de mensagens, localização, eventos, dados financeiros e contas excluídas.
+14. **Infraestrutura:** provedor, região, secrets manager, backup, RPO/RTO e custos.
+15. **Marca:** busca de disponibilidade de JOGA e nomes derivados antes de divulgação/registro.
+16. **Identificador do aplicativo:** package/bundle ID definitivo e nome de exibição.
+17. **Capitães:** desempate final, substituição/ausência do capitão e comportamento em lobbies manuais.
+18. **Resultados:** tolerância de divergência por modalidade e prazos de relato.
+19. **Votação de troca de quadra:** definição explícita de abstenções e voto válido para quórum.
+20. **Moderação:** política de conteúdo, limites de contexto, ferramenta/provedor de IA e retenção.
+21. **Precificação:** medir `q`, `C_k`, `C_c`, `τ` e `p_t`; definir `c` final e limite de elegibilidade por faixa.
+22. **Jurídico:** modelo de split/custódia, contratos com estabelecimentos, cancelamento, reembolso e retenção de valores.
 
 Cada decisão relevante deve ser registrada em ADR com contexto, alternativas, decisão, consequências, status e data.
+
+---
 
 ## 27. Referências técnicas e legais
 
@@ -1284,21 +1405,21 @@ As referências devem ser revisitadas durante a implementação:
 - Android Location Permissions: https://developer.android.com/develop/sensors-and-location/location/permissions
 - Apple Core Location: https://developer.apple.com/documentation/corelocation/requesting-authorization-to-use-location-services
 - LGPD — Lei nº 13.709/2018: https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm
-- Código de Defesa do Consumidor — Lei nº 8.078/1990, especialmente art. 49: https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm
-- Decreto nº 7.962/2013 — comércio eletrônico: https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/decreto/d7962.htm
+- Código de Defesa do Consumidor — Lei nº 8.078/1990: https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm
+- Pagar.me — Documentação V5: https://docs.pagar.me/docs/overview-principal
+- Pagar.me — Recebedores: https://docs.pagar.me/docs/recebedores
+- Pagar.me — Criando uma transferência: https://docs.pagar.me/reference/criando-uma-transferência
+- Banco Central — Resolução nº 264/2022 e alterações (interface eletrônica para recebedores): https://www.bcb.gov.br/
+- Inter — Tarifas e Pix: https://bancointer.com.br/
 
-As referências legais não substituem revisão jurídica específica do modelo de marketplace, dos contratos com vendedores e da operação de pagamento.
+As referências legais não substituem revisão jurídica específica do modelo de split, custódia, contratos com estabelecimentos e operação de pagamento.
+
+---
 
 ## 28. Próxima tarefa técnica autorizada
 
-A próxima entrega autorizada é a **Fase 1: prova técnica mobile**. O trabalho deve validar, com protótipos mínimos e evidências:
+As Fases 0–6 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 (resultados e disputas) é a próxima do núcleo esportivo, mas **não deve ser iniciada automaticamente**: depende de pedido explícito e de arquivo próprio em `harness/build/`.
 
-- Estratégia React Native: Expo development build com `expo prebuild`, decidida no ADR 0009 após comparar React Native CLI.
-- Builds Android e viabilidade de build iOS.
-- Passkeys nativas em Android e iOS.
-- Integração SMS para OTP.
-- Localização em primeiro plano, localização aproximada e alternativa manual.
-- Requisitos de domínio/associação de aplicativo.
-- Bibliotecas e limitações observadas.
+Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 
-Não construir o aplicativo completo, backend comercial, Marketplace, sistema de estoque, reservas, chat ou clãs durante a Fase 1. Não iniciar automaticamente a Fase 2. Ao concluir, apresentar evidências, riscos, recomendações e ADRs para aprovação.
+Ao concluir qualquer fase, apresentar evidências, riscos, recomendações e ADRs para aprovação.
