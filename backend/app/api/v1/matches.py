@@ -40,6 +40,7 @@ class MatchParticipantResponse(BaseModel):
 
 class MatchSummary(BaseModel):
     id: UUID
+    lobby_id: UUID
     state: str
     scheduled_start_at: datetime
     scheduled_end_at: datetime
@@ -107,6 +108,7 @@ def _summary(
             )
     return MatchSummary(
         id=match.id,
+        lobby_id=match.lobby_id,
         state=match.state,
         scheduled_start_at=match.scheduled_start_at,
         scheduled_end_at=match.scheduled_end_at,
