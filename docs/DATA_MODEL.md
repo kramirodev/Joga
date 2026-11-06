@@ -370,9 +370,13 @@ Partida criada a partir de um lobby, com estado controlado pelo servidor.
 | `substitution_deadline` | timestamptz | início − 15 min |
 | `cancelled_reason` | varchar(40) | `declined`, `confirmation_deadline`, `no_substitute`, `missing_check_in` |
 | `started_at` | timestamptz | quando entrou em `IN_PROGRESS` |
+| `final_result` | varchar(8) | `TEAM_1`, `TEAM_2`, `DRAW` ou nulo; validado por check |
+| `finalized_at` | timestamptz | quando o resultado foi finalizado |
+| `voided_reason` | text | justificativa da anulação |
+| `result_version` | integer | começa em 0 e incrementa a cada finalização/anulação; default 0 |
 | `created_at` / `updated_at` | timestamptz | default `now()` |
 
-Constraints garantem a ordem dos prazos e que tudo acontece antes do início. A fase 6 só alcança `PENDING_CONFIRMATION → READY → IN_PROGRESS`, com saídas `CANCELLED`/`EXPIRED`.
+Constraints garantem a ordem dos prazos e que tudo acontece antes do início. A fase 6 alcança `PENDING_CONFIRMATION → READY → IN_PROGRESS`; a fase 7 adiciona `IN_PROGRESS → RESULT_PENDING → FINALIZED | DISPUTED | VOIDED` e `DISPUTED → FINALIZED | VOIDED`.
 
 ## `match_participants`
 
@@ -385,6 +389,9 @@ Constraints garantem a ordem dos prazos e que tudo acontece antes do início. A 
 | `level` | varchar(20) | nível usado no balanceamento |
 | `status` | varchar(20) | `invited`, `confirmed`, `declined`, `checked_in`, `no_show` |
 | `is_substitute` | boolean | suplente convidado após ausência |
+| `is_captain` | boolean | capitão simbólico da equipe, selecionado na formação |
+| `captain_selection_version` | varchar(20) | `provisional_v1` na Fase 7; nulo para não capitães |
+| `captain_selected_at` | timestamptz | momento da seleção; não recalculado |
 | `queue_entry_id` | UUID | FK `queue_entries.id`, `SET NULL` |
 | `invited_at` | timestamptz | default `now()` |
 | `confirmed_at` / `checked_in_at` | timestamptz | opcionais |
@@ -406,6 +413,26 @@ Trilha append-only das transições, com ator e motivo.
 | `reason` | text | motivo auditável |
 | `created_at` | timestamptz | default `now()` |
 
+## Resultados e disputas (Fase 7)
+
+Implementado na migração `e1a4c7d9b230_add_match_results.py`. Todas as tabelas de histórico são append-only por convenção: não há endpoint de atualização ou exclusão.
+
+| Tabela | Papel |
+|---|---|
+| `match_result_eligible_participants` | conjunto de elegíveis congelado na abertura da rodada 1; único por partida/participante e partida/usuário |
+| `match_result_rounds` | rodada 1 ou 2, status `OPEN`/`CLOSED`, `opens_at`, `deadline`, `eligible_count`, `quorum`, `valid_votes`, `evaluated_outcome`, `divergent_votes` e `outcome` |
+| `match_result_reports` | relato append-only por participante/rodada; na rodada 2 o último envio válido é o voto efetivo |
+| `match_result_captain_confirmations` | confirmação separada do capitão; não conta como voto |
+| `match_disputes` | disputa aberta para todo caso enviado à revisão humana (`QUORUM`, `DIVERGENCE`, `TIE`, `SECOND_ROUND_50`, `NO_UNIQUE_RESULT`) |
+| `match_dispute_evidence` | evidência textual privada, uma por participante/disputa, 1–2.000 caracteres |
+| `match_result_analyses` | parecer interno com `signals` em JSONB; conclusão sempre `INCONCLUSIVE` na Fase 7 |
+| `match_result_reviews` | revisão `PENDING`/`RESOLVED`/`CANCELLED` por partida/rodada |
+| `match_result_decisions` | decisão humana auditável (`FINALIZE`, `VOID`, `REQUEST_MORE_INFO`) com operador, motivo e timestamp |
+| `idempotency_records` | replay idempotente de POSTs por `scope`/`key`, com hash do corpo e resposta gravada |
+| `rate_limit_counters` | contador por `scope`/`key`/janela fixa, usado nos POSTs de resultado, confirmação e evidência |
+
+O worker `advance_matches.py` abre e fecha rodadas; a API rejeita votos após o prazo mesmo com worker atrasado. `signals` e `response_body` usam JSONB no PostgreSQL e JSON no SQLite de testes (variante do tipo).
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
@@ -418,13 +445,14 @@ Trilha append-only das transições, com ator e motivo.
 - Migração de dados existentes não se aplica: o banco ainda não tem dados de produção.
 - Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda, bloqueios, reservas, KYC do recebedor, cobranças e liberações pertencem às Fases 12–15.
 - Modelo financeiro de reservas (cobranças, ledger, reembolsos, liberações e MED) ainda não existe; será modelado na Fase 14 e detalhado na Fase 15.
+- Resultados e disputas da Fase 7 estão modelados (ver seção acima). A retenção provisória está no ADR 0024 e é aplicada por `scripts/cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19. Migração, concorrência e rate limiting validados com PostgreSQL local.
 - Penalidades por no-show (banimento temporário e reputação) ficam para as Fases 8/17; a Fase 6 só registra `no_show`.
-- Capitães adiados: dependem de Trust Factor, MMR e histórico de partidas.
+- Capitães completos, com Trust Factor, MMR e histórico, ficam para a Fase 8; a Fase 7 usa a seleção provisória por `FINALIZED` e UUID.
 - Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); cache é por processo e some no restart.
 - Disponibilidade não trata feriados, exceções pontuais nem conversão de fuso por usuário.
 
 ## Referência
 
-- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py` e `b8d2f4a6c910_add_profile_and_discovery.py`
-- Modelos: `backend/app/modules/identity/models.py` e `backend/app/modules/profile/models.py`
-- Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015 e ADR 0019.
+- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py` e `f2b5d8e1a7c3_add_rate_limit_counters.py`
+- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py` e `backend/app/modules/ratelimit/models.py`
+- Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015, ADR 0019 e ADR 0023.

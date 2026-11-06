@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     SmallInteger,
     String,
     Text,
@@ -57,6 +58,10 @@ class Match(Base):
         CheckConstraint(
             "substitution_deadline <= scheduled_start_at", name="substitution_before_start"
         ),
+        CheckConstraint(
+            "final_result IS NULL OR final_result IN ('TEAM_1', 'TEAM_2', 'DRAW')",
+            name="final_result_valid",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -72,6 +77,12 @@ class Match(Base):
     substitution_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     cancelled_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    final_result: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
@@ -110,6 +121,13 @@ class MatchParticipant(Base):
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="invited")
     is_substitute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_captain: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    captain_selection_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    captain_selected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     queue_entry_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("queue_entries.id", ondelete="SET NULL"), nullable=True
     )

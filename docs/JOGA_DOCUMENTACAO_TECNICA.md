@@ -1,8 +1,8 @@
 # JOGA — Documentação Técnica
 
-**Versão:** 2.1<br>
+**Versão:** 2.2<br>
 **Status:** especificação técnica-alvo; não representa implementação concluída<br>
-**Data:** 5 de novembro de 2026<br>
+**Data:** 6 de novembro de 2026<br>
 **Escopo:** aplicativo Android/iOS, painel web de gestão, API, PostgreSQL/PostGIS, Redis, workers e fluxo financeiro de reservas de quadras<br>
 **Nome do produto:** JOGA
 
@@ -527,45 +527,61 @@ Nas partidas formadas pelo matchmaking, cada equipe terá um capitão simbólico
   2. Maior número de partidas válidas realizadas.
   3. Maior MMR da modalidade/formato.
   4. Maior idade, em caso de empate nos critérios anteriores.
-- A seleção deve ser determinística, registrada na partida e auditável. Os critérios (inicialização do Trust Factor de novos jogadores, empates finais e substituição por ausência) permanecem pendentes de definição (seção 26).
-- O conceito define capitão apenas para partidas formadas pelo matchmaking. Lobbies manuais ficam sem capitão até que o produto decida o contrário (seção 26); os endpoints de confirmação não devem exigir capitão nesses casos.
+- A seleção deve ser determinística, registrada na partida e auditável.
+- **Na Fase 7, a seleção é provisória:** maior quantidade de partidas válidas concluídas (`FINALIZED`) e, em empate, UUID. Não usar nível. Registrar `captain_selection_version` e não alterar capitães ou registros históricos retroativamente.
+- Na Fase 8, os critérios completos poderão ser aplicados a partidas futuras, incorporando Trust Factor, partidas válidas, MMR e idade quando houver dado confiável.
+- O conceito define capitão apenas para partidas formadas pelo matchmaking. Lobbies manuais ficam sem capitão e, portanto, não têm confirmação de capitão na Fase 7.
 
 ### 10.2 Relato e confirmação do resultado
 
-- Ao final da partida, todos os participantes devem relatar o resultado individualmente, selecionando a equipe vencedora ou empate, quando o formato permitir.
+- Ao final da partida, todos os participantes devem relatar o resultado individualmente. A votação tem **três resultados possíveis**: `TEAM_1`, `TEAM_2` ou `DRAW`, este último apenas quando o formato permitir.
 - Os capitães podem registrar a confirmação de suas respectivas equipes.
 - Os relatos individuais são visíveis aos demais participantes da partida. A exposição é intencional (responsabilidade social) e deve respeitar autorização: somente participantes da partida podem consultar os relatos e as confirmações; nenhuma consulta externa.
-- O prazo de relato será limitado e configurável entre 5 e 10 minutos após o encerramento da partida. Os limites da faixa são validados no servidor; o valor efetivo por formato permanece pendente (seção 26).
-- Jogadores que não relatarem dentro do prazo são registrados como relatos anulados. Relatos anulados não contam como favoráveis a nenhum resultado e são apresentados separadamente, sem interpretação automática de concordância ou discordância.
+- O prazo padrão de relato é de **10 minutos** após o encerramento da partida, controlado pelo backend e configurável por formato no futuro. O lobby não altera livremente a janela.
+- Os POSTs de relato, confirmação de capitão e evidência têm rate limit por usuário em janela fixa de 60 segundos (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). Excesso retorna `429 rate_limited` com `Retry-After`.
+- Jogadores que não relatarem dentro do prazo são registrados como relatos anulados. Votos ausentes ou anulados não entram no denominador do cálculo e não contam como favoráveis a nenhum resultado.
+- O denominador é sempre o total de **votos válidos** da rodada, não o total de participantes.
 
 ### 10.3 Divergências e validação
 
-- O backend compara os relatos e as confirmações dos capitães. Divergências isoladas não interrompem automaticamente a validação: o resultado majoritário pode ser aceito quando a divergência estiver dentro da tolerância configurável por modalidade e quantidade de participantes. O valor base da tolerância permanece pendente (seção 26) e deve ser validado antes do uso.
-- Quando mais de 50% dos relatos válidos divergirem do resultado predominante, a partida entra em `DISPUTED`. Quando a divergência for exatamente de 50%, aplica-se o fluxo de desempate da seção 10.4.
+- O backend compara os relatos e as confirmações dos capitães.
+- **Quórum mínimo:** `ceil(participantes_elegíveis / 2)` votos válidos. Os elegíveis são congelados na abertura da primeira rodada e reutilizados na segunda. Abaixo do quórum, o caso vai para revisão humana e não é finalizado automaticamente.
+- **Resultado avaliado:** o outcome com mais votos válidos (maioria simples/plurality), não maioria absoluta. Se houver empate na primeira posição, abre-se a segunda rodada.
+- **Não existe parâmetro separado de tolerância de 1–2 votos.** A regra é calculada sobre os votos válidos:
+  - divergência abaixo de 50% em relação ao resultado avaliado: resultado pode ser finalizado;
+  - divergência exatamente igual a 50%: segunda rodada;
+  - divergência acima de 50%: partida em `DISPUTED`.
+- Votos ausentes ou anulados não entram no denominador e não são interpretados como concordância ou discordância.
+- `DRAW` só é aceito quando o formato permitir: futebol 5x5 permite; vôlei não permite na primeira versão.
 - A disputa é medida de proteção, não mecanismo para anular partidas automaticamente. A anulação é considerada apenas como última alternativa, depois de avaliadas as evidências.
 
 ### 10.4 Desempate exato em 50% — segunda votação e análise de confiabilidade
 
-Regra aprovada para o caso de divergência exatamente igual a 50% (conceito §9.4; ADR 0008).
+Regra aprovada para a segunda rodada: empate na primeira posição ou divergência exatamente igual a 50% (conceito §9.4; ADR 0008).
 
-1. **Segunda confirmação.** O backend abre uma nova rodada de confirmação para todos os participantes da partida. Cada jogador pode confirmar ou corrigir a resposta anterior. A segunda rodada tem prazo curto e configurável; o valor efetivo permanece pendente (seção 26).
+1. **Segunda confirmação.** O backend abre uma nova rodada de confirmação para todos os participantes elegíveis. Cada jogador pode confirmar ou corrigir a resposta anterior. A segunda rodada tem prazo de **5 minutos**, controlado pelo backend, sem renovação automática. Ela apresenta todas as alternativas permitidas pelo formato (`TEAM_1`, `TEAM_2` e, se permitido, `DRAW`), independentemente da distribuição da primeira rodada.
 2. **Histórico preservado.** Nenhum relato é sobrescrito: a primeira votação é mantida integralmente para auditoria, e cada confirmação/correção da segunda rodada é registrada de forma append-only com ator e timestamp.
-3. **Análise interna e invisível.** Se a segunda rodada continuar exatamente empatada em 50%, a partida entra em análise interna de confiabilidade, sem exposição de indicadores aos participantes:
+3. **Análise interna e invisível.** Se a segunda rodada continuar exatamente empatada em 50%, ou não produzir resultado confiável, a partida entra em análise interna de confiabilidade, sem exposição de indicadores aos participantes:
    - Avalia cada relato individualmente — não por média simples de Trust Factor do grupo — impedindo que um grupo vença apenas acumulando contas de alta reputação.
    - Sinais avaliados: consistência de votos entre as rodadas; histórico competitivo; coerência em alterações de voto; detecção de padrões de comportamento coordenado ou manipulação.
-   - Os relatos dos capitães (selecionados por Trust Factor, seção 10.1) funcionam como sinais relevantes pela confiabilidade de seu histórico, sem peso automático de voto adicional e sem autoridade para determinar o resultado sozinhos.
+   - Os relatos dos capitães (selecionados pelo critério vigente, seção 10.1) funcionam como sinais relevantes pela confiabilidade de seu histórico, sem peso automático de voto adicional e sem autoridade para determinar o resultado sozinhos.
    - Os indicadores internos e a análise nunca são exibidos aos participantes; servem exclusivamente ao sistema.
 4. **Desfechos.** O sistema tenta resolver com base nos indicadores; se as evidências não permitirem conclusão segura, o caso vai para revisão humana. A anulação permanece como último recurso.
+   - Na segunda rodada: resultado único com divergência abaixo de 50% finaliza; exatamente 50% vai para análise interna; acima de 50% vai para disputa e revisão humana; empate na primeira posição, ausência de resultado único ou falta de quórum vão para revisão humana. Não há terceira rodada.
 5. **MMR congelado.** Durante as duas rodadas e a análise, nenhuma aplicação de rating é permitida: o rating só é aplicado após decisão final validada, via mecanismo idempotente (seção 11.1).
 
 ### 10.5 Disputas de partida
 
 Uma partida em `DISPUTED` não gera aplicação de rating.
 
-- O sistema reúne: relatos de cada participante; confirmações dos capitães; histórico de alterações e confirmações; denúncias relacionadas à partida; histórico de confiabilidade relevante dos envolvidos; outras evidências disponíveis e pertinentes.
+- O sistema reúne: relatos de cada participante; confirmações dos capitães; histórico de alterações e confirmações; denúncias relacionadas à partida; histórico de confiabilidade relevante dos envolvidos; justificativa textual privada; outras evidências disponíveis e pertinentes.
+- A evidência da Fase 7 é **apenas textual**, limitada a **2.000 caracteres**, com no máximo uma justificativa por participante por disputa. Acesso restrito e auditável. Não há upload ou armazenamento de arquivos nesta fase; o conteúdo não é exposto publicamente no lobby.
+- A retenção provisória está no ADR 0024: evidências por 12 meses após o encerramento da disputa; relatos, confirmações, decisões, revisões e análises por 24 meses; contadores de rate limit por 24 horas. A limpeza é manual e configurável; a política definitiva será revisada na fase de LGPD.
 - A primeira análise pode ser automatizada por regras de consistência e mecanismos de detecção de comportamento suspeito. Casos inconclusivos ou com indícios relevantes de fraude podem ser encaminhados para revisão humana.
 - Decisões possíveis: confirmar o resultado predominante; solicitar informações adicionais; corrigir o resultado quando houver evidência suficiente; aplicar medidas de integridade quando houver fraude comprovada; anular a partida somente quando não houver alternativa confiável.
-- Toda decisão é registrada com justificativa auditável, ator, timestamp e mecânica append-only; correções posteriores geram eventos compensatórios (seção 11.1).
+- Toda decisão é registrada com justificativa auditável, ator, timestamp e mecânica append-only.
+- Enquanto não existir estrutura de staff/admin, a revisão humana pode ser feita por **CLI/script interno auditável**, com `--operator` validado contra lista autorizada, `--reason` obrigatório, ator, timestamp e justificativa. Não criar um sistema completo de administração nesta fase nem endpoint público de moderação.
+- Correções posteriores geram eventos compensatórios, sem apagar o histórico.
 
 ### 10.6 Integridade do sistema de resultados
 
@@ -1234,9 +1250,11 @@ Backups automáticos criptografados, retenção definida, RPO/RTO e teste docume
 - Compatibilidade de preferências de quadra.
 - Cálculo de horário e duração do formato.
 - Transições de lobby, partida e reserva.
-- Quórum e maioria da votação.
-- Tolerância de divergência, relatos anulados e prazo do relato de resultado.
-- Desempate em 50%: segunda rodada, preservação de histórico e análise de confiabilidade individual.
+- Quórum e maioria da votação de troca de quadra.
+- Resultado com três opções (`TEAM_1`, `TEAM_2`, `DRAW`), quórum `ceil(elegíveis/2)`, elegíveis congelados e denominador de votos válidos.
+- Plurality, divergência abaixo/exatamente/acima de 50% e segunda rodada com todas as alternativas permitidas.
+- Capitão provisório por partidas `FINALIZED` do mesmo formato e UUID, com versão registrada.
+- Evidência textual de até 2.000 caracteres, uma por participante, com acesso restrito e auditoria.
 - Denúncia de perfil no lobby: categorias, até cinco mensagens e limites de contexto.
 - Medidas de moderação e fluxo de recurso.
 - Cálculo de MMR e troféus.
@@ -1324,7 +1342,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–6 estão implementadas no backend conforme `harness/build-log.md`. A Fase 7 é a próxima do núcleo esportivo, mas não deve ser iniciada sem pedido explícito. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 7 cobre relatos de resultado, quórum, segunda rodada, disputa, evidência textual, capitão provisório e revisão humana por CLI, sem MMR. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1349,6 +1367,12 @@ O JOGA não deve ser considerado pronto enquanto itens críticos estiverem pende
 - MMR e troféus são calculados no servidor e têm histórico.
 - Publicidade não altera critérios competitivos.
 - Relatos de resultado são visíveis apenas aos participantes da partida.
+- Resultado é tratado com três opções (`TEAM_1`, `TEAM_2`, `DRAW`), com janela de 10 minutos, quórum `ceil(elegíveis/2)`, elegíveis congelados e votos ausentes/anulados fora do denominador.
+- Resultado avaliado é a maioria simples (plurality), com divergência calculada sobre votos válidos.
+- Segunda rodada dura 5 minutos e apresenta todas as alternativas permitidas pelo formato; não há terceira rodada.
+- Capitão provisório é determinístico, registrado e não retroage; critérios completos entram na Fase 8.
+- Evidência de disputa é textual, privada, limitada a 2.000 caracteres e auditável.
+- Revisão humana exige operador autorizado e motivo registrado.
 - Desempate exato em 50% segue segunda confirmação e análise individual, com MMR congelado.
 - Denúncias de usuários e medidas de moderação têm justificativa, recurso e registro auditável.
 - Dados sensíveis não aparecem em logs/traces/analytics.
@@ -1378,8 +1402,8 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 14. **Infraestrutura:** provedor, região, secrets manager, backup, RPO/RTO e custos.
 15. **Marca:** busca de disponibilidade de JOGA e nomes derivados antes de divulgação/registro.
 16. **Identificador do aplicativo:** package/bundle ID definitivo e nome de exibição.
-17. **Capitães:** desempate final, substituição/ausência do capitão e comportamento em lobbies manuais.
-18. **Resultados:** tolerância de divergência por modalidade e prazos de relato.
+17. **Capitães:** implementado na Fase 7 — seleção provisória por partidas `FINALIZED` do mesmo formato, concluídas antes da partida atual, com UUID como desempate; seleção na formação com versão `provisional_v1`; confirmação do capitão é registro separado e não conta como voto. Retenção provisória no ADR 0024.
+18. **Resultados:** implementado na Fase 7 — prazo de 10 minutos, quórum `ceil(elegíveis/2)`, resultado por maioria simples, três opções, `DRAW` conforme formato, segunda rodada de 5 minutos, análise interna sempre `INCONCLUSIVE`, evidência textual de 2.000 caracteres e rate limiting por usuário. Validado em PostgreSQL local, incluindo concorrência de votos, confirmações, fechamento de rodada e rate limit. Retenção provisória no ADR 0024; pendente configurar operadores autorizados da CLI.
 19. **Votação de troca de quadra:** definição explícita de abstenções e voto válido para quórum.
 20. **Moderação:** política de conteúdo, limites de contexto, ferramenta/provedor de IA e retenção.
 21. **Precificação:** medir `q`, `C_k`, `C_c`, `τ` e `p_t`; definir `c` final e limite de elegibilidade por faixa.
@@ -1418,7 +1442,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–6 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 (resultados e disputas) é a próxima do núcleo esportivo, mas **não deve ser iniciada automaticamente**: depende de pedido explícito e de arquivo próprio em `harness/build/`.
+As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 (resultados e disputas) foi implementada e validada com PostgreSQL local, e depende de revisão/commit e configuração de `JOGA_REVIEW_OPERATORS`. A Fase 8 (MMR/rating) **não foi iniciada**. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 

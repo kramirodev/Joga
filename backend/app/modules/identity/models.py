@@ -200,6 +200,7 @@ class Session(Base):
     __tablename__ = "sessions"
     __table_args__ = (
         Index("ix_sessions_user_revoked", "user_id", "revoked_at"),
+        Index("uq_sessions_access_token_hash", "access_token_hash", unique=True),
         CheckConstraint(
             "revoked_reason IS NULL OR length(revoked_reason) <= 40",
             name="revoked_reason_length",
@@ -214,7 +215,7 @@ class Session(Base):
         ForeignKey("devices.id", ondelete="SET NULL"), nullable=True
     )
     family_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, index=True)
-    access_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    access_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     refresh_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(

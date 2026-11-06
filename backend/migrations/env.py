@@ -5,10 +5,13 @@ from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
 from app.infrastructure.database.base import Base
+from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.matches import models as matches_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
+from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
+from app.modules.results import models as results_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -25,6 +28,15 @@ settings = get_settings()
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
+# Objetos de infraestrutura criados por extensões (PostGIS, etc.) não pertencem
+# ao modelo da aplicação e não devem aparecer no autogenerate.
+IGNORED_TABLES = frozenset({"spatial_ref_sys"})
+
+
+def include_object(object, name, type_, reflected, compare_to) -> bool:  # noqa: ANN001
+    """Filtra objetos externos ao schema da aplicação."""
+    return not (type_ == "table" and name in IGNORED_TABLES)
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
@@ -33,6 +45,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -44,7 +57,11 @@ def run_migrations_online() -> None:
     connectable = create_engine(settings.database_url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

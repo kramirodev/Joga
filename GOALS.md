@@ -94,7 +94,7 @@ A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo cor
 - Política de cancelamento após a reserva confirmada e desistência individual.
 - Framework e estratégia de deploy do painel web de gestão.
 - Infraestrutura e região de hospedagem após estimativa de tráfego, custo e requisitos LGPD.
-- Regra de confirmação de resultados por modalidade, tolerância de divergências e prazos de relato (faixa de 5 a 10 minutos; valor de segunda rodada de desempate pendente). Tratamento de empate exato em 50% está definido (conceito §9.4; ADR 0008).
+- Regra de confirmação de resultados por modalidade: prazo de 10 minutos, segunda rodada de 5 minutos, quórum `ceil(elegíveis/2)`, resultado por maioria simples, evidência textual de 2.000 caracteres e rate limiting **implementados no backend na Fase 7 e validados com PostgreSQL local**. Retenção provisória no ADR 0024; revisão definitiva na fase de LGPD. Pendente: configurar operadores autorizados da CLI.
 - Política de moderação, limites de contexto e retenção de mensagens.
 - Parâmetros iniciais do rating e da fórmula de troféus, a validar com simulações e testes.
 - Parâmetros medidos de `q`, `C_k`, `C_c`, `τ` e `p_t` para a fórmula de precificação.

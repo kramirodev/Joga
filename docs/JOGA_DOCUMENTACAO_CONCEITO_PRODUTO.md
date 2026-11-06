@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.2<br>
-**Status:** visão de produto atualizada — precificação e fluxo financeiro revisados; escopo sem comércio de produtos<br>
-**Data:** 5 de novembro de 2026<br>
+**Versão:** 3.3<br>
+**Status:** visão de produto atualizada — Fase 7 com regras de resultado, capitão provisório e evidência textual<br>
+**Data:** 6 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -15,6 +15,7 @@
 | 3.0 | 5 de novembro de 2026 | Marketplace de produtos adiado; reservas de quadras por solicitação; Pix individual e coletivo; política de taxa com acréscimo de 80%; simulações financeiras; pendências separadas |
 | 3.1 | 5 de novembro de 2026 | Coeficiente 1,8 reposicionado como hipótese inicial de segurança; piso, preço variável e teto; PSP com múltiplos pagamentos individuais por reserva como condição de viabilidade |
 | 3.2 | 5 de novembro de 2026 | Fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`; 1,8 reinterpretado como fator de segurança de 95%; piso, preço variável e teto removidos; elegibilidade mínima; Pagar.me Flex como primeira opção; KYC, liberação após a partida e interface financeira do recebedor; comércio de produtos fora do escopo |
+| 3.3 | 6 de novembro de 2026 | Fase 7: relato de resultado em 10 minutos; três resultados; regra de 50% sem tolerância separada; segunda rodada; capitão provisório por partidas finalizadas e UUID; evidência apenas textual; revisão humana por CLI; backend-only sem MMR |
 
 ## Como interpretar as decisões neste documento
 
@@ -344,37 +345,53 @@ A escolha seguirá esta ordem de prioridade:
 
 O Trust Factor será o principal critério porque o capitão deve ser, prioritariamente, o jogador considerado mais confiável pelo sistema.
 
+**Na Fase 7, a seleção é provisória.** Como Trust Factor e MMR ainda não existem, o capitão será escolhido pelo maior número de partidas válidas concluídas (`FINALIZED`) e, em caso de empate, pelo UUID como desempate determinístico. Não será usado critério de nível. A seleção e a versão do critério ficam registradas, e capitães ou registros históricos não são alterados retroativamente. Na Fase 8, os critérios completos poderão ser aplicados a partidas futuras, incorporando Trust Factor, partidas válidas, MMR e idade quando houver dado confiável.
+
 ### 9.2 Confirmação do resultado
 
-Ao final da partida, todos os jogadores deverão informar o resultado individualmente, selecionando a equipe vencedora ou indicando empate, quando permitido pelo formato.
+Ao final da partida, todos os jogadores deverão informar o resultado individualmente. A votação tem **três resultados possíveis**: vitória da equipe A, vitória da equipe B ou empate esportivo, este último apenas quando o formato permitir. Não tratar a votação como binária.
 
 Além disso, os capitães poderão informar o resultado de suas respectivas equipes. Essa confirmação será uma informação adicional para o sistema, não uma decisão absoluta.
 
 Os votos dos participantes serão visíveis aos demais jogadores. Essa transparência é intencional: a expectativa é reduzir votos aleatórios ou incorretos por meio da responsabilidade social entre os participantes.
 
-O prazo de votação será limitado, configurável entre 5 e 10 minutos após o encerramento da partida.
+O prazo padrão de votação será de **10 minutos** após o encerramento da partida, controlado pelo backend. O valor poderá ser configurado por formato no futuro, mas cada lobby não poderá alterá-lo livremente.
 
-Jogadores que não votarem dentro do prazo serão registrados como votos anulados, e não como votos favoráveis a qualquer resultado.
+Jogadores que não votarem dentro do prazo serão registrados como votos anulados, e não como votos favoráveis a qualquer resultado. Votos ausentes ou anulados não entram no cálculo e não significam concordância nem discordância.
 
 ### 9.3 Divergências e validação
 
 O sistema comparará os resultados informados pelos participantes e as confirmações dos capitães.
 
-Pequenas divergências, como um ou dois votos isolados, não deverão interromper automaticamente a validação. O resultado majoritário poderá ser aceito quando a divergência estiver dentro da tolerância definida para a modalidade e a quantidade de participantes.
+**Não existe uma tolerância separada de “1 ou 2 votos”.** A regra é calculada sobre os votos válidos:
 
-Quando mais de 50% dos votos válidos divergirem do resultado predominante, a partida entrará em disputa.
+- divergência **abaixo de 50%** em relação ao resultado avaliado: o resultado pode ser finalizado;
+- divergência **exatamente igual a 50%**: segunda rodada de votação;
+- divergência **acima de 50%**: a partida entra em disputa.
 
-A quantidade de votos anulados será registrada separadamente e não deverá ser interpretada automaticamente como concordância ou discordância.
+Na prática, 1 ou 2 jogadores divergentes em uma partida de 10 ficam abaixo do limite e não abrem disputa automaticamente.
 
-A disputa será uma medida de proteção, não um mecanismo para anular partidas automaticamente. A anulação deverá ser considerada apenas como última alternativa, depois de avaliadas as evidências disponíveis.
+O resultado com mais votos válidos é o **resultado avaliado** (maioria simples/plurality). Isso não significa maioria absoluta: um resultado pode ser o mais votado sem ultrapassar 50% dos votos. Se houver empate na primeira posição, abre-se a segunda rodada.
+
+A votação exige **quórum mínimo de `ceil(participantes_elegíveis / 2)` votos válidos**. O conjunto de elegíveis é congelado na abertura da primeira rodada e reutilizado na segunda. Abaixo do quórum, o caso vai para revisão humana e não é finalizado automaticamente.
+
+Votos ausentes ou anulados não entram no denominador e não são interpretados como concordância ou discordância.
+
+A partida entra em disputa quando a divergência ultrapassa 50% dos votos válidos. A disputa será uma medida de proteção, não um mecanismo para anular partidas automaticamente. A anulação deverá ser considerada apenas como última alternativa, depois de avaliadas as evidências disponíveis.
 
 ### 9.4 Desempate de resultados e análise de confiabilidade
 
-Quando a primeira votação terminar exatamente em 50% para cada resultado, o JOGA solicitará uma segunda confirmação a todos os participantes.
+Quando a divergência em relação ao resultado avaliado for exatamente 50%, o JOGA solicitará uma segunda confirmação a todos os participantes.
 
 Os jogadores poderão confirmar ou corrigir suas respostas anteriores. O histórico da primeira votação será preservado para auditoria.
 
-Se a segunda votação continuar exatamente empatada, a partida entrará em uma análise interna e invisível de confiabilidade.
+A segunda rodada terá prazo próprio de **5 minutos**, controlado pelo backend, sem renovação automática.
+
+A segunda rodada apresenta **todas as alternativas permitidas pelo formato** (`TEAM_1`, `TEAM_2` e, quando permitido, `DRAW`), independentemente da distribuição da primeira rodada. Não haverá terceira rodada.
+
+Na segunda rodada: resultado único com divergência abaixo de 50% finaliza; exatamente 50% vai para análise interna; acima de 50% vai para disputa e revisão humana; empate na primeira posição, ausência de resultado único ou falta de quórum vão para revisão humana.
+
+Se a segunda votação continuar sem resultado confiável, a partida entrará em uma análise interna e invisível de confiabilidade.
 
 Nessa análise, o sistema avaliará os relatos individualmente — e não por média simples de grupo —, buscando consistência de votos, histórico competitivo, coerência em eventuais alterações de voto e detecção de padrões de comportamento coordenado ou manipulação.
 
@@ -397,7 +414,10 @@ O sistema deverá reunir:
 - Histórico de alterações e confirmações.
 - Denúncias relacionadas à partida.
 - Histórico de confiabilidade relevante dos envolvidos.
+- Justificativa textual privada apresentada na disputa.
 - Outras evidências disponíveis e pertinentes.
+
+A evidência da Fase 7 é **apenas textual**, limitada a **2.000 caracteres**, com no máximo uma justificativa por participante em cada disputa. O acesso é restrito e auditável. Não há upload de imagens, áudios, vídeos ou arquivos nesta fase. O conteúdo não é exposto publicamente no lobby.
 
 A primeira análise poderá ser automatizada por regras de consistência e mecanismos de detecção de comportamento suspeito.
 
@@ -412,6 +432,8 @@ As decisões possíveis incluem:
 - Anular a partida somente quando não houver alternativa confiável.
 
 Toda decisão deverá ser registrada e possuir justificativa auditável.
+
+Enquanto não existir estrutura de staff/admin, a revisão humana poderá ser feita por script interno auditável, com operador autorizado, justificativa e timestamp. Não será criado um sistema completo de administração na Fase 7.
 
 ### 9.6 Integridade do sistema de resultados
 
@@ -1731,6 +1753,21 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 32. A interface financeira do estabelecimento é escopo obrigatório quando houver split (Res. 264/349).
 33. Denúncias e falhas isoladas não geram punição automática; confiabilidade é separada de MMR.
 34. A taxa não deve ser reduzida automaticamente quando a conclusão melhorar; a revisão exige verificar se a margem cobre riscos reais.
+35. O prazo padrão de relato de resultado é de **10 minutos**, controlado pelo backend e configurável por formato no futuro.
+36. O resultado tem **três opções**: equipe A, equipe B ou empate esportivo, quando o formato permitir.
+37. Não existe tolerância separada de “1–2 votos”: a regra é o limite de 50% sobre votos válidos — abaixo de 50% finaliza, exatamente 50% abre segunda rodada, acima de 50% abre disputa.
+38. Votos ausentes ou anulados não entram no denominador e não significam concordância nem discordância.
+39. O capitão da Fase 7 é provisório: maior número de partidas válidas concluídas (`FINALIZED`) e, em empate, UUID; sem critério de nível; seleção registrada e não retroativa.
+40. A evidência da Fase 7 é apenas textual, privada e auditável; não há upload de arquivos.
+41. A Fase 7 é backend-only e não implementa nem atualiza MMR.
+42. A revisão humana da Fase 7 pode ser feita por CLI/script interno auditável, sem painel administrativo completo.
+43. O quórum mínimo é `ceil(participantes_elegíveis / 2)` votos válidos; os elegíveis são congelados na abertura da primeira rodada e reutilizados na segunda.
+44. O resultado avaliado é o de maior número de votos válidos (maioria simples/plurality), não maioria absoluta.
+45. A segunda rodada dura 5 minutos, apresenta todas as alternativas permitidas pelo formato e não há terceira rodada.
+46. A evidência textual tem limite de 2.000 caracteres e no máximo uma justificativa por participante por disputa.
+47. A CLI de revisão exige `--operator` validado contra lista autorizada e `--reason` obrigatório.
+48. Relatos e votos individuais são visíveis aos participantes; a contagem agregada e o resultado parcial só aparecem após o fechamento da rodada.
+49. Futebol 5x5 permite empate esportivo; vôlei não permite na primeira versão.
 
 ### 26.2 Parâmetros iniciais
 
@@ -1746,6 +1783,10 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 - Valor mínimo de referência para a taxa ficar abaixo de 25% em `q = 20%`: cerca de R$ 100.
 - Tarifa percentual de PSP adotada nas simulações: 0,90%.
 - Meio de pagamento: Pix.
+- Relato de resultado: 10 minutos.
+- Segunda rodada de resultado: 5 minutos.
+- Quórum mínimo de resultado: `ceil(elegíveis / 2)` votos válidos.
+- Evidência textual: até 2.000 caracteres por participante por disputa.
 - Quantidade de participantes do futebol 5x5: 10.
 - Formato do vôlei: ainda a definir.
 - Duração da partida: definida pelo formato esportivo, não pelo lobby.
@@ -1793,10 +1834,12 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 22. Tratamento fiscal da taxa de serviço (ISS, retenções e município competente).
 23. Termos de uso, política de cancelamento e direito de arrependimento aplicáveis ao consumidor.
 24. Retenção de dados financeiros, comprovantes e histórico de reservas.
-25. Critérios e limites do indicador de confiabilidade de jogadores e estabelecimentos.
-26. Periodicidade e amostra mínima da recalibração.
-27. Metodologia de amortecimento para evitar oscilações bruscas de preço.
-28. Estratégia de onboarding e cobrança por recebedor.
+25. Revisar, na fase de LGPD, a política provisória de retenção do ADR 0024 para relatos, confirmações, evidências, decisões e contadores.
+26. Configurar a lista de operadores autorizados da CLI (`JOGA_REVIEW_OPERATORS`).
+27. Critérios e limites do indicador de confiabilidade de jogadores e estabelecimentos.
+28. Periodicidade e amostra mínima da recalibração.
+29. Metodologia de amortecimento para evitar oscilações bruscas de preço.
+30. Estratégia de onboarding e cobrança por recebedor.
 
 ### 26.5 O que este documento não decide
 
@@ -1807,6 +1850,8 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 - Não define `N` da liberação automática.
 - Não define política de cancelamento após confirmação.
 - Não define política de desistência individual.
+- Não define prazo definitivo de retenção de relatos, confirmações, evidências e decisões; o ADR 0024 fixa uma política provisória.
+- Não define a lista nominal de operadores autorizados da CLI.
 - Não define contratos com estabelecimentos.
 - Não afirma que o fluxo já está implementado.
 - Não substitui `PLANS.md` como ordem normativa de execução.
@@ -1816,26 +1861,29 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 
 ## 27. Governança documental e próximos passos
 
-Esta versão 3.2 atualiza a documentação conceitual, `GOALS.md`, `PLANS.md`, a documentação técnica e os documentos operacionais. Nenhum código, migração, contrato ou infraestrutura foi alterado.
+Esta versão 3.3 atualiza a documentação conceitual, `GOALS.md`, `PLANS.md`, a documentação técnica e os documentos operacionais. A implementação backend-only da Fase 7 foi feita na mesma data, em alteração separada.
 
 Documentos alinhados nesta revisão:
 
-- `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`: fórmula, fluxo financeiro, escopo sem marketplace e transparência.
+- `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`: fórmula, fluxo financeiro, escopo sem marketplace, transparência e regras da Fase 7.
 - `GOALS.md`: três pilares, sem comércio de produtos.
-- `PLANS.md`: Fases 11–19 reorganizadas em torno de organizações, quadras, reservas, pagamentos, interface financeira, clubes, moderação, publicidade e lançamento.
-- `docs/JOGA_DOCUMENTACAO_TECNICA.md`: arquitetura, modelo de dados, contratos e testes sem marketplace.
+- `PLANS.md`: Fases 11–19 reorganizadas; Fase 7 detalhada com regras de resultado.
+- `docs/JOGA_DOCUMENTACAO_TECNICA.md`: arquitetura, modelo de dados, contratos e testes sem marketplace; §10 com as regras da Fase 7.
 - `docs/ADR/0021-politica-de-precificacao-e-fluxo-financeiro.md`: decisão de precificação e PSP.
 - `docs/ADR/0022-remocao-do-marketplace-de-produtos-do-escopo.md`: decisão de escopo.
+- `docs/ADR/0023-fase-7-resultados-e-disputas.md`: decisões da Fase 7, com implementação local registrada.
+- `harness/build/phase-07-resultados-e-disputas.md`: plano e estado da implementação da fase.
 
 Próximos passos recomendados, em ordem:
 
-1. Obter resposta formal do Pagar.me sobre as 15 perguntas do ADR 0021 e comparar com o Inter.
-2. Fazer revisão jurídica e fiscal do modelo de split, custódia, cancelamento, reembolso e retenção de valores.
-3. Especificar o domínio de reservas, a máquina de estados, as constraints de bloqueio e os contratos HTTP/WebSocket.
-4. Especificar o painel do estabelecimento, o onboarding/KYC e a interface financeira do recebedor.
-5. Executar piloto controlado com poucos estabelecimentos e medir os dados da seção 18.12.
-6. Somente depois disso, decidir o valor final de `c` e a expansão do pagamento integrado.
-
+1. Revisar, commitar e mergear a documentação e a implementação local da Fase 7; revisar a retenção provisória do ADR 0024 e configurar os operadores da CLI.
+2. Manter os testes de concorrência e migração com PostgreSQL real na CI e em ambiente descartável.
+3. Em paralelo, obter resposta formal do Pagar.me sobre as 15 perguntas do ADR 0021 e comparar com o Inter.
+4. Fazer revisão jurídica e fiscal do modelo de split, custódia, cancelamento, reembolso e retenção de valores.
+5. Especificar o domínio de reservas, a máquina de estados, as constraints de bloqueio e os contratos HTTP/WebSocket.
+6. Especificar o painel do estabelecimento, o onboarding/KYC e a interface financeira do recebedor.
+7. Executar piloto controlado com poucos estabelecimentos e medir os dados da seção 18.12.
+8. Somente depois disso, decidir o valor final de `c` e a expansão do pagamento integrado.
 ---
 
 ## Anexo A — Glossário mínimo
@@ -1888,4 +1936,9 @@ Próximos passos recomendados, em ordem:
 - Foi adotado o Pagar.me Flex como primeira opção de PSP, condicionado a confirmação contratual, com o Inter como alternativa centralizada.
 - Foram incluídos o portão de KYC do recebedor, a liberação após a partida e a interface financeira obrigatória do estabelecimento.
 - Foram incluídas simulações para 20%, 30%, 40%, 60%, 80% e 90% de conclusão, sensibilidade a `C_c` e `τ`, quadras baratas e custo fixo.
+- Na versão 3.3, a Fase 7 passou a ter relato de resultado em 10 minutos, três resultados possíveis e regra de 50% sem tolerância separada.
+- O capitão da Fase 7 passou a ser provisório, por partidas `FINALIZED` e UUID, sem critério de nível e sem alteração retroativa.
+- A evidência de disputa passou a ser apenas textual e privada; upload de arquivos ficou para fase posterior.
+- A revisão humana da Fase 7 passou a ser feita por CLI/script auditável, sem painel administrativo.
+- Foi registrado que a Fase 7 é backend-only e não implementa nem atualiza MMR.
 - Foram separadas decisões aprovadas, parâmetros iniciais, propostas e pendências.
