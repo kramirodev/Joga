@@ -484,3 +484,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check`, `pnpm exec expo install --check` e `expo config --type public` passam.
 - **Limite:** sem teste automatizado de UI ou execução em aparelho nesta sessão; a validação visual exige development build/Expo com backend local.
 - **Fase 8:** 8A, 8B e 8C concluídos. Nenhuma fase seguinte foi iniciada.
+
+### 2026-11-06 — Smoke test mobile do painel competitivo
+
+- **Ambiente:** moto g(7) play, Android 10, development build `com.anonymous.joga`; Metro em 8081 e API em 8000 via `adb reverse`; worker `scripts.apply_ratings.py --loop` ativo.
+- **Login:** OTP local fixo com telefone de teste `+5511955554444`; sessão persistida no SecureStore.
+- **Dados de teste:** contas de rating semeadas no banco local para futebol 5x5, incluindo o usuário de teste e dois rankings sintéticos.
+- **Resultado observado:** painel exibiu “Platina”, progresso até Diamante, posição 2 e 10 partidas; ranking com Diamante/Platina/Ouro. Ao trocar para Vôlei, exibiu “Provisório”, 5 partidas restantes e ranking vazio. A troca de formato e a atualização funcionaram.
+- **Rede:** API respondeu 200 para `/ratings/me` e `/rankings`; nenhum crash ou erro de renderização observado.
+- **Limite:** é um smoke test manual em um aparelho; não substitui testes automatizados de UI ou validação em iOS.
