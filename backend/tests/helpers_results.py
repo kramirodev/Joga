@@ -143,6 +143,7 @@ def build_match(
     checked_in: int | None = None,
     history: dict[int, int] | None = None,
     origin: str = "matchmaking",
+    mode: str = "casual",
     start: datetime = START,
     end: datetime = END,
 ) -> tuple[Match, list[uuid.UUID], list[MatchParticipant], SportFormat]:
@@ -154,7 +155,7 @@ def build_match(
         format_id=sport_format.id,
         format_version=1,
         origin=origin,
-        mode="casual",
+        mode=mode,
         status="scheduled",
         court_preference="ANY",
         scheduled_start_at=start,
