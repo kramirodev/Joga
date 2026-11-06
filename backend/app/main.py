@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.observability import install_observability
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -18,6 +19,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.include_router(api_router, prefix="/api/v1")
+    install_observability(app)
     return app
 
 

@@ -281,6 +281,29 @@ Set-Location C:\prog\joga\backend
 
 Padrões: mensagens de lobby 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. Eventos `PENDING`, convites pendentes/aceitos e tokens ativos são preservados.
 
+## 4.1 Observabilidade, carga e backup
+
+Todas as respostas HTTP incluem `X-Request-ID` (eco de um valor seguro do cliente ou um ID novo). Os logs `joga.http` registram método, rota, status, duração e request ID, sem query string, corpo, tokens ou telefone.
+
+Carga local:
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.load_test --requests 200 --concurrency 20
+.venv\Scripts\python.exe -m scripts.load_test --path /api/v1/sports --requests 100 --concurrency 10
+```
+
+Backup e restauração local:
+
+```bash
+docker exec joga-postgres-1 pg_dump -U joga -d joga -Fc > /tmp/joga_backup.dump
+docker exec joga-postgres-1 psql -U joga -d postgres -c "CREATE DATABASE joga_restore_test"
+docker exec -i joga-postgres-1 pg_restore -U joga -d joga_restore_test < /tmp/joga_backup.dump
+docker exec joga-postgres-1 psql -U joga -d joga_restore_test -tAc "SELECT version_num FROM alembic_version"
+```
+
+Depois de validar, remova o banco temporário e o arquivo de dump. Produção exige storage externo, criptografia, retenção e teste de restore documentado.
+
 ## 5. Mobile
 
 ```powershell

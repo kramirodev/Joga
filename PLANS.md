@@ -119,6 +119,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 10 — Hardening e piloto (núcleo esportivo)
 
+**Status:** 10A (hardening backend local) concluído em 2026-11-06; piloto real pendente.
+
 **Escopo:** threat modeling atualizado, testes de segurança, carga, observabilidade, alertas, backups e restauração, política de retenção, revisão LGPD, rollout controlado do núcleo esportivo. O hardening final, a revisão LGPD completa e o lançamento dos módulos comerciais ocorrem na Fase 19.
 
 **Não fazer:** produção sem plano de rollback, backup restaurável, alertas e responsável por incidentes.

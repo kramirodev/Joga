@@ -522,3 +522,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** `test_communication_cleanup.py` cobre remoção e preservação; backend segue com 281 passed/23 skipped sem PostgreSQL e 304 passed com a variável. Mobile: typecheck, lint, format e Expo check passam.
 - **Smoke:** chat HTTP e solicitação de amizade foram exercitados no aparelho; a validação visual do WebSocket depende de sessão válida e backend ativo.
 - **Fase 9:** encerrada. Redis/fan-out, push real, LGPD definitiva e hardening ficam para a Fase 10.
+
+### 2026-11-06 — Fase 10A: hardening backend local
+
+- **Observabilidade:** `X-Request-ID` seguro, headers `X-Content-Type-Options`, `Referrer-Policy` e `Cache-Control`; log `joga.http` sem query string/corpo/PII. Testes em `test_observability.py`.
+- **Carga:** `scripts/load_test.py`; `/health/live` 200 requisições/concorrência 20 → 0 falhas, p50 37,9 ms, p95 146,8 ms; `/sports` 100/10 → 0 falhas, p50 41,2 ms, p95 79,2 ms.
+- **Backup/restore:** `pg_dump` + `pg_restore` em `joga_restore_test`; versão `b4e8d1f6c752`, 13 usuários e 1 partida restaurados; banco temporário removido.
+- **Segurança:** `docs/THREAT_MODEL.md` com ativos, ameaças, controles e riscos residuais.
+- **Testes:** **287 passed, 23 skipped** sem PostgreSQL e **310 passed** com a variável; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Bloqueios de piloto:** celular, provedores reais, orçamento, LGPD/jurídico e infraestrutura de produção. Nenhuma fase seguinte iniciada.
