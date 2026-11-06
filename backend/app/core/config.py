@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     environment: str = "local"
     database_url: str = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
     database_connect_timeout_seconds: int = Field(default=3, ge=1, le=30)
+    max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     log_level: str = "INFO"
 
     # Segredo de hash de telefone/OTP/IP. O valor padrão só vale para

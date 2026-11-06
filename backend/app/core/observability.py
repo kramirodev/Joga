@@ -9,7 +9,9 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
+
+from app.core.config import get_settings
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -31,7 +33,19 @@ def install_observability(app: FastAPI) -> None:
         request_id = request_id_from(request.headers.get(REQUEST_ID_HEADER))
         started = time.perf_counter()
         try:
-            response: Response = await call_next(request)
+            content_length = request.headers.get("content-length")
+            too_large = (
+                content_length is not None
+                and content_length.isdigit()
+                and int(content_length) > get_settings().max_request_body_bytes
+            )
+            if too_large:
+                response: Response = JSONResponse(
+                    status_code=413,
+                    content={"detail": {"code": "payload_too_large"}},
+                )
+            else:
+                response = await call_next(request)
         except Exception:
             duration_ms = (time.perf_counter() - started) * 1000
             logger.exception(

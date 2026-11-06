@@ -35,6 +35,17 @@ def test_unsafe_request_id_is_replaced() -> None:
     assert request_id_from("safe_request-1") == "safe_request-1"
 
 
+def test_oversized_content_length_is_rejected(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/health/live",
+        headers={"Content-Length": "2000000"},
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": {"code": "payload_too_large"}}
+    assert response.headers["X-Request-ID"]
+
+
 def test_access_log_does_not_include_query_string(
     client: TestClient,
     caplog,

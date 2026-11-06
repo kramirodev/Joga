@@ -541,3 +541,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Comunicação:** chat carregou histórico, enviou mensagem (`201`), recebeu mensagem de outro usuário via WebSocket sem atualizar, mostrou “Tempo real conectado”, reconectou após reinício da API e recebeu nova mensagem.
 - **Social:** solicitação de amizade, lista de amigos e convite de lobby (`201`); aceite do convite adicionou o participante.
 - **Limite:** dados de teste no banco local; sem teste automatizado de UI.
+
+### 2026-11-06 — Fase 10B: limites, auditoria e carga autenticada
+
+- **Payload:** `JOGA_MAX_REQUEST_BODY_BYTES` (padrão 1 MB) rejeita `Content-Length` acima do limite com `413 payload_too_large`; teste de observabilidade cobre o caso.
+- **Dependências:** `pip-audit -r requirements.lock` sem vulnerabilidades conhecidas. `pnpm audit --prod` encontrou 2 vulnerabilidades moderadas transitivas (`glob`, `minimatch`) via Expo CLI; aceitas temporariamente como ferramenta de build, correção depende de atualização do SDK.
+- **Carga autenticada:** 100 requisições em `/api/v1/matches`, concorrência 10, 0 falhas; p50 98,3 ms, p95 155,0 ms, p99 165,7 ms.
+- **Testes:** 288 passed/23 skipped sem PostgreSQL e 311 passed com a variável; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Piloto:** ainda bloqueado por provedores reais, orçamento, LGPD/jurídico e infraestrutura de produção. Nenhuma fase seguinte iniciada.
