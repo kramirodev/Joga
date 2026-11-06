@@ -8,7 +8,9 @@ from datetime import UTC, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import DEFAULT_TOKEN_HASH_SECRET
 from app.modules.identity.models import User
+from app.modules.identity.sessions import SessionService
 from app.modules.matches.models import Match, MatchParticipant
 from app.modules.matches.service import create_match_for_lobby
 from app.modules.matchmaking.models import Lobby, LobbyParticipant, QueueEntry
@@ -23,6 +25,18 @@ from app.modules.profile.models import (
 NOW = datetime(2026, 11, 6, 21, 0, tzinfo=UTC)
 START = datetime(2026, 11, 7, 21, 0, tzinfo=UTC)
 END = START + timedelta(minutes=60)
+
+
+def make_token(session: Session, user_id: uuid.UUID) -> str:
+    tokens = SessionService(
+        session,
+        DEFAULT_TOKEN_HASH_SECRET,
+        access_ttl_seconds=600,
+        refresh_absolute_ttl_days=30,
+        refresh_idle_ttl_days=7,
+    ).issue(user_id)
+    session.commit()
+    return tokens.access_token
 
 
 def make_user(session: Session, *, available: bool = True) -> uuid.UUID:

@@ -5,14 +5,17 @@ from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
 from app.infrastructure.database.base import Base
+from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.matches import models as matches_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
+from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
 from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
+from app.modules.social import models as social_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
