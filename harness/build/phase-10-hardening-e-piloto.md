@@ -1,6 +1,6 @@
 # Fase 10 — Hardening e piloto (núcleo esportivo)
 
-**Status:** 10A (hardening backend local) concluído em 2026-11-06; piloto real pendente de infraestrutura, celular, provedores e LGPD
+**Status:** 10A/10B (hardening backend local) concluídos em 2026-11-06; piloto real pendente de infraestrutura, provedores, orçamento e LGPD
 **Branch:** `feat/10-hardening-piloto`
 
 ## Objetivo
@@ -74,7 +74,10 @@ Preparar o núcleo esportivo para um piloto controlado: documentar ameaças, red
 - **Segurança:** `docs/THREAT_MODEL.md` com ativos, ameaças, controles e riscos residuais.
 - **Testes:** **287 passed, 23 skipped** sem PostgreSQL e **310 passed** com PostgreSQL; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Smoke Android 14:** moto g24; login, competitivo, chat, WebSocket ao vivo/reconnect, amizade e convite validados no aparelho. APK de debug exibiu aviso de compatibilidade do Android, mas executou.
-- **Bloqueios para piloto real:** celular/dispositivo, provedores de SMS/push/mapas, orçamento, LGPD/jurídico e infraestrutura de produção.
+- **Bloqueios para piloto real:** provedores de SMS/push/mapas, orçamento, LGPD/jurídico e infraestrutura de produção.
+- **10B — limite de payload:** `JOGA_MAX_REQUEST_BODY_BYTES` (1 MB) retorna `413 payload_too_large`; testado.
+- **10B — auditoria de dependências:** `pip-audit -r requirements.lock` sem vulnerabilidades conhecidas; `pnpm audit --prod` encontrou 2 moderadas transitivas em `glob`/`minimatch` via Expo CLI. Aceitas temporariamente como ferramenta de build; correção depende de atualização do Expo.
+- **10B — carga autenticada:** 100 requisições em `/api/v1/matches`, concorrência 10, 0 falhas; p50 98,3 ms, p95 155,0 ms, p99 165,7 ms.
 
 ## Condição de parada
 
