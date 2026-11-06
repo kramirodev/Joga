@@ -1,6 +1,6 @@
 # ADR 0026 — Comunicação em tempo real, Outbox, amigos e convites
 
-- **Status:** Aprovado em 2026-11-06; 9A (backend) implementado; 9B (mobile) pendente de autorização.
+- **Status:** Aprovado em 2026-11-06; 9A e 9B implementados.
 - **Data:** 2026-11-06
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** `PLANS.md` Fase 9; `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` §8.2 e §20.1; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §12 e §20.3/§21; ADR 0023; `harness/build/phase-09-comunicacao-tempo-real.md`.

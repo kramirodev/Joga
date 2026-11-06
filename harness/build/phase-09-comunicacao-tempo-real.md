@@ -1,6 +1,6 @@
 # Fase 09 — Comunicação em tempo real
 
-**Status:** 9A (backend) implementado em 2026-11-06; 9B (mobile) pendente de autorização
+**Status:** 9A e 9B implementados em 2026-11-06 (backend + painel mobile)
 **Branch:** `feat/09-comunicacao-tempo-real`
 **Decisão:** `docs/ADR/0026-comunicacao-tempo-real-e-amigos.md`
 
@@ -139,7 +139,7 @@ Par único ordenado (`user_low_id`, `user_high_id`), status `PENDING`/`ACCEPTED`
 - [x] Outbox transacional e dispatcher idempotente.
 - [x] Testes negativos de autorização e concorrência.
 - [x] Documentação, migração e build-log atualizados.
-- [ ] Mobile (9B) só após atualização formal de `mobile/AGENTS.md`.
+- [x] Mobile (9B) com chat, amigos, convites e estados de erro/carregamento.
 
 ## Condição de parada
 
@@ -155,3 +155,13 @@ Encerrar 9A com backend estável; não iniciar 9B sem autorização específica.
 - **Push:** `app/modules/push/` com tokens por dispositivo, adaptador de teste e interface de envio; nenhum provedor real configurado.
 - **Testes:** 25 novos testes de chat, social, push, Outbox e WebSocket. Sem PostgreSQL: **281 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **304 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Limite:** WebSocket entrega apenas conexões do processo atual; Redis e fan-out multi-processo ficam para a fase de hardening/escala. Push real depende de provedor e credenciais.
+
+## Implementação 9B
+
+- **Mobile:** `mobile/src/CommunicationPanel.tsx`, integrado ao `App.tsx`.
+- **Chat:** seleção de partida/lobby, histórico, envio idempotente e atualização manual.
+- **Amigos:** lista, solicitação a partir dos participantes da partida e convite para o lobby selecionado.
+- **Convites:** lista de pendentes e ações de aceitar/recusar.
+- **Governança:** `mobile/AGENTS.md` atualizado para autorizar as telas da Fase 9B.
+- **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` e `expo install --check` passam. O backend ganhou `lobby_id` no resumo de partida para permitir o chat.
+- **Limite:** o app usa atualização manual/HTTP; a conexão WebSocket nativa no mobile ainda não foi integrada e não há teste automatizado de UI.
