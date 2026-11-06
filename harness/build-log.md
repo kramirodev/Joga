@@ -572,4 +572,5 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Verificações web:** `pnpm lint`, `pnpm format:check`, `pnpm typecheck` e `pnpm build` passam; bundle de produção gerado.
 - **Smoke no navegador:** registro por OTP fixo local, criação de organização, criação/ativação de estabelecimento, auditoria, refresh após recarga, logout e login de conta existente; smoke de operador confirmou ocultação de controles administrativos.
 - **Ambiente local:** API em 8000 (com `JOGA_DEV_FIXED_OTP=123456`) e Vite em 5173; banco local migrado para `a1b2c3d4e5f6`.
+- **CI:** run `42211679165` verde nos jobs Backend, Web e Mobile.
 - **Fora do escopo:** deploy, domínio, CSP definitiva, testes automatizados de UI, reservas, agenda, pagamentos e KYC.

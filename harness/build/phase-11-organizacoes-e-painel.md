@@ -116,6 +116,7 @@ Regras adicionais:
 - Painel: `pnpm lint`, `pnpm format:check`, `pnpm typecheck` e `pnpm build` passam.
 - Smoke no navegador: criação de conta por OTP, criação de organização, criação/ativação de estabelecimento, auditoria, recarga da página com refresh, logout e login de conta existente.
 - Smoke de papéis no navegador: operador não vê edição de organização, gestão de membros nem auditoria; consegue consultar membros e criar estabelecimento.
+- CI da branch `feat/11-organizacoes-painel`: run `42211679165` verde nos jobs Backend, Web e Mobile.
 - Nenhum deploy, provedor real ou custo externo foi acionado.
 
 ## Próximos passos
