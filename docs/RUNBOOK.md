@@ -24,6 +24,7 @@ Nenhuma credencial real é necessária. Os valores padrão do Compose e do `.env
 |---|---|---|
 | API | 8000 | Padrão local do Uvicorn |
 | Metro/Expo | 8081 | Padrão do Expo |
+| Painel web (Vite) | 5173 | Padrão local do Vite; faz proxy de `/api` para 8000 |
 | PostgreSQL/PostGIS | **5434** | 5432 já é usada pelo PostgreSQL 18 da máquina; 5433 é usada por outro projeto (`matchmaking-engine-db-1`) |
 
 Se outra porta estiver ocupada, defina `POSTGRES_PORT` no ambiente **e** ajuste `JOGA_DATABASE_URL` para a mesma porta. O Compose não altera a URL da aplicação automaticamente.
@@ -381,12 +382,33 @@ adb reverse tcp:8000 tcp:8000
 
 Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte. O APK não é versionado e precisa ser gerado de novo em cada máquina.
 
+## 5.1 Painel web (Fase 11B)
+
+O painel **JOGA y GESTÃO** fica em `web/` e usa React + TypeScript + Vite. Ele consome a mesma API do aplicativo; não há banco ou autenticação separados.
+
+```powershell
+Set-Location C:\prog\joga\web
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run format:check
+pnpm run typecheck
+pnpm run build
+pnpm run dev
+```
+
+Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migrações aplicadas. O Vite faz proxy de `/api` para o backend local.
+
+Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
+
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. Reservas, agenda, pagamentos, KYC, clãs, moderação e publicidade não estão implementados.
+
 ## 6. CI
 
 `.github/workflows/ci.yml` roda em push para `main`, `feat/**`, `fix/**`, `docs/**` e em pull requests:
 
 - **backend:** Python 3.13, serviço `postgis/postgis:16-3.4` em 5432, instalação por `requirements.lock`, `ruff check`, `mypy app`, `alembic upgrade head`/`downgrade base`/`upgrade head` e `pytest`.
 - **mobile:** Node 24, pnpm 11.25.0, `pnpm install --frozen-lockfile`, `lint`, `format:check`, `typecheck` e `expo install --check`.
+- **web:** Node 24, pnpm 11.25.0, `pnpm install --frozen-lockfile`, `lint`, `format:check`, `typecheck` e `build`.
 
 A CI foi observada em execução no commit `3e6c692`: backend e mobile concluíram com `success` (run [41475001880](https://github.com/kramirodev/Joga/actions/runs/41475001880)). Para repetir, faça push de uma branch coberta pelos gatilhos ou abra um pull request.
 

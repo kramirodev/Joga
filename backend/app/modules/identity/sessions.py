@@ -211,6 +211,33 @@ class SessionService:
         row.revoked_reason = reason
         self._session.flush()
 
+    def revoke_by_refresh(
+        self,
+        refresh_token: str,
+        *,
+        reason: str = "web_logout",
+        now: datetime | None = None,
+    ) -> uuid.UUID | None:
+        """Revoga a sessão associada ao refresh sem rotacionar o token.
+
+        Usado pelo logout do painel web, em que o refresh fica apenas em cookie
+        HttpOnly. Devolve o usuário da sessão, quando encontrado.
+        """
+
+        token_hash = hash_token(refresh_token, self._secret, "refresh")
+        row = self._session.scalar(
+            select(SessionRecord)
+            .where(SessionRecord.refresh_token_hash == token_hash)
+            .with_for_update()
+        )
+        if row is None:
+            return None
+        if row.revoked_at is None:
+            row.revoked_at = ensure_utc(now or utcnow())
+            row.revoked_reason = reason
+            self._session.flush()
+        return row.user_id
+
     def revoke_all(
         self,
         user_id: uuid.UUID,

@@ -1,6 +1,6 @@
 # Fase 11 — Organizações e painel de gestão
 
-**Status:** 11A (fundação backend) implementado em 2026-11-06; 11B (painel web) autorizado pelo ADR 0028 em 2026-11-06.
+**Status:** 11A (fundação backend) e 11B (painel web) implementados e validados localmente em 2026-11-06; sem deploy.
 **Branch:** `feat/11-organizacoes-painel`
 
 ## Objetivo
@@ -19,9 +19,31 @@ Permitir que estabelecimentos esportivos administrem apenas as operações origi
 - Teste PostgreSQL de unicidade de vínculo e concorrência do último proprietário.
 - Migração Alembic reversível e validada com `alembic check`.
 
+## Escopo 11B — painel web (implementado)
+
+- Painel `web/` em React + TypeScript + Vite, responsivo, sem site público e sem SSR.
+- Login e criação de conta por OTP, reutilizando a identidade do aplicativo.
+- Sessão web com refresh em cookie `HttpOnly`, access token em memória e CSRF de duplo envio para refresh/logout.
+- Rotas autenticadas: `/login`, `/` (organizações) e `/organizations/:id`.
+- Seleção/criação de organização, edição de nome, membros/papéis, estabelecimentos e auditoria.
+- Exibição de controles conforme o papel: operador não edita organização, não gerencia membros e não vê auditoria; pode consultar membros e gerenciar estabelecimentos.
+- Estados de carregamento, erro, vazio e sucesso; layout responsivo para desktop e navegador do celular.
+- CI do painel: `lint`, `format:check`, `typecheck` e `build`.
+
+### Autenticação web
+
+| Método | Rota | Função |
+|---|---|---|
+| `POST` | `/api/v1/auth/web/registration` | cria conta e sessão web |
+| `POST` | `/api/v1/auth/web/login` | autentica conta existente |
+| `POST` | `/api/v1/auth/web/refresh` | rotaciona o refresh com CSRF |
+| `POST` | `/api/v1/auth/web/logout` | revoga a sessão e limpa cookies |
+
+O refresh cookie usa `Path=/api/v1/auth/web`, `HttpOnly` e `SameSite=Strict`. O cookie CSRF é legível pelo JavaScript e o header `X-CSRF-Token` é exigido em refresh/logout. Em produção, `JOGA_WEB_COOKIE_SECURE=true` e HTTPS são obrigatórios.
+
 ## Fora do escopo imediato
 
-- Painel web visual antes da confirmação do ADR 0028.
+- Site público, SSR, SEO ou página pública de estabelecimento.
 - Quadras, agenda, preços, bloqueios e exceções (Fase 12).
 - Reservas, temporizadores e fluxo financeiro (Fases 13–15).
 - KYC/recebedor no PSP (Fase 12).
@@ -81,26 +103,28 @@ Regras adicionais:
 - [x] Identidade compartilhada com o app; o mesmo usuário pode ter papéis diferentes em organizações distintas.
 - [x] Auditoria registra ator, ação, recurso e organização, sem exclusão silenciosa.
 - [x] Migração revisável, com upgrade/downgrade/check validados.
-- [ ] Painel web responsivo e autenticado — ADR 0028 aprovado; implementação em andamento.
+- [x] Painel web responsivo e autenticado — login/registro por OTP, organizações, membros, estabelecimentos e auditoria validados no navegador.
 - [ ] Operações de reservas/pagamentos no painel — dependem das Fases 12–15.
 
 ## Evidências de execução
 
-- `pytest` sem PostgreSQL: **296 passed, 25 skipped**.
-- `pytest` com `JOGA_TEST_DATABASE_URL`: **321 passed**.
-- Testes específicos da fase: 8 HTTP + 2 PostgreSQL.
+- `pytest` sem PostgreSQL: **302 passed, 25 skipped**.
+- `pytest` com `JOGA_TEST_DATABASE_URL`: **327 passed**.
+- Testes específicos da fase: 8 HTTP de organizações + 2 PostgreSQL + 5 HTTP de sessão web + 1 teste de revogação por refresh.
 - `ruff check`, `ruff format --check` e `mypy app` passam.
 - Migração `a1b2c3d4e5f6`: upgrade, downgrade e novo upgrade em banco descartável com PostGIS; `alembic check` sem operações pendentes.
+- Painel: `pnpm lint`, `pnpm format:check`, `pnpm typecheck` e `pnpm build` passam.
+- Smoke no navegador: criação de conta por OTP, criação de organização, criação/ativação de estabelecimento, auditoria, recarga da página com refresh, logout e login de conta existente.
+- Smoke de papéis no navegador: operador não vê edição de organização, gestão de membros nem auditoria; consegue consultar membros e criar estabelecimento.
+- Nenhum deploy, provedor real ou custo externo foi acionado.
 
-## Próximo passo (11B)
+## Próximos passos
 
-1. Confirmar o ADR 0028 (React + TypeScript + Vite).
-2. Implementar autenticação do painel sem conta separada, preferindo cookie `HttpOnly` same-origin, CSRF e curta duração de acesso.
-3. Criar seleção de organização, tela de membros/papéis e tela de estabelecimentos.
-4. Exibir a auditoria apenas para `OWNER`/`ADMIN`.
-5. Testar responsividade no navegador do celular e no desktop, além de estados vazio/erro/carregamento.
-6. Não iniciar reservas, agenda, pagamentos ou KYC nesta fase.
+1. Revisar a 11B em code review e, se aprovada, integrar a branch.
+2. Iniciar a Fase 12 somente após autorização específica: quadras, agenda, preços e KYC.
+3. Adicionar testes automatizados de UI (Vitest/Testing Library ou Playwright) antes de ampliar o painel.
+4. Definir CSP, política de origem e observabilidade do painel antes de produção.
 
 ## Condição de parada
 
-Encerrar a 11A com os testes e a migração validados. Não implementar o painel web, reservas ou ações externas sem confirmação do ADR e autorização específica.
+Encerrar a Fase 11 com 11A/11B validados localmente. Não iniciar a Fase 12, reservas, pagamentos ou ações externas sem autorização específica.

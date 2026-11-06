@@ -149,6 +149,23 @@ def test_refresh_idle_expiry(session: Session) -> None:
         service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(days=8))
 
 
+def test_revoke_by_refresh_revokes_without_rotating(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+
+    user_id = service.revoke_by_refresh(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
+
+    assert user_id == user.id
+    row = session.get(SessionRecord, issued.session_id)
+    assert row is not None
+    assert row.revoked_reason == "web_logout"
+    with pytest.raises(InvalidRefreshToken):
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=2))
+    with pytest.raises(InvalidAccessToken):
+        service.authenticate(issued.access_token, now=BASE_TIME + timedelta(seconds=2))
+
+
 def test_revoke_all_revokes_every_session(session: Session) -> None:
     user = make_user(session)
     service = build_service(session)

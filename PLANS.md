@@ -129,7 +129,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 11 — Organizações e painel de gestão
 
-**Status:** 11A (fundação backend) implementado em 2026-11-06; 11B (painel web) autorizado pelo ADR 0028 em 2026-11-06.
+**Status:** 11A (fundação backend) e 11B (painel web) implementados e validados localmente em 2026-11-06; sem deploy.
 
 **Escopo:** organizações/estabelecimentos esportivos, membros, papéis e permissões por recurso; painel web responsivo autenticado (JOGA y GESTÃO) com cadastro e consulta das operações originadas no JOGA; auditoria de ações administrativas. Framework web registrado em ADR próprio.
 

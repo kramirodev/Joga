@@ -5,17 +5,18 @@ JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por 
 ## Arquitetura em alto nível
 
 - Aplicativos móveis Android e iOS em React Native com TypeScript.
+- Painel web de gestão em React + TypeScript + Vite, consumindo a mesma API.
 - Backend Python com FastAPI em monólito modular, com processos de worker separados.
 - PostgreSQL com PostGIS como fonte oficial da verdade; Redis somente para funções auxiliares e efêmeras.
 - Comunicação do aplicativo com o backend por contratos HTTP/WebSocket versionados.
 
-As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile. A Fase 10 está em hardening local (10A concluído); o piloto real depende de celular, provedores, orçamento e revisão LGPD. Reservas pagas, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados** e pertencem às Fases 11–19. O comércio de produtos está fora do escopo inicial (ADR 0022).
+As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile. A Fase 10 está em hardening local (10A/10B concluídos); o piloto real depende de provedores, orçamento, infraestrutura e revisão LGPD. A Fase 11 tem a fundação de organizações (11A) e o painel web (11B) implementados localmente. Reservas pagas, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados** e pertencem às Fases 12–19. O comércio de produtos está fora do escopo inicial (ADR 0022).
 
 ## Por onde começar
 
 1. Leia [`AGENTS.md`](AGENTS.md), [`docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`](docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md), [`GOALS.md`](GOALS.md) e [`PLANS.md`](PLANS.md) para instruções, a visão de produto (referência máxima), objetivos e sequência normativa das fases.
 2. Consulte [`docs/JOGA_DOCUMENTACAO_TECNICA.md`](docs/JOGA_DOCUMENTACAO_TECNICA.md) para arquitetura e contratos-alvo; decisões ainda abertas estão identificadas por fase.
-3. Siga [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para subir backend, banco local, verificações e aplicativo Android.
+3. Siga [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para subir backend, banco local, verificações, painel web e aplicativo Android.
 4. Use [`PROMPTS.md`](PROMPTS.md) para preparar uma tarefa e [`harness/build/`](harness/build/) para revisar o escopo de cada fase.
 5. Consulte [`harness/build-log.md`](harness/build-log.md) para status e evidências observadas.
 6. [`README_INICIO.md`](README_INICIO.md) continua como guia complementar para organizar o início do trabalho.

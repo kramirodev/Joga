@@ -12,6 +12,7 @@ from app.api.v1.profile import router as profile_router
 from app.api.v1.ratings import router as ratings_router
 from app.api.v1.results import router as results_router
 from app.api.v1.social import router as social_router
+from app.api.v1.web_auth import router as web_auth_router
 from app.api.v1.ws import router as ws_router
 
 api_router = APIRouter()
@@ -25,4 +26,5 @@ api_router.include_router(ratings_router)
 api_router.include_router(organizations_router)
 api_router.include_router(chat_router)
 api_router.include_router(social_router)
+api_router.include_router(web_auth_router)
 api_router.include_router(ws_router)

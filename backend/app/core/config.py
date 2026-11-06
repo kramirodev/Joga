@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     refresh_absolute_ttl_days: int = Field(default=30, ge=1, le=365)
     refresh_idle_ttl_days: int = Field(default=7, ge=1, le=90)
 
+    # Painel web: refresh em cookie HttpOnly e CSRF em cookie legível.
+    # Em produção, JOGA_WEB_COOKIE_SECURE deve ser true (HTTPS).
+    web_cookie_secure: bool = False
+
     # WebAuthn/passkeys. A origem Android é derivada do certificado de debug da
     # prova; um build de release exige atualizar este valor e o assetlinks.
     webauthn_rp_id: str = Field(default="joga-passkeys.vercel.app", min_length=1)

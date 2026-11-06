@@ -560,3 +560,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `a1b2c3d4e5f6`; upgrade, downgrade e novo upgrade em banco descartável com PostGIS; `alembic check` sem operações pendentes.
 - **Painel web:** ADR 0028 proposto (React + TypeScript + Vite, cookie HttpOnly + CSRF); implementação da 11B bloqueada até confirmação.
 - **Fora do escopo:** reservas, agenda, pagamentos, KYC, clãs, moderação, publicidade, ERP e site público.
+
+### 2026-11-06 — Fase 11B: painel web, sessão HttpOnly e CSRF
+
+- **Sessão web:** `POST /api/v1/auth/web/registration`, `/login`, `/refresh` e `/logout`; refresh em cookie `HttpOnly` com `Path=/api/v1/auth/web`, access token apenas em memória e `X-CSRF-Token` de duplo envio em refresh/logout.
+- **Revogação:** `SessionService.revoke_by_refresh` revoga a sessão do cookie sem rotacionar o token; logout limpa cookies e registra evento de segurança.
+- **Painel:** `web/` com React 19, TypeScript 6, Vite 8, React Router 7 e TanStack Query; rotas de login, organizações e detalhe da organização; membros/papéis, estabelecimentos e auditoria.
+- **Permissões na UI:** operador não vê edição de organização, gestão de membros nem auditoria; pode consultar membros e gerenciar estabelecimentos. O backend continua sendo a autoridade.
+- **CI:** job `Web` com `pnpm install --frozen-lockfile`, `lint`, `format:check`, `typecheck` e `build`.
+- **Testes backend:** **302 passed, 25 skipped** sem PostgreSQL e **327 passed** com `JOGA_TEST_DATABASE_URL`.
+- **Verificações web:** `pnpm lint`, `pnpm format:check`, `pnpm typecheck` e `pnpm build` passam; bundle de produção gerado.
+- **Smoke no navegador:** registro por OTP fixo local, criação de organização, criação/ativação de estabelecimento, auditoria, refresh após recarga, logout e login de conta existente; smoke de operador confirmou ocultação de controles administrativos.
+- **Ambiente local:** API em 8000 (com `JOGA_DEV_FIXED_OTP=123456`) e Vite em 5173; banco local migrado para `a1b2c3d4e5f6`.
+- **Fora do escopo:** deploy, domínio, CSP definitiva, testes automatizados de UI, reservas, agenda, pagamentos e KYC.
