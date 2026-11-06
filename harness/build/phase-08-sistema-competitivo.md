@@ -1,6 +1,6 @@
 # Fase 08 — Sistema competitivo
 
-**Status:** 8A e 8B implementados; 8C (mobile) pendente de decisão de escopo por conflito com `mobile/AGENTS.md`
+**Status:** Implementada no backend e no mobile; 8C concluído em 2026-11-06
 **Branch:** `feat/08-sistema-competitivo`
 **Decisão:** `docs/ADR/0025-sistema-competitivo-mmr-e-rankings.md`
 
@@ -164,6 +164,14 @@ Regras:
 - **Matchmaking:** `ranked` habilitado; política `mmr_v1` ordena candidatos por proximidade de MMR e limita a dispersão interna a 800 pontos por equipe.
 - **Testes:** `test_ratings_api.py` (6), casos de `mmr_v1` em `test_matchmaking_policy.py` (4) e `test_matchmaking_postgres.py` (1 ranked). Sem PostgreSQL: **256 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **279 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 
+## Implementação 8C
+
+- **Mobile:** `mobile/src/CompetitivePanel.tsx` exibe seletor de formato, divisão, progresso, posição e top 50; não recebe nem mostra MMR bruto, RD, volatilidade ou Trust Factor.
+- **API client:** tipos `MyRating`/`RankingPage` e `ratingsApi` em `mobile/src/api.ts`.
+- **Governança:** `mobile/AGENTS.md` atualizado para autorizar exclusivamente a tela competitiva da Fase 8C.
+- **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` e `pnpm exec expo install --check` passam.
+- **Limite:** não há teste automatizado de UI em aparelho; a validação visual depende de development build/Expo com backend local.
+
 ## Contratos previstos (8B)
 
 - `GET /api/v1/ratings/me?format_id=...` — divisão, progresso, posição, partidas e provisório.
@@ -180,7 +188,7 @@ Regras:
 - [x] Concorrência PostgreSQL não duplica evento nem perde atualização.
 - [x] Ranking ordena por MMR e desempata de forma determinística.
 - [x] Fila ranqueada respeita média e dispersão de MMR.
-- [ ] Mobile exibe divisão, progresso e ranking sem MMR bruto — **bloqueado:** `mobile/AGENTS.md` ainda proíbe telas de produto e declara o app como protótipo da Fase 1.
+- [x] Mobile exibe divisão, progresso e ranking sem MMR bruto.
 - [x] Documentação, migração, runbook e build-log atualizados.
 
 ## Condição de parada

@@ -271,7 +271,9 @@ pnpm run typecheck
 pnpm exec expo install --check
 ```
 
-O projeto usa Expo `~58.0.22`, React Native `0.88.1`, React `19.3.0`, TypeScript `~6.0.3`, ESLint `9.39.5` e Prettier `3.9.10`. O pnpm usa `nodeLinker: hoisted` em `mobile/pnpm-workspace.yaml`; sem isso, o build Android no Windows falha por caminho longo (`build.ninja` dirty).
+O projeto usa Expo `~58.0.23`, React Native `0.88.1`, React `19.3.0`, TypeScript `~6.0.3`, ESLint `9.39.5` e Prettier `3.9.10`. O pnpm usa `nodeLinker: hoisted` em `mobile/pnpm-workspace.yaml`; sem isso, o build Android no Windows falha por caminho longo (`build.ninja` dirty).
+
+O painel **Competitivo** (Fase 8C) usa `GET /api/v1/ratings/me` e `GET /api/v1/rankings`. Ele mostra divisão, progresso, posição e top do formato; não exibe MMR bruto nem Trust Factor. É necessário estar autenticado e ter o backend rodando.
 
 ### Abrir no aparelho
 

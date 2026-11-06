@@ -2,10 +2,10 @@
 
 ## Conexão com a governança do projeto
 
-Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` é o protótipo mínimo da **Fase 1 (prova técnica mobile/nativa)** — não é o aplicativo de produto.
+Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre o protótipo da **Fase 1 (prova técnica mobile/nativa)** e, a partir da **Fase 8C**, o painel competitivo (divisão, progresso e ranking). Navegação de produto completa, matchmaking, lobbies, chat, reservas e pagamentos continuam fora do escopo deste diretório até a fase correspondente.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
-- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` é a tela única de prova, com localização, passkey e o painel de identidade (`src/IdentityPanel.tsx`), sem navegação/funcionalidade de produto.
+- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` reúne a prova de localização/passkey, o painel de identidade (`src/IdentityPanel.tsx`), o perfil (`src/ProfilePanel.tsx`) e o painel competitivo (`src/CompetitivePanel.tsx`).
 - A estratégia mobile foi decidida no **ADR 0009 (aprovado)**: Expo development build com `expo prebuild`, mantendo `android/` e `ios/` gerados e não versionados neste momento. EAS Build, distribuição e OTA continuam sem decisão; não presumir EAS. Não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
 - O módulo nativo local `mobile/modules/passkey-proof` foi criado para a prova de Credential Manager e está registrado no **ADR 0011**; na Fase 3 passou a aceitar as opções WebAuthn emitidas pelo backend. É código de prova, não biblioteca de produção.
 - O fluxo de identidade usa `expo-secure-store` para os tokens e `http://127.0.0.1:8000/api/v1`; no aparelho, as portas 8081 e 8000 precisam de `adb reverse`. `JOGA_DEV_FIXED_OTP` é apenas local e nunca deve ser usado em ambiente compartilhado.
@@ -36,7 +36,7 @@ Expo entrega breaking changes a cada SDK. Antes de escrever código que toque AP
 
 ## Regras de escopo
 
-- Não avançar fase; não criar telas/features de produto (perfil, matchmaking, lobbies, chat, reservas, pagamentos).
+- Não avançar para outras fases; a tela competitiva da Fase 8C é a única tela de produto autorizada neste diretório. Não criar, sem autorização da fase, telas de matchmaking, lobbies, chat, reservas ou pagamentos.
 - Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; o ADR 0009 mantém os projetos nativos gerados e não versionados e prevê reavaliar se surgir módulo nativo próprio.
 - Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
 - Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).

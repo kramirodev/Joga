@@ -1359,7 +1359,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 8 está em implementação: 8A (Glicko-2, schema, worker e simulações) e 8B (fila ranqueada, divisão e ranking) concluídos; 8C (mobile) está pendente de decisão de escopo. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–8 estão implementadas no backend e no mobile conforme `harness/build-log.md`. A Fase 8 cobre Glicko-2, rating/Trust Factor, fila ranqueada, divisão, ranking e painel mobile, sem expor MMR bruto. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1459,7 +1459,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local. A Fase 8 está em implementação: 8A e 8B concluídos; 8C pendente. Nenhuma fase comercial (11–19) está implementada.
+As Fases 0–8 do núcleo esportivo estão implementadas no backend e no mobile, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local; a Fase 8 cobre Glicko-2, fila ranqueada, ranking e painel mobile. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 

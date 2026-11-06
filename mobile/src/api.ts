@@ -114,6 +114,37 @@ export type VenuePage = {
   page_size: number;
 };
 
+export type MyRating = {
+  format_id: string;
+  algorithm_version: string;
+  division: string;
+  provisional: boolean;
+  placement_matches_remaining: number;
+  progress: number | null;
+  next_division: string | null;
+  position: number | null;
+  matches_played: number;
+  last_rated_at: string | null;
+};
+
+export type RankingEntry = {
+  position: number;
+  user_id: string;
+  display_name: string | null;
+  division: string;
+  matches_played: number;
+};
+
+export type RankingPage = {
+  format_id: string;
+  algorithm_version: string;
+  placement_matches: number;
+  total: number;
+  limit: number;
+  offset: number;
+  entries: RankingEntry[];
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -356,5 +387,19 @@ export const profileApi = {
 
   discoverVenues(accessToken: string, page = 1, pageSize = 20): Promise<VenuePage> {
     return call<VenuePage>(`/discovery/venues?page=${page}&page_size=${pageSize}`, {}, accessToken);
+  },
+};
+
+export const ratingsApi = {
+  myRating(accessToken: string, formatId: string): Promise<MyRating> {
+    return call<MyRating>(`/ratings/me?format_id=${encodeURIComponent(formatId)}`, {}, accessToken);
+  },
+
+  ranking(accessToken: string, formatId: string, limit = 100, offset = 0): Promise<RankingPage> {
+    return call<RankingPage>(
+      `/rankings?format_id=${encodeURIComponent(formatId)}&limit=${limit}&offset=${offset}`,
+      {},
+      accessToken,
+    );
   },
 };
