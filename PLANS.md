@@ -109,6 +109,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 9 — Comunicação em tempo real
 
+**Status:** 9A (backend) implementado em 2026-11-06; 9B (mobile) pendente de autorização.
+
 **Escopo:** WebSocket autenticado e autorizado, Outbox transacional, push por adaptadores, gestão de tokens de dispositivo, reconciliação de notificações, lista de amigos com convites a lobbies, bloqueios e limites contra spam.
 
 **Não fazer:** conexões em memória como mecanismo de coordenação entre processos; confiar em evento entregue como prova de estado; chat global universal; envio livre de mídia.

@@ -493,3 +493,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Resultado observado:** painel exibiu “Platina”, progresso até Diamante, posição 2 e 10 partidas; ranking com Diamante/Platina/Ouro. Ao trocar para Vôlei, exibiu “Provisório”, 5 partidas restantes e ranking vazio. A troca de formato e a atualização funcionaram.
 - **Rede:** API respondeu 200 para `/ratings/me` e `/rankings`; nenhum crash ou erro de renderização observado.
 - **Limite:** é um smoke test manual em um aparelho; não substitui testes automatizados de UI ou validação em iOS.
+
+### 2026-11-06 — Fase 9A: chat, amigos, convites, Outbox e WebSocket
+
+- **Decisão:** ADR 0026 aprovado; WebSocket/push são canais de entrega, nunca fonte de verdade. Redis fica opcional nesta fase.
+- **Schema:** migração `b4e8d1f6c752_add_social_chat_outbox.py` cria `lobby_messages`, `outbox_events`, `friendships`, `user_blocks`, `lobby_invites` e `device_push_tokens`; aplicada, revertida e reaplicada no PostgreSQL local.
+- **Chat:** serviço e endpoints `GET/POST /api/v1/lobbies/{id}/messages`, com persistência antes da entrega, idempotência, paginação e autorização por participante.
+- **Social:** solicitação/aceite/remoção de amizade, bloqueio, convite de lobby, aceite/recusa, limites por hora e respeito a bloqueios.
+- **Outbox/WebSocket:** eventos transacionais, dispatcher e entrega local best-effort; endpoint `/api/v1/ws` autenticado e assinatura de lobby autorizada.
+- **Push:** tokens por dispositivo e adaptador de teste; nenhum provedor real configurado.
+- **Testes:** 25 novos testes (chat, API, social, push, Outbox, realtime e WebSocket). Sem PostgreSQL: **281 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **304 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Limite:** fan-out multi-processo/Redis e push real permanecem para hardening; 9B mobile não iniciado.

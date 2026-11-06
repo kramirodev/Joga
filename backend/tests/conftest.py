@@ -10,14 +10,17 @@ from sqlalchemy.pool import StaticPool
 
 from app.infrastructure.database.base import Base
 from app.main import create_app
+from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.identity.sms import RecordingSmsSender
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
+from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
 from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
+from app.modules.social import models as social_models  # noqa: F401
 
 
 @pytest.fixture
