@@ -1,6 +1,6 @@
 # ADR 0025 — Sistema competitivo: Glicko-2 adaptado, ranking e Trust Factor
 
-- **Status:** Aprovado em 2026-11-06; 8A e 8B implementados no backend; 8C (mobile) pendente de decisão de escopo.
+- **Status:** Aprovado em 2026-11-06; 8A, 8B e 8C implementados.
 - **Data:** 2026-11-06
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** `PLANS.md` Fase 8; `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` §19–21; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §11; ADR 0008; ADR 0023; `harness/build/phase-08-sistema-competitivo.md`.

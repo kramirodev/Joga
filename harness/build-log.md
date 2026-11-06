@@ -474,3 +474,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** `test_ratings_api.py` (6), casos de `mmr_v1` em `test_matchmaking_policy.py` (4) e caso ranked em `test_matchmaking_postgres.py` (1). Sem PostgreSQL: **256 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **279 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Conflito de escopo mobile:** `mobile/AGENTS.md` ainda declara o app como protótipo da Fase 1 e proíbe telas de produto. A tela competitiva (8C) não foi implementada; é necessário atualizar a governança mobile antes.
 - **Pendente:** 8C (mobile) e decisão de escopo correspondente. Nenhuma fase seguinte foi iniciada.
+
+### 2026-11-06 — Fase 8C: painel competitivo mobile
+
+- **Governança:** `mobile/AGENTS.md` atualizado para autorizar exclusivamente a tela competitiva da Fase 8C; as demais telas de produto continuam fora de escopo.
+- **API mobile:** tipos `MyRating`, `RankingPage` e `ratingsApi` em `mobile/src/api.ts`.
+- **Tela:** `mobile/src/CompetitivePanel.tsx`, integrada ao `App.tsx`, com seletor de formato, divisão, progresso, posição, partidas e top 50. Não exibe MMR bruto, RD, volatilidade ou Trust Factor.
+- **Estados:** carregamento, erro, sessão ausente, colocação provisória e ranking vazio.
+- **Validação:** `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check`, `pnpm exec expo install --check` e `expo config --type public` passam.
+- **Limite:** sem teste automatizado de UI ou execução em aparelho nesta sessão; a validação visual exige development build/Expo com backend local.
+- **Fase 8:** 8A, 8B e 8C concluídos. Nenhuma fase seguinte foi iniciada.

@@ -99,7 +99,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 8 — Sistema competitivo
 
-**Status:** 8A e 8B implementados em 2026-11-06 (motor Glicko-2, schema, worker, fila ranqueada e leitura de ranking); 8C (mobile) pendente de decisão de escopo.
+**Status:** implementada no backend e no mobile em 2026-11-06, sem MMR bruto exposto e sem painel administrativo; pendente de revisão/commit final.
 
 **Escopo:** rating inicial simples/versionado, histórico append-only, ranking e Trust Factor separado.
 
