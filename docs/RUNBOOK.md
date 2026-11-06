@@ -228,7 +228,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m scripts.apply_ratings --loop --interval 60
 ```
 
-Aplica MMR às partidas `ranked` em `FINALIZED` que ainda não têm eventos para a versão `glicko2_team_v1`. A constraint única por partida/usuário/versão torna a reexecução idempotente. Partidas casuais, disputadas, anuladas ou não finalizadas não recebem rating.
+Aplica MMR às partidas `ranked` em `FINALIZED` que ainda não têm eventos para a versão `glicko2_team_v1`. A constraint única por partida/usuário/versão torna a reexecução idempotente. Partidas casuais, disputadas, anuladas ou não finalizadas não recebem rating. A fila ranqueada usa `mmr_v1`; os endpoints de leitura são `GET /api/v1/ratings/me` e `GET /api/v1/rankings`.
 
 Simulação antes de liberar ranking público:
 
@@ -363,7 +363,7 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O PostgreSQL local é descartável e não contém dados reais.
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
-- Fases 5, 6 e 7 estão implementadas no backend; a Fase 8 está em implementação (motor de rating 8A). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
+- Fases 5, 6 e 7 estão implementadas no backend; a Fase 8 está em implementação (8A e 8B concluídos). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
 - Reservas de quadras, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados**. Não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
 - Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
 - O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.

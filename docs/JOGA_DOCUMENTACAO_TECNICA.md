@@ -614,6 +614,19 @@ Na Fase 8, o Trust Factor começa neutro (`100`), fica oculto e apenas registra 
 
 Compras, anúncios patrocinados, assinatura, gasto em quadras ou pagamento a estabelecimentos nunca alteram MMR, Trust Factor esportivo ou troféus de clã.
 
+### 11.4 Leitura competitiva e ranking
+
+- `GET /api/v1/ratings/me?format_id=...`: divisão, progresso, colocação, posição e última atualização; nunca retorna MMR bruto, RD, volatilidade ou Trust Factor.
+- `GET /api/v1/rankings?format_id=...&limit=...&offset=...`: top 100 de jogadores já colocados, com nome de exibição, divisão e partidas. Jogadores em colocação não entram no ranking público.
+- A fila ranqueada usa a política `mmr_v1`, com média de MMR e limite de dispersão interna de 800 pontos por equipe na v1.
+- O worker `apply_ratings.py` é separado do worker de partidas e pode ser reexecutado com segurança.
+
+### 11.5 Transparência
+
+- O app mostra divisão, progresso, posição e histórico competitivo, mas não o número bruto do MMR.
+- Trust Factor permanece oculto e não influencia MMR, divisão ou ranking na Fase 8.
+- A fórmula, os parâmetros e a versão `glicko2_team_v1` são documentados; mudanças futuras exigem nova versão.
+
 ## 12. Amigos, chat e clãs
 
 ### 12.1 Lista de amigos
@@ -1346,7 +1359,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 8 está em implementação: o bloco 8A (Glicko-2, schema, worker e simulações) foi concluído; 8B (ranqueado/ranking) e 8C (mobile) permanecem pendentes. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–7 estão implementadas no backend conforme `harness/build-log.md`. A Fase 8 está em implementação: 8A (Glicko-2, schema, worker e simulações) e 8B (fila ranqueada, divisão e ranking) concluídos; 8C (mobile) está pendente de decisão de escopo. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1446,7 +1459,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local. A Fase 8 está em implementação: 8A concluído; 8B e 8C pendentes. Nenhuma fase comercial (11–19) está implementada.
+As Fases 0–7 do núcleo esportivo estão implementadas no backend, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local. A Fase 8 está em implementação: 8A e 8B concluídos; 8C pendente. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 

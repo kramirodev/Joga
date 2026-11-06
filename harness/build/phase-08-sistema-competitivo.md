@@ -1,6 +1,6 @@
 # Fase 08 — Sistema competitivo
 
-**Status:** 8A implementado (motor de rating, schema, worker e simulações); 8B e 8C pendentes
+**Status:** 8A e 8B implementados; 8C (mobile) pendente de decisão de escopo por conflito com `mobile/AGENTS.md`
 **Branch:** `feat/08-sistema-competitivo`
 **Decisão:** `docs/ADR/0025-sistema-competitivo-mmr-e-rankings.md`
 
@@ -154,7 +154,15 @@ Regras:
 - **Persistência:** `rating_accounts`, `rating_events`, `trust_accounts` e `trust_events`; migração `a3f7c9e2d641_add_ratings_and_trust_events.py`.
 - **Serviço/worker:** `RatingService` idempotente e `scripts/apply_ratings.py`.
 - **Testes:** `test_ratings_engine.py` (11), `test_ratings_service.py` (10) e `test_ratings_postgres.py` (1). Sem PostgreSQL: **245 passed, 22 skipped**; com `JOGA_TEST_DATABASE_URL`: **267 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
-- **Pendente em 8A:** nenhum item funcional conhecido; 8B e 8C permanecem pendentes.
+- **Pendente em 8A:** nenhum item funcional conhecido.
+- **8B:** `mmr_v1` com média e dispersão máxima de 800; fila ranqueada habilitada; `GET /api/v1/ratings/me` e `GET /api/v1/rankings`; top 100 por formato e jogadores em colocação fora do ranking público.
+- **8C:** bloqueado por conflito de governança: `mobile/AGENTS.md` proíbe telas de produto enquanto o app é protótipo da Fase 1. É necessário atualizar esse arquivo/ADR antes de implementar a tela competitiva.
+
+## Implementação 8B
+
+- **API:** `backend/app/api/v1/ratings.py`, com leitura de divisão/progresso/posição e ranking paginado; nenhum campo de MMR bruto, RD ou Trust Factor.
+- **Matchmaking:** `ranked` habilitado; política `mmr_v1` ordena candidatos por proximidade de MMR e limita a dispersão interna a 800 pontos por equipe.
+- **Testes:** `test_ratings_api.py` (6), casos de `mmr_v1` em `test_matchmaking_policy.py` (4) e `test_matchmaking_postgres.py` (1 ranked). Sem PostgreSQL: **256 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **279 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 
 ## Contratos previstos (8B)
 
@@ -170,9 +178,9 @@ Regras:
 - [x] Casual, `DISPUTED`, `VOIDED` e `CANCELLED` não alteram rating.
 - [x] Worker processa partida finalizada e é seguro ao reexecutar.
 - [x] Concorrência PostgreSQL não duplica evento nem perde atualização.
-- [ ] Ranking ordena por MMR e desempata de forma determinística.
-- [ ] Fila ranqueada respeita média e dispersão de MMR.
-- [ ] Mobile exibe divisão, progresso e ranking sem MMR bruto.
+- [x] Ranking ordena por MMR e desempata de forma determinística.
+- [x] Fila ranqueada respeita média e dispersão de MMR.
+- [ ] Mobile exibe divisão, progresso e ranking sem MMR bruto — **bloqueado:** `mobile/AGENTS.md` ainda proíbe telas de produto e declara o app como protótipo da Fase 1.
 - [x] Documentação, migração, runbook e build-log atualizados.
 
 ## Condição de parada

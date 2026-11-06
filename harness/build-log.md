@@ -465,3 +465,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Simulação:** 60 jogadores e 3.000 partidas produziram quartil inferior ≈1279 e superior ≈1666, mostrando convergência.
 - **Testes:** `test_ratings_engine.py` (11), `test_ratings_service.py` (10) e `test_ratings_postgres.py` (1). Sem PostgreSQL: **245 passed, 22 skipped**; com `JOGA_TEST_DATABASE_URL`: **267 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Pendente:** 8B (fila ranqueada, ranking e endpoints) e 8C (telas mobile). Nenhuma fase seguinte foi iniciada.
+
+### 2026-11-06 — Fase 8B: fila ranqueada, divisão e ranking
+
+- **Ranked:** `ranked` habilitado na fila; `ranked_not_available` removido. A política `mmr_v1` ordena candidatos por proximidade de MMR e limita a dispersão interna a 800 pontos por equipe.
+- **Team balance:** `balance_teams_by_rating` minimiza diferença de média e dispersão; grupos acima de 16 jogadores usam fallback guloso determinístico.
+- **API:** `GET /api/v1/ratings/me` retorna divisão, progresso, colocação, posição e partidas; `GET /api/v1/rankings` retorna top 100 paginado por formato. Jogadores em colocação não entram no ranking público. Nenhum endpoint expõe MMR bruto, RD, volatilidade ou Trust Factor.
+- **Testes:** `test_ratings_api.py` (6), casos de `mmr_v1` em `test_matchmaking_policy.py` (4) e caso ranked em `test_matchmaking_postgres.py` (1). Sem PostgreSQL: **256 passed, 23 skipped**; com `JOGA_TEST_DATABASE_URL`: **279 passed**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Conflito de escopo mobile:** `mobile/AGENTS.md` ainda declara o app como protótipo da Fase 1 e proíbe telas de produto. A tela competitiva (8C) não foi implementada; é necessário atualizar a governança mobile antes.
+- **Pendente:** 8C (mobile) e decisão de escopo correspondente. Nenhuma fase seguinte foi iniciada.
