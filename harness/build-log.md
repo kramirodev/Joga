@@ -531,3 +531,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Segurança:** `docs/THREAT_MODEL.md` com ativos, ameaças, controles e riscos residuais.
 - **Testes:** **287 passed, 23 skipped** sem PostgreSQL e **310 passed** com a variável; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Bloqueios de piloto:** celular, provedores reais, orçamento, LGPD/jurídico e infraestrutura de produção. Nenhuma fase seguinte iniciada.
+
+### 2026-11-06 — Smoke test em Android 14 (moto g24)
+
+- **Dispositivo:** moto g24, Android 14 (API 34), APK de debug `com.anonymous.joga`; aviso de compatibilidade do Android exibido, mas o app abriu.
+- **Ambiente:** Metro em 8081, API em 8000 e `adb reverse` ativos.
+- **Login:** OTP local fixo com telefone de teste; sessão persistida.
+- **Competitivo:** painel exibiu Platina, progresso para Diamante, posição e ranking.
+- **Comunicação:** chat carregou histórico, enviou mensagem (`201`), recebeu mensagem de outro usuário via WebSocket sem atualizar, mostrou “Tempo real conectado”, reconectou após reinício da API e recebeu nova mensagem.
+- **Social:** solicitação de amizade, lista de amigos e convite de lobby (`201`); aceite do convite adicionou o participante.
+- **Limite:** dados de teste no banco local; sem teste automatizado de UI.

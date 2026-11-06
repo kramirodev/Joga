@@ -73,6 +73,7 @@ Preparar o núcleo esportivo para um piloto controlado: documentar ameaças, red
 - **Backup/restore:** `pg_dump` do banco local e `pg_restore` em `joga_restore_test`; versão `b4e8d1f6c752`, 13 usuários e 1 partida restaurados; banco temporário removido.
 - **Segurança:** `docs/THREAT_MODEL.md` com ativos, ameaças, controles e riscos residuais.
 - **Testes:** **287 passed, 23 skipped** sem PostgreSQL e **310 passed** com PostgreSQL; `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Smoke Android 14:** moto g24; login, competitivo, chat, WebSocket ao vivo/reconnect, amizade e convite validados no aparelho. APK de debug exibiu aviso de compatibilidade do Android, mas executou.
 - **Bloqueios para piloto real:** celular/dispositivo, provedores de SMS/push/mapas, orçamento, LGPD/jurídico e infraestrutura de produção.
 
 ## Condição de parada
