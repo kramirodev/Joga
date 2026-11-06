@@ -46,8 +46,12 @@ jobs:
           cache-dependency-path: backend/requirements.lock
       - name: Instalar dependências fixadas
         run: python -m pip install -r requirements.lock
-      - name: Habilitar PostGIS no banco de teste
-        run: psql -h localhost -U joga -d joga_test -c "CREATE EXTENSION IF NOT EXISTS postgis"
+      - name: Preparar PostGIS no banco de teste
+        run: |
+          psql -h localhost -U joga -d joga_test -c "DROP EXTENSION IF EXISTS postgis CASCADE"
+          psql -h localhost -U joga -d joga_test -c "CREATE SCHEMA IF NOT EXISTS extensions"
+          psql -h localhost -U joga -d joga_test -c "CREATE EXTENSION postgis SCHEMA extensions"
+          psql -h localhost -U joga -d joga_test -c "ALTER DATABASE joga_test SET search_path TO public, extensions"
       - name: Lint
         run: python -m ruff check .
       - name: Formatação
