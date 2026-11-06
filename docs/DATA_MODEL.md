@@ -446,6 +446,21 @@ Implementado na migração `a3f7c9e2d641_add_ratings_and_trust_events.py`.
 
 O worker `apply_ratings.py` processa partidas `ranked` em `FINALIZED`. A constraint única `(match_id, user_id, algorithm_version)` garante aplicação única. O Trust Factor não aplica penalidade automática na Fase 8; eventos ficam disponíveis para a Fase 17.
 
+## Comunicação, amigos e Outbox (Fase 9)
+
+Implementado na migração `b4e8d1f6c752_add_social_chat_outbox.py`.
+
+| Tabela | Papel |
+|---|---|
+| `lobby_messages` | chat textual append-only por lobby; 1–2.000 caracteres, sem mídia |
+| `outbox_events` | evento transacional para entrega assíncrona; status e tentativas auditáveis |
+| `friendships` | par único ordenado, status `PENDING`/`ACCEPTED`/`REMOVED` e solicitante |
+| `user_blocks` | bloqueio unilateral único; impede amizade, convite e eventos sociais |
+| `lobby_invites` | convite de participante para amigo; status e expiração |
+| `device_push_tokens` | token opaco por dispositivo, revogável e nunca exposto a terceiros |
+
+O WebSocket serve apenas à entrega local do processo; o PostgreSQL continua sendo a fonte de verdade. Mensagens são persistidas antes da entrega, e a reconexão recupera o histórico pela API. Redis/fan-out multi-processo e provedor real de push ficam para a fase de hardening/escala.
+
 ## Pendências deste modelo
 
 - Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
@@ -466,6 +481,6 @@ O worker `apply_ratings.py` processa partidas `ranked` em `FINALIZED`. A constra
 
 ## Referência
 
-- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py`, `f2b5d8e1a7c3_add_rate_limit_counters.py` e `a3f7c9e2d641_add_ratings_and_trust_events.py`
-- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py`, `backend/app/modules/ratelimit/models.py` e `backend/app/modules/ratings/models.py`
+- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py`, `f2b5d8e1a7c3_add_rate_limit_counters.py`, `a3f7c9e2d641_add_ratings_and_trust_events.py` e `b4e8d1f6c752_add_social_chat_outbox.py`
+- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py`, `backend/app/modules/ratelimit/models.py`, `backend/app/modules/ratings/models.py`, `backend/app/modules/chat/models.py`, `backend/app/modules/social/models.py` e `backend/app/modules/outbox/models.py`
 - Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015, ADR 0019 e ADR 0023.

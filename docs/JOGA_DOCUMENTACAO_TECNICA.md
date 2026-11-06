@@ -646,6 +646,8 @@ Mensagens devem ser persistidas no PostgreSQL. WebSocket serve à entrega em tem
 
 Controles obrigatórios: autorização por conversa, paginação, limite de tamanho e frequência, bloqueio, denúncia, silenciamento, moderação, prevenção de spam e auditoria de ações administrativas.
 
+Na implementação 9A, o chat por lobby usa `lobby_messages` e a Outbox; o WebSocket entrega eventos apenas no processo atual e o histórico é recuperado por HTTP. Redis/fan-out multi-processo fica para hardening. Tokens de push são registrados por dispositivo, mas o provedor real ainda não está configurado.
+
 ### 12.3 Clãs
 
 Clãs possuem estado aberto ou fechado, membros, administradores, convites e limites. Entrada em clã aberto pode ser imediata, desde que haja vaga e regras atendidas. Entrada em clã fechado depende de convite ou aprovação.
@@ -1359,7 +1361,7 @@ Pipeline recomendado:
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |
 
-As Fases 0–8 estão implementadas no backend e no mobile conforme `harness/build-log.md`. A Fase 8 cobre Glicko-2, rating/Trust Factor, fila ranqueada, divisão, ranking e painel mobile, sem expor MMR bruto. Nenhuma fase comercial (11+) está implementada.
+As Fases 0–8 estão implementadas no backend e no mobile conforme `harness/build-log.md`. A Fase 9 está em implementação: 9A (backend) concluído; 9B (mobile) pendente de autorização. Nenhuma fase comercial (11+) está implementada.
 
 ---
 
@@ -1459,7 +1461,7 @@ As referências legais não substituem revisão jurídica específica do modelo 
 
 ## 28. Próxima tarefa técnica autorizada
 
-As Fases 0–8 do núcleo esportivo estão implementadas no backend e no mobile, conforme `harness/build-log.md`. A Fase 7 foi validada com PostgreSQL local; a Fase 8 cobre Glicko-2, fila ranqueada, ranking e painel mobile. Nenhuma fase comercial (11–19) está implementada.
+As Fases 0–8 do núcleo esportivo estão implementadas no backend e no mobile, conforme `harness/build-log.md`. A Fase 9 está em implementação: 9A (backend) concluído; 9B (mobile) pendente. Nenhuma fase comercial (11–19) está implementada.
 
 Nenhuma fase comercial (11–19) está implementada. Não construir reservas pagas, pagamentos, split, KYC, interface financeira, clãs, moderação ou publicidade sem autorização específica.
 

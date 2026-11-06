@@ -259,6 +259,16 @@ Set-Location C:\prog\joga\backend
 
 Padrões: contadores de rate limit 24 h; evidências 365 dias após o encerramento da disputa; relatos, confirmações, decisões, revisões e análises 730 dias após o encerramento da partida. Partidas em andamento, em disputa ou com revisão pendente são preservadas. Os prazos podem ser ajustados por `--rate-limit-hours`, `--evidence-days`, `--report-days` e `--decision-days`.
 
+### Comunicação e WebSocket (Fase 9A)
+
+- `GET /api/v1/lobbies/{lobby_id}/messages` lista o histórico paginado.
+- `POST /api/v1/lobbies/{lobby_id}/messages` envia texto; exige `Idempotency-Key`.
+- `GET /api/v1/ws` abre o WebSocket autenticado por `Authorization: Bearer <token>`. O cliente envia `{"type":"subscribe","lobby_id":"..."}`.
+- `GET/POST /api/v1/friends`, `/api/v1/blocks`, `/api/v1/lobbies/{id}/invites` e `/api/v1/lobby-invites` cobrem amigos, bloqueios e convites.
+- `PUT /api/v1/push-tokens` registra token; o envio real depende de provedor autorizado.
+
+Nesta fase o WebSocket entrega apenas conexões do processo atual. Para reiniciar após queda, o cliente busca o histórico pela API; Redis e fan-out multi-processo ficam para hardening/escala.
+
 ## 5. Mobile
 
 ```powershell
@@ -365,7 +375,7 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O PostgreSQL local é descartável e não contém dados reais.
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
-- Fases 5, 6 e 7 estão implementadas no backend; a Fase 8 está em implementação (8A e 8B concluídos). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
+- Fases 5, 6, 7 e 8 estão implementadas no backend e no mobile; a Fase 9 está em implementação (9A backend). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
 - Reservas de quadras, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados**. Não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
 - Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
 - O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
