@@ -446,3 +446,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Implementação:** `backend/app/modules/results/cleanup.py` e `backend/scripts/cleanup_results.py`, com `--dry-run` e prazos configuráveis. Só remove partidas `FINALIZED`/`VOIDED` e revisões `RESOLVED`/`CANCELLED`; partidas em andamento ou com revisão pendente são preservadas.
 - **Testes:** `test_results_cleanup.py` (7), cobrindo partida finalizada antiga, partida recente, partida anulada, partida ativa, prazos separados, contadores e prazo negativo. Sem PostgreSQL: **224 passed, 21 skipped**. Com `JOGA_TEST_DATABASE_URL`: **245 passed, 0 skips**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
 - **Limite:** a limpeza é manual, sem agendador; a política definitiva será revista na fase de LGPD. Nenhum commit/push executado.
+
+### 2026-11-06 — Fase 7 integrada à main
+
+- **PRs:** #1 (documentação de precificação), #2 (Expo 58.0.23) e #3 (Fase 7) mesclados em `main`; branch final `feat/07-resultados-e-disputas` reaplicada sobre `main` antes do merge.
+- **CI da main:** run `42179305339` concluído com sucesso para backend e mobile.
+- **Validação final na main:** 224 passed e 21 skipped sem PostgreSQL; 245 passed com `JOGA_TEST_DATABASE_URL`; `ruff check`, `ruff format --check`, `mypy app` e `alembic check` passam.
+- **Ambiente:** banco local na revisão `f2b5d8e1a7c3`; banco temporário de simulação da CI removido.
+- **Pendências:** configurar `JOGA_REVIEW_OPERATORS` para usar a CLI; revisar a retenção provisória do ADR 0024 na fase de LGPD; agendar a limpeza apenas após essa revisão. Nenhuma fase comercial ou MMR foi iniciada.
