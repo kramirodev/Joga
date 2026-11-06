@@ -23,5 +23,6 @@ O texto da decisão, redigido pelo responsável, foi incorporado como subseção
 
 - A pendência de exatamente 50% está encerrada nos três níveis (conceito §9.4, técnica §10.4, PLANS fase 7).
 - Continuam pendentes: tolerância por modalidade, prazo efetivo do relato e prazo da segunda rodada (na faixa curta a definir) — seção 26 da técnica.
+- **Atualização 2026-11-06:** o prazo de relato foi fixado em 10 minutos, a segunda rodada em 5 minutos e a regra de 50% foi detalhada no ADR 0023.
 - Nenhuma implementação é autorizada por este ADR; a regra será materializada na Fase 7 (PLANS 0–19).
 - A análise interna deve gerar registro auditável append-only, sem exibir indicadores aos participantes.

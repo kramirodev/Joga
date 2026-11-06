@@ -386,3 +386,63 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Documentos atualizados:** `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` v3.2; `GOALS.md`; `PLANS.md`; `docs/JOGA_DOCUMENTACAO_TECNICA.md` v2.1; `docs/DATA_MODEL.md`; `docs/RUNBOOK.md`; `README.md`; `README_INICIO.md`; `mobile/AGENTS.md`; ADRs 0021 e 0022.
 - **Não incluído:** nenhum código, migração, tabela, endpoint, contrato de PSP, chave, deploy ou ação externa. Nenhuma fase 7–19 foi iniciada.
 - **Limitações:** as simulações usam hipóteses de `C_k`, `C_c`, `p` e `p_t`; as tarifas do Pagar.me Flex e o comportamento de saque/estorno/MED ainda precisam de confirmação formal. `N` da liberação automática e a política de cancelamento após confirmação continuam pendentes.
+
+### 2026-11-06 — Planejamento da Fase 7: resultados, disputas e capitão provisório
+
+- **Decisões:** relato de resultado em 10 minutos, controlado pelo backend; três resultados (`TEAM_1`, `TEAM_2`, `DRAW`); sem tolerância separada de 1–2 votos — abaixo de 50% finaliza, exatamente 50% abre segunda rodada, acima de 50% abre disputa; votos ausentes/anulados fora do denominador; capitão provisório por partidas `FINALIZED` e UUID, sem nível e sem alteração retroativa; evidência apenas textual; revisão humana por CLI; backend-only; sem MMR.
+- **Documentos:** ADR 0023, `harness/build/phase-07-resultados-e-disputas.md`, `PLANS.md` Fase 7, conceito §9 e §26, técnica §10 e §26, `DATA_MODEL.md` e `RUNBOOK.md`.
+- **Pontos abertos:** resultado avaliado com três opções sem maioria absoluta; quórum mínimo; empate por formato; limite da evidência; confirmação do prazo de 5 min da segunda rodada; regra para segunda rodada sem 50% exato; abrangência/momento do capitão; visibilidade dos relatos; autorização da CLI; contrato HTTP.
+- **Não incluído:** nenhum código, migração, endpoint, tela, teste ou ação externa. A Fase 7 não foi iniciada.
+
+### 2026-11-06 — Fase 7: plano finalizado para revisão
+
+- **Regras fechadas:** quórum `ceil(elegíveis/2)` com elegíveis congelados; resultado por maioria simples (plurality); divergência de 50% sobre votos válidos; segunda rodada de 5 minutos com todas as alternativas permitidas pelo formato; sem terceira rodada; `DRAW` só no futebol 5x5; evidência textual de até 2.000 caracteres; CLI com operador autorizado e motivo.
+- **Contrato HTTP:** rotas, payloads, códigos de erro, autorização, idempotência e controle de prazo documentados em `harness/build/phase-07-resultados-e-disputas.md`.
+- **Modelo previsto:** rodadas, elegíveis congelados, relatos, confirmações de capitão, disputa, evidência, análise, revisão e decisão, além de `idempotency_records`.
+- **Pontos pendentes:** confirmar análise interna sempre em revisão humana na Fase 7; confirmar confirmação do capitão como registro separado; definir retenção; configurar operadores da CLI.
+- **Não incluído:** nenhum código, migração, endpoint, tela, teste ou ação externa. A Fase 7 não foi iniciada.
+
+### 2026-11-06 — Fase 7 implementada localmente: resultados, disputas e capitão provisório
+
+- **Implementado:** domínio `results` com rodadas 1/2, elegíveis congelados, relatos, confirmações de capitão, disputa, evidência textual, análise `INCONCLUSIVE`, revisão e decisão auditável; domínio `idempotency` para replay de POSTs; endpoints HTTP de resultado, relatos, confirmações e evidência; CLI `review_match_result.py`; worker `advance_matches.py` apurando rodadas; migração `e1a4c7d9b230_add_match_results.py`.
+- **Regras:** prazo de 10 minutos, segunda rodada de 5 minutos, quórum `ceil(elegíveis/2)`, plurality, divergência em inteiros (abaixo de 50% finaliza, 50% abre segunda rodada, acima de 50% abre disputa), sem terceira rodada, `DRAW` só no futebol, capitão `provisional_v1` por `FINALIZED` do mesmo formato e UUID.
+- **Testes:** `test_results_policy.py`, `test_results_service.py`, `test_results_api.py`, `test_review_cli.py` e `helpers_results.py`. Suíte local: 209 passed, 14 skipped (PostgreSQL sem `JOGA_TEST_DATABASE_URL`). `ruff check app scripts tests migrations` passa. Migração validada por `alembic upgrade head --sql`, sem aplicar em banco.
+- **Documentos atualizados:** ADR 0023, `PLANS.md`, `GOALS.md`, `README.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `docs/DATA_MODEL.md`, `docs/RUNBOOK.md`, `harness/build/phase-07-resultados-e-disputas.md` e `backend/.env.example`.
+- **Desvios e limites:** rate limiting `429 rate_limited` não implementado; retenção de relatos/evidências pendente; naquele momento, testes de concorrência e migração com PostgreSQL real ainda não executados (ver entrada seguinte); `missing_idempotency_key`/`invalid_idempotency_key` são extensões ao contrato; `signals` e `response_body` usam JSONB no PostgreSQL e JSON no SQLite; `result_version` começa em 0.
+- **Não incluído:** MMR/rating, telas mobile, painel administrativo, upload de arquivos, notificações, commit, push, merge ou ação externa.
+
+### 2026-11-06 — Fase 7 validada com PostgreSQL local e concorrência real
+
+- **Banco:** container `joga-postgres-1` (`postgis/postgis:16-3.4`) iniciado via `infra/compose.yaml`; `alembic upgrade head`, `alembic downgrade d7f2b9c4e615` e novo `alembic upgrade head` executados com sucesso no banco descartável local.
+- **Testes:** suíte completa com `JOGA_TEST_DATABASE_URL` apontando para o banco local: **229 passed, 0 skips**. Sem a variável: 209 passed, 20 skipped.
+- **Novo arquivo:** `backend/tests/test_results_postgres.py` com seis testes de concorrência: voto duplicado do mesmo participante, votos de participantes distintos, dois workers fechando a mesma rodada, confirmações concorrentes do capitão, abertura única da segunda rodada e decisões humanas concorrentes.
+- **Correção relacionada:** os testes novos usam o `participant_id` correto ao contar relatos; a primeira versão contava por `user_id` e foi corrigida antes da validação final.
+- **Observação:** `alembic check` ainda reporta divergências pré-existentes de fases anteriores (`spatial_ref_sys`, índices/constraints de sessões, perfil e locais). Nenhuma divergência foi introduzida pela migração `e1a4c7d9b230`.
+- **Documentação:** ADR 0023, `PLANS.md`, `GOALS.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `docs/DATA_MODEL.md`, `docs/RUNBOOK.md` e `harness/build/phase-07-resultados-e-disputas.md` atualizados com a evidência de PostgreSQL.
+- **Ainda pendente:** rate limiting; retenção de relatos/evidências; revisão/commit. Nenhum MMR, tela mobile ou painel administrativo foi implementado.
+
+### 2026-11-06 — Divergências de `alembic check` verificadas e corrigidas
+
+- **Diagnóstico:** quatro divergências reportadas, todas anteriores à Fase 7: tabela `spatial_ref_sys` do PostGIS; índice único de `sessions.access_token_hash` versus constraint declarada no modelo; nome da constraint única de `user_sport_profiles`; índice GiST `ix_venues_location_gist` criado só por SQL na migração e ausente do modelo.
+- **Classificação:** `spatial_ref_sys` é objeto de extensão e não pertence ao schema da aplicação; as demais eram diferenças reais de metadata, sem mudança de comportamento esperado; o índice GiST é intencional e específico de PostgreSQL.
+- **Correções:** `migrations/env.py` passou a excluir `spatial_ref_sys` do autogenerate; `sessions` passou a declarar `uq_sessions_access_token_hash` como índice único; `user_sport_profiles` passou a usar o nome `uq_user_sport_profiles_user_format`; `venues` passou a declarar o índice GiST com expressão e `ddl_if(dialect="postgresql")`. Nenhuma migração histórica foi reescrita.
+- **CI:** adicionada a etapa `python -m alembic check` após reaplicar as migrações.
+- **Resultado:** `alembic check` agora retorna “No new upgrade operations detected”; `ruff check`, `ruff format --check` e `mypy app` passam; **209 passed, 20 skipped** sem PostgreSQL e **229 passed, 0 skips** com `JOGA_TEST_DATABASE_URL`.
+- **Ajustes de CI encontrados na verificação:** um erro de tipagem em `results/service.py` (variável `match` reutilizada com tipos diferentes) foi corrigido, e 10 arquivos da Fase 7 foram formatados para atender `ruff format --check`.
+
+### 2026-11-06 — Rate limiting dos POSTs de resultado
+
+- **Implementado:** módulo `backend/app/modules/ratelimit/` com contador persistente por `scope`/`key`/janela fixa; tabela `rate_limit_counters`; migração `f2b5d8e1a7c3_add_rate_limit_counters.py`; configuração `JOGA_RESULTS_RATE_LIMIT_PER_MINUTE` (padrão 30).
+- **Integração:** relatos, confirmações de capitão e evidências aplicam o limite por usuário em janela de 60 segundos. A tentativa é contabilizada e commitada antes da ação, para que requisições inválidas também consumam o limite. Excesso retorna `429 {"detail":{"code":"rate_limited"}}` com `Retry-After`.
+- **Concorrência:** a linha é bloqueada com `FOR UPDATE`; criação concorrente da mesma janela é resolvida pelo índice único e tratada com savepoint. Teste PostgreSQL com 10 requisições concorrentes e limite 5 confirmou exatamente 5 permitidas e 5 bloqueadas.
+- **Testes:** `test_ratelimit.py` (6), dois casos novos em `test_results_api.py` (429 com `Retry-After` e tentativa inválida consumindo o limite) e novo caso em `test_results_postgres.py` (concorrência). Sem PostgreSQL: **217 passed, 21 skipped**. Com `JOGA_TEST_DATABASE_URL`: **238 passed, 0 skips**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Migração:** aplicada, revertida (`f2b5d8e1a7c3 -> e1a4c7d9b230`) e reaplicada no PostgreSQL local; `alembic check` sem divergências.
+- **Pendente:** retenção dos contadores de rate limit, além da retenção já pendente de relatos, confirmações, evidências e decisões. Nenhum commit/push executado.
+
+### 2026-11-06 — Retenção provisória dos dados de resultado
+
+- **ADR:** `docs/ADR/0024-retencao-provisoria-resultados.md`, aprovado provisoriamente para desenvolvimento/piloto e sujeito à revisão LGPD das Fases 10/19.
+- **Prazos:** contadores de rate limit 24 h; evidências 365 dias após o encerramento da disputa; relatos, confirmações, decisões, revisões e análises 730 dias após o encerramento da partida. `matches` e `match_result_rounds` são mantidos.
+- **Implementação:** `backend/app/modules/results/cleanup.py` e `backend/scripts/cleanup_results.py`, com `--dry-run` e prazos configuráveis. Só remove partidas `FINALIZED`/`VOIDED` e revisões `RESOLVED`/`CANCELLED`; partidas em andamento ou com revisão pendente são preservadas.
+- **Testes:** `test_results_cleanup.py` (7), cobrindo partida finalizada antiga, partida recente, partida anulada, partida ativa, prazos separados, contadores e prazo negativo. Sem PostgreSQL: **224 passed, 21 skipped**. Com `JOGA_TEST_DATABASE_URL`: **245 passed, 0 skips**. `ruff`, `ruff format`, `mypy` e `alembic check` passam.
+- **Limite:** a limpeza é manual, sem agendador; a política definitiva será revista na fase de LGPD. Nenhum commit/push executado.

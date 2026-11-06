@@ -85,11 +85,17 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 7 — Resultados e disputas
 
-**Escopo:** relatórios autorizados, evidências privadas, divergências, disputa e decisão registrada. Inclui o desempate de resultado exatamente em 50%: segunda confirmação com histórico preservado e, persistindo o empate, análise interna de confiabilidade avaliada relato a relato (sem média de grupo, com capitães como sinal sem peso automático), revisão humana quando inseguro, anulação como último recurso e MMR congelado durante todo o processo (conceito §9.4; ADR 0008).
+**Status:** implementada no backend e validada com PostgreSQL 16/PostGIS local em 2026-11-06, sem MMR, sem telas e sem painel; pendente de revisão e commit.
 
-**Não fazer:** aplicar MMR antes de resultado final; majority vote como antifraude universal; sobrescrever relatos antigos; tornar visível aos participantes a análise interna de confiabilidade.
+**Escopo:** relatos autorizados com três resultados possíveis (equipe A, equipe B ou empate esportivo quando o formato permitir), janela de 10 minutos controlada pelo backend, quórum `ceil(elegíveis/2)`, resultado por maioria simples, evidência textual privada de até 2.000 caracteres, divergências, segunda rodada de 5 minutos em empate na primeira posição ou divergência exata de 50%, análise interna, revisão humana por CLI/script auditável e decisão registrada. Inclui o desempate de resultado exatamente em 50%: segunda confirmação com histórico preservado e, persistindo o empate, análise interna avaliada relato a relato (sem média de grupo, com capitães como sinal sem peso automático), revisão humana quando inseguro, anulação como último recurso e MMR congelado durante todo o processo (conceito §9.4; ADRs 0008 e 0023).
 
-**Aceite:** resultados conflitantes entram em disputa; partida disputada não altera rating; evidências têm limites de formato/tamanho/acesso; decisão é auditável.
+**Decisões já aprovadas:** não existe tolerância separada de “1–2 votos”; a regra é o limite de 50% sobre votos válidos — abaixo de 50% finaliza, exatamente 50% abre segunda rodada, acima de 50% abre disputa. Votos ausentes ou anulados não entram no denominador. A segunda rodada apresenta todas as alternativas permitidas pelo formato e não há terceira rodada. O capitão da Fase 7 é provisório: maior número de partidas válidas concluídas (`FINALIZED`) do mesmo formato, anteriores à partida atual, e, em empate, UUID; sem critério de nível; seleção na formação e não retroativa. Evidência é apenas textual, privada, com limite de 2.000 caracteres e uma por participante por disputa. A fase é backend-only e não implementa nem atualiza MMR. A CLI exige operador autorizado e motivo.
+
+**Não fazer:** aplicar MMR antes de resultado final; majority vote como antifraude universal; sobrescrever relatos antigos; tornar visível aos participantes a análise interna de confiabilidade; criar telas mobile; implementar upload de arquivos; criar painel administrativo completo; alterar capitães ou resultados históricos.
+
+**Aceite:** resultados conflitantes entram em disputa; partida disputada não altera rating; evidências têm limites de formato/tamanho/acesso; decisão é auditável; três resultados são tratados corretamente; quórum e votos ausentes/anulados são respeitados; segunda rodada tem prazo próprio e alternativas definidas; capitão provisório é determinístico e registrado; contrato HTTP e códigos de erro implementados conforme o plano.
+
+**Pontos abertos após a implementação:** revisar a retenção provisória do ADR 0024 na fase de LGPD; configurar a lista de operadores autorizados da CLI (`JOGA_REVIEW_OPERATORS`). Ver ADR 0023, ADR 0024 e `harness/build/phase-07-resultados-e-disputas.md`.
 
 ## Fase 8 — Sistema competitivo
 
