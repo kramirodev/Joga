@@ -145,6 +145,56 @@ export type RankingPage = {
   entries: RankingEntry[];
 };
 
+export type MatchParticipant = {
+  user_id: string;
+  display_name: string | null;
+  team: number;
+  level: string;
+  status: string;
+  is_substitute: boolean;
+  confirmed_at: string | null;
+  checked_in_at: string | null;
+};
+
+export type MatchSummary = {
+  id: string;
+  lobby_id: string;
+  state: string;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  confirmation_deadline: string;
+  check_in_opens_at: string;
+  check_in_deadline: string;
+  substitution_deadline: string;
+  cancelled_reason: string | null;
+  my_status: string;
+  participants: MatchParticipant[] | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  lobby_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+};
+
+export type Friend = {
+  user_id: string;
+  display_name: string | null;
+};
+
+export type LobbyInvite = {
+  id: string;
+  lobby_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  responded_at: string | null;
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -399,6 +449,114 @@ export const ratingsApi = {
     return call<RankingPage>(
       `/rankings?format_id=${encodeURIComponent(formatId)}&limit=${limit}&offset=${offset}`,
       {},
+      accessToken,
+    );
+  },
+};
+
+export const matchesApi = {
+  list(accessToken: string): Promise<{ matches: MatchSummary[] }> {
+    return call<{ matches: MatchSummary[] }>('/matches', {}, accessToken);
+  },
+
+  get(accessToken: string, matchId: string): Promise<MatchSummary> {
+    return call<MatchSummary>(`/matches/${encodeURIComponent(matchId)}`, {}, accessToken);
+  },
+};
+
+export const chatApi = {
+  list(
+    accessToken: string,
+    lobbyId: string,
+    before?: string,
+  ): Promise<{ messages: ChatMessage[] }> {
+    const query = before ? `?before=${encodeURIComponent(before)}` : '';
+    return call<{ messages: ChatMessage[] }>(
+      `/lobbies/${encodeURIComponent(lobbyId)}/messages${query}`,
+      {},
+      accessToken,
+    );
+  },
+
+  send(
+    accessToken: string,
+    lobbyId: string,
+    body: string,
+    idempotencyKey: string,
+  ): Promise<ChatMessage> {
+    return call<ChatMessage>(
+      `/lobbies/${encodeURIComponent(lobbyId)}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ body }),
+      },
+      accessToken,
+    );
+  },
+};
+
+export const socialApi = {
+  friends(accessToken: string): Promise<{ friends: Friend[] }> {
+    return call<{ friends: Friend[] }>('/friends', {}, accessToken);
+  },
+
+  requestFriend(accessToken: string, userId: string): Promise<{ id: string; status: string }> {
+    return call<{ id: string; status: string }>(
+      '/friends/requests',
+      { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+      accessToken,
+    );
+  },
+
+  acceptFriend(accessToken: string, requestId: string): Promise<{ id: string; status: string }> {
+    return call<{ id: string; status: string }>(
+      `/friends/requests/${encodeURIComponent(requestId)}/accept`,
+      { method: 'POST' },
+      accessToken,
+    );
+  },
+
+  removeFriend(accessToken: string, userId: string): Promise<void> {
+    return call<void>(`/friends/${encodeURIComponent(userId)}`, { method: 'DELETE' }, accessToken);
+  },
+
+  block(accessToken: string, userId: string): Promise<{ status: string }> {
+    return call<{ status: string }>(
+      '/blocks',
+      { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+      accessToken,
+    );
+  },
+
+  unblock(accessToken: string, userId: string): Promise<void> {
+    return call<void>(`/blocks/${encodeURIComponent(userId)}`, { method: 'DELETE' }, accessToken);
+  },
+
+  invites(accessToken: string): Promise<{ invites: LobbyInvite[] }> {
+    return call<{ invites: LobbyInvite[] }>('/lobby-invites', {}, accessToken);
+  },
+
+  inviteToLobby(accessToken: string, lobbyId: string, userId: string): Promise<LobbyInvite> {
+    return call<LobbyInvite>(
+      `/lobbies/${encodeURIComponent(lobbyId)}/invites`,
+      { method: 'POST', body: JSON.stringify({ user_id: userId }) },
+      accessToken,
+    );
+  },
+
+  acceptInvite(accessToken: string, inviteId: string): Promise<LobbyInvite> {
+    return call<LobbyInvite>(
+      `/lobby-invites/${encodeURIComponent(inviteId)}/accept`,
+      { method: 'POST' },
+      accessToken,
+    );
+  },
+
+  declineInvite(accessToken: string, inviteId: string): Promise<LobbyInvite> {
+    return call<LobbyInvite>(
+      `/lobby-invites/${encodeURIComponent(inviteId)}/decline`,
+      { method: 'POST' },
       accessToken,
     );
   },
