@@ -21,7 +21,6 @@ from app.modules.matchmaking.service import (
     InvalidFormat,
     InvalidMode,
     MatchmakingService,
-    RankedUnavailable,
     RegionRequired,
     SportProfileRequired,
 )
@@ -118,7 +117,7 @@ def enqueue(
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[MatchmakingService, Depends(get_matchmaking_service)],
 ) -> QueueEntryResponse:
-    """Entra na fila casual do formato escolhido."""
+    """Entra na fila casual ou ranqueada do formato escolhido."""
     try:
         entry = service.enqueue(
             current.user_id,
@@ -127,8 +126,6 @@ def enqueue(
             mode=payload.mode,
         )
         session.commit()
-    except RankedUnavailable:
-        raise _error(status.HTTP_400_BAD_REQUEST, "ranked_not_available") from None
     except InvalidMode:
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_mode") from None
     except InvalidFormat:

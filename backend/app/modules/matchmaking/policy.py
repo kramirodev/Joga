@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from itertools import combinations
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LEVEL_VALUES = {"beginner": 1, "intermediate": 2, "advanced": 3}
@@ -98,6 +99,89 @@ def balance_teams(candidates: Sequence[Candidate]) -> dict[uuid.UUID, int]:
         assignment[candidate.user_id] = team
         totals[team] += level_value(candidate.level)
     return assignment
+
+
+class RatingBalanceError(ValueError):
+    """Não há composição de equipes dentro da dispersão máxima."""
+
+
+def balance_teams_by_rating(
+    ratings: Sequence[tuple[uuid.UUID, float]],
+    *,
+    team_size: int,
+    max_span: float | None = None,
+) -> dict[uuid.UUID, int]:
+    """Divide em duas equipes minimizando diferença de média e dispersão (`mmr_v1`).
+
+    Para grupos pequenos, testa todas as combinações. Acima de 16 jogadores, usa
+    um guloso determinístico. ``max_span`` rejeita composições em que a diferença
+    entre o maior e o menor MMR de uma equipe ultrapasse o limite.
+    """
+    if team_size <= 0:
+        raise ValueError("team_size deve ser positivo")
+    if len(ratings) != team_size * 2:
+        raise ValueError("quantidade de ratings incompatível com o tamanho das equipes")
+    if len({user_id for user_id, _ in ratings}) != len(ratings):
+        raise ValueError("usuários duplicados no balanceamento")
+
+    ordered = sorted(ratings, key=lambda item: (-item[1], str(item[0])))
+    if len(ordered) > 16:
+        assignment = _greedy_rating_balance(ordered)
+        _ensure_span(ordered, assignment, max_span)
+        return assignment
+
+    best_cost: tuple[float, tuple[str, ...]] | None = None
+    best_team_1: tuple[int, ...] | None = None
+    indexes = range(len(ordered))
+    for team_1_indexes in combinations(indexes, team_size):
+        team_1_set = set(team_1_indexes)
+        team_1_values = [ordered[index][1] for index in team_1_indexes]
+        team_2_values = [ordered[index][1] for index in indexes if index not in team_1_set]
+        team_span = max(
+            max(team_1_values) - min(team_1_values),
+            max(team_2_values) - min(team_2_values),
+        )
+        if max_span is not None and team_span > max_span:
+            continue
+        average_difference = abs(sum(team_1_values) - sum(team_2_values)) / team_size
+        dispersion = (
+            (max(team_1_values) - min(team_1_values)) + (max(team_2_values) - min(team_2_values))
+        ) / 2
+        tie_break = tuple(sorted(str(ordered[index][0]) for index in team_1_indexes))
+        cost = (average_difference + (dispersion * 0.5), tie_break)
+        if best_cost is None or cost < best_cost:
+            best_cost = cost
+            best_team_1 = team_1_indexes
+
+    if best_team_1 is None:
+        raise RatingBalanceError("sem composição de equipes dentro da dispersão máxima")
+    selected = set(best_team_1)
+    return {user_id: (1 if index in selected else 2) for index, (user_id, _) in enumerate(ordered)}
+
+
+def _greedy_rating_balance(
+    ordered: Sequence[tuple[uuid.UUID, float]],
+) -> dict[uuid.UUID, int]:
+    totals = {1: 0.0, 2: 0.0}
+    assignment: dict[uuid.UUID, int] = {}
+    for user_id, rating in ordered:
+        team = 1 if totals[1] <= totals[2] else 2
+        assignment[user_id] = team
+        totals[team] += rating
+    return assignment
+
+
+def _ensure_span(
+    ordered: Sequence[tuple[uuid.UUID, float]],
+    assignment: dict[uuid.UUID, int],
+    max_span: float | None,
+) -> None:
+    if max_span is None:
+        return
+    for team in (1, 2):
+        values = [rating for user_id, rating in ordered if assignment[user_id] == team]
+        if max(values) - min(values) > max_span:
+            raise RatingBalanceError("sem composição de equipes dentro da dispersão máxima")
 
 
 def _zone(name: str) -> ZoneInfo:

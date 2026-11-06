@@ -152,7 +152,7 @@ def test_enqueue_requires_sport_profile(api: TestClient, db_session: Session) ->
     assert response.json() == {"detail": {"code": "sport_profile_required"}}
 
 
-def test_enqueue_rejects_ranked(api: TestClient, db_session: Session) -> None:
+def test_enqueue_accepts_ranked(api: TestClient, db_session: Session) -> None:
     user_id, token = make_user_with_tokens(db_session)
     sport_format = seed_format(db_session)
     give_region(db_session, user_id)
@@ -164,8 +164,8 @@ def test_enqueue_rejects_ranked(api: TestClient, db_session: Session) -> None:
         json={"format_id": str(sport_format.id), "mode": "ranked"},
     )
 
-    assert response.status_code == 400
-    assert response.json() == {"detail": {"code": "ranked_not_available"}}
+    assert response.status_code == 201
+    assert response.json()["mode"] == "ranked"
 
 
 def test_enqueue_rejects_unknown_format(api: TestClient, db_session: Session) -> None:

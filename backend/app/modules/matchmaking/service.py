@@ -20,13 +20,19 @@ from app.modules.matchmaking.policy import (
     AvailabilityWindow,
     Candidate,
     MeetingRegion,
+    RatingBalanceError,
     RegionPoint,
     balance_teams,
+    balance_teams_by_rating,
     court_intersection,
     meeting_region,
     select_start,
 )
 from app.modules.profile.models import Availability, SportFormat, UserRegion, UserSportProfile
+from app.modules.ratings.models import RatingAccount
+
+MMR_ALGORITHM_VERSION = "mmr_v1"
+MAX_RANKED_TEAM_SPAN = 800.0
 
 
 class QueueError(Exception):
@@ -35,10 +41,6 @@ class QueueError(Exception):
 
 class InvalidMode(QueueError):
     """Modo de partida desconhecido."""
-
-
-class RankedUnavailable(QueueError):
-    """Ranqueada ainda não habilitada."""
 
 
 class InvalidFormat(QueueError):
@@ -106,9 +108,7 @@ class MatchmakingService:
         mode: str = "casual",
         now: datetime | None = None,
     ) -> QueueEntry:
-        if mode == "ranked":
-            raise RankedUnavailable("partida ranqueada ainda não disponível")
-        if mode != "casual":
+        if mode not in ("casual", "ranked"):
             raise InvalidMode("modo de partida inválido")
 
         sport_format = self._session.get(SportFormat, format_id)
@@ -231,8 +231,23 @@ class MatchmakingService:
             sport_format = self._session.get(SportFormat, format_id)
             if sport_format is None or not sport_format.active:
                 continue
-            formed += self._form_group(sport_format, mode, entries, now)
+            ratings = self._ratings_for_format(format_id) if mode == "ranked" else None
+            formed += self._form_group(
+                sport_format,
+                mode,
+                entries,
+                now,
+                ratings=ratings,
+            )
         return formed
+
+    def _ratings_for_format(self, format_id: uuid.UUID) -> dict[uuid.UUID, float]:
+        rows = self._session.execute(
+            select(RatingAccount.user_id, RatingAccount.rating).where(
+                RatingAccount.format_id == format_id
+            )
+        )
+        return {user_id: rating for user_id, rating in rows}
 
     def _lock_waiting(self, now: datetime) -> list[QueueEntry]:
         statement = (
@@ -250,6 +265,8 @@ class MatchmakingService:
         mode: str,
         entries: Sequence[QueueEntry],
         now: datetime,
+        *,
+        ratings: dict[uuid.UUID, float] | None = None,
     ) -> int:
         needed = sport_format.total_participants
         if needed < 2:
@@ -261,7 +278,18 @@ class MatchmakingService:
             base = pending[0]
             selected = [base]
             formation: Formation | None = None
-            for candidate in pending[1:]:
+            candidates = pending[1:]
+            if mode == "ranked" and ratings is not None:
+                anchor_rating = ratings.get(base.user_id, 1500.0)
+                candidates = sorted(
+                    candidates,
+                    key=lambda entry: (
+                        abs(ratings.get(entry.user_id, 1500.0) - anchor_rating),
+                        entry.created_at,
+                        str(entry.id),
+                    ),
+                )
+            for candidate in candidates:
                 if len(selected) == needed:
                     break
                 trial = [*selected, candidate]
@@ -273,7 +301,28 @@ class MatchmakingService:
                 # A entrada mais antiga não fecha grupo; tenta a próxima sem bloqueá-la.
                 pending = pending[1:]
                 continue
-            self._create_lobby(sport_format, mode, selected, formation, now)
+
+            teams = None
+            if mode == "ranked" and ratings is not None:
+                try:
+                    teams = balance_teams_by_rating(
+                        [(entry.user_id, ratings.get(entry.user_id, 1500.0)) for entry in selected],
+                        team_size=needed // 2,
+                        max_span=MAX_RANKED_TEAM_SPAN,
+                    )
+                except RatingBalanceError:
+                    pending = pending[1:]
+                    continue
+
+            self._create_lobby(
+                sport_format,
+                mode,
+                selected,
+                formation,
+                now,
+                ratings=ratings,
+                teams=teams,
+            )
             formed += 1
             pending = [entry for entry in pending if entry not in selected]
         return formed
@@ -335,7 +384,11 @@ class MatchmakingService:
         entries: Sequence[QueueEntry],
         formation: Formation,
         now: datetime,
+        *,
+        ratings: dict[uuid.UUID, float] | None = None,
+        teams: dict[uuid.UUID, int] | None = None,
     ) -> Lobby:
+        algorithm_version = MMR_ALGORITHM_VERSION if mode == "ranked" else self._algorithm
         lobby = Lobby(
             format_id=sport_format.id,
             format_version=sport_format.version,
@@ -349,21 +402,35 @@ class MatchmakingService:
             center_lat=formation.region.lat,
             center_lng=formation.region.lng,
             radius_km=formation.region.radius_km,
-            algorithm_version=self._algorithm,
+            algorithm_version=algorithm_version,
         )
         self._session.add(lobby)
         self._session.flush()
 
-        teams = balance_teams(
-            [
-                Candidate(
-                    user_id=entry.user_id,
-                    level=entry.level,
-                    region=RegionPoint(entry.center_lat, entry.center_lng, entry.radius_km),
+        if teams is None:
+            if mode == "ranked":
+                teams = balance_teams_by_rating(
+                    [
+                        (
+                            entry.user_id,
+                            (ratings or {}).get(entry.user_id, 1500.0),
+                        )
+                        for entry in entries
+                    ],
+                    team_size=sport_format.total_participants // 2,
+                    max_span=MAX_RANKED_TEAM_SPAN,
                 )
-                for entry in entries
-            ]
-        )
+            else:
+                teams = balance_teams(
+                    [
+                        Candidate(
+                            user_id=entry.user_id,
+                            level=entry.level,
+                            region=RegionPoint(entry.center_lat, entry.center_lng, entry.radius_km),
+                        )
+                        for entry in entries
+                    ]
+                )
         participants: list[LobbyParticipant] = []
         for entry in entries:
             participant = LobbyParticipant(

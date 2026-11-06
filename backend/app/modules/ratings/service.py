@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,10 +15,12 @@ from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.matches.models import Match, MatchParticipant
 from app.modules.matches.service import MatchNotFound
 from app.modules.matchmaking.models import Lobby
+from app.modules.profile.models import UserProfile
 from app.modules.ratings.engine import (
     DEFAULT_RATING,
     DEFAULT_RATING_DEVIATION,
     DEFAULT_VOLATILITY,
+    PLACEMENT_MATCHES,
     RatingState,
     rate_match,
 )
@@ -237,6 +239,71 @@ class RatingService:
         account.updated_at = moment
         self._session.flush()
         return event
+
+    def account_for(
+        self,
+        user_id: uuid.UUID,
+        format_id: uuid.UUID,
+    ) -> RatingAccount | None:
+        return self._session.scalar(
+            select(RatingAccount).where(
+                RatingAccount.user_id == user_id,
+                RatingAccount.format_id == format_id,
+            )
+        )
+
+    def position_for(self, account: RatingAccount) -> int | None:
+        """Posição no ranking, considerando apenas contas já colocadas."""
+        if account.matches_played < PLACEMENT_MATCHES:
+            return None
+        higher = self._session.scalar(
+            select(func.count())
+            .select_from(RatingAccount)
+            .where(
+                RatingAccount.format_id == account.format_id,
+                RatingAccount.matches_played >= PLACEMENT_MATCHES,
+                or_(
+                    RatingAccount.rating > account.rating,
+                    and_(
+                        RatingAccount.rating == account.rating,
+                        RatingAccount.user_id < account.user_id,
+                    ),
+                ),
+            )
+        )
+        return int(higher or 0) + 1
+
+    def leaderboard(
+        self,
+        format_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[RatingAccount, str | None]], int]:
+        """Top de contas colocadas, com nome de exibição."""
+        if limit <= 0 or offset < 0:
+            raise ValueError("paginação inválida")
+        filters = (
+            RatingAccount.format_id == format_id,
+            RatingAccount.matches_played >= PLACEMENT_MATCHES,
+        )
+        total = int(
+            self._session.scalar(select(func.count()).select_from(RatingAccount).where(*filters))
+            or 0
+        )
+        rows = self._session.execute(
+            select(RatingAccount, UserProfile.display_name)
+            .outerjoin(UserProfile, UserProfile.user_id == RatingAccount.user_id)
+            .where(*filters)
+            .order_by(
+                RatingAccount.rating.desc(),
+                RatingAccount.matches_played.desc(),
+                RatingAccount.user_id,
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return [(account, display_name) for account, display_name in rows], total
 
     def _account_for(
         self,

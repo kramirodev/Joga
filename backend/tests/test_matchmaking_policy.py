@@ -207,3 +207,67 @@ def test_select_start_finds_next_week_window() -> None:
     )
 
     assert start == datetime(2026, 11, 5, 21, 0, tzinfo=UTC)
+
+
+def test_balance_teams_by_rating_minimizes_average_and_spread() -> None:
+    from app.modules.matchmaking.policy import balance_teams_by_rating
+
+    ratings = [
+        (uuid.UUID(int=index), rating)
+        for index, rating in enumerate(
+            [1600, 1550, 1500, 1450, 1400, 1350, 1300, 1250, 1200, 1150],
+            start=1,
+        )
+    ]
+
+    assignment = balance_teams_by_rating(ratings, team_size=5)
+
+    team_1 = [rating for user_id, rating in ratings if assignment[user_id] == 1]
+    team_2 = [rating for user_id, rating in ratings if assignment[user_id] == 2]
+    assert len(team_1) == 5
+    assert len(team_2) == 5
+    assert abs(sum(team_1) - sum(team_2)) <= 50
+    assert max(team_1) - min(team_1) <= 450
+
+
+def test_balance_teams_by_rating_is_deterministic() -> None:
+    from app.modules.matchmaking.policy import balance_teams_by_rating
+
+    ratings = [(uuid.UUID(int=index), 1500 + index * 10) for index in range(1, 11)]
+
+    first = balance_teams_by_rating(ratings, team_size=5)
+    second = balance_teams_by_rating(list(reversed(ratings)), team_size=5)
+
+    assert first == second
+
+
+def test_balance_teams_by_rating_rejects_invalid_input() -> None:
+    from app.modules.matchmaking.policy import balance_teams_by_rating
+
+    with pytest.raises(ValueError):
+        balance_teams_by_rating([(uuid.uuid4(), 1500)], team_size=2)
+    with pytest.raises(ValueError):
+        balance_teams_by_rating(
+            [(uuid.UUID(int=1), 1500), (uuid.UUID(int=1), 1500)],
+            team_size=1,
+        )
+
+
+def test_balance_teams_by_rating_works_above_combination_limit() -> None:
+    from app.modules.matchmaking.policy import balance_teams_by_rating
+
+    ratings = [(uuid.UUID(int=index), 1500.0) for index in range(1, 19)]
+
+    assignment = balance_teams_by_rating(ratings, team_size=9)
+
+    assert set(assignment.values()) == {1, 2}
+    assert sum(1 for team in assignment.values() if team == 1) == 9
+
+
+def test_balance_teams_by_rating_respects_max_span() -> None:
+    from app.modules.matchmaking.policy import RatingBalanceError, balance_teams_by_rating
+
+    ratings = [(uuid.UUID(int=index), 3000.0 if index == 1 else 1000.0) for index in range(1, 11)]
+
+    with pytest.raises(RatingBalanceError):
+        balance_teams_by_rating(ratings, team_size=5, max_span=500)
