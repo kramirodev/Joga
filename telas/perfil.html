@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JOGA - Perfil Minimalista</title>
+    <!-- Google Fonts: Inter & Oswald -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-canvas: #FAFAFA;
+            --text-main: #111111;
+            --text-muted: #707072;
+            --text-light: #A0A0A5;
+            --border-light: #E5E5E5;
+            
+            --font-head: 'Oswald', -apple-system, sans-serif;
+            --font-body: 'Inter', -apple-system, sans-serif;
+            --radius-sm: 8px;
+            --radius-md: 14px;
+            --radius-lg: 20px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-canvas);
+            color: var(--text-main);
+            font-family: var(--font-body);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            padding-bottom: 95px; /* Espaço para a Bottom Bar */
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 440px;
+            padding: 24px 20px 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        /* TITULOS DE SEÇÃO */
+        .section-label {
+            font-family: var(--font-head);
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 1. HEADER DO PERFIL */
+        .profile-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding-top: 12px;
+        }
+
+        .avatar-wrapper {
+            position: relative;
+            width: 96px;
+            height: 96px;
+            margin-bottom: 14px;
+        }
+
+        .avatar-box {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #111 0%, #333 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+            overflow: hidden;
+            border: 2px solid #FFF;
+        }
+
+        .avatar-box svg {
+            width: 70px;
+            height: 70px;
+        }
+
+        /* ELO EM FIGURINHA / INSÍGNIA */
+        .elo-mini-sticker {
+            position: absolute;
+            bottom: -4px;
+            right: -4px;
+            background: #111;
+            padding: 4px;
+            border-radius: 50%;
+            border: 2px solid #FFF;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .elo-mini-sticker svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .user-name {
+            font-family: var(--font-head);
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            line-height: 1.1;
+            text-transform: uppercase;
+        }
+
+        .user-tag {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        /* 2. INFORMAÇÕES DE CLÃ */
+        .clan-strip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-light);
+            background: #FFF;
+        }
+
+        .clan-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .clan-flag {
+            width: 22px;
+            height: 28px;
+            background: var(--text-main);
+            clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+            border-radius: 2px;
+        }
+
+        .clan-meta {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .clan-name {
+            font-family: var(--font-head);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .clan-role {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .clan-trophy {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-head);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* 3. SELETOR DE ESPORTE */
+        .sport-selector {
+            display: flex;
+            gap: 20px;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .sport-selector::-webkit-scrollbar { display: none; }
+
+        .sport-tab {
+            font-family: var(--font-head);
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: none;
+            border: none;
+            padding-bottom: 8px;
+            cursor: pointer;
+            white-space: nowrap;
+            position: relative;
+            transition: color 0.2s ease;
+        }
+
+        .sport-tab.active {
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        .sport-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--text-main);
+            border-radius: 2px;
+        }
+
+        /* 4. PREFERÊNCIA DE QUADRA */
+        .court-preference-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chips-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chip-btn {
+            flex: 1;
+            padding: 10px 0;
+            background: transparent;
+            border: 1px solid var(--border-light);
+            color: var(--text-muted);
+            font-family: var(--font-body);
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+            border-radius: var(--radius-sm);
+        }
+
+        .chip-btn.active {
+            border-color: var(--text-main);
+            color: var(--text-main);
+            font-weight: 700;
+            background: #F0F0F0;
+        }
+
+        /* 5. ELO EM FIGURINHA E MÉTRICAS */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 84px 1fr;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .elo-sticker-badge {
+            width: 84px;
+            height: 84px;
+            border: 1.5px solid var(--text-main);
+            border-radius: var(--radius-md);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #FFF;
+            gap: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+
+        .elo-sticker-icon {
+            width: 36px;
+            height: 36px;
+        }
+
+        .elo-title {
+            font-family: var(--font-head);
+            font-size: 0.65rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .metrics-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px dashed var(--border-light);
+            padding-bottom: 4px;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-family: var(--font-head);
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        /* 6. MEDALHAS / CONQUISTAS */
+        .medals-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 16px;
+        }
+
+        .total-collection-link {
+            font-size: 0.75rem;
+            color: var(--text-main);
+            text-decoration: underline;
+            text-underline-offset: 4px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .medals-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+
+        .medal-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .medal-icon-box {
+            width: 100%;
+            aspect-ratio: 1;
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #FFF;
+            transition: border-color 0.2s;
+        }
+
+        .medal-item:hover .medal-icon-box {
+            border-color: var(--text-main);
+        }
+
+        .medal-icon-box svg {
+            width: 28px;
+            height: 28px;
+            opacity: 0.7;
+        }
+
+        .medal-name {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-align: center;
+        }
+
+        /* 7. SELEÇÃO DE HORÁRIOS POR DIA DA SEMANA */
+        .schedule-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .day-tabs-bar {
+            display: flex;
+            justify-content: space-between;
+            gap: 4px;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 8px;
+        }
+
+        .day-tab-btn {
+            flex: 1;
+            padding: 8px 0;
+            border: none;
+            background: transparent;
+            font-family: var(--font-head);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all 0.2s;
+        }
+
+        .day-tab-btn.active {
+            background: var(--text-main);
+            color: #FFF;
+            font-weight: 700;
+        }
+
+        .slots-time-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .slots-time-container::-webkit-scrollbar {
+            width: 4px;
+        }
+        .slots-time-container::-webkit-scrollbar-thumb {
+            background: var(--text-light);
+            border-radius: 4px;
+        }
+
+        .time-slot-btn {
+            padding: 8px 0;
+            border: 1px solid var(--border-light);
+            background: #FFF;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-family: monospace;
+            color: var(--text-muted);
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s ease;
+        }
+
+        .time-slot-btn.selected {
+            background: var(--text-main);
+            color: #FFF;
+            border-color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* 8. LISTA DE AMIGOS E ADICIONAR AMIGO */
+        .friends-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .friend-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-md);
+            background: #FFF;
+        }
+
+        .friend-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .friend-avatar-box {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: #F0F0F0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-light);
+            overflow: hidden;
+        }
+
+        .friend-avatar-box svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .friend-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-family: var(--font-head);
+        }
+
+        .friend-tag {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-light);
+        }
+
+        .status-dot.online {
+            background: #00B856;
+        }
+
+        /* ADICIONAR AMIGO */
+        .add-friend-form {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .clean-input {
+            flex: 1;
+            border: 1px solid var(--border-light);
+            background: #FFF;
+            border-radius: var(--radius-sm);
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            color: var(--text-main);
+            outline: none;
+            padding: 10px 14px;
+        }
+
+        .clean-input::placeholder {
+            color: var(--text-light);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-send-invite {
+            background: var(--text-main);
+            color: #FFF;
+            border: none;
+            padding: 10px 18px;
+            border-radius: var(--radius-sm);
+            font-family: var(--font-head);
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-send-invite:hover {
+            opacity: 0.85;
+        }
+
+        /* 9. BARRA DE NAVEGAÇÃO FIXA INFERIOR */
+        .bottom-nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 440px;
+            height: 68px;
+            background-color: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid var(--border-light);
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            align-items: center;
+            z-index: 100;
+            padding: 0 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            text-decoration: none;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            cursor: pointer;
+            height: 100%;
+            transition: color 0.2s ease;
+        }
+
+        .nav-item.active {
+            color: var(--text-main);
+        }
+
+        .nav-icon {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .nav-label {
+            font-family: var(--font-head);
+            font-size: 0.65rem;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        .nav-item.active .nav-label {
+            font-weight: 700;
+        }
+
+        .nav-indicator {
+            width: 4px;
+            height: 4px;
+            background: var(--text-main);
+            border-radius: 50%;
+            margin-top: -2px;
+            opacity: 0;
+        }
+
+        .nav-item.active .nav-indicator {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+
+        <!-- 1. HEADER DO PERFIL (COM AVATAR ILUSTRADO E ELO EM FIGURINHA) -->
+        <header class="profile-header">
+            <div class="avatar-wrapper">
+                <div class="avatar-box">
+                    <!-- Personagenzinho Avatar SVG -->
+                    <svg viewBox="0 0 100 100" fill="none">
+                        <circle cx="50" cy="50" r="45" fill="#E8E8E8"/>
+                        <path d="M30 42C30 30 70 30 70 42V48H30V42Z" fill="#111111"/> <!-- Boné / Cabelo -->
+                        <rect x="25" y="44" width="50" height="6" rx="3" fill="#111111"/> <!-- Aba boné -->
+                        <circle cx="50" cy="52" r="18" fill="#F4C29C"/> <!-- Rosto -->
+                        <circle cx="43" cy="52" r="2.5" fill="#111111"/> <!-- Olho E -->
+                        <circle cx="57" cy="52" r="2.5" fill="#111111"/> <!-- Olho D -->
+                        <path d="M46 58C46 58 48 60 50 60C52 60 54 58 54 58" stroke="#111111" stroke-width="2" stroke-linecap="round"/> <!-- Sorriso -->
+                        <path d="M25 88C25 73 36 67 50 67C64 67 75 73 75 88V100H25V88Z" fill="#333333"/> <!-- Corpo / Camisa -->
+                    </svg>
+                </div>
+                <!-- ELO EM FIGURINHA / STICKER -->
+                <div class="elo-mini-sticker" title="Elo Platina">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2L3 7V12C3 17.5 7 21 12 22C17 21 21 17.5 21 12V7L12 2Z" fill="#CCFF00" stroke="#111111" stroke-width="2"/>
+                        <path d="M12 6L15 11H9L12 6Z" fill="#111111"/>
+                    </svg>
+                </div>
+            </div>
+            <h1 class="user-name">SUSAN</h1>
+            <span class="user-tag">#7732</span>
+        </header>
+
+        <!-- 2. INFORMAÇÕES DE CLÃ -->
+        <section class="clan-strip">
+            <div class="clan-info">
+                <div class="clan-flag"></div>
+                <div class="clan-meta">
+                    <span class="clan-name">ALPHA SQUAD</span>
+                    <span class="clan-role">Capitão de Equipe</span>
+                </div>
+            </div>
+            <div class="clan-trophy">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"></path></svg>
+                <span>1,420 XP</span>
+            </div>
+        </section>
+
+        <!-- 3. SELETOR DE ESPORTE -->
+        <section>
+            <div class="sport-selector">
+                <button class="sport-tab active" onclick="switchSport(this)">Futebol 5x5</button>
+                <button class="sport-tab" onclick="switchSport(this)">Basquete 3x3</button>
+                <button class="sport-tab" onclick="switchSport(this)">Vôlei de Praia</button>
+                <button class="sport-tab" onclick="switchSport(this)">Tênis</button>
+            </div>
+        </section>
+
+        <!-- 4. PREFERÊNCIA DE QUADRA -->
+        <section class="court-preference-section">
+            <div class="section-label">Preferência de Quadra</div>
+            <div class="chips-row">
+                <button class="chip-btn" onclick="selectChip(this)">Tanto faz</button>
+                <button class="chip-btn active" onclick="selectChip(this)">Pública</button>
+                <button class="chip-btn" onclick="selectChip(this)">Privada</button>
+            </div>
+        </section>
+
+        <!-- 5. ELO EM FIGURINHA & MÉTRICAS -->
+        <section class="metrics-grid">
+            <!-- Elo Figurinha -->
+            <div class="elo-sticker-badge">
+                <svg class="elo-sticker-icon" viewBox="0 0 36 36" fill="none">
+                    <path d="M18 3L4 9V17C4 25.5 10 30.5 18 33C26 30.5 32 25.5 32 17V9L18 3Z" fill="#111111"/>
+                    <polygon points="18,8 22,16 30,17 24,23 26,30 18,26 10,30 12,23 6,17 14,16" fill="#CCFF00"/>
+                </svg>
+                <span class="elo-title">PLATINA IV</span>
+            </div>
+
+            <div class="metrics-list">
+                <div class="metric-row">
+                    <span class="metric-label">Reset da Temporada</span>
+                    <span class="metric-value">14d 08h</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Vitórias Totais</span>
+                    <span class="metric-value">128</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Sequência (Streak)</span>
+                    <span class="metric-value">5 WINS</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. COLEÇÃO DE MEDALHAS -->
+        <section>
+            <div class="medals-header">
+                <span class="section-label" style="margin:0;">Medalhas Destaque</span>
+                <span class="total-collection-link">Coleção Total (18)</span>
+            </div>
+            
+            <div class="medals-grid">
+                <div class="medal-item">
+                    <div class="medal-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="6"></circle><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"></path></svg>
+                    </div>
+                    <span class="medal-name">Artilheiro</span>
+                </div>
+                <div class="medal-item">
+                    <div class="medal-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+                    </div>
+                    <span class="medal-name">Imparável</span>
+                </div>
+                <div class="medal-item">
+                    <div class="medal-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    </div>
+                    <span class="medal-name">Muralha</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. GERENCIADOR DE HORÁRIOS POR DIA DA SEMANA (30 MINUTOS) -->
+        <section class="schedule-section">
+            <div class="section-label">Configurar Horários (30 em 30 min)</div>
+            
+            <!-- ABAS DE DIAS DA SEMANA -->
+            <div class="day-tabs-bar">
+                <button class="day-tab-btn active" onclick="selectDayTab(this, 'seg')">SEG</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'ter')">TER</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'qua')">QUA</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'qui')">QUI</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'sex')">SEX</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'sab')">SÁB</button>
+                <button class="day-tab-btn" onclick="selectDayTab(this, 'dom')">DOM</button>
+            </div>
+
+            <!-- GRADE DE SLOTS DO DIA SELECIONADO -->
+            <div class="slots-time-container" id="timeSlotsContainer">
+                <!-- Preenchido via JavaScript -->
+            </div>
+        </section>
+
+        <!-- 8. LISTA DE AMIGOS COM PERSONAGENZINHOS & ADICIONAR AMIGO -->
+        <section>
+            <div class="section-label">Lista de Amigos</div>
+            <div class="friends-list">
+
+                <!-- Amigo 1 -->
+                <div class="friend-row">
+                    <div class="friend-left">
+                        <div class="friend-avatar-box">
+                            <svg viewBox="0 0 100 100" fill="none">
+                                <circle cx="50" cy="50" r="45" fill="#E0E0E0"/>
+                                <circle cx="50" cy="48" r="18" fill="#DDB088"/>
+                                <rect x="30" y="32" width="40" height="14" rx="7" fill="#111"/>
+                                <circle cx="43" cy="48" r="2.5" fill="#111"/>
+                                <circle cx="57" cy="48" r="2.5" fill="#111"/>
+                                <path d="M25 88C25 73 36 67 50 67C64 67 75 73 75 88V100H25V88Z" fill="#0047FF"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="friend-name">MARCUS_RISE</div>
+                            <div class="friend-tag">#1029</div>
+                        </div>
+                    </div>
+                    <div class="status-dot online" title="Online"></div>
+                </div>
+
+                <!-- Amigo 2 -->
+                <div class="friend-row">
+                    <div class="friend-left">
+                        <div class="friend-avatar-box">
+                            <svg viewBox="0 0 100 100" fill="none">
+                                <circle cx="50" cy="50" r="45" fill="#E0E0E0"/>
+                                <circle cx="50" cy="50" r="18" fill="#F0C8A0"/>
+                                <path d="M30 40C30 25 70 25 70 40V50H30V40Z" fill="#FF2E00"/>
+                                <circle cx="43" cy="50" r="2.5" fill="#111"/>
+                                <circle cx="57" cy="50" r="2.5" fill="#111"/>
+                                <path d="M25 88C25 73 36 67 50 67C64 67 75 73 75 88V100H25V88Z" fill="#222"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="friend-name">CARLA_SKILLS</div>
+                            <div class="friend-tag">#4401</div>
+                        </div>
+                    </div>
+                    <div class="status-dot" title="Offline"></div>
+                </div>
+
+            </div>
+
+            <div class="section-label">Adicionar Amigo</div>
+            <form class="add-friend-form" onsubmit="event.preventDefault(); alert('Solicitação enviada!');">
+                <input type="text" class="clean-input" placeholder="NOME #TAG DO JOGADOR" required>
+                <button type="submit" class="btn-send-invite">ENVIAR</button>
+            </form>
+        </section>
+
+    </div>
+
+    <!-- 9. BARRA DE NAVEGAÇÃO SUPERPOSTA INFERIOR (FIXA) -->
+    <nav class="bottom-nav-bar">
+        <!-- Descobrir -->
+        <button class="nav-item" onclick="setActiveNav(this)">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span class="nav-label">Descobrir</span>
+            <div class="nav-indicator"></div>
+        </button>
+
+        <!-- Partidas -->
+        <button class="nav-item" onclick="setActiveNav(this)">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span class="nav-label">Partidas</span>
+            <div class="nav-indicator"></div>
+        </button>
+
+        <!-- Competitivo -->
+        <button class="nav-item" onclick="setActiveNav(this)">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span class="nav-label">Competitivo</span>
+            <div class="nav-indicator"></div>
+        </button>
+
+        <!-- Perfil (Ativo) -->
+        <button class="nav-item active" onclick="setActiveNav(this)">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="nav-label">Perfil</span>
+            <div class="nav-indicator"></div>
+        </button>
+    </nav>
+
+    <script>
+        // GERENCIAMENTO DE DISPONIBILIDADE POR DIA (30 em 30 min)
+        const container = document.getElementById('timeSlotsContainer');
+        let currentDay = 'seg';
+
+        // Armazena horários selecionados por dia
+        const scheduleData = {
+            'seg': ['18:00', '18:30', '19:00', '19:30', '20:00'],
+            'ter': ['08:00', '08:30', '09:00'],
+            'qua': ['19:00', '19:30', '20:00', '20:30'],
+            'qui': [],
+            'sex': ['20:00', '20:30', '21:00', '21:30', '22:00'],
+            'sab': ['14:00', '14:30', '15:00'],
+            'dom': []
+        };
+
+        function renderSlots() {
+            container.innerHTML = '';
+            const activeTimes = scheduleData[currentDay] || [];
+
+            for (let hour = 0; hour < 24; hour++) {
+                for (let min of [0, 30]) {
+                    const hh = String(hour).padStart(2, '0');
+                    const mm = String(min).padStart(2, '0');
+                    const timeStr = `${hh}:${mm}`;
+
+                    const btn = document.createElement('button');
+                    btn.className = 'time-slot-btn';
+                    if (activeTimes.includes(timeStr)) {
+                        btn.classList.add('selected');
+                    }
+                    btn.textContent = timeStr;
+                    btn.onclick = () => toggleSlot(timeStr, btn);
+                    container.appendChild(btn);
+                }
+            }
+        }
+
+        function toggleSlot(timeStr, element) {
+            const list = scheduleData[currentDay];
+            const index = list.indexOf(timeStr);
+            if (index > -1) {
+                list.splice(index, 1);
+                element.classList.remove('selected');
+            } else {
+                list.push(timeStr);
+                element.classList.add('selected');
+            }
+        }
+
+        function selectDayTab(element, day) {
+            document.querySelectorAll('.day-tab-btn').forEach(b => b.classList.remove('active'));
+            element.classList.add('active');
+            currentDay = day;
+            renderSlots();
+        }
+
+        // Inicializar slots do dia padrão (SEG)
+        renderSlots();
+
+        // CONTROLES DE INTERFACE
+        function selectChip(element) {
+            const siblings = element.parentElement.querySelectorAll('.chip-btn');
+            siblings.forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+        }
+
+        function switchSport(element) {
+            const siblings = element.parentElement.querySelectorAll('.sport-tab');
+            siblings.forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+        }
+
+        function setActiveNav(element) {
+            const items = document.querySelectorAll('.nav-item');
+            items.forEach(item => item.classList.remove('active'));
+            element.classList.add('active');
+        }
+    </script>
+</body>
+</html>

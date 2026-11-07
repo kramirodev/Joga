@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JOGA — Protótipo de UI mobile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFAFA; --page:#EFEFEE; --card:#fff;
+    --ink:#111; --muted:#707072; --light:#A0A0A5;
+    --line:#E7E7E7; --line-strong:#D6D6D6;
+    --lime:#CCFF00; --blue:#0047FF; --green:#00A34A; --orange:#FF6A00; --red:#D91F1F;
+    --font-head:'Oswald', Impact, sans-serif;
+    --font-body:'Inter', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--page);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.45;padding:44px 24px 90px}
+  a{color:inherit}
+  button{font-family:inherit}
+  .sprite{position:absolute;width:0;height:0;overflow:hidden}
+  .page{max-width:1300px;margin:0 auto}
+
+  /* ---------- cabeçalho da página ---------- */
+  .page-head{max-width:820px;margin:0 auto 54px;text-align:center}
+  .eyebrow{font-family:var(--font-head);text-transform:uppercase;letter-spacing:2.6px;font-size:10px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:18px}
+  .eyebrow::before,.eyebrow::after{content:"";width:38px;height:1px;background:#CFCFCF}
+  .page-head h1{font-family:var(--font-head);text-transform:uppercase;font-size:clamp(34px,5vw,54px);line-height:.96;letter-spacing:-.5px;margin-bottom:18px}
+  .page-head h1 span{background:var(--lime);padding:0 10px;display:inline-block;transform:rotate(-1.4deg)}
+  .lede{color:#555;font-size:15px;line-height:1.6;max-width:620px;margin:0 auto 26px}
+  .flow{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:center;font-family:var(--font-head);font-size:10px;letter-spacing:1.2px;text-transform:uppercase}
+  .flow b{font-weight:500;border:1px solid #D5D5D5;background:#fff;border-radius:999px;padding:8px 12px}
+  .flow i{color:var(--light);font-style:normal;font-size:11px}
+
+  /* ---------- galeria ---------- */
+  .gallery{display:flex;flex-wrap:wrap;gap:46px 30px;justify-content:center;align-items:flex-start}
+  figure.screen{margin:0;width:375px}
+  figcaption{display:flex;gap:10px;margin-bottom:12px;min-height:44px}
+  .num{font-family:var(--font-head);font-size:11px;letter-spacing:1px;color:var(--light);width:20px;flex:none;padding-top:2px}
+  .cap strong{display:block;font-family:var(--font-head);font-size:13px;letter-spacing:1px;text-transform:uppercase;line-height:1.2}
+  .cap span{display:block;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:3px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.4;max-width:375px}
+  .note b{color:var(--ink)}
+
+  /* ---------- moldura ---------- */
+  .phone{position:relative;width:375px;height:800px;background:var(--bg);border-radius:38px;box-shadow:0 26px 60px -22px rgba(0,0,0,.35),0 0 0 1px rgba(0,0,0,.07);overflow:hidden;display:flex;flex-direction:column}
+  .phone.dark{background:#111;color:#fff}
+  .status{height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-size:11px;font-weight:600;letter-spacing:.2px}
+  .status-icons{display:flex;align-items:center;gap:5px}
+  .status-icons svg{height:11px;width:auto;fill:currentColor}
+  .body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 20px 24px;display:flex;flex-direction:column;gap:14px;scrollbar-width:none}
+  .body::-webkit-scrollbar{display:none}
+  .body>*{flex-shrink:0}
+  .body.center{align-items:center;text-align:center}
+  .body.flush{padding:0 0 24px}
+
+  /* ---------- topo ---------- */
+  .topbar{flex:none;display:flex;align-items:center;gap:12px;padding:6px 20px 14px;min-height:44px}
+  .topbar h2{font-family:var(--font-head);font-size:14px;letter-spacing:1.6px;text-transform:uppercase}
+  .topbar .spacer{flex:1}
+  .icon-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink);flex:none;cursor:pointer}
+  .icon-btn.plain{background:transparent;border-color:transparent}
+  .icon-btn.dark{background:#111;border-color:#111;color:#fff}
+  .ic{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .ic.sm{width:15px;height:15px}
+  .phone.dark .icon-btn{background:transparent;border-color:#333;color:#fff}
+
+  /* ---------- tipografia ---------- */
+  .h1{font-family:var(--font-head);text-transform:uppercase;font-size:30px;line-height:1.02;letter-spacing:-.2px}
+  .h1.xl{font-size:38px}
+  .h2{font-family:var(--font-head);font-size:19px;line-height:1.1;text-transform:uppercase;letter-spacing:.4px}
+  .sub{font-size:13px;color:var(--muted);line-height:1.55}
+  .sub b{color:var(--ink);font-weight:600}
+  .label{font-family:var(--font-head);font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#8A8A8E}
+  .tiny{font-size:11px;line-height:1.45;color:var(--muted)}
+  .phone.dark .sub,.phone.dark .tiny{color:#9C9C9C}
+
+  /* ---------- botões ---------- */
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;border-radius:14px;border:1px solid transparent;background:#111;color:#fff;font-weight:600;font-size:14px;letter-spacing:.2px;cursor:pointer;transition:transform .12s,opacity .12s}
+  .btn:active{transform:scale(.985)}
+  .btn-primary{background:var(--lime);color:var(--ink)}
+  .btn-dark{background:#111;color:#fff}
+  .btn-ghost{background:transparent;border-color:var(--line-strong);color:var(--ink)}
+  .btn-link{display:inline-flex;background:none;border:0;color:var(--ink);font-weight:600;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+  .btn[disabled],.btn.disabled{opacity:.4;pointer-events:none}
+  .btn-sm{min-height:42px;border-radius:11px;font-size:13px}
+  .phone.dark .btn-ghost{border-color:#3A3A3A;color:#fff}
+  .btn-row{display:flex;gap:10px}
+  .btn-row .btn{flex:1}
+
+  /* ---------- cartões ---------- */
+  .card{background:#fff;border:1px solid #EBEBEB;border-radius:18px;padding:16px}
+  .card.dark{background:#111;border-color:#111;color:#fff}
+  .card.flat{background:#F3F3F1;border-color:transparent}
+  .tint{background:#F4FFC7;border:1px solid #E4F59E;border-radius:14px;padding:12px 14px;font-size:12px;line-height:1.5;color:#33420A;display:flex;gap:9px}
+  .tint.blue{background:#EDF2FF;border-color:#D8E2FF;color:#173A99}
+  .tint.orange{background:#FFF2E8;border-color:#FFE0C7;color:#8A3A00}
+  .row{display:flex;align-items:center;gap:10px}
+  .row.between{justify-content:space-between}
+  .row.top{align-items:flex-start}
+  .grow{flex:1;min-width:0}
+  .divider{height:1px;background:var(--line);margin:2px 0}
+  .card-list{background:#fff;border:1px solid #EBEBEB;border-radius:18px;overflow:hidden}
+  .card-list>*{padding:14px 16px;border-bottom:1px solid #F0F0F0}
+  .card-list>*:last-child{border-bottom:0}
+
+  /* ---------- avatares / badges / chips ---------- */
+  .avatar{width:40px;height:40px;border-radius:50%;background:#E9E9E9;display:grid;place-items:center;font-size:11px;font-weight:700;letter-spacing:.4px;flex:none;position:relative;color:#111}
+  .avatar.lime{background:var(--lime)}
+  .avatar.blue{background:#DDE6FF;color:#0047FF}
+  .avatar.dark{background:#222;color:#fff}
+  .avatar.sm{width:30px;height:30px;font-size:9px}
+  .avatar.lg{width:76px;height:76px;font-size:20px}
+  .avatar .status-dot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--green);border:2px solid #fff}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;background:#F0F0F0;color:#555;white-space:nowrap}
+  .badge.lime{background:#E9FF9E;color:#2A3A00}
+  .badge.dark{background:#111;color:#fff}
+  .badge.blue{background:#E4EBFF;color:#0047FF}
+  .badge.orange{background:#FFEBDC;color:#C24A00}
+  .badge.red{background:#FFE5E5;color:#C00000}
+  .badge.green{background:#DDF7E6;color:#006B2E}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--line-strong);background:#fff;border-radius:999px;padding:9px 14px;font-size:12px;font-weight:600;color:#555;cursor:pointer}
+  .chip.active{background:#111;border-color:#111;color:#fff}
+  .chip.lime{background:var(--lime);border-color:var(--lime);color:#111}
+  .chip[disabled]{opacity:.45;pointer-events:none}
+  .seg{display:flex;background:#EDEDEB;border-radius:12px;padding:3px;gap:3px}
+  .seg button{flex:1;border:0;background:transparent;border-radius:9px;padding:9px 6px;font-weight:600;font-size:12px;color:var(--muted);cursor:pointer}
+  .seg button.active{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+  /* ---------- campos ---------- */
+  .field{border:1px solid var(--line-strong);background:#fff;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px}
+  .field .prefix{font-weight:600;color:var(--muted);border-right:1px solid var(--line);padding-right:10px;font-size:14px}
+  .field input{border:0;outline:0;font:500 16px var(--font-body);width:100%;color:var(--ink);background:transparent;letter-spacing:.4px}
+  .field.focus{border-color:#111;box-shadow:0 0 0 3px rgba(204,255,0,.55)}
+  .field textarea{border:0;outline:0;resize:none;width:100%;font:400 13px/1.5 var(--font-body);color:var(--ink);background:transparent;min-height:96px}
+  .field-note{display:flex;justify-content:space-between;font-size:11px;color:var(--light);margin-top:5px}
+  .otp{display:flex;gap:8px}
+  .otp span{flex:1;aspect-ratio:1/1.12;border:1px solid var(--line-strong);border-radius:12px;display:grid;place-items:center;font:600 22px var(--font-head);background:#fff}
+  .otp span.filled{background:#F4F4F2;border-color:#F4F4F2}
+  .otp span.cursor{border-color:#111;box-shadow:0 0 0 3px rgba(204,255,0,.6)}
+
+  /* ---------- navegação inferior ---------- */
+  .nav{flex:none;height:74px;background:#fff;border-top:1px solid #EBEBEB;display:grid;grid-template-columns:repeat(4,1fr);padding:8px 6px 10px}
+  .nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--light);font-family:var(--font-head);font-size:9px;letter-spacing:1.2px;text-transform:uppercase;text-decoration:none;position:relative}
+  .nav a .ic{width:21px;height:21px}
+  .nav a.active{color:var(--ink)}
+  .nav a i{width:16px;height:2px;border-radius:2px;background:transparent}
+  .nav a.active i{background:var(--lime)}
+</style>
+<style>
+  /* ---------- telas específicas ---------- */
+  .wordmark{font-family:var(--font-head);font-weight:700;font-size:30px;letter-spacing:-1px;line-height:.9}
+  .wordmark b{color:var(--ink);background:var(--lime);padding:0 5px;display:inline-block;transform:rotate(-2deg)}
+  .wordmark small{display:block;font-family:var(--font-body);font-size:9px;font-weight:600;letter-spacing:3.4px;text-transform:uppercase;color:var(--muted);margin-top:6px}
+  .hero{padding:16px 0 4px}
+  .hero-art{position:relative;height:126px;border-radius:18px;background:#111;overflow:hidden;margin-bottom:18px}
+  .hero-art .court{position:absolute;inset:16px;border:1px solid #3A3A3A;border-radius:6px}
+  .hero-art .court::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3A3A3A}
+  .hero-art .court::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;border:1px solid #3A3A3A;border-radius:50%;transform:translate(-50%,-50%)}
+  .hero-art .ball{position:absolute;right:28px;top:26px;width:26px;height:26px;border-radius:50%;background:var(--lime)}
+  .hero-art .future{position:absolute;right:26px;bottom:22px;font-family:var(--font-head);font-size:9px;letter-spacing:1.6px;color:#8B8B8B;text-transform:uppercase}
+  .bullets{display:flex;flex-direction:column;gap:11px}
+  .bullets div{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;line-height:1.45;color:#3F3F41}
+  .bullets .tick{width:18px;height:18px;border-radius:50%;background:var(--lime);display:grid;place-items:center;flex:none;margin-top:1px}
+  .bullets .tick svg{width:11px;height:11px;stroke:#111;stroke-width:2.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .terms{font-size:10.5px;color:var(--light);text-align:center;line-height:1.5}
+  .terms a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+  .checkline{display:flex;gap:9px;align-items:flex-start;font-size:11px;color:var(--muted);line-height:1.45}
+  .checkline .box{width:17px;height:17px;border:1.5px solid #B9B9B9;border-radius:5px;flex:none;display:grid;place-items:center;margin-top:1px}
+  .checkline .box.on{background:#111;border-color:#111}
+  .checkline .box.on svg{width:11px;height:11px;stroke:var(--lime);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .step-line{height:3px;background:#E3E3E1;border-radius:3px;overflow:hidden;flex:1}
+  .step-line i{display:block;height:100%;background:#111}
+  .pick{border:1px solid var(--line-strong);border-radius:16px;padding:14px;background:#fff;display:flex;align-items:center;gap:12px}
+  .pick.on{border-color:#111;box-shadow:0 0 0 1px #111 inset;background:#FBFFEF}
+  .pick.off{opacity:.5}
+  .pick .glyph{width:40px;height:40px;border-radius:12px;background:#F1F1EF;display:grid;place-items:center;font-family:var(--font-head);font-size:13px;flex:none}
+  .pick.on .glyph{background:var(--lime)}
+  .pick strong{display:block;font-size:13px;letter-spacing:.2px}
+  .pick small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+  .pick .radio{margin-left:auto;width:20px;height:20px;border-radius:50%;border:1.5px solid #CFCFCF;flex:none}
+  .pick.on .radio{border:6px solid #111}
+  .time-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+  .time-grid span{border:1px solid var(--line-strong);border-radius:9px;text-align:center;padding:9px 0;font-size:11px;font-weight:600;color:#555;background:#fff}
+  .time-grid span.on{background:#111;border-color:#111;color:#fff}
+  .time-grid span.off{opacity:.4;text-decoration:line-through}
+  .region-opt{display:flex;align-items:center;gap:10px;border:1px solid var(--line-strong);border-radius:12px;padding:12px;background:#fff;font-size:12px;font-weight:600}
+  .region-opt .ic{color:#111}
+  .region-opt small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);margin-top:1px}
+  .greet h1{font-family:var(--font-head);font-size:24px;text-transform:uppercase;line-height:1;letter-spacing:.2px}
+  .greet p{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .match-card{background:#111;color:#fff;border-radius:20px;padding:17px}
+  .match-card .time{font-family:var(--font-head);font-size:34px;line-height:.9;letter-spacing:-.5px}
+  .match-card .meta{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#B9B9B9;margin-top:3px}
+  .match-card .meta .ic{width:13px;height:13px}
+  .match-card .divider{background:#2C2C2C;margin:14px 0}
+  .countdown{display:inline-flex;align-items:center;gap:6px;background:#2A2A2A;border-radius:7px;padding:5px 8px;font-family:var(--font-head);font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--lime)}
+  .countdown .dot{width:5px;height:5px;border-radius:50%;background:var(--lime)}
+  .alert-card{border-left:3px solid var(--orange);background:#FFF7F1;border-radius:14px;padding:13px 14px}
+  .alert-card .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .alert-card strong{font-size:12.5px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .tile{background:#fff;border:1px solid #EBEBEB;border-radius:14px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+  .tile .ic{width:18px;height:18px}
+  .tile span{font-family:var(--font-head);font-size:9px;letter-spacing:1.1px;text-transform:uppercase;color:#444}
+  .mode{border:1px solid var(--line-strong);border-radius:16px;padding:14px;display:flex;gap:12px;align-items:flex-start;background:#fff}
+  .mode.on{border-color:#111;background:#FBFFEF;box-shadow:0 0 0 1px #111 inset}
+  .mode .radio{margin-top:2px;width:19px;height:19px;border-radius:50%;border:1.5px solid #CFCFCF;flex:none}
+  .mode.on .radio{border:6px solid #111}
+  .mode strong{font-size:13px}
+  .mode p{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+  .info-box{display:flex;gap:9px;border:1px dashed #D8D8D8;border-radius:12px;padding:11px 12px;font-size:11.5px;color:var(--muted);line-height:1.45}
+  .info-box .ic{width:15px;height:15px;margin-top:1px;color:#111}
+  .summary{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid #F0F0F0}
+  .summary:last-child{border-bottom:0}
+  .summary .ic{width:17px;height:17px;color:#444;margin-top:1px}
+  .summary strong{display:block;font-size:12px}
+  .summary small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+  .summary .edit{margin-left:auto;font-size:11px;font-weight:600;text-decoration:underline;text-underline-offset:2px;color:#777;white-space:nowrap}
+  .radar{position:relative;width:190px;height:190px;margin:30px auto 8px}
+  .radar .ring{position:absolute;border-radius:50%;border:1px solid #2E2E2E}
+  .radar .r1{inset:0}
+  .radar .r2{inset:32px}
+  .radar .r3{inset:64px}
+  .radar .pulse{position:absolute;inset:0;border-radius:50%;border:2px solid var(--lime);animation:pulse 2.6s ease-out infinite}
+  .radar .pulse.p2{animation-delay:1.3s}
+  .radar .core{position:absolute;inset:76px;border-radius:50%;background:var(--lime);display:grid;place-items:center;color:#111}
+  .radar .core .ic{width:26px;height:26px;stroke-width:2.2}
+  @keyframes pulse{0%{transform:scale(.35);opacity:.9}100%{transform:scale(1);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.radar .pulse{animation:none;opacity:.25}}
+  .elapsed{font-family:var(--font-head);font-size:44px;line-height:1;letter-spacing:1px;color:var(--lime)}
+  .found-check{width:64px;height:64px;border-radius:50%;background:var(--lime);display:grid;place-items:center;margin:8px auto 0}
+  .found-check svg{width:30px;height:30px;stroke:#111;stroke-width:2.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .match-hero h2{font-family:var(--font-head);font-size:30px;line-height:1;text-transform:uppercase}
+  .match-hero .when{font-size:12px;color:var(--muted);margin-top:5px}
+  .chips-row{display:flex;gap:6px;flex-wrap:wrap}
+  .steps{display:flex;flex-direction:column}
+  .step{display:grid;grid-template-columns:22px 1fr auto;gap:10px;padding-bottom:15px;position:relative}
+  .step:last-child{padding-bottom:0}
+  .step:not(:last-child)::before{content:"";position:absolute;left:6px;top:16px;bottom:0;width:1px;background:#E4E4E2}
+  .step .dot{width:13px;height:13px;border-radius:50%;border:1.5px solid #CFCFCF;background:var(--bg);margin-top:2px;z-index:1}
+  .step.done .dot{background:#111;border-color:#111}
+  .step.now .dot{background:var(--lime);border-color:#111}
+  .step strong{display:block;font-size:12px;line-height:1.3}
+  .step small{display:block;font-size:10.5px;color:var(--muted);margin-top:1px}
+  .step .when{font-family:var(--font-head);font-size:10px;letter-spacing:.8px;color:var(--light);padding-top:2px;white-space:nowrap}
+  .team{background:#fff;border:1px solid #EBEBEB;border-radius:16px;padding:12px}
+  .team h4{font-family:var(--font-head);font-size:11px;letter-spacing:1.1px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+  .person{display:flex;align-items:center;gap:7px;padding:4px 0;font-size:11px;min-width:0}
+  .person .avatar{width:26px;height:26px;font-size:8px}
+  .person span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .person .cap-badge{font-family:var(--font-head);font-size:7px;letter-spacing:.7px;background:var(--lime);border-radius:3px;padding:1px 3px;flex:none}
+  .action-bar{flex:none;display:flex;gap:9px;padding:12px 20px 18px;background:#fff;border-top:1px solid #EBEBEB}
+  .action-bar .btn{flex:1}
+  .action-bar .icon-btn{width:52px;height:52px;border-radius:14px;flex:none}
+  .msg{display:flex;flex-direction:column;gap:3px;max-width:84%}
+  .msg .who{font-size:10px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  .msg .who b{color:#333;font-weight:600}
+  .bubble{background:#fff;border:1px solid #EBEBEB;border-radius:4px 14px 14px 14px;padding:9px 12px;font-size:12.5px;line-height:1.45}
+  .msg.mine{align-self:flex-end;align-items:flex-end}
+  .msg.mine .bubble{background:#111;color:#fff;border-color:#111;border-radius:14px 4px 14px 14px}
+  .system{align-self:center;text-align:center;font-size:10.5px;color:var(--muted);background:#F0F0EE;border-radius:999px;padding:6px 12px;max-width:90%;line-height:1.4}
+  .composer{display:flex;gap:8px;align-items:center}
+  .composer .field{flex:1;padding:10px 13px;border-radius:999px}
+  .composer .send{width:44px;height:44px;border-radius:50%;background:var(--lime);border:0;display:grid;place-items:center;flex:none;cursor:pointer}
+  .composer .send svg{width:19px;height:19px;stroke:#111;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .result-opt{border:1px solid var(--line-strong);border-radius:15px;padding:14px;display:flex;align-items:center;gap:12px;background:#fff}
+  .result-opt.on{border-color:#111;background:#FBFFEF;box-shadow:0 0 0 1px #111 inset}
+  .result-opt .score{font-family:var(--font-head);font-size:20px;letter-spacing:1px;margin-left:auto}
+  .result-opt .check{width:20px;height:20px;border-radius:50%;border:1.5px solid #CFCFCF;flex:none}
+  .result-opt.on .check{background:#111;border:5px solid #111;box-shadow:inset 0 0 0 2px var(--lime)}
+  .vote-stack{display:flex;align-items:center}
+  .vote-stack .avatar{width:24px;height:24px;font-size:7px;border:2px solid #fff;margin-left:-7px}
+  .vote-stack .avatar:first-child{margin-left:0}
+  .list-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #EBEBEB;border-radius:16px;padding:14px}
+  .list-card .date{width:42px;flex:none;text-align:center;border-right:1px solid #EEE;padding-right:10px}
+  .list-card .date b{display:block;font-family:var(--font-head);font-size:17px;line-height:1}
+  .list-card .date span{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .list-card h4{font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .list-card p{font-size:10.5px;color:var(--muted);margin-top:2px}
+  .list-card .go{width:30px;height:30px;border-radius:50%;background:#F2F2F0;display:grid;place-items:center;flex:none}
+  .list-card .go .ic{width:14px;height:14px}
+  .history-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #F0F0F0;font-size:11.5px}
+  .history-row:last-child{border-bottom:0}
+  .history-row .res{font-family:var(--font-head);font-size:9px;letter-spacing:1px;padding:3px 6px;border-radius:4px;background:#EEE;flex:none}
+  .history-row .res.win{background:#DFF7E7;color:#006B2E}
+  .history-row .res.loss{background:#FFE5E5;color:#B00000}
+  .history-row .score{font-family:var(--font-head);font-size:12px;letter-spacing:.5px}
+  .history-row .when{margin-left:auto;color:var(--light);font-size:10px;white-space:nowrap}
+  .division{background:#111;color:#fff;border-radius:20px;padding:18px;position:relative;overflow:hidden}
+  .division .shield{width:44px;height:44px;border-radius:12px;background:var(--lime);color:#111;display:grid;place-items:center}
+  .division .shield .ic{width:24px;height:24px}
+  .division h3{font-family:var(--font-head);font-size:27px;letter-spacing:.5px;line-height:1;margin-top:14px}
+  .division .progress{height:6px;border-radius:6px;background:#2E2E2E;margin:14px 0 6px;overflow:hidden}
+  .division .progress i{display:block;height:100%;width:62%;background:var(--lime)}
+  .division .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid #2C2C2C}
+  .division .stats b{display:block;font-family:var(--font-head);font-size:15px;line-height:1}
+  .division .stats span{display:block;font-size:8.5px;letter-spacing:.8px;text-transform:uppercase;color:#8F8F8F;margin-top:4px}
+  .rank-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F2F2F0;font-size:11.5px}
+  .rank-row:last-child{border-bottom:0}
+  .rank-row .pos{width:18px;font-family:var(--font-head);font-size:12px;color:var(--muted);flex:none}
+  .rank-row.me .pos{width:38px;font-size:10px}
+  .rank-row .name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rank-row .div{font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  .rank-row.me{background:#F7FFD9;border-radius:8px;padding:9px 8px;margin:0 -8px;border-bottom:0}
+  .profile-head{text-align:center;padding:4px 0 2px}
+  .profile-head h1{font-family:var(--font-head);font-size:25px;text-transform:uppercase;letter-spacing:.4px;margin-top:10px;line-height:1}
+  .profile-head .tag{font-size:11px;color:var(--muted);margin-top:2px}
+  .profile-head .badges{display:flex;justify-content:center;gap:6px;margin-top:8px}
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border:1px solid #EBEBEB;border-radius:16px;padding:12px 0}
+  .stat-row div{text-align:center;border-right:1px solid #F0F0F0}
+  .stat-row div:last-child{border-right:0}
+  .stat-row b{display:block;font-family:var(--font-head);font-size:18px;line-height:1}
+  .stat-row span{display:block;font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-top:4px}
+  .menu-item{display:flex;align-items:center;gap:11px;font-size:12.5px;font-weight:500;width:100%;background:none;border:0;text-align:left;cursor:pointer;color:inherit}
+  .menu-item .mi{width:30px;height:30px;border-radius:9px;background:#F2F2F0;display:grid;place-items:center;flex:none}
+  .menu-item .mi .ic{width:16px;height:16px}
+  .menu-item .chev{margin-left:auto;color:#C3C3C3;width:15px;height:15px}
+  .freeze{background:#111;color:#fff;border-radius:18px;padding:16px;display:flex;gap:11px;align-items:flex-start}
+  .freeze .ic{color:var(--lime);width:20px;height:20px;margin-top:1px}
+  .freeze strong{display:block;font-size:13px}
+  .freeze p{font-size:11px;color:#A8A8A8;line-height:1.45;margin-top:3px}
+  .vote-bar{display:flex;height:6px;border-radius:6px;overflow:hidden;background:#EEE;margin:8px 0 5px}
+  .vote-bar i{display:block;height:100%}
+  .vote-bar .a{background:#111}
+  .vote-bar .b{background:var(--lime)}
+  .vote-legend{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+
+  /* ---------- folha de componentes ---------- */
+  .sheet{margin-top:80px;background:#fff;border:1px solid #E4E4E2;border-radius:26px;padding:34px}
+  .sheet-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;border-bottom:1px solid #EFEFED;padding-bottom:18px;margin-bottom:26px;flex-wrap:wrap}
+  .sheet-head h2{font-family:var(--font-head);font-size:26px;text-transform:uppercase;line-height:1}
+  .sheet-head p{font-size:12px;color:var(--muted);max-width:420px}
+  .sheet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:26px 34px}
+  .comp h3{font-family:var(--font-head);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#888;margin-bottom:12px}
+  .comp .stack{display:flex;flex-direction:column;gap:8px}
+  .swatch{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+  .swatch i{width:22px;height:22px;border-radius:6px;border:1px solid rgba(0,0,0,.08)}
+  .skel{background:#F1F1EF;border-radius:8px;height:12px}
+  .toast{border-radius:10px;background:#111;color:#fff;font-size:11.5px;padding:10px 12px;display:flex;gap:8px;align-items:center}
+  .toast .ic{color:var(--lime);width:15px;height:15px}
+  .empty-mini{border:1px dashed #D8D8D6;border-radius:12px;padding:18px 14px;text-align:center}
+  .empty-mini .ic{width:22px;height:22px;color:#C0C0C0;margin-bottom:6px}
+  .empty-mini strong{display:block;font-size:12px}
+  .empty-mini span{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
+  /* ---------- perfil gamificado (baseado em perfil.html) ---------- */
+  .p-head{text-align:center;padding:2px 0 0}
+  .p-avatar{position:relative;width:88px;height:88px;margin:0 auto 12px}
+  .p-avatar .pic{width:88px;height:88px;border-radius:50%;overflow:hidden;background:#E8E8E8;border:1px solid #E7E7E7}
+  .p-avatar .pic svg{width:100%;height:100%;display:block}
+  .p-avatar .elo-mini{position:absolute;right:-3px;bottom:-2px;width:30px;height:30px;border-radius:50%;background:#fff;border:1px solid #E7E7E7;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+  .p-avatar .elo-mini svg{width:23px;height:23px}
+  .p-head h1{font-family:var(--font-head);font-size:24px;text-transform:uppercase;letter-spacing:.5px;line-height:1}
+  .p-head .tag{font-size:11px;color:var(--muted);margin-top:3px}
+  .p-head .role{font-size:9px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.8px}
+  .p-clan{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid #EBEBEB;border-radius:12px;padding:11px 13px}
+  .p-clan .flag{width:18px;height:23px;background:#111;clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%);border-radius:2px;flex:none}
+  .p-clan strong{display:block;font-family:var(--font-head);font-size:12px;letter-spacing:.5px;text-transform:uppercase}
+  .p-clan small{display:block;font-size:10px;color:var(--muted);margin-top:1px}
+  .p-clan .xp{margin-left:auto;display:flex;align-items:center;gap:5px;font-family:var(--font-head);font-size:12px;white-space:nowrap}
+  .p-clan .xp .ic{width:14px;height:14px}
+  .sport-tabs{display:flex;gap:17px;overflow-x:auto;border-bottom:1px solid #E7E7E7;scrollbar-width:none}
+  .sport-tabs::-webkit-scrollbar{display:none}
+  .sport-tabs span{font-family:var(--font-head);font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:#8A8A8E;padding:0 0 8px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .sport-tabs span.on{color:#111;border-bottom-color:#111;font-weight:600}
+  .court-chips{display:flex;gap:7px}
+  .court-chips span{flex:1;text-align:center;border:1px solid #E7E7E7;background:#fff;border-radius:8px;padding:9px 0;font-size:9.5px;font-weight:500;letter-spacing:.5px;text-transform:uppercase;color:#707072}
+  .court-chips span.on{border-color:#111;color:#111;font-weight:700;background:#F0F0F0}
+  .elo-panel{display:grid;grid-template-columns:84px 1fr;gap:17px;align-items:center}
+  .elo-stamp{width:84px;height:84px;border:1.5px solid #111;border-radius:14px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;box-shadow:0 4px 12px rgba(0,0,0,.04)}
+  .elo-stamp svg{width:36px;height:36px}
+  .elo-stamp b{font-family:var(--font-head);font-size:9px;letter-spacing:1px;text-transform:uppercase}
+  .metrics{display:flex;flex-direction:column;gap:9px}
+  .metric{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px dashed #E7E7E7;padding-bottom:4px;font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:#707072;gap:8px}
+  .metric b{font-family:var(--font-head);font-size:14px;color:#111;white-space:nowrap}
+  .medals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .medal{text-align:center}
+  .medal .box{aspect-ratio:1;border:1px solid #E7E7E7;border-radius:10px;background:#fff;display:grid;place-items:center}
+  .medal .box svg{width:27px;height:27px;stroke:#111;fill:none;stroke-width:1.4;opacity:.8}
+  .medal span{display:block;margin-top:5px;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#707072}
+  .day-tabs{display:flex;gap:3px;border-bottom:1px solid #E7E7E7;padding-bottom:8px}
+  .day-tabs span{flex:1;text-align:center;font-family:var(--font-head);font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:#8A8A8E;padding:6px 0;border-radius:7px}
+  .day-tabs span.on{background:#111;color:#fff;font-weight:600}
+  .slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .slot-grid span{border:1px solid #E7E7E7;background:#fff;border-radius:7px;text-align:center;padding:7px 0;font-size:9.5px;color:#707072}
+  .slot-grid span.on{background:#111;color:#fff;border-color:#111;font-weight:600}
+  .slot-grid span.blocked{background:#F3F3F1;color:#C0C0C4;text-decoration:line-through;border-color:#F0F0F0}
+  .friend-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #EBEBEB;border-radius:12px;padding:9px 12px}
+  .friend-avatar{width:36px;height:36px;border-radius:50%;overflow:hidden;background:#F0F0F0;border:1px solid #EBEBEB;flex:none}
+  .friend-avatar svg{width:100%;height:100%;display:block}
+  .friend-row strong{display:block;font-family:var(--font-head);font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+  .friend-row small{display:block;font-size:9.5px;color:var(--muted);margin-top:1px}
+  .friend-row .online{width:7px;height:7px;border-radius:50%;background:#00B856;margin-left:auto;flex:none}
+  .friend-row .offline{width:7px;height:7px;border-radius:50%;background:#D6D6D6;margin-left:auto;flex:none}
+  .friend-row .act{margin-left:auto;width:28px;height:28px;border-radius:50%;background:#F3F3F1;display:grid;place-items:center;flex:none}
+  .friend-row .act .ic{width:14px;height:14px}
+
+  /* ---------- clã ---------- */
+  .clan-hero{background:#111;color:#fff;border-radius:20px;padding:18px;position:relative;overflow:hidden}
+  .clan-hero .flag-big{width:32px;height:42px;background:var(--lime);clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%);border-radius:2px}
+  .clan-hero h2{font-family:var(--font-head);font-size:26px;text-transform:uppercase;letter-spacing:.6px;line-height:1;margin-top:12px}
+  .clan-hero .meta{font-size:11px;color:#A8A8A8;margin-top:4px}
+  .clan-hero .open{display:inline-flex;align-items:center;gap:5px;background:#2A2A2A;border-radius:6px;padding:4px 7px;font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:#D8D8D8;margin-top:10px}
+  .clan-hero .open i{width:5px;height:5px;border-radius:50%;background:var(--lime)}
+  .trophy-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:15px;padding-top:14px;border-top:1px solid #2C2C2C}
+  .trophy{text-align:center}
+  .trophy .ic{width:20px;height:20px;color:var(--lime)}
+  .trophy b{display:block;font-family:var(--font-head);font-size:14px;margin-top:4px}
+  .trophy span{display:block;font-size:8px;color:#8F8F8F;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+  .member-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid #F0F0F0}
+  .member-row:last-child{border-bottom:0}
+  .member-row strong{display:block;font-size:11px;font-weight:600;line-height:1.2}
+  .member-row small{display:block;font-size:9px;color:var(--muted);margin-top:1px}
+  .member-row .role-tag{font-family:var(--font-head);font-size:7px;letter-spacing:.6px;text-transform:uppercase;background:#F0F0F0;color:#555;border-radius:3px;padding:2px 4px;flex:none}
+  .member-row .role-tag.cap{background:var(--lime);color:#111}
+  .member-row .xp{margin-left:auto;font-family:var(--font-head);font-size:10px;color:#707072;white-space:nowrap}
+  .clan-rank{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid #F2F2F0;font-size:11px}
+  .clan-rank:last-child{border-bottom:0}
+  .clan-rank .pos{width:17px;font-family:var(--font-head);font-size:11px;color:var(--muted);flex:none}
+  .clan-rank .name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .clan-rank .pts{font-family:var(--font-head);font-size:11px;color:#707072;white-space:nowrap}
+  .clan-rank.me{background:#F7FFD9;border-radius:8px;padding:8px;margin:0 -8px;border-bottom:0}
+
+  /* ---------- notificações ---------- */
+  .notif-row{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid #F0F0F0;align-items:flex-start}
+  .notif-row:last-child{border-bottom:0}
+  .notif-icon{width:34px;height:34px;border-radius:10px;background:#F2F2F0;display:grid;place-items:center;flex:none}
+  .notif-icon.lime{background:#E9FF9E}
+  .notif-icon.orange{background:#FFEBDC}
+  .notif-icon.blue{background:#E4EBFF}
+  .notif-icon .ic{width:16px;height:16px}
+  .notif-row strong{display:block;font-size:12px;line-height:1.25}
+  .notif-row p{font-size:10.5px;color:#707072;line-height:1.45;margin-top:2px}
+  .notif-row .when{font-size:9px;color:#A0A0A5;white-space:nowrap;margin-left:auto;padding-top:2px}
+  .notif-dot{width:6px;height:6px;border-radius:50%;background:var(--lime);margin-top:6px;flex:none}
+  .notif-row.read{opacity:.6}
+
+  /* ---------- denúncia ---------- */
+  .reason{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid #E7E7E7;border-radius:10px;background:#fff;font-size:12px}
+  .reason .radio{width:17px;height:17px;border-radius:50%;border:1.5px solid #CFCFCF;flex:none}
+  .reason.on{border-color:#111;background:#FBFFEF}
+  .reason.on .radio{border:5px solid #111}
+  .msg-pick{display:flex;gap:9px;align-items:flex-start;padding:10px 11px;border:1px solid #E7E7E7;border-radius:10px;background:#fff;font-size:10.5px;line-height:1.45}
+  .msg-pick .box{width:16px;height:16px;border:1.5px solid #B9B9B9;border-radius:4px;flex:none;margin-top:1px;display:grid;place-items:center}
+  .msg-pick.on{border-color:#111;background:#FBFFEF}
+  .msg-pick.on .box{background:#111;border-color:#111}
+  .msg-pick.on .box svg{width:10px;height:10px;stroke:var(--lime);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .msg-pick b{font-weight:600;display:block;font-size:9px;color:#8A8A8E;margin-bottom:2px}
+
+  /* ---------- reserva ---------- */
+  .venue-art{height:92px;border-radius:12px;background:#111;position:relative;overflow:hidden;margin-bottom:10px}
+  .venue-art .court{position:absolute;inset:14px;border:1px solid #3A3A3A;border-radius:5px}
+  .venue-art .court::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3A3A3A}
+  .venue-art .court::after{content:"";position:absolute;left:50%;top:50%;width:38px;height:38px;border:1px solid #3A3A3A;border-radius:50%;transform:translate(-50%,-50%)}
+  .venue-art .tag{position:absolute;left:12px;bottom:10px;font-family:var(--font-head);font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--lime)}
+  .date-strip{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+  .date-strip::-webkit-scrollbar{display:none}
+  .date-chip{flex:none;width:48px;text-align:center;border:1px solid #E7E7E7;border-radius:10px;padding:7px 0;background:#fff}
+  .date-chip b{display:block;font-family:var(--font-head);font-size:14px;line-height:1}
+  .date-chip span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#707072;margin-top:2px}
+  .date-chip.on{background:#111;color:#fff;border-color:#111}
+  .date-chip.on span{color:#B9B9B9}
+  .slot-grid.three{grid-template-columns:repeat(3,1fr)}
+  .slot-grid.three span{padding:9px 0;font-size:10px}
+
+  /* ---------- pagamento ---------- */
+  .pay-steps{display:flex;align-items:flex-start}
+  .pay-step{flex:1;text-align:center;position:relative;font-size:7.5px;text-transform:uppercase;letter-spacing:.4px;color:#A0A0A5;line-height:1.3}
+  .pay-step:not(:last-child)::after{content:"";position:absolute;top:7px;left:calc(50% + 10px);right:calc(-50% + 10px);height:1px;background:#E2E2E2}
+  .pay-step i{display:block;width:15px;height:15px;border-radius:50%;border:1.5px solid #D6D6D6;background:#fff;margin:0 auto 5px;position:relative;z-index:1}
+  .pay-step.done i{background:#111;border-color:#111}
+  .pay-step.now i{background:var(--lime);border-color:#111}
+  .pay-step.done::after{background:#111}
+  .pay-step.now{color:#111;font-weight:600}
+  .qr{position:relative;width:132px;height:132px;margin:0 auto;border-radius:10px;background:#fff;border:1px solid #E7E7E7;padding:8px;overflow:hidden}
+  .qr-grid{width:100%;height:100%;background:repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/14px 14px}
+  .qr::before,.qr::after{content:"";position:absolute;width:24px;height:24px;border:5px solid #111;background:#fff}
+  .qr::before{top:8px;left:8px}
+  .qr::after{bottom:8px;right:8px}
+  .pix-code{display:flex;align-items:center;gap:8px;background:#F5F5F3;border-radius:9px;padding:9px 11px;font-family:monospace;font-size:9.5px;color:#555}
+  .pix-code span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pix-code .btn-copy{font-family:var(--font-head);font-size:8.5px;letter-spacing:.7px;text-transform:uppercase;background:#111;color:#fff;border-radius:5px;padding:5px 7px;flex:none}
+
+  .page-foot{max-width:820px;margin:56px auto 0;text-align:center;font-size:11px;color:var(--muted);line-height:1.7}
+  .page-foot b{color:var(--ink)}
+
+  @media (max-width:820px){
+    body{padding:26px 14px 60px}
+    .gallery{gap:38px 18px}
+    .phone{width:100%;max-width:375px;height:780px}
+    figure.screen{width:100%;max-width:375px}
+    .sheet{padding:20px;border-radius:18px;margin-top:56px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v4M9 21h6M10 19v2h4v-2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-5.5A8 8 0 0 1 13 4a8 8 0 0 1 8 8Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 21 4l-3 17-6-6-8-3Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-off" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M8.5 8.5A6 6 0 0 0 7 12c0 3.5-2 4-2 4h12"/><path d="M17 14.5c.6-1.5.6-2.5.6-2.5a6 6 0 0 0-2.1-4.5"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5M12 17.5v.5"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.3 6-5.3s6 2 6 5.3"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6.2M18 14.9c2 .7 3 2.3 3 5.1"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></symbol>
+  <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="5.5"/><path d="M9 13.5 8 22l4-2.5L16 22l-1-8.5"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 22c4 0 6.5-2.6 6.5-6.2 0-4.8-4.5-6.8-3.4-11.8-2.8 1-4.6 3.2-4.6 5.6 0 1.4.6 2.6 1.4 3.5-.4-1.8.2-3.4 1.6-4.6-.6 4 2 5 2 8 0 1.7-1.5 3-3.5 3-1.7 0-3-1-3.5-2.6-.6 1-.9 2-.9 3C7.6 19.5 10 22 12 22Z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+</svg>
+
+<header class="page-head">
+  <p class="eyebrow">JOGA y JOGA · estudo de interface mobile</p>
+  <h1>Protótipo <span>mobile</span> v1</h1>
+  <p class="lede">24 telas estáticas em HTML e CSS para visualizar a ideia: cadastro, onboarding, fila, partida, chat, resultado, competitivo, perfil, clã, amigos, notificações, reserva, pagamento e denúncia. Dados fictícios, sem lógica real. Cada telefone rola internamente.</p>
+  <div class="flow">
+    <b>Identidade</b><i>→</i><b>Perfil</b><i>→</i><b>Clã</b><i>→</i><b>Amigos</b><i>→</i><b>Fila</b><i>→</i><b>Partida</b><i>→</i><b>Chat</b><i>→</i><b>Check-in</b><i>→</i><b>Resultado</b><i>→</i><b>Divisão</b><i>→</i><b>Reserva</b><i>→</i><b>Pagamento</b>
+  </div>
+</header>
+
+<main class="gallery">
+
+  <!-- 01 -->
+  <figure class="screen">
+    <figcaption><span class="num">01</span><div class="cap"><strong>Boas-vindas</strong><span>Apresenta o produto e escolhe entre criar conta, entrar ou usar passkey.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="body" style="gap:0">
+        <div class="wordmark" style="font-size:26px">JOGA <b>Y</b> JOGA</div>
+        <div class="hero">
+          <div class="hero-art">
+            <span class="court"></span><span class="ball"></span>
+            <span class="future">hoje · 20:00 · futebol 5x5</span>
+          </div>
+          <h1 class="h1 xl" style="margin-bottom:12px">Encontre sua<br>próxima partida.</h1>
+          <p class="sub" style="margin-bottom:22px">Jogue com pessoas do seu nível, no seu tempo<br>e perto de você.</p>
+          <div class="bullets">
+            <div><span class="tick"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span><span>Partidas casuais e ranqueadas com times equilibrados.</span></div>
+            <div><span class="tick"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span><span>Horário, região e tipo de quadra que combinam com você.</span></div>
+            <div><span class="tick"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span><span>Histórico, amigos e sua divisão sempre à mão.</span></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:9px">
+          <button class="btn btn-primary">Criar conta</button>
+          <button class="btn btn-ghost">Já tenho conta</button>
+          <button class="btn btn-link" style="justify-content:center">Entrar com passkey</button>
+          <p class="terms">Ao continuar, você aceita os <a href="#">Termos de Uso</a><br>e a <a href="#">Política de Privacidade</a>.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 02 -->
+  <figure class="screen">
+    <figcaption><span class="num">02</span><div class="cap"><strong>Cadastro por telefone</strong><span>O telefone verifica a conta e nunca aparece para outros jogadores.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar">
+        <button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button>
+        <span class="spacer"></span>
+        <span class="label">Passo 1 de 2</span>
+      </div>
+      <div class="body">
+        <div class="row between" style="margin-bottom:6px"><span class="label">Criar conta</span><span class="tiny">01 / 02</span></div>
+        <h1 class="h1">Qual é o seu telefone?</h1>
+        <p class="sub">Usamos seu número para verificar a conta. Ele não aparece para outros jogadores e não é usado como identidade pública.</p>
+        <div style="margin-top:4px">
+          <div class="field focus">
+            <span class="prefix">+55</span>
+            <input value="21 99999-0000" aria-label="Telefone" readonly>
+          </div>
+          <div class="field-note"><span>DDD + número</span><span>Celular</span></div>
+        </div>
+        <div class="checkline">
+          <span class="box on"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span>
+          <span>Li e aceito os <a href="#" style="color:#111">Termos de Uso</a> e a <a href="#" style="color:#111">Política de Privacidade</a>.</span>
+        </div>
+        <div class="tint" style="margin-top:2px"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>Seu telefone é um contato de verificação, não uma prova pública de identidade.</span></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary">Receber código</button>
+          <button class="btn btn-link" style="justify-content:center">Já tenho conta</button>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 03 -->
+  <figure class="screen">
+    <figcaption><span class="num">03</span><div class="cap"><strong>Verificação OTP</strong><span>Código de 6 dígitos, prazo visível, tentativas limitadas e reenvio com espera.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button></div>
+      <div class="body">
+        <h1 class="h1">Digite o código</h1>
+        <p class="sub">Enviamos 6 dígitos para <b>+55 21 99999-0000</b>. <a href="#" style="color:#111;font-weight:600">Trocar número</a></p>
+        <div class="otp" style="margin-top:10px" aria-label="Código de verificação">
+          <span class="filled">4</span><span class="filled">8</span><span class="filled">2</span><span class="filled">9</span><span class="filled">1</span><span class="cursor"></span>
+        </div>
+        <div class="row between" style="font-size:11px">
+          <span class="row" style="gap:5px;color:#555"><svg class="ic sm"><use href="#i-clock"/></svg>Expira em <b style="font-weight:600">04:32</b></span>
+          <span style="color:#A0A0A5">Reenviar em 00:54</span>
+        </div>
+        <div class="tint" style="margin-top:6px"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>O código é de uso único. Não compartilhe com ninguém, nem com quem diz ser do JOGA.</span></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary">Confirmar</button>
+          <button class="btn btn-ghost">Reenviar código</button>
+          <p class="terms">Problemas para receber? <a href="#">Ver alternativas</a></p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 04 -->
+  <figure class="screen">
+    <figcaption><span class="num">04</span><div class="cap"><strong>Onboarding · esporte e nível</strong><span>Coleta o mínimo para o matchmaking. Nível autodeclarado não é divisão.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar">
+        <button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button>
+        <div class="step-line"><i style="width:50%"></i></div>
+        <span class="label">2 / 4</span>
+      </div>
+      <div class="body">
+        <h1 class="h1">O que você joga?</h1>
+        <p class="sub">Escolha a modalidade e seu nível. Você pode mudar isso depois no perfil.</p>
+        <div>
+          <div class="label" style="margin-bottom:8px">Modalidade</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="pick on">
+              <span class="glyph">F5</span>
+              <div class="grow"><strong>Futebol 5x5</strong><small>5 contra 5 · quadra ou campo reduzido</small></div>
+              <span class="radio"></span>
+            </div>
+            <div class="pick off">
+              <span class="glyph">V</span>
+              <div class="grow"><strong>Vôlei</strong><small>Formato ainda não disponível</small></div>
+              <span class="badge" style="margin-left:auto">Em breve</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Seu nível</div>
+          <div class="seg"><button>Iniciante</button><button class="active">Intermediário</button><button>Avançado</button></div>
+          <p class="tiny" style="margin-top:7px">O nível é autodeclarado e ajuda a equilibrar partidas casuais. Não é a sua divisão.</p>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Onde prefere jogar?</div>
+          <div class="chips"><button class="chip">Só públicas</button><button class="chip active">Tanto faz</button><button class="chip">Só particulares</button></div>
+        </div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-dark">Continuar</button>
+          <button class="btn btn-link" style="justify-content:center">Pular por agora</button>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 05 -->
+  <figure class="screen">
+    <figcaption><span class="num">05</span><div class="cap"><strong>Onboarding · disponibilidade e região</strong><span>Define quando e onde aceita jogar. GPS é opcional; CEP é alternativa.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar">
+        <button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button>
+        <div class="step-line"><i style="width:75%"></i></div>
+        <span class="label">3 / 4</span>
+      </div>
+      <div class="body">
+        <h1 class="h1">Quando você joga?</h1>
+        <p class="sub">Marque os dias e horários em que costuma estar disponível. O JOGA cruza isso com a região.</p>
+        <div>
+          <div class="label" style="margin-bottom:8px">Dias</div>
+          <div class="chips" style="gap:5px">
+            <button class="chip" style="padding:8px 9px;font-size:10.5px">SEG</button>
+            <button class="chip active" style="padding:8px 9px;font-size:10.5px">TER</button>
+            <button class="chip" style="padding:8px 9px;font-size:10.5px">QUA</button>
+            <button class="chip active" style="padding:8px 9px;font-size:10.5px">QUI</button>
+            <button class="chip" style="padding:8px 9px;font-size:10.5px">SEX</button>
+            <button class="chip active" style="padding:8px 9px;font-size:10.5px">SÁB</button>
+            <button class="chip" style="padding:8px 9px;font-size:10.5px">DOM</button>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Horários</div>
+          <div class="time-grid">
+            <span class="off">18:00</span><span class="on">19:00</span><span class="on">20:00</span><span>21:00</span>
+            <span>22:00</span><span style="grid-column:span 2">+ outro</span><span class="off">06:00</span>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Região</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="region-opt" style="border-color:#111;background:#FBFFEF">
+              <svg class="ic"><use href="#i-pin"/></svg>
+              <div class="grow">Usar localização aproximada<small>Tijuca, Rio de Janeiro · raio de 8 km</small></div>
+              <span class="badge lime">Ativo</span>
+            </div>
+            <div class="region-opt">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <div class="grow">Informar CEP<small>Alternativa se você negar o GPS</small></div>
+              <svg class="ic" style="color:#C3C3C3"><use href="#i-next"/></svg>
+            </div>
+          </div>
+        </div>
+        <p class="tiny row" style="gap:6px;align-items:flex-start"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg>Sua localização exata nunca é mostrada. Usamos a região só para sugerir partidas e espaços.</p>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-dark">Continuar</button>
+          <p class="terms">Passo 3 de 4 · depois você revisa tudo</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 06 -->
+  <figure class="screen">
+    <figcaption><span class="num">06</span><div class="cap"><strong>Jogar · início</strong><span>Responde “o que eu faço agora?” com uma ação prioritária por vez.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px">
+        <div class="avatar lime">S</div>
+        <div class="grow greet"><h1>Boa noite, Susan</h1><p>Terça, 7 de novembro</p></div>
+        <button class="icon-btn" style="position:relative"><svg class="ic"><use href="#i-bell"/></svg><i style="position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--orange);border:1.5px solid #fff"></i></button>
+      </div>
+      <div class="body">
+        <div class="match-card">
+          <div class="row between">
+            <span class="label" style="color:#8F8F8F">Próxima partida · hoje</span>
+            <span class="countdown"><span class="dot"></span>Confirme em 42 min</span>
+          </div>
+          <div class="row between" style="margin-top:12px;align-items:flex-end">
+            <div>
+              <div class="time">20:00</div>
+              <div class="meta"><svg class="ic"><use href="#i-pin"/></svg>Arena Tijuca · Tijuca, RJ</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-family:var(--font-head);font-size:13px;letter-spacing:.6px">FUTEBOL 5X5</div>
+              <div class="meta" style="justify-content:flex-end">10 / 10 vagas</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="row between" style="margin-bottom:13px">
+            <div class="row" style="gap:7px">
+              <span class="badge" style="background:#2A2A2A;color:#fff">Casual</span>
+              <span style="font-size:11px;color:#B9B9B9">Quadra pública</span>
+            </div>
+            <div class="vote-stack">
+              <span class="avatar sm dark" style="border-color:#111">M</span>
+              <span class="avatar sm" style="border-color:#111;background:#3A3A3A;color:#fff">C</span>
+              <span class="avatar sm" style="border-color:#111;background:#4A4A4A;color:#fff">R</span>
+              <span style="font-size:10px;color:#B9B9B9;margin-left:6px">+7</span>
+            </div>
+          </div>
+          <button class="btn btn-primary">Confirmar presença</button>
+          <button class="btn btn-link" style="justify-content:center;color:#fff;margin-top:8px;font-size:11px">Ver detalhes da partida</button>
+        </div>
+
+        <div class="alert-card">
+          <div class="top">
+            <strong>Resultado pendente</strong>
+            <span class="row" style="gap:4px;font-family:var(--font-head);font-size:10px;color:#C24A00"><svg class="ic sm"><use href="#i-clock"/></svg>08:42</span>
+          </div>
+          <p class="tiny" style="margin-top:3px">Futebol 5x5 · ontem, 21:00 · Arena Tijuca</p>
+          <button class="btn btn-dark btn-sm" style="margin-top:10px">Informar resultado</button>
+        </div>
+
+        <div>
+          <div class="row between" style="margin-bottom:8px"><span class="label">Convites</span><span class="tiny">1 pendente</span></div>
+          <div class="card">
+            <div class="row">
+              <div class="avatar blue">MC</div>
+              <div class="grow"><strong style="font-size:12.5px">Marcus te convidou</strong><div class="tiny">Futebol 5x5 · amanhã, 19:00</div></div>
+            </div>
+            <div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm">Recusar</button><button class="btn btn-primary btn-sm">Aceitar</button></div>
+          </div>
+        </div>
+
+        <div class="tiles">
+          <div class="tile"><svg class="ic"><use href="#i-people"/></svg><span>Amigos</span></div>
+          <div class="tile"><svg class="ic"><use href="#i-clock"/></svg><span>Histórico</span></div>
+          <div class="tile"><svg class="ic"><use href="#i-trophy"/></svg><span>Ranking</span></div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="active" href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 07 -->
+  <figure class="screen">
+    <figcaption><span class="num">07</span><div class="cap"><strong>Configurar fila</strong><span>Uma única fila por modalidade; quadra é filtro, não uma fila separada.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Buscar partida</h2></div>
+      <div class="body">
+        <div class="pick" style="padding:13px">
+          <span class="glyph" style="background:#111;color:#fff">F5</span>
+          <div class="grow"><strong>Futebol 5x5</strong><small>5 contra 5 · cerca de 60 min</small></div>
+          <span class="badge">Trocar</span>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Modo</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="mode on">
+              <span class="radio"></span>
+              <div class="grow"><strong>Casual</strong><p>Jogue sem alterar sua divisão. O resultado entra no histórico.</p></div>
+            </div>
+            <div class="mode">
+              <span class="radio"></span>
+              <div class="grow"><strong>Ranqueada</strong><p>Altera sua divisão e sua posição no ranking.</p></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Tipo de quadra</div>
+          <div class="chips"><button class="chip">Públicas</button><button class="chip">Particulares</button><button class="chip active">Tanto faz</button></div>
+        </div>
+        <div class="card" style="padding:4px 16px">
+          <div class="summary">
+            <svg class="ic"><use href="#i-pin"/></svg>
+            <div class="grow"><strong>Região</strong><small>Tijuca, RJ · raio de 8 km</small></div>
+            <span class="edit">Editar</span>
+          </div>
+          <div class="summary">
+            <svg class="ic"><use href="#i-cal"/></svg>
+            <div class="grow"><strong>Disponibilidade</strong><small>Ter, Qui, Sáb · 19h às 21h</small></div>
+            <span class="edit">Editar</span>
+          </div>
+        </div>
+        <div class="info-box"><svg class="ic"><use href="#i-alert"/></svg><span>O JOGA cruza horário, região e quadra para todos. Você pode fechar o app: avisamos quando encontrar uma partida.</span></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary">Entrar na fila</button>
+          <p class="terms">Partidas ranqueadas podem alterar sua divisão.<br>Partidas em análise não alteram até a decisão.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 08 -->
+  <figure class="screen">
+    <figcaption><span class="num">08</span><div class="cap"><strong>Procurando partida</strong><span>Sem ETA inventado. Mostra o tempo real na fila e permite cancelar.</span></div></figcaption>
+    <div class="phone dark">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><span class="spacer"></span><span class="label" style="color:#7C7C7C">Fila</span></div>
+      <div class="body center" style="justify-content:center;gap:0;padding-bottom:28px">
+        <div class="radar">
+          <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span>
+          <span class="pulse"></span><span class="pulse p2"></span>
+          <span class="core"><svg class="ic"><use href="#i-search"/></svg></span>
+        </div>
+        <h1 class="h1" style="font-size:32px;margin-top:14px">Procurando<br>partida</h1>
+        <p class="sub" style="margin-top:10px">Futebol 5x5 · Casual<br>Quadras públicas · Tijuca, RJ</p>
+        <div class="elapsed" style="margin-top:26px">01:24</div>
+        <p class="label" style="color:#7C7C7C;margin-top:4px">Tempo na fila</p>
+        <p class="tiny" style="margin-top:24px;max-width:250px">Você pode fechar o app. Avisamos por notificação quando encontrarmos uma partida.</p>
+        <div style="margin-top:auto;width:100%;padding-top:26px">
+          <button class="btn btn-ghost">Cancelar busca</button>
+          <p class="tiny" style="margin-top:12px;font-size:10px">Cancelar não afeta sua reputação nem sua divisão.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 09 -->
+  <figure class="screen">
+    <figcaption><span class="num">09</span><div class="cap"><strong>Partida encontrada</strong><span>Transição da fila para o compromisso. Confirmar acontece no detalhe.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><span class="spacer"></span><button class="icon-btn plain" style="font-size:18px;color:#A0A0A5">×</button></div>
+      <div class="body center" style="gap:0;justify-content:center">
+        <div class="found-check"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></div>
+        <h1 class="h1" style="font-size:33px;margin-top:18px">Partida<br>encontrada</h1>
+        <p class="sub" style="margin-top:9px">Confirme sua presença em até 1 hora<br>para garantir a vaga.</p>
+        <div class="card" style="width:100%;text-align:left;margin-top:26px;padding:16px">
+          <div class="row between">
+            <div><div style="font-family:var(--font-head);font-size:26px;line-height:1">HOJE · 20:00</div><div class="tiny" style="margin-top:3px">Duração de 60 min</div></div>
+            <span class="badge lime">Casual</span>
+          </div>
+          <div class="divider"></div>
+          <div class="row" style="gap:9px"><svg class="ic"><use href="#i-pin"/></svg><div class="grow"><strong style="font-size:12px">Arena Tijuca</strong><div class="tiny">Tijuca, Rio de Janeiro · 3,2 km</div></div></div>
+          <div class="row" style="gap:9px;margin-top:10px"><svg class="ic"><use href="#i-people"/></svg><div class="grow"><strong style="font-size:12px">10 jogadores · 2 times</strong><div class="tiny">Time preto x time branco</div></div></div>
+        </div>
+        <div class="tint" style="text-align:left;margin-top:12px"><svg class="ic sm" style="margin-top:1px"><use href="#i-clock"/></svg><span>Confirmar agora não é check-in. No dia, você confirma presença outra vez quando a janela abrir.</span></div>
+        <div style="width:100%;margin-top:20px;display:flex;flex-direction:column;gap:9px">
+          <button class="btn btn-primary">Ver partida e confirmar</button>
+          <button class="btn btn-ghost">Agora não</button>
+          <p class="terms">Se você não confirmar no prazo, a vaga pode ser oferecida a outra pessoa.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 10 -->
+  <figure class="screen">
+    <figcaption><span class="num">10</span><div class="cap"><strong>Detalhe da partida</strong><span>Centro de organização: status, prazos, times, chat e ação do momento.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Partida</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-share"/></svg></button></div>
+      <div class="body">
+        <div class="chips-row"><span class="badge dark">Casual</span><span class="badge green">Confirmada</span><span class="badge">10 / 10</span></div>
+        <div class="match-hero">
+          <h2>Futebol 5x5</h2>
+          <div class="when">Hoje · 20:00 – 21:00 · 60 min</div>
+          <div class="row" style="gap:6px;margin-top:9px"><svg class="ic sm"><use href="#i-pin"/></svg><span style="font-size:12px">Arena Tijuca · Tijuca, RJ · 3,2 km</span></div>
+        </div>
+        <div class="card" style="padding:15px 16px">
+          <div class="steps">
+            <div class="step done"><span class="dot"></span><div><strong>Presença confirmada</strong><small>Você confirmou às 18:12</small></div><span class="when">OK</span></div>
+            <div class="step now"><span class="dot"></span><div><strong>Check-in no dia</strong><small>Abre 15 minutos antes do horário</small></div><span class="when">19:45</span></div>
+            <div class="step"><span class="dot"></span><div><strong>Partida</strong><small>Encontro no local combinado</small></div><span class="when">20:00</span></div>
+            <div class="step"><span class="dot"></span><div><strong>Resultado</strong><small>Todos informam o placar</small></div><span class="when">21:00</span></div>
+          </div>
+        </div>
+        <div class="teams">
+          <div class="team">
+            <h4>Time preto <span style="color:#A0A0A5;font-size:9px">5/5</span></h4>
+            <div class="person"><span class="avatar dark">MC</span><span>Marcus</span><span class="cap-badge">CAP</span></div>
+            <div class="person"><span class="avatar">RA</span><span>Rafa</span></div>
+            <div class="person"><span class="avatar lime">SU</span><span>Susan</span></div>
+            <div class="person"><span class="avatar">TH</span><span>Thiago</span></div>
+            <div class="person"><span class="avatar">LE</span><span>Léo</span></div>
+          </div>
+          <div class="team">
+            <h4>Time branco <span style="color:#A0A0A5;font-size:9px">5/5</span></h4>
+            <div class="person"><span class="avatar blue">CA</span><span>Carla</span><span class="cap-badge">CAP</span></div>
+            <div class="person"><span class="avatar">AN</span><span>André</span></div>
+            <div class="person"><span class="avatar">BR</span><span>Bruno</span></div>
+            <div class="person"><span class="avatar">DI</span><span>Diana</span></div>
+            <div class="person"><span class="avatar">FE</span><span>Felipe</span></div>
+          </div>
+        </div>
+        <div class="tint"><svg class="ic sm" style="margin-top:1px"><use href="#i-clock"/></svg><span>O check-in abre às <b>19:45</b> e fecha às <b>20:10</b>. Quem não fizer check-in pode ser marcado como ausente.</span></div>
+        <div class="info-box"><svg class="ic"><use href="#i-chat"/></svg><span>Combine detalhes no chat da partida. Só participantes podem ler e escrever.</span></div>
+      </div>
+      <div class="action-bar">
+        <button class="icon-btn" style="position:relative"><svg class="ic"><use href="#i-chat"/></svg><i style="position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--orange)"></i></button>
+        <button class="btn btn-dark" disabled>Check-in abre às 19:45</button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 11 -->
+  <figure class="screen">
+    <figcaption><span class="num">11</span><div class="cap"><strong>Chat da partida</strong><span>Contextual, só texto, só para participantes. Não existe lista global de conversas.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><div class="grow"><h2>Futebol 5x5</h2><div class="tiny" style="margin-top:1px">10 participantes · hoje, 20:00</div></div><button class="icon-btn"><svg class="ic"><use href="#i-people"/></svg></button></div>
+      <div class="body" style="gap:12px;padding-top:2px">
+        <div class="system">Partida confirmada. Combinem local, horário e detalhes por aqui.</div>
+        <div class="msg">
+          <div class="who"><b>Marcus</b><span>19:02</span></div>
+          <div class="bubble">Alguém leva colete? Tenho 4 sobrando.</div>
+        </div>
+        <div class="msg mine">
+          <div class="bubble">Eu levo 6. Chego 19:40.</div>
+          <div class="who" style="font-size:9px">19:04 · enviada</div>
+        </div>
+        <div class="msg">
+          <div class="who"><b>Carla</b><span>19:06</span></div>
+          <div class="bubble">Fechado. Vou de metrô, alguém passa na Saens Peña?</div>
+        </div>
+        <div class="msg">
+          <div class="who"><b>Rafa</b><span>19:07</span></div>
+          <div class="bubble">Eu passo. 19:25 na estação?</div>
+        </div>
+        <div class="system" style="background:transparent;padding:0;color:#B0B0B4">Carla está digitando…</div>
+      </div>
+      <div style="flex:none;padding:10px 16px 20px;background:#fff;border-top:1px solid #EBEBEB">
+        <p class="tiny" style="text-align:center;margin-bottom:8px;font-size:9.5px">Somente participantes da partida podem escrever.</p>
+        <div class="composer">
+          <div class="field"><input placeholder="Mensagem" aria-label="Mensagem" readonly></div>
+          <button class="send" aria-label="Enviar"><svg viewBox="0 0 24 24"><use href="#i-send"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 12 -->
+  <figure class="screen">
+    <figcaption><span class="num">12</span><div class="cap"><strong>Resultado da partida</strong><span>Voto claro, prazo de 10 minutos, envio idempotente e consequência visível.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Resultado</h2><span class="spacer"></span><span class="badge">Casual</span></div>
+      <div class="body">
+        <h1 class="h1">Como foi a partida?</h1>
+        <p class="sub">Futebol 5x5 · ontem, 21:00 · Arena Tijuca</p>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+          <div class="result-opt on">
+            <div class="grow"><strong style="font-size:13px">Vitória do time preto</strong><div class="tiny">Marcus, Rafa, Susan, Thiago e Léo</div></div>
+            <span class="score">3 – 2</span>
+            <span class="check"></span>
+          </div>
+          <div class="result-opt">
+            <div class="grow"><strong style="font-size:13px">Vitória do time branco</strong><div class="tiny">Carla, André, Bruno, Diana e Felipe</div></div>
+            <span class="score">2 – 3</span>
+            <span class="check"></span>
+          </div>
+          <div class="result-opt" style="padding:11px 14px">
+            <div class="grow"><strong style="font-size:12.5px">Empate</strong></div>
+            <span class="check"></span>
+          </div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div class="row between"><strong style="font-size:12px">3 de 10 informaram</strong><span class="row" style="gap:4px;font-family:var(--font-head);font-size:10px;color:#C24A00"><svg class="ic sm"><use href="#i-clock"/></svg>08:42</span></div>
+          <div class="vote-bar"><i class="a" style="width:30%"></i><i class="b" style="width:0"></i></div>
+          <div class="vote-legend"><span>Faltam 7 votos</span><span>Prazo: 21:10</span></div>
+        </div>
+        <div class="tint"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>Partida casual: sua divisão não muda. O resultado vale para o histórico e para os troféus do clã.</span></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary">Enviar resultado</button>
+          <p class="terms">Você pode corrigir seu voto até o prazo.<br>Se os votos divergirem, abre uma segunda rodada.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 13 -->
+  <figure class="screen">
+    <figcaption><span class="num">13</span><div class="cap"><strong>Partidas</strong><span>Organiza o que exige ação agora, o que vem depois e o que já aconteceu.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px"><h2 style="font-size:18px">Partidas</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-search"/></svg></button></div>
+      <div class="body">
+        <div class="seg"><button class="active">Próximas</button><button>Histórico</button></div>
+        <div>
+          <div class="row between" style="margin-bottom:8px"><span class="label" style="color:#C24A00">Ação necessária</span><span class="badge orange">1</span></div>
+          <div class="alert-card">
+            <div class="top"><strong>Resultado pendente</strong><span class="row" style="gap:4px;font-family:var(--font-head);font-size:10px;color:#C24A00"><svg class="ic sm"><use href="#i-clock"/></svg>08:42</span></div>
+            <p class="tiny" style="margin-top:3px">Futebol 5x5 · ontem, 21:00</p>
+            <button class="btn btn-dark btn-sm" style="margin-top:10px">Informar resultado</button>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Hoje</div>
+          <div class="list-card">
+            <div class="date"><b>07</b><span>NOV</span></div>
+            <div class="grow"><h4>Futebol 5x5 <span class="badge green">Confirmada</span></h4><p>20:00 · Arena Tijuca · 10/10</p></div>
+            <span class="go"><svg class="ic"><use href="#i-next"/></svg></span>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:8px">Amanhã</div>
+          <div class="list-card">
+            <div class="date"><b>08</b><span>NOV</span></div>
+            <div class="grow"><h4>Futebol 5x5 <span class="badge orange">A confirmar</span></h4><p>19:00 · Praça Nossa Senhora · 8/10</p></div>
+            <span class="go"><svg class="ic"><use href="#i-next"/></svg></span>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:6px"><span class="label">Histórico recente</span><span class="tiny">Ver tudo</span></div>
+          <div class="card" style="padding:6px 16px">
+            <div class="history-row"><span class="res win">VIT</span><span class="grow">Futebol 5x5</span><span class="score">3 – 2</span><span class="when">02/11</span></div>
+            <div class="history-row"><span class="res loss">DER</span><span class="grow">Futebol 5x5</span><span class="score">1 – 4</span><span class="when">28/10</span></div>
+            <div class="history-row"><span class="res win">VIT</span><span class="grow">Futebol 5x5</span><span class="score">5 – 3</span><span class="when">21/10</span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a class="active" href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 14 -->
+  <figure class="screen">
+    <figcaption><span class="num">14</span><div class="cap"><strong>Competitivo</strong><span>Mostra divisão, progresso e posição. Nunca exibe MMR bruto nem Trust Factor.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px"><h2 style="font-size:18px">Competitivo</h2><span class="spacer"></span><span class="badge lime">Temporada 4</span></div>
+      <div class="body">
+        <div class="chips"><button class="chip active">Futebol 5x5</button><button class="chip" disabled>Vôlei · em breve</button></div>
+        <div class="division">
+          <div class="row between">
+            <div class="shield"><svg class="ic"><use href="#i-shield"/></svg></div>
+            <span class="badge" style="background:#2A2A2A;color:#fff">SEQ. 5 VITÓRIAS</span>
+          </div>
+          <div class="label" style="color:#8F8F8F;margin-top:16px">Sua divisão</div>
+          <h3>PLATINA IV</h3>
+          <div class="progress"><i></i></div>
+          <div class="row between" style="font-size:10px;color:#9A9A9A"><span>62 / 100 para Platina III</span><span>+18 na última</span></div>
+          <div class="stats">
+            <div><b>#1.284</b><span>Posição</span></div>
+            <div><b>34</b><span>Partidas</span></div>
+            <div><b>61%</b><span>Vitórias</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row between" style="margin-bottom:4px"><strong style="font-size:12px">Top da sua região</strong><span class="tiny">Tijuca, RJ</span></div>
+          <div class="rank-row"><span class="pos">1</span><span class="avatar sm lime">LU</span><span class="name">Lucas_Ferr</span><span class="div">Diamante II</span></div>
+          <div class="rank-row"><span class="pos">2</span><span class="avatar sm blue">BI</span><span class="name">BiaCortes</span><span class="div">Diamante IV</span></div>
+          <div class="rank-row"><span class="pos">3</span><span class="avatar sm">GU</span><span class="name">Gustavo_H</span><span class="div">Platina I</span></div>
+          <div class="rank-row me"><span class="pos">1.284</span><span class="avatar sm dark">SU</span><span class="name">Você · Susan</span><span class="div">Platina IV</span></div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div class="row between"><strong style="font-size:12px">Como sua divisão funciona</strong><svg class="ic sm" style="color:#B0B0B4"><use href="#i-next"/></svg></div>
+          <div class="divider" style="margin:10px 0"></div>
+          <div class="tiny" style="display:flex;flex-direction:column;gap:6px">
+            <span>· Partidas casuais não alteram sua divisão.</span>
+            <span>· Resultados em análise ficam congelados até a decisão.</span>
+            <span>· O JOGA calcula tudo no servidor. Você não vê números internos.</span>
+          </div>
+        </div>
+        <p class="tiny" style="text-align:center;font-size:9.5px">Atualizado há 2 horas · Fim da temporada em 14 dias</p>
+      </div>
+      <nav class="nav">
+        <a href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a class="active" href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 15 -->
+  <figure class="screen">
+    <figcaption><span class="num">15</span><div class="cap"><strong>Meu perfil</strong><span>Insígnia de elo, clã, medalhas, sequência e disponibilidade — a linguagem do perfil.html.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px"><h2 style="font-size:18px">Perfil</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-eye"/></svg></button><button class="icon-btn"><svg class="ic"><use href="#i-gear"/></svg></button></div>
+      <div class="body">
+        <div class="p-head">
+          <div class="p-avatar">
+            <div class="pic"><svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#E8E8E8"/><path d="M30 42C30 30 70 30 70 42V48H30V42Z" fill="#111"/><rect x="25" y="44" width="50" height="6" rx="3" fill="#111"/><circle cx="50" cy="52" r="18" fill="#F4C29C"/><circle cx="43" cy="52" r="2.5" fill="#111"/><circle cx="57" cy="52" r="2.5" fill="#111"/><path d="M46 58s2 2 4 2 4-2 4-2" stroke="#111" stroke-width="2" stroke-linecap="round"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#333"/></svg></div>
+            <span class="elo-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 3 7v5c0 5.5 4 9 9 10 5-1 9-4.5 9-10V7l-9-5Z" fill="#CCFF00" stroke="#111" stroke-width="2"/><path d="M12 6 15 11H9l3-5Z" fill="#111"/></svg></span>
+          </div>
+          <h1>Susan</h1>
+          <div class="tag">#7732</div>
+          <div class="role">Capitã · Alpha Squad</div>
+        </div>
+        <div class="p-clan">
+          <span class="flag"></span>
+          <div class="grow"><strong>Alpha Squad</strong><small>Capitã de equipe</small></div>
+          <span class="xp"><svg class="ic"><use href="#i-trophy"/></svg>1.420 XP</span>
+        </div>
+        <div class="sport-tabs"><span class="on">Futebol 5x5</span><span>Basquete 3x3</span><span>Vôlei de praia</span><span>Tênis</span></div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Preferência de quadra</div>
+          <div class="court-chips"><span>Tanto faz</span><span class="on">Pública</span><span>Privada</span></div>
+        </div>
+        <div class="elo-panel">
+          <div class="elo-stamp">
+            <svg viewBox="0 0 36 36" fill="none"><path d="M18 3 4 9v8c0 8.5 6 13.5 14 16 8-2.5 14-7.5 14-16V9L18 3Z" fill="#111"/><polygon points="18,8 22,16 30,17 24,23 26,30 18,26 10,30 12,23 6,17 14,16" fill="#CCFF00"/></svg>
+            <b>Platina IV</b>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Reset da temporada</span><b>14d 08h</b></div>
+            <div class="metric"><span>Vitórias totais</span><b>128</b></div>
+            <div class="metric"><span>Sequência</span><b>5 WINS</b></div>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:9px"><span class="label">Medalhas destaque</span><span class="tiny" style="text-decoration:underline;text-underline-offset:2px">Coleção total (18)</span></div>
+          <div class="medals">
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-medal"/></svg></div><span>Artilheiro</span></div>
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-flame"/></svg></div><span>Imparável</span></div>
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-shield"/></svg></div><span>Muralha</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Disponibilidade · terça</div>
+          <div class="day-tabs"><span>SEG</span><span class="on">TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span><span>DOM</span></div>
+          <div class="slot-grid" style="margin-top:7px"><span>18:00</span><span class="on">18:30</span><span class="on">19:00</span><span class="on">19:30</span><span class="on">20:00</span><span>20:30</span><span>21:00</span><span>21:30</span></div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:7px"><span class="label">Amigos</span><span class="tiny">Ver todos (18)</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="48" r="18" fill="#DDB088"/><rect x="30" y="32" width="40" height="14" rx="7" fill="#111"/><circle cx="43" cy="48" r="2.5" fill="#111"/><circle cx="57" cy="48" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#0047FF"/></svg></span>
+              <div class="grow"><strong>Marcus_rise</strong><small>#1029</small></div>
+              <span class="online"></span>
+            </div>
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="50" r="18" fill="#F0C8A0"/><path d="M30 40C30 25 70 25 70 40V50H30V40Z" fill="#FF2E00"/><circle cx="43" cy="50" r="2.5" fill="#111"/><circle cx="57" cy="50" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#222"/></svg></span>
+              <div class="grow"><strong>Carla_skills</strong><small>#4401</small></div>
+              <span class="offline"></span>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-ghost">Ver como outros veem meu perfil</button>
+        <p class="tiny" style="text-align:center;font-size:9px">Conta, segurança e dispositivos em Ajustes.</p>
+      </div>
+      <nav class="nav">
+        <a href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a class="active" href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 16 -->
+  <figure class="screen">
+    <figcaption><span class="num">16</span><div class="cap"><strong>Perfil público · outro jogador</strong><span>Como Marcus aparece para quem chega pelo lobby: elo, clã, medalhas, sequência e ações.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2 style="font-size:13px">Perfil do jogador</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-more"/></svg></button></div>
+      <div class="body">
+        <div class="p-head">
+          <div class="p-avatar">
+            <div class="pic"><svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="#E8E8E8"/><circle cx="50" cy="48" r="18" fill="#DDB088"/><rect x="30" y="32" width="40" height="14" rx="7" fill="#111"/><circle cx="43" cy="48" r="2.5" fill="#111"/><circle cx="57" cy="48" r="2.5" fill="#111"/><path d="M46 58s2 2 4 2 4-2 4-2" stroke="#111" stroke-width="2" stroke-linecap="round"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#0047FF"/></svg></div>
+            <span class="elo-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 3 7v5c0 5.5 4 9 9 10 5-1 9-4.5 9-10V7l-9-5Z" fill="#CCFF00" stroke="#111" stroke-width="2"/><path d="M12 6 15 11H9l3-5Z" fill="#111"/></svg></span>
+          </div>
+          <h1>Marcus_rise</h1>
+          <div class="tag">#1029</div>
+          <div class="role">Oficial · Alpha Squad</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary btn-sm">Adicionar amigo</button>
+          <button class="btn btn-ghost btn-sm">Convidar</button>
+        </div>
+        <div class="p-clan">
+          <span class="flag"></span>
+          <div class="grow"><strong>Alpha Squad</strong><small>Membro desde 2024</small></div>
+          <span class="xp"><svg class="ic"><use href="#i-trophy"/></svg>1.420 XP</span>
+        </div>
+        <div class="sport-tabs"><span class="on">Futebol 5x5</span><span>Basquete 3x3</span><span>Vôlei de praia</span><span>Tênis</span></div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Preferência de quadra</div>
+          <div class="court-chips"><span>Tanto faz</span><span class="on">Pública</span><span>Privada</span></div>
+        </div>
+        <div class="elo-panel">
+          <div class="elo-stamp">
+            <svg viewBox="0 0 36 36" fill="none"><path d="M18 3 4 9v8c0 8.5 6 13.5 14 16 8-2.5 14-7.5 14-16V9L18 3Z" fill="#111"/><polygon points="18,8 22,16 30,17 24,23 26,30 18,26 10,30 12,23 6,17 14,16" fill="#CCFF00"/></svg>
+            <b>Platina III</b>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Reset da temporada</span><b>14d 08h</b></div>
+            <div class="metric"><span>Vitórias totais</span><b>214</b></div>
+            <div class="metric"><span>Sequência</span><b>3 WINS</b></div>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:9px"><span class="label">Medalhas destaque</span><span class="tiny" style="text-decoration:underline;text-underline-offset:2px">Coleção total (24)</span></div>
+          <div class="medals">
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-medal"/></svg></div><span>Artilheiro</span></div>
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-flame"/></svg></div><span>Imparável</span></div>
+            <div class="medal"><div class="box"><svg viewBox="0 0 24 24"><use href="#i-shield"/></svg></div><span>Muralha</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Costuma jogar</div>
+          <div class="day-tabs"><span>SEG</span><span>TER</span><span class="on">QUA</span><span>QUI</span><span class="on">SEX</span><span class="on">SÁB</span><span>DOM</span></div>
+          <div class="slot-grid" style="margin-top:7px"><span class="on">19:00</span><span class="on">19:30</span><span class="on">20:00</span><span class="on">20:30</span><span>21:00</span><span>21:30</span><span>22:00</span><span>22:30</span></div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:7px"><span class="label">Amigos</span><span class="tiny">18 amigos</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E8E8E8"/><circle cx="50" cy="50" r="18" fill="#C98B5E"/><path d="M32 38C32 26 68 26 68 38V44H32V38Z" fill="#3A2A1A"/><circle cx="43" cy="50" r="2.5" fill="#111"/><circle cx="57" cy="50" r="2.5" fill="#111"/><path d="M46 57s2 2 4 2 4-2 4-2" stroke="#111" stroke-width="2" stroke-linecap="round"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#1F8A4C"/></svg></span>
+              <div class="grow"><strong>Rafa</strong><small>#2088 · jogou com Marcus em 01/11</small></div>
+              <span class="online"></span>
+            </div>
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="50" r="18" fill="#F0C8A0"/><path d="M30 40C30 25 70 25 70 40V50H30V40Z" fill="#FF2E00"/><circle cx="43" cy="50" r="2.5" fill="#111"/><circle cx="57" cy="50" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#222"/></svg></span>
+              <div class="grow"><strong>Carla_skills</strong><small>#4401</small></div>
+              <span class="offline"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:12px 14px">
+          <div class="row between"><span class="tiny">Não quer receber convites deste jogador?</span><button class="btn-link" style="font-size:11px">Bloquear</button></div>
+          <div class="row between" style="margin-top:8px"><span class="tiny">Teve uma conduta inadequada?</span><button class="btn-link" style="font-size:11px">Denunciar</button></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 17 -->
+  <figure class="screen">
+    <figcaption><span class="num">17</span><div class="cap"><strong>Resultado em análise</strong><span>Disputa com justificativa privada e divisão congelada até a decisão.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Partida</h2><span class="spacer"></span><span class="badge orange">EM ANÁLISE</span></div>
+      <div class="body">
+        <div class="freeze">
+          <svg class="ic"><use href="#i-lock"/></svg>
+          <div><strong>Sua divisão está congelada</strong><p>O resultado deste jogo está em análise. Nada muda no seu perfil competitivo até a decisão final.</p></div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div class="row between"><div><strong style="font-size:13px">Futebol 5x5</strong><div class="tiny">Ranqueada · 03/11, 21:00</div></div><span class="badge red">DIVERGÊNCIA</span></div>
+          <div class="divider" style="margin:12px 0"></div>
+          <div class="row between" style="font-size:11px;margin-bottom:6px"><span>Segunda rodada encerrada</span><span style="color:#8A8A8E">sem consenso</span></div>
+          <div class="vote-bar"><i class="a" style="width:40%"></i><i class="b" style="width:40%"></i></div>
+          <div class="vote-legend"><span>4 · Time preto</span><span>4 · Time branco</span><span>2 sem voto</span></div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Sua versão dos fatos</div>
+          <div class="field" style="flex-direction:column;align-items:stretch;padding:12px 14px">
+            <textarea placeholder="Conte o que aconteceu. Isso é privado." aria-label="Justificativa"></textarea>
+            <div class="field-note"><span>Visível apenas para a revisão</span><span>0 / 2.000</span></div>
+          </div>
+        </div>
+        <div class="tint blue"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>A justificativa é privada e enviada uma única vez. Os outros jogadores não conseguem lê-la.</span></div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-dark">Enviar justificativa</button>
+          <p class="terms">A revisão pode confirmar o resultado ou anular a partida.<br>Você recebe uma notificação quando houver decisão.</p>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 18 -->
+  <figure class="screen">
+    <figcaption><span class="num">18</span><div class="cap"><strong>Clã · visão geral</strong><span>Casa do clã: identidade, troféus, ranking, membros e chat em um só lugar.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Clã</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-more"/></svg></button></div>
+      <div class="body">
+        <div class="clan-hero">
+          <div class="row between" style="align-items:flex-start">
+            <span class="flag-big"></span>
+            <span class="badge" style="background:#2A2A2A;color:#fff">CLÃ ABERTO</span>
+          </div>
+          <h2>Alpha Squad</h2>
+          <div class="meta">Capitã: Susan · 12 de 20 membros</div>
+          <div class="open"><i></i>Criado em 2024</div>
+          <div class="trophy-row">
+            <div class="trophy"><svg class="ic"><use href="#i-trophy"/></svg><b>1.240</b><span>Futebol 5x5</span></div>
+            <div class="trophy"><svg class="ic"><use href="#i-medal"/></svg><b>860</b><span>Basquete 3x3</span></div>
+            <div class="trophy"><svg class="ic"><use href="#i-shield"/></svg><b>410</b><span>Vôlei</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row between" style="margin-bottom:3px"><strong style="font-size:12px">Ranking de clãs</strong><span class="tiny">Tijuca · temporada 4</span></div>
+          <div class="clan-rank"><span class="pos">1</span><span class="name">Os Cria</span><span class="pts">3.940</span></div>
+          <div class="clan-rank me"><span class="pos">2</span><span class="name">Alpha Squad</span><span class="pts">2.510</span></div>
+          <div class="clan-rank"><span class="pos">3</span><span class="name">Tijuca FC</span><span class="pts">2.180</span></div>
+        </div>
+        <div class="card" style="padding:13px 16px">
+          <div class="row between"><strong style="font-size:12px">Membros</strong><span class="tiny">Ver todos (12)</span></div>
+          <div style="margin-top:6px">
+            <div class="member-row">
+              <span class="avatar sm lime">SU</span>
+              <div class="grow"><strong>Susan</strong><small>#7732</small></div>
+              <span class="role-tag cap">Capitã</span>
+              <span class="xp">1.420 XP</span>
+            </div>
+            <div class="member-row">
+              <span class="avatar sm dark">MC</span>
+              <div class="grow"><strong>Marcus_rise</strong><small>#1029</small></div>
+              <span class="role-tag">Oficial</span>
+              <span class="xp">1.180 XP</span>
+            </div>
+            <div class="member-row">
+              <span class="avatar sm blue">CA</span>
+              <div class="grow"><strong>Carla_skills</strong><small>#4401</small></div>
+              <span class="role-tag">Membro</span>
+              <span class="xp">980 XP</span>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:13px 16px">
+          <div class="row between" style="margin-bottom:8px"><strong style="font-size:12px">Chat do clã</strong><span class="tiny">Abrir ›</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="bubble" style="font-size:11px;width:88%">Fechado para sábado às 19h na Arena Tijuca?</div>
+            <div class="bubble" style="font-size:11px;width:70%;background:#111;color:#fff;border-color:#111;align-self:flex-end">Confirmado. Já reservei.</div>
+          </div>
+        </div>
+        <button class="btn-link" style="align-self:center;color:#C24A00">Sair do clã</button>
+      </div>
+      <div class="action-bar">
+        <button class="icon-btn"><svg class="ic"><use href="#i-chat"/></svg></button>
+        <button class="btn btn-primary">Convidar membro</button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 19 -->
+  <figure class="screen">
+    <figcaption><span class="num">19</span><div class="cap"><strong>Clã · membros e cargos</strong><span>Quem manda em quê: capitã, oficiais e membros, com convite e regras visíveis.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Membros</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-search"/></svg></button></div>
+      <div class="body">
+        <div class="row between"><div><strong style="font-family:var(--font-head);font-size:14px;letter-spacing:.5px">12 DE 20 MEMBROS</strong><div class="tiny">3 vagas abertas nesta temporada</div></div><button class="btn btn-primary btn-sm" style="width:auto;padding:0 12px">Convidar</button></div>
+        <div>
+          <div class="label" style="margin-bottom:3px">Capitã</div>
+          <div class="member-row">
+            <span class="avatar lime">SU</span>
+            <div class="grow"><strong>Susan</strong><small>#7732 · desde 2024</small></div>
+            <span class="role-tag cap">Capitã</span>
+            <span class="xp">1.420 XP</span>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:3px">Oficiais</div>
+          <div class="member-row"><span class="avatar dark">MC</span><div class="grow"><strong>Marcus_rise</strong><small>#1029 · online</small></div><span class="role-tag">Oficial</span><span class="xp">1.180 XP</span></div>
+          <div class="member-row"><span class="avatar blue">CA</span><div class="grow"><strong>Carla_skills</strong><small>#4401 · offline</small></div><span class="role-tag">Oficial</span><span class="xp">980 XP</span></div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:3px">Membros</div>
+          <div class="member-row"><span class="avatar">RA</span><div class="grow"><strong>Rafa</strong><small>#2088 · online</small></div><span class="role-tag">Membro</span><span class="xp">640 XP</span></div>
+          <div class="member-row"><span class="avatar">BR</span><div class="grow"><strong>Bruno</strong><small>#3110 · offline</small></div><span class="role-tag">Membro</span><span class="xp">520 XP</span></div>
+          <div class="member-row"><span class="avatar">DI</span><div class="grow"><strong>Diana</strong><small>#5502 · offline</small></div><span class="role-tag">Membro</span><span class="xp">410 XP</span></div>
+          <div class="member-row"><span class="avatar">FE</span><div class="grow"><strong>Felipe</strong><small>#6614 · offline</small></div><span class="role-tag">Membro</span><span class="xp">390 XP</span></div>
+        </div>
+        <div class="card" style="padding:13px 16px">
+          <strong style="font-size:12px">Cargos e permissões</strong>
+          <div class="tiny" style="margin-top:7px;display:flex;flex-direction:column;gap:5px">
+            <span><b style="color:#111">Capitã:</b> edita o clã, aprova membros e remove oficiais.</span>
+            <span><b style="color:#111">Oficial:</b> convida jogadores e modera o chat do clã.</span>
+            <span><b style="color:#111">Membro:</b> participa do chat, das partidas e soma troféus.</span>
+          </div>
+        </div>
+        <div class="tint blue"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>Troféus do clã vêm de partidas ranqueadas. Eles não são MMR pessoal e não podem ser comprados.</span></div>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 20 -->
+  <figure class="screen">
+    <figcaption><span class="num">20</span><div class="cap"><strong>Amigos</strong><span>Lista, solicitações e convite por nome#tag. Amizade nasce do contexto da partida.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px"><h2 style="font-size:18px">Amigos</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-plus"/></svg></button></div>
+      <div class="body">
+        <div class="seg"><button class="active">Amigos (18)</button><button>Solicitações (2)</button></div>
+        <div class="field" style="padding:10px 12px"><svg class="ic sm" style="color:#A0A0A5"><use href="#i-search"/></svg><input placeholder="Buscar por nome #tag" aria-label="Buscar amigo" readonly></div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Online agora</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="48" r="18" fill="#DDB088"/><rect x="30" y="32" width="40" height="14" rx="7" fill="#111"/><circle cx="43" cy="48" r="2.5" fill="#111"/><circle cx="57" cy="48" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#0047FF"/></svg></span>
+              <div class="grow"><strong>Marcus_rise</strong><small>#1029 · Platina III</small></div>
+              <button class="act" aria-label="Convidar para partida"><svg class="ic"><use href="#i-send"/></svg></button>
+            </div>
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E8E8E8"/><path d="M30 42C30 30 70 30 70 42V48H30V42Z" fill="#111"/><rect x="25" y="44" width="50" height="6" rx="3" fill="#111"/><circle cx="50" cy="52" r="18" fill="#F4C29C"/><circle cx="43" cy="52" r="2.5" fill="#111"/><circle cx="57" cy="52" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#333"/></svg></span>
+              <div class="grow"><strong>Rafa</strong><small>#2088 · Ouro I</small></div>
+              <button class="act" aria-label="Convidar para partida"><svg class="ic"><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Offline</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="50" r="18" fill="#F0C8A0"/><path d="M30 40C30 25 70 25 70 40V50H30V40Z" fill="#FF2E00"/><circle cx="43" cy="50" r="2.5" fill="#111"/><circle cx="57" cy="50" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#222"/></svg></span>
+              <div class="grow"><strong>Carla_skills</strong><small>#4401 · Platina IV</small></div>
+              <span class="offline"></span>
+            </div>
+            <div class="friend-row">
+              <span class="friend-avatar"><svg viewBox="0 0 100 100" fill="none"><circle cx="50" cy="50" r="50" fill="#E0E0E0"/><circle cx="50" cy="48" r="18" fill="#DDB088"/><rect x="30" y="32" width="40" height="14" rx="7" fill="#111"/><circle cx="43" cy="48" r="2.5" fill="#111"/><circle cx="57" cy="48" r="2.5" fill="#111"/><path d="M25 88C25 73 36 67 50 67s25 6 25 21v12H25V88Z" fill="#0047FF"/></svg></span>
+              <div class="grow"><strong>Felipe</strong><small>#6614 · Prata II</small></div>
+              <span class="offline"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:13px 16px">
+          <div class="row between"><strong style="font-size:12px">Solicitações recebidas</strong><span class="badge lime">2</span></div>
+          <div class="row" style="padding:10px 0;border-bottom:1px solid #F0F0F0">
+            <span class="avatar sm blue">DI</span>
+            <div class="grow"><strong style="font-size:11px">Diana</strong><small style="display:block;font-size:9.5px;color:var(--muted)">#5502 · jogou com você em 02/11</small></div>
+            <button class="btn btn-ghost" style="width:auto;min-height:30px;padding:0 9px;font-size:10px;border-radius:7px">Recusar</button>
+            <button class="btn btn-primary" style="width:auto;min-height:30px;padding:0 9px;font-size:10px;border-radius:7px">Aceitar</button>
+          </div>
+          <div class="row" style="padding:10px 0">
+            <span class="avatar sm">BR</span>
+            <div class="grow"><strong style="font-size:11px">Bruno</strong><small style="display:block;font-size:9.5px;color:var(--muted)">#3110 · amigo de Carla</small></div>
+            <button class="btn btn-ghost" style="width:auto;min-height:30px;padding:0 9px;font-size:10px;border-radius:7px">Recusar</button>
+            <button class="btn btn-primary" style="width:auto;min-height:30px;padding:0 9px;font-size:10px;border-radius:7px">Aceitar</button>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Adicionar amigo</div>
+          <div class="row" style="gap:7px">
+            <div class="field" style="flex:1;padding:10px 12px"><input placeholder="Nome #tag do jogador" aria-label="Nome e tag" readonly></div>
+            <button class="btn btn-dark" style="width:auto;min-height:44px;padding:0 15px;border-radius:10px;font-size:12px">Enviar</button>
+          </div>
+          <p class="tiny" style="margin-top:6px">Você também pode adicionar alguém tocando no perfil dentro de uma partida.</p>
+        </div>
+        <button class="btn-link" style="align-self:flex-start;color:#707072;font-size:11px">Bloqueados (3)</button>
+      </div>
+      <nav class="nav">
+        <a href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a class="active" href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 21 -->
+  <figure class="screen">
+    <figcaption><span class="num">21</span><div class="cap"><strong>Notificações</strong><span>Uma caixa só: convites, confirmações, pagamento e retorno de moderação. Sem push duplicado.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar" style="padding-top:2px"><h2 style="font-size:18px">Notificações</h2><span class="spacer"></span><button class="btn-link" style="font-size:11px;color:#707072">Marcar lidas</button></div>
+      <div class="body">
+        <div class="seg"><button class="active">Todas</button><button>Não lidas (3)</button></div>
+        <div>
+          <div class="label" style="margin-bottom:2px">Hoje</div>
+          <div class="notif-row">
+            <span class="notif-icon lime"><svg class="ic"><use href="#i-people"/></svg></span>
+            <div class="grow"><strong>Diana quer ser sua amiga</strong><p>Jogaram juntas em 02/11 · Futebol 5x5. A amizade só existe depois do aceite.</p></div>
+            <span class="when">agora</span>
+            <span class="notif-dot"></span>
+          </div>
+          <div class="notif-row">
+            <span class="notif-icon"><svg class="ic"><use href="#i-shield"/></svg></span>
+            <div class="grow"><strong>Convite para o Alpha Squad</strong><p>Capitã Susan chamou você. O clã tem 12 de 20 membros e vaga aberta.</p></div>
+            <span class="when">há 12 min</span>
+            <span class="notif-dot"></span>
+          </div>
+          <div class="notif-row">
+            <span class="notif-icon blue"><svg class="ic"><use href="#i-cal"/></svg></span>
+            <div class="grow"><strong>Reserva confirmada · sábado 19:00</strong><p>Arena Tijuca, quadra 2. Sua vaga está garantida após o pagamento individual.</p></div>
+            <span class="when">há 1 h</span>
+            <span class="notif-dot"></span>
+          </div>
+          <div class="notif-row read">
+            <span class="notif-icon orange"><svg class="ic"><use href="#i-clock"/></svg></span>
+            <div class="grow"><strong>Pagamento pendente · R$ 12,00</strong><p>Pague até 12:00 de sábado (T2) para não perder a vaga. Só a sua parte é cobrada.</p></div>
+            <span class="when">há 2 h</span>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:2px">Ontem</div>
+          <div class="notif-row read">
+            <span class="notif-icon"><svg class="ic"><use href="#i-trophy"/></svg></span>
+            <div class="grow"><strong>Resultado confirmado · vitória 5x3</strong><p>Seu elo subiu para Platina IV. A divisão é recalculada só no fim da partida.</p></div>
+            <span class="when">ontem</span>
+          </div>
+          <div class="notif-row read">
+            <span class="notif-icon"><svg class="ic"><use href="#i-medal"/></svg></span>
+            <div class="grow"><strong>Medalha desbloqueada · Muralha</strong><p>5 partidas seguidas sem sofrer gol. Já está na sua coleção de perfil.</p></div>
+            <span class="when">ontem</span>
+          </div>
+          <div class="notif-row read">
+            <span class="notif-icon blue"><svg class="ic"><use href="#i-shield"/></svg></span>
+            <div class="grow"><strong>Sua denúncia foi analisada</strong><p>O caso foi encerrado pela moderação. O retorno é privado e não expõe quem denunciou.</p></div>
+            <span class="when">ontem</span>
+          </div>
+        </div>
+        <div class="tint blue"><svg class="ic sm" style="margin-top:1px"><use href="#i-lock"/></svg><span>Notificações repetidas são agrupadas. Nada de resultado, elo ou punição chega por push antes da confirmação no servidor.</span></div>
+      </div>
+      <nav class="nav">
+        <a href="#"><svg class="ic"><use href="#i-home"/></svg><span>Jogar</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-cal"/></svg><span>Partidas</span><i></i></a>
+        <a href="#"><svg class="ic"><use href="#i-trophy"/></svg><span>Competitivo</span><i></i></a>
+        <a class="active" href="#"><svg class="ic"><use href="#i-user"/></svg><span>Perfil</span><i></i></a>
+      </nav>
+    </div>
+  </figure>
+
+  <!-- 22 -->
+  <figure class="screen">
+    <figcaption><span class="num">22</span><div class="cap"><strong>Reserva de quadra</strong><span>Disponibilidade real, preço por pessoa e prazos T1/T2/T3 antes de qualquer cobrança.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Reservar quadra</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-more"/></svg></button></div>
+      <div class="body">
+        <div class="venue-art">
+          <span class="court"></span>
+          <span class="tag">Arena Tijuca · quadra 2</span>
+        </div>
+        <div class="card" style="padding:13px 15px">
+          <div class="row between"><div><strong style="font-size:13px">Arena Tijuca</strong><div class="tiny">Rua Conde de Bonfim, 512 · Tijuca</div></div><span class="badge green">VERIFICADA</span></div>
+          <div class="divider" style="margin:10px 0"></div>
+          <div class="row" style="gap:14px;font-size:10px;color:#707072">
+            <span>★ 4,8 · 126 avaliações</span>
+            <span>1,2 km</span>
+            <span>Coberta</span>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:7px"><span class="label">Data</span><span class="tiny">novembro</span></div>
+          <div class="date-strip">
+            <div class="date-chip"><b>06</b><span>qui</span></div>
+            <div class="date-chip"><b>07</b><span>sex</span></div>
+            <div class="date-chip on"><b>08</b><span>sáb</span></div>
+            <div class="date-chip"><b>09</b><span>dom</span></div>
+            <div class="date-chip"><b>10</b><span>seg</span></div>
+            <div class="date-chip"><b>11</b><span>ter</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:7px"><span class="label">Horários · 90 min</span><span class="tiny" style="color:#8A8A8E">2 livres</span></div>
+          <div class="slot-grid three">
+            <span class="blocked">18:00</span>
+            <span class="blocked">18:30</span>
+            <span class="on">19:00</span>
+            <span>19:30</span>
+            <span>20:00</span>
+            <span class="blocked">20:30</span>
+          </div>
+        </div>
+        <div class="card" style="padding:12px 14px">
+          <div class="row between"><span class="tiny">Quadra R$ 120,00 · 10 vagas</span><span class="badge lime">SUA PARTE R$ 12,00</span></div>
+          <div class="tiny" style="margin-top:4px">Cobrança individual por Pix, só depois do aceite. Ninguém paga pelo grupo inteiro.</div>
+        </div>
+        <div class="tint orange">
+          <svg class="ic sm" style="margin-top:1px"><use href="#i-clock"/></svg>
+          <span><b>T1 · aceite</b> até 24h antes · <b>T2 · pagamento</b> até 12h antes · <b>T3 · cancelamento</b> com reembolso até 6h antes. A vaga fica bloqueada, não vendida.</span>
+        </div>
+      </div>
+      <div class="action-bar">
+        <div class="grow"><div class="label">Sábado · 19:00</div><div style="font-family:var(--font-head);font-size:17px;line-height:1.2">R$ 12,00 <span style="font-family:var(--font-body);font-size:10px;color:var(--muted)">/pessoa</span></div></div>
+        <button class="btn btn-primary" style="width:auto;padding:0 20px">Reservar</button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 23 -->
+  <figure class="screen">
+    <figcaption><span class="num">23</span><div class="cap"><strong>Pagamento individual</strong><span>Pix só depois do aceite. A vaga expira no prazo T2 e o valor não some do histórico.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Pagamento</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-lock"/></svg></button></div>
+      <div class="body">
+        <div class="pay-steps">
+          <div class="pay-step done"><i></i>Reserva</div>
+          <div class="pay-step done"><i></i>Aceite</div>
+          <div class="pay-step now"><i></i>Pagamento</div>
+          <div class="pay-step"><i></i>Confirmado</div>
+        </div>
+        <div class="card" style="padding:13px 15px">
+          <div class="row between"><strong style="font-size:13px">Arena Tijuca · quadra 2</strong><span class="badge lime">SÁB 08/11</span></div>
+          <div class="tiny" style="margin-top:3px">19:00 – 20:30 · Futebol 5x5 · 7 de 10 confirmados</div>
+          <div class="divider" style="margin:10px 0"></div>
+          <div class="row between" style="align-items:baseline"><span class="tiny">Sua parte (1 de 10)</span><span style="font-family:var(--font-head);font-size:22px">R$ 12,00</span></div>
+        </div>
+        <div class="card" style="padding:15px">
+          <div class="row between" style="margin-bottom:12px"><span class="label">Pix · copia e cola</span><span class="badge">EXPIRA 12:00</span></div>
+          <div class="qr"><div class="qr-grid"></div></div>
+          <div class="pix-code" style="margin-top:12px"><span>00020126joga.app/qr/8f31a2c4</span><span class="btn-copy">Copiar</span></div>
+          <div class="tiny" style="margin-top:8px;text-align:center">Código único desta vaga. A confirmação é automática: não precisa enviar comprovante no chat.</div>
+        </div>
+        <div class="tint blue"><svg class="ic sm" style="margin-top:1px"><use href="#i-shield"/></svg><span>A vaga fica reservada até <b>sábado, 12:00 (T2)</b>. Depois disso ela volta para a fila e o valor pago, se houver, é devolvido conforme a regra T3.</span></div>
+      </div>
+      <div class="action-bar">
+        <button class="btn btn-primary">Copiar código Pix</button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- 24 -->
+  <figure class="screen">
+    <figcaption><span class="num">24</span><div class="cap"><strong>Denúncia</strong><span>Privada por padrão. Uma denúncia isolada não pune ninguém; o histórico é que decide.</span></div></figcaption>
+    <div class="phone">
+      <div class="status"><span>21:12</span><span class="status-icons"><svg viewBox="0 0 18 12"><path d="M0 9h2V6H0v3Zm4 0h2V4H4v5Zm4 0h2V2H8v7Zm4 0h2V0h-2v9Z"/></svg><svg viewBox="0 0 18 13"><path d="M9 11.5 1 4a11.5 11.5 0 0 1 16 0l-8 7.5Z"/></svg><svg viewBox="0 0 25 12"><rect x=".6" y=".6" width="20" height="10.8" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="2.8" width="14" height="6.4" rx="1.6"/><path d="M22.5 4v4a2.2 2.2 0 0 0 0-4Z"/></svg></span></div>
+      <div class="topbar"><button class="icon-btn"><svg class="ic"><use href="#i-back"/></svg></button><h2>Denunciar</h2><span class="spacer"></span><button class="icon-btn"><svg class="ic"><use href="#i-lock"/></svg></button></div>
+      <div class="body">
+        <div class="card" style="padding:11px 13px">
+          <div class="row"><span class="avatar sm dark">MC</span><div class="grow"><strong style="font-size:12px">Marcus_rise</strong><small style="display:block;font-size:9.5px;color:var(--muted)">#1029 · perfil do jogador</small></div><span class="badge orange">ALVO</span></div>
+        </div>
+        <div class="tint blue"><svg class="ic sm" style="margin-top:1px"><use href="#i-eye"/></svg><span>Só a moderação vê esta denúncia. O jogador denunciado não recebe seu nome nem o texto. <b>Uma denúncia isolada não pune automaticamente:</b> histórico, chat e denúncias anteriores são cruzados antes de qualquer ação.</span></div>
+        <div>
+          <div class="label" style="margin-bottom:7px">Motivo</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="reason on"><span class="radio"></span>Conduta ofensiva no chat</div>
+            <div class="reason"><span class="radio"></span>Jogo combinado ou resultado falso</div>
+            <div class="reason"><span class="radio"></span>Assédio, ameaça ou exposição</div>
+            <div class="reason"><span class="radio"></span>Outro</div>
+          </div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:7px">O que aconteceu</div>
+          <div class="field" style="flex-direction:column;align-items:stretch;padding:11px 13px">
+            <div style="font-size:12px;line-height:1.5;color:#333">Ofensas repetidas no chat da partida de 03/11, depois do resultado.</div>
+            <div class="field-note"><span>Privado</span><span>118 / 500</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="row between" style="margin-bottom:7px"><span class="label">Mensagens como evidência</span><span class="tiny">opcional</span></div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="msg-pick on"><span class="box"><svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span><span><b>03/11 · 21:48</b>“você é um lixo, nem devia estar em quadra”</span></div>
+          </div>
+        </div>
+        <p class="tiny" style="text-align:center;font-size:9px">Denúncias falsas também são registradas. O retorno chega em Notificações.</p>
+      </div>
+      <div class="action-bar">
+        <button class="btn btn-ghost" style="flex:none;width:auto;padding:0 16px">Cancelar</button>
+        <button class="btn btn-dark">Enviar denúncia</button>
+      </div>
+    </div>
+  </figure>
+
+</main>
+
+<section class="sheet">
+  <div class="sheet-head">
+    <div>
+      <h2>Peças e estados</h2>
+      <p>Componentes usados nas telas acima. Servem para manter a linguagem consistente quando o desenho for para o Figma ou para o código.</p>
+    </div>
+    <span class="badge lime">HTML + CSS</span>
+  </div>
+  <div class="sheet-grid">
+    <div class="comp">
+      <h3>Cor</h3>
+      <div class="stack">
+        <span class="swatch"><i style="background:#111"></i>Tinta · texto e ações escuras</span>
+        <span class="swatch"><i style="background:#CCFF00"></i>Lima · ação principal e destaque</span>
+        <span class="swatch"><i style="background:#0047FF"></i>Azul · informação e link</span>
+        <span class="swatch"><i style="background:#FF6A00"></i>Laranja · prazo e atenção</span>
+        <span class="swatch"><i style="background:#00A34A"></i>Verde · presença e sucesso</span>
+        <span class="swatch"><i style="background:#E7E7E7"></i>Linha · divisores e bordas</span>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Botões</h3>
+      <div class="stack">
+        <button class="btn btn-primary btn-sm">Ação principal</button>
+        <button class="btn btn-dark btn-sm">Ação escura</button>
+        <button class="btn btn-ghost btn-sm">Ação secundária</button>
+        <button class="btn btn-dark btn-sm" disabled>Aguardando o servidor</button>
+        <button class="btn btn-link">Link de texto</button>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Chips e badges</h3>
+      <div class="stack">
+        <div class="chips"><span class="chip active">Selecionado</span><span class="chip">Opção</span></div>
+        <div class="chips"><span class="chip lime">Filtro ativo</span><span class="chip" disabled>Em breve</span></div>
+        <div class="chips"><span class="badge dark">CASUAL</span><span class="badge lime">RANQUEADA</span><span class="badge green">CONFIRMADA</span></div>
+        <div class="chips"><span class="badge orange">A CONFIRMAR</span><span class="badge red">EM ANÁLISE</span><span class="badge blue">NOVO</span></div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Prazos</h3>
+      <div class="stack">
+        <div class="row between" style="font-size:11px"><span class="row" style="gap:5px"><svg class="ic sm"><use href="#i-clock"/></svg>Expira em</span><b style="font-family:var(--font-head);font-size:13px">04:32</b></div>
+        <div class="row between" style="font-size:11px"><span class="row" style="gap:5px"><svg class="ic sm"><use href="#i-clock"/></svg>Check-in</span><b style="font-family:var(--font-head);font-size:13px">19:45</b></div>
+        <div class="row between" style="font-size:11px"><span class="row" style="gap:5px"><svg class="ic sm"><use href="#i-clock"/></svg>Resultado</span><b style="font-family:var(--font-head);font-size:13px;color:#C24A00">08:42</b></div>
+        <div class="tint orange"><svg class="ic sm" style="margin-top:1px"><use href="#i-alert"/></svg><span>Um prazo por etapa. Nunca um contador único para tudo.</span></div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Card de partida</h3>
+      <div class="match-card" style="padding:14px">
+        <div class="row between"><span class="label" style="color:#8F8F8F">Hoje · 20:00</span><span class="badge lime">Casual</span></div>
+        <div class="row between" style="margin-top:8px"><strong style="font-size:13px">Futebol 5x5</strong><span style="font-size:10px;color:#B9B9B9">10/10</span></div>
+        <div class="meta" style="margin-top:5px"><svg class="ic"><use href="#i-pin"/></svg>Arena Tijuca · 3,2 km</div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Avatares</h3>
+      <div class="stack">
+        <div class="row"><span class="avatar lg lime">SU</span><span class="avatar blue">MC</span><span class="avatar dark">CA</span><span class="avatar">RA</span></div>
+        <div class="row"><span class="avatar sm lime">SU</span><span class="avatar sm blue">MC</span><span class="avatar sm">+7</span><span class="tiny">Avatar por iniciais. Foto é decisão separada.</span></div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Estados de tela</h3>
+      <div class="stack">
+        <div class="toast"><svg class="ic"><use href="#i-off"/></svg>Sem conexão. Tentando novamente…</div>
+        <div class="empty-mini"><svg class="ic"><use href="#i-cal"/></svg><strong>Nenhuma partida ainda</strong><span>Busque uma na aba Jogar.</span></div>
+        <div class="card" style="padding:12px">
+          <div class="skel" style="width:40%;margin-bottom:8px"></div>
+          <div class="skel" style="width:80%;height:9px;margin-bottom:6px"></div>
+          <div class="skel" style="width:60%;height:9px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Confirmação destrutiva</h3>
+      <div class="card" style="padding:16px">
+        <strong style="font-size:12.5px">Sair de todos os dispositivos?</strong>
+        <p class="tiny" style="margin-top:4px">Você precisará entrar de novo com passkey ou telefone.</p>
+        <div class="btn-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm">Cancelar</button><button class="btn btn-dark btn-sm">Sair</button></div>
+      </div>
+    </div>
+    <div class="comp">
+      <h3>Regras que a UI deve lembrar</h3>
+      <div class="stack">
+        <div class="info-box"><svg class="ic"><use href="#i-lock"/></svg><span>Nunca mostrar MMR bruto, RD, volatilidade ou Trust Factor.</span></div>
+        <div class="info-box"><svg class="ic"><use href="#i-shield"/></svg><span>Localização aproximada. GPS é opcional; CEP é alternativa.</span></div>
+        <div class="info-box"><svg class="ic"><use href="#i-alert"/></svg><span>Reserva e pagamento só depois do aceite e do bloqueio do espaço.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sheet" style="margin-top:26px">
+  <div class="sheet-head" style="border:0;padding:0;margin:0">
+    <div>
+      <h2>Decisões em aberto</h2>
+      <p>Pontos que o desenho ainda não pode fechar sozinho. Valem uma conversa de produto antes de virar tela final.</p>
+    </div>
+  </div>
+  <div class="sheet-grid" style="margin-top:22px">
+    <div class="comp"><h3>Descoberta</h3><p class="tiny">Existe partida aberta para entrada pública ou todo lobby nasce de matchmaking e convite? A home não deve prometer um feed que ainda não existe.</p></div>
+    <div class="comp"><h3>Clãs</h3><p class="tiny">Quinta aba ou módulo dentro de Perfil? A resposta muda a navegação principal e o espaço do chat de clã.</p></div>
+    <div class="comp"><h3>Foto de perfil</h3><p class="tiny">Avatar por iniciais resolve o MVP. Upload de foto exige moderação, armazenamento privado e política de retenção.</p></div>
+    <div class="comp"><h3>Empate</h3><p class="tiny">Cada formato permite empate? A tela de resultado só mostra a opção quando a regra do formato permitir.</p></div>
+    <div class="comp"><h3>Notificações</h3><p class="tiny">Só push ou também uma central de avisos dentro do app? A central compete com “Jogar” como ponto de retorno.</p></div>
+    <div class="comp"><h3>Reserva</h3><p class="tiny">Quem inicia a solicitação: o organizador, o capitão ou qualquer participante? T1, T2 e T3 precisam de nomes claros na interface.</p></div>
+  </div>
+</section>
+
+<footer class="page-foot">
+  <p><b>JOGA y JOGA · protótipo de baixa fidelidade.</b> Arquivo estático para estudo de produto e UX.<br>
+  Não é código de produção, não conversa com a API e não contém dados reais.</p>
+  <p>Companheiro de <b>telas/perfil.html</b> · mesmos tokens visuais · Inter + Oswald · pt-BR.</p>
+</footer>
+
+</div>
+</body>
+</html>
