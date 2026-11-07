@@ -418,7 +418,9 @@ cd backend
 .venv/bin/python -m scripts.advance_bookings --loop --interval 60
 ```
 
-- O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Reexecutar é seguro.
+- O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Também reembolsa reservas terminais com cobranças pagas. Reexecutar é seguro.
+- A organização consulta o resumo em `GET /api/v1/organizations/{org}/financial/summary` e o extrato em `GET /api/v1/organizations/{org}/bookings/{booking}/financial`.
+- Reembolso manual: `POST /api/v1/organizations/{org}/bookings/{booking}/refund` com motivo. No beta, o adaptador simulado processa o estorno.
 
 ### Pagamentos no protótipo/beta (ADR 0034)
 

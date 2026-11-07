@@ -65,6 +65,8 @@
 | Troca de PSP sem abstração | Domínio acoplado ao Mercado Pago e difícil migrar para Pagar.me | adaptador de PSP com modos `mercadopago_beta` e `pagarme_production` | implementação da Fase 14 ainda não iniciada |
 | Webhook de pagamento forjado/replay | Confirmar reserva sem pagamento real | assinatura HMAC, consulta server-to-server, `psp_webhook_events` idempotente e ledger append-only | segredo e URL de produção ainda não configurados |
 | Divergência de valor/referência | PSP devolver valor diferente da cobrança | conferência de `amount_cents` e `external_reference` antes de aplicar status | conciliação periódica pertence à Fase 15 |
+| Reembolso indevido/duplicado | Cancelar reserva e tentar estornar duas vezes ou reembolsar cobrança não paga | autorização por organização, idempotência por `payment_refunds`, ledger append-only e teste de repetição | reembolso real e MED pendentes na 14B |
+| Reembolso após repasse | Estornar reserva já concluída/liberada | `VENUE_RELEASE` só para `COMPLETED`; política de cancelamento pós-confirmação pendente | precisa de contrato e conciliação real |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 

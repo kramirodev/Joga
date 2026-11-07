@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.9<br>
-**Status:** visão de produto atualizada — hipótese de provisão de fraude dinâmica registrada; modelo fixo mantido<br>
+**Versão:** 3.10<br>
+**Status:** visão de produto atualizada — Fase 14C com reembolsos e conciliação no beta<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -22,6 +22,7 @@
 | 3.7 | 7 de novembro de 2026 | Protótipo/beta fechado usa Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034) |
 | 3.8 | 7 de novembro de 2026 | Fase 14A: Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste |
 | 3.9 | 7 de novembro de 2026 | Hipótese de `p_t` dinâmico pela mediana de Trust Factor registrada; modelo atual mantém `p_t = 0,2%` fixo e avaliação futura em modo sombra (ADR 0036) |
+| 3.10 | 7 de novembro de 2026 | Fase 14C: reembolso integral em cancelamentos/expirações do beta, reembolso de substituto, extrato e resumo financeiro com PSP simulado |
 
 ## Como interpretar as decisões neste documento
 
@@ -786,6 +787,8 @@ Se o estabelecimento conseguir sacar o saldo por conta própria, a retenção de
 Na alternativa centralizada, o valor fica na conta do JOGA e o repasse ao estabelecimento ocorre depois da confirmação. Essa custódia exige revisão jurídica, segregação contábil e não é presumida como permitida.
 
 No **protótipo e beta fechado**, a ADR 0034 permite uma custódia centralizada **de teste** no Mercado Pago: o valor fica na conta do JOGA, o ledger registra a obrigação por participante e o repasse ao estabelecimento é simulado ou manual após a partida ser declarada como acontecida (`COMPLETED`). Esse fluxo não é escrow, não promete reembolso de produção e só pode operar dinheiro real com MEI/CNPJ, contrato e revisão jurídica. A produção continua com Pagar.me e retenção controlada.
+
+Na **Fase 14C**, cancelamentos e expirações do beta reembolsam integralmente as cobranças pagas usando o PSP simulado. A política de reembolso real, cancelamento após confirmação e conciliação com PSP continua pendente para a 14B.
 
 ### 12.5 Portão de KYC do estabelecimento
 
@@ -2029,3 +2032,4 @@ Próximos passos recomendados, em ordem:
 - Na versão 3.7, o protótipo/beta fechado passou a usar Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034).
 - Na versão 3.8, a Fase 14A passou a usar Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste.
 - Na versão 3.9, foi registrada a hipótese de `p_t` dinâmico pela mediana de Trust Factor; o modelo atual mantém `p_t = 0,2%` fixo e a avaliação futura será em modo sombra (ADR 0036).
+- Na versão 3.10, a Fase 14C passou a reembolsar integralmente cancelamentos/expirações do beta, reembolsar substituto e oferecer extrato/resumo financeiro com PSP simulado.

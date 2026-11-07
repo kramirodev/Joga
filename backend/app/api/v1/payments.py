@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
@@ -16,9 +18,14 @@ from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.service import BookingService
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.permissions import Capability
-from app.modules.organizations.service import OrganizationService
+from app.modules.organizations.service import (
+    Forbidden,
+    OrganizationNotFound,
+    OrganizationService,
+)
 from app.modules.payments.adapter import PspAdapter, PspError, verify_webhook_signature
 from app.modules.payments.dependency import get_psp_adapter
+from app.modules.payments.models import PaymentRefund
 from app.modules.payments.service import PaymentError, PaymentNotFound, PaymentService
 
 router = APIRouter(tags=["payments"])
@@ -35,8 +42,68 @@ class OpenChargesResponse(BaseModel):
     payments: int
 
 
+class RefundRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class RefundResponse(BaseModel):
+    refunded: int
+
+
+class LedgerView(BaseModel):
+    id: UUID
+    booking_payment_id: UUID | None
+    entry_type: str
+    direction: str
+    amount_cents: int
+    status: str
+    details: dict[str, Any] | None
+    created_at: datetime
+
+
+class RefundView(BaseModel):
+    id: UUID
+    booking_payment_id: UUID
+    amount_cents: int
+    status: str
+    reason: str | None
+    provider_reference: str | None
+    processed_at: datetime | None
+    created_at: datetime
+
+
+class BookingFinancialResponse(BaseModel):
+    booking_id: UUID
+    ledger: list[LedgerView]
+    refunds: list[RefundView]
+
+
+class OrganizationSummaryResponse(BaseModel):
+    charged_cents: int
+    paid_cents: int
+    refunded_cents: int
+    pending_cents: int
+    released_cents: int
+    payments: int
+    refunds: int
+
+
 def _error(code: str, status_code: int) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code})
+
+
+def _require_org_capability(
+    session: Session,
+    user_id: UUID,
+    organization_id: UUID,
+    capability: Capability,
+) -> None:
+    try:
+        OrganizationService(session).require_capability(user_id, organization_id, capability)
+    except OrganizationNotFound as exc:
+        raise _error("organization_not_found", status.HTTP_404_NOT_FOUND) from exc
+    except Forbidden as exc:
+        raise _error("forbidden", status.HTTP_403_FORBIDDEN) from exc
 
 
 @router.post("/payments/mercadopago/webhook", include_in_schema=False)
@@ -155,3 +222,110 @@ def open_charges(
         session.rollback()
         raise _error("payment_open_failed", status.HTTP_500_INTERNAL_SERVER_ERROR) from exc
     return OpenChargesResponse(payments=len(bundle.payments))
+
+
+@router.post(
+    "/organizations/{organization_id}/bookings/{booking_id}/refund",
+    response_model=RefundResponse,
+)
+def refund_booking(
+    organization_id: UUID,
+    booking_id: UUID,
+    payload: RefundRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
+) -> RefundResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.BOOKINGS_MANAGE)
+    try:
+        booking = BookingService(session).get(current.user_id, booking_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _error("booking_not_found", status.HTTP_404_NOT_FOUND) from exc
+    if booking.booking.organization_id != organization_id:
+        raise _error("booking_not_found", status.HTTP_404_NOT_FOUND)
+    service = PaymentService(session, adapter)
+    try:
+        refunded = service.refund_booking(
+            booking_id,
+            reason=payload.reason,
+            requested_by=current.user_id,
+        )
+        session.commit()
+    except PspError as exc:
+        session.rollback()
+        raise _error("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE) from exc
+    except PaymentError as exc:
+        session.rollback()
+        raise _error("refund_failed", status.HTTP_409_CONFLICT) from exc
+    return RefundResponse(refunded=refunded)
+
+
+@router.get(
+    "/organizations/{organization_id}/financial/summary",
+    response_model=OrganizationSummaryResponse,
+)
+def organization_summary(
+    organization_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
+) -> OrganizationSummaryResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.BOOKINGS_READ)
+    summary = PaymentService(session, adapter).organization_summary(organization_id)
+    return OrganizationSummaryResponse(**summary)
+
+
+@router.get(
+    "/organizations/{organization_id}/bookings/{booking_id}/financial",
+    response_model=BookingFinancialResponse,
+)
+def booking_financial(
+    organization_id: UUID,
+    booking_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
+) -> BookingFinancialResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.BOOKINGS_READ)
+    try:
+        booking = BookingService(session).get(current.user_id, booking_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _error("booking_not_found", status.HTTP_404_NOT_FOUND) from exc
+    if booking.booking.organization_id != organization_id:
+        raise _error("booking_not_found", status.HTTP_404_NOT_FOUND)
+    service = PaymentService(session, adapter)
+    ledger = service.booking_ledger(booking_id)
+    refunds = session.scalars(
+        select(PaymentRefund)
+        .where(PaymentRefund.booking_id == booking_id)
+        .order_by(PaymentRefund.created_at)
+    ).all()
+    return BookingFinancialResponse(
+        booking_id=booking_id,
+        ledger=[
+            LedgerView(
+                id=item.id,
+                booking_payment_id=item.booking_payment_id,
+                entry_type=item.entry_type,
+                direction=item.direction,
+                amount_cents=item.amount_cents,
+                status=item.status,
+                details=item.details,
+                created_at=item.created_at,
+            )
+            for item in ledger
+        ],
+        refunds=[
+            RefundView(
+                id=item.id,
+                booking_payment_id=item.booking_payment_id,
+                amount_cents=item.amount_cents,
+                status=item.status,
+                reason=item.reason,
+                provider_reference=item.provider_reference,
+                processed_at=item.processed_at,
+                created_at=item.created_at,
+            )
+            for item in refunds
+        ],
+    )

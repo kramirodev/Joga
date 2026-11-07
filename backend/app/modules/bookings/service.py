@@ -316,16 +316,6 @@ class BookingService:
         outgoing.active = False
         outgoing.replaced_by_user_id = new_user_id
         outgoing.replaced_at = now
-        if outgoing.payment_status == "PAID":
-            outgoing.payment_status = "REFUNDED"
-            for payment in self.session.scalars(
-                select(BookingPayment).where(
-                    BookingPayment.booking_id == booking.id,
-                    BookingPayment.participant_id == outgoing.id,
-                    BookingPayment.status == "PAID",
-                )
-            ).all():
-                payment.status = "REFUNDED"
 
         new_participant = BookingParticipant(
             booking_id=booking.id,

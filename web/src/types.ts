@@ -199,6 +199,16 @@ export interface BookingListResponse {
   bookings: Booking[];
 }
 
+export interface OrganizationFinancialSummary {
+  charged_cents: number;
+  paid_cents: number;
+  refunded_cents: number;
+  pending_cents: number;
+  released_cents: number;
+  payments: number;
+  refunds: number;
+}
+
 export interface SportCatalogItem {
   id: string;
   slug: string;

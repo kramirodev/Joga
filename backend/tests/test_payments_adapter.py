@@ -135,6 +135,36 @@ def test_mercadopago_get_order_maps_processed_status() -> None:
     assert status.external_reference == "pay-1"
 
 
+def test_mercadopago_refund_posts_payment_refund() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(201, json={"id": "REF01", "status": "approved"})
+
+    client = httpx.Client(
+        base_url="https://api.mercadopago.test",
+        transport=httpx.MockTransport(handler),
+    )
+    adapter = MercadoPagoAdapter(
+        "TEST-TOKEN",
+        base_url="https://api.mercadopago.test",
+        notification_url=None,
+        timeout_seconds=5,
+        client=client,
+    )
+    result = adapter.refund(
+        provider_order_id="ORD01",
+        provider_payment_id="PAY01",
+        amount_cents=10000,
+    )
+    assert captured["path"] == "/v1/payments/PAY01/refunds"
+    assert captured["payload"] == {"amount": "100.00"}
+    assert result.refund_id == "REF01"
+    assert result.status == "approved"
+
+
 def test_webhook_signature_round_trip() -> None:
     secret = "segredo"
     timestamp = "1700000000"

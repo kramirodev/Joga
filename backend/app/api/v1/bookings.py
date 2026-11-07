@@ -370,6 +370,7 @@ def substitute_participant(
     payload: SubstitutionCreate,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
     service = BookingService(session)
     try:
@@ -378,6 +379,12 @@ def substitute_participant(
             booking_id,
             replace_user_id=payload.replace_user_id,
             new_user_id=payload.new_user_id,
+        )
+        PaymentService(session, adapter).refund_participant(
+            booking_id,
+            payload.replace_user_id,
+            reason="participant_replaced",
+            requested_by=current.user_id,
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001
@@ -395,8 +402,9 @@ def simulate_payment(
     booking_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
-    service = BookingService(session)
+    service = PaymentService(session, adapter)
     try:
         bundle = service.simulate_payment(current.user_id, booking_id)
         session.commit()
@@ -412,10 +420,16 @@ def cancel_booking(
     payload: CancelRequest,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
     service = BookingService(session)
     try:
         bundle = service.cancel(current.user_id, booking_id, reason=payload.reason)
+        PaymentService(session, adapter).refund_booking(
+            booking_id,
+            reason=payload.reason,
+            requested_by=current.user_id,
+        )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
@@ -484,6 +498,7 @@ def cancel_booking_by_venue(
     payload: CancelRequest,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
     service = BookingService(session)
     try:
@@ -495,6 +510,11 @@ def cancel_booking_by_venue(
         )
         if bundle.booking.organization_id != organization_id:
             raise BookingNotFound
+        PaymentService(session, adapter).refund_booking(
+            booking_id,
+            reason=payload.reason,
+            requested_by=current.user_id,
+        )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()

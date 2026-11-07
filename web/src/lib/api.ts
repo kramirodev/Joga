@@ -6,6 +6,7 @@ import type {
   Member,
   MemberListResponse,
   Organization,
+  OrganizationFinancialSummary,
   OrganizationListResponse,
   Role,
   SportCatalogResponse,
@@ -345,6 +346,12 @@ export const api = {
   listOrganizationBookings(organizationId: string): Promise<BookingListResponse> {
     return request<BookingListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/bookings`,
+    );
+  },
+
+  getOrganizationFinancialSummary(organizationId: string): Promise<OrganizationFinancialSummary> {
+    return request<OrganizationFinancialSummary>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/summary`,
     );
   },
 

@@ -16,19 +16,27 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
 from app.modules.bookings.service import BookingService
+from app.modules.payments.adapter import build_psp_adapter
+from app.modules.payments.service import PaymentService
 
 logger = logging.getLogger("joga.bookings")
 
 
 def run_once(session: Session) -> int:
+    adapter = build_psp_adapter()
     try:
         expired = BookingService(session).expire_due()
+        refunds = PaymentService(session, adapter).refund_cancelled_bookings()
         session.commit()
     except Exception:
         session.rollback()
-        logger.exception("expiração de reservas falhou")
+        logger.exception("expiração/reembolso de reservas falhou")
         return 1
-    logger.info("reservas: temporizadores_expirados=%s", expired)
+    finally:
+        close = getattr(adapter, "close", None)
+        if callable(close):
+            close()
+    logger.info("reservas: temporizadores_expirados=%s reembolsos=%s", expired, refunds)
     return 0
 
 

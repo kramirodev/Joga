@@ -190,6 +190,12 @@ export function OrganizationPage() {
     enabled: organizationId.length > 0,
   });
 
+  const financialSummaryQuery = useQuery({
+    queryKey: queryKeys.financialSummary(organizationId),
+    queryFn: () => api.getOrganizationFinancialSummary(organizationId),
+    enabled: organizationId.length > 0,
+  });
+
   const showAudit = organization ? canReadAudit(organization.role) : false;
 
   const auditQuery = useQuery({
@@ -215,6 +221,7 @@ export function OrganizationPage() {
   const invalidateBookings = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.bookings(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary(organizationId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
     ]);
   };
@@ -308,7 +315,11 @@ export function OrganizationPage() {
 
   const loading = organizationQuery.isPending || membersQuery.isPending || venuesQuery.isPending;
   const queryError =
-    organizationQuery.error ?? membersQuery.error ?? venuesQuery.error ?? bookingsQuery.error;
+    organizationQuery.error ??
+    membersQuery.error ??
+    venuesQuery.error ??
+    bookingsQuery.error ??
+    financialSummaryQuery.error;
   const mutationError =
     renameMutation.error ??
     addMemberMutation.error ??
@@ -329,6 +340,7 @@ export function OrganizationPage() {
   const members = membersQuery.data ?? [];
   const venues = venuesQuery.data ?? [];
   const bookings = bookingsQuery.data ?? [];
+  const financialSummary = financialSummaryQuery.data;
   const audit = auditQuery.data ?? [];
   const activeTab: Tab = tab === "audit" && !showAudit ? "members" : tab;
 
@@ -697,6 +709,30 @@ export function OrganizationPage() {
                 </p>
               </div>
             </div>
+            {financialSummary ? (
+              <div className="financial-summary">
+                <div>
+                  <span>Cobrado</span>
+                  <strong>{money(financialSummary.charged_cents)}</strong>
+                </div>
+                <div>
+                  <span>Pago</span>
+                  <strong>{money(financialSummary.paid_cents)}</strong>
+                </div>
+                <div>
+                  <span>Reembolsado</span>
+                  <strong>{money(financialSummary.refunded_cents)}</strong>
+                </div>
+                <div>
+                  <span>Pendente</span>
+                  <strong>{money(financialSummary.pending_cents)}</strong>
+                </div>
+                <div>
+                  <span>Repassado</span>
+                  <strong>{money(financialSummary.released_cents)}</strong>
+                </div>
+              </div>
+            ) : null}
             {bookingsQuery.isPending ? (
               <LoadingBlock label="Carregando reservas..." />
             ) : bookings.length === 0 ? (

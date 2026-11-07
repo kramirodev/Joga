@@ -73,6 +73,7 @@ def test_webhook_requires_secret_outside_local(client: TestClient, db_session: S
         phone_hash_secret=SecretStr("phone-secret"),
         token_hash_secret=SecretStr("token-secret"),
         psp_provider="simulator",
+        mercado_pago_webhook_secret=None,
     )
     api = api_client(client, db_session, settings)
     response = api.post(

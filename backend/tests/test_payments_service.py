@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -11,10 +12,21 @@ from sqlalchemy.orm import Session
 
 from app.modules.bookings.models import Booking, BookingHold, BookingPayment
 from app.modules.bookings.service import BookingNotFound, BookingService
-from app.modules.payments.adapter import PixChargeRequest, ProviderStatus
-from app.modules.payments.models import LedgerEntry, PaymentEvent, PspWebhookEvent
+from app.modules.identity.clock import utcnow
+from app.modules.payments.adapter import (
+    PixChargeRequest,
+    ProviderStatus,
+    RefundResult,
+    SimulatorPspAdapter,
+)
+from app.modules.payments.models import (
+    LedgerEntry,
+    PaymentEvent,
+    PaymentRefund,
+    PspWebhookEvent,
+)
 from app.modules.payments.service import PaymentMismatch, PaymentNotFound, PaymentService
-from tests.helpers_results import make_user
+from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import (
     api_client,
     bearer,
@@ -41,6 +53,21 @@ class FakeAdapter:
             if status.provider_payment_id == provider_payment_id:
                 return status
         raise KeyError(provider_payment_id)
+
+    def refund(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str | None,
+        amount_cents: int,
+    ) -> RefundResult:
+        return RefundResult(
+            provider="mercadopago",
+            refund_id=f"REF-{provider_order_id}",
+            status="processed",
+            amount_cents=amount_cents,
+            raw={"test": True},
+        )
 
 
 def accepted_booking(api, context) -> dict:
@@ -261,3 +288,176 @@ def test_booking_service_can_register_payment_result_idempotently(
         status="PAID",
     )
     assert again.booking.status == "PAYMENT_PENDING"
+
+
+def pay_all(api, context, booking_id: str) -> None:
+    for token in context["tokens"]:
+        response = api.post(
+            f"/api/v1/bookings/{booking_id}/payments/simulate",
+            headers=bearer(token),
+        )
+        assert response.status_code == 200, response.text
+
+
+def test_venue_cancel_refunds_all_paid_participants(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    pay_all(api, context, accepted["id"])
+
+    cancelled = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/cancel",
+        headers=bearer(context["tokens"][0]),
+        json={"reason": "Falha operacional da quadra"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "CANCELLED_BY_VENUE"
+    assert {item["status"] for item in cancelled.json()["payments"]} == {"REFUNDED"}
+
+    refunds = db_session.scalars(
+        select(PaymentRefund).where(PaymentRefund.booking_id == uuid.UUID(accepted["id"]))
+    ).all()
+    assert len(refunds) == 4
+    assert {item.status for item in refunds} == {"PROCESSED"}
+    ledger_count = db_session.scalar(select(func.count()).select_from(LedgerEntry))
+    assert ledger_count == 12
+
+    again = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/refund",
+        headers=bearer(context["tokens"][0]),
+        json={"reason": "Repetição idempotente"},
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["refunded"] == 0
+    assert (
+        len(
+            db_session.scalars(
+                select(PaymentRefund).where(PaymentRefund.booking_id == uuid.UUID(accepted["id"]))
+            ).all()
+        )
+        == 4
+    )
+
+
+def test_substitution_refunds_only_replaced_participant(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    user1 = context["users"][1]
+    participant = next(item for item in accepted["participants"] if item["user_id"] == str(user1))
+    payment = next(
+        item for item in accepted["payments"] if item["participant_id"] == participant["id"]
+    )
+    paid = api.post(
+        f"/api/v1/bookings/{accepted['id']}/payments/simulate",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert paid.status_code == 200, paid.text
+
+    new_user = make_user(db_session)
+    substituted = api.post(
+        f"/api/v1/bookings/{accepted['id']}/substitutions",
+        headers=bearer(context["tokens"][0]),
+        json={"replace_user_id": str(user1), "new_user_id": str(new_user)},
+    )
+    assert substituted.status_code == 200, substituted.text
+    old_payment = db_session.get(BookingPayment, uuid.UUID(payment["id"]))
+    assert old_payment is not None and old_payment.status == "REFUNDED"
+    refunds = db_session.scalars(
+        select(PaymentRefund).where(PaymentRefund.booking_payment_id == uuid.UUID(payment["id"]))
+    ).all()
+    assert len(refunds) == 1
+
+
+def test_t3_expiry_refunds_paid_participants(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    for token in context["tokens"][:3]:
+        response = api.post(
+            f"/api/v1/bookings/{accepted['id']}/payments/simulate",
+            headers=bearer(token),
+        )
+        assert response.status_code == 200, response.text
+
+    BookingService(db_session).expire_due(now=utcnow() + timedelta(hours=2))
+    PaymentService(db_session, SimulatorPspAdapter()).refund_cancelled_bookings()
+    db_session.commit()
+    booking = db_session.get(Booking, uuid.UUID(accepted["id"]))
+    assert booking is not None and booking.status == "CANCELLED"
+    refunds = db_session.scalars(
+        select(PaymentRefund).where(PaymentRefund.booking_id == uuid.UUID(accepted["id"]))
+    ).all()
+    assert len(refunds) == 3
+    assert {item.status for item in refunds} == {"PROCESSED"}
+
+
+def test_financial_summary_and_booking_ledger(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+
+    summary = api.get(
+        f"/api/v1/organizations/{context['organization'].id}/financial/summary",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["charged_cents"] == 40_000
+    assert summary.json()["pending_cents"] == 40_000
+
+    pay_all(api, context, accepted["id"])
+    summary = api.get(
+        f"/api/v1/organizations/{context['organization'].id}/financial/summary",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert summary.json()["paid_cents"] == 40_000
+    assert summary.json()["pending_cents"] == 0
+
+    complete = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/complete",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert complete.status_code == 200, complete.text
+    summary = api.get(
+        f"/api/v1/organizations/{context['organization'].id}/financial/summary",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert summary.json()["released_cents"] == 40_000
+
+    financial = api.get(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/financial",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert financial.status_code == 200, financial.text
+    body = financial.json()
+    assert len(body["ledger"]) == 9
+    assert body["refunds"] == []
+
+
+def test_refund_endpoint_rejects_other_organization(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    outsider = make_user(db_session)
+    outsider_token = make_token(db_session, outsider)
+    response = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/refund",
+        headers=bearer(outsider_token),
+        json={"reason": "Tentativa externa"},
+    )
+    assert response.status_code == 404

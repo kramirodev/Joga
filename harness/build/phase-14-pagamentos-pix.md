@@ -1,6 +1,6 @@
 # Fase 14 — Pagamentos Pix e reembolsos
 
-**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) implementada e validada localmente em 2026-11-07; 14B (Pagar.me produção, split/retenção e reembolso real) pendente.
+**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Pagar.me produção, split/retenção e reembolso real) pendente.
 **Branch:** `feat/14-pagamentos-pix`
 
 ## Fontes e contexto
@@ -31,6 +31,17 @@ Implementar a cobrança Pix por participante no protótipo/beta usando Mercado P
 - Confirmação da reserva somente quando todas as vagas ativas estiverem pagas.
 - Adaptador simulado para testes locais e CI.
 - Exibição do QR Code/copia-e-cola no mobile e status financeiro no painel.
+
+## Escopo 14C — reembolsos, extrato e conciliação (PSP simulado)
+
+- Reembolso integral de reservas canceladas/expiradas que já tinham pagamento.
+- Reembolso de participante substituído, sem duplicar vaga ou cobrança.
+- `payment_refunds` idempotente por cobrança, com status e referência do PSP.
+- Ledger `PAYMENT_REFUNDED` e `VENUE_RELEASE` simulados.
+- Resumo financeiro por organização e extrato por reserva.
+- Worker de expiração também executa reembolsos pendentes.
+- Painel com resumo de cobrado, pago, reembolsado, pendente e repassado.
+- Nenhum reembolso real: o adaptador simulado processa; o Pagar.me/Pix real fica na 14B.
 
 ## Fora do escopo da 14A
 
@@ -106,6 +117,10 @@ pnpm exec tsc --noEmit && pnpm exec eslint . && pnpm exec prettier --check .
 - [x] Adaptador simulado funciona sem rede e sem credenciais.
 - [x] Nenhum dinheiro real, split ou provedor de produção é acionado.
 - [x] Migração reversível e `alembic check` limpo.
+- [x] Cancelamento/expiração reembolsa todas as cobranças pagas.
+- [x] Substituição reembolsa apenas o participante substituído.
+- [x] Reembolso e ledger são idempotentes.
+- [x] Resumo financeiro e extrato por reserva são consultáveis pela organização.
 
 ## Evidências exigidas
 
@@ -126,6 +141,8 @@ pnpm exec tsc --noEmit && pnpm exec eslint . && pnpm exec prettier --check .
 - Painel web e mobile com testes/verificações verdes; QR Code exibido no mobile.
 - Nenhuma credencial real, dinheiro real ou split de produção foi acionado.
 - **Sandbox real:** credencial de teste validada em `/users/me` e ordem Pix criada com status `action_required`, QR Code e ticket URL. Nenhum pagamento foi realizado.
+- **14C:** reembolsos integrais em cancelamento por estabelecimento/jogador e expiração T3; reembolso de substituto; `payment_refunds` idempotente; resumo financeiro e extrato por reserva; worker executa reembolsos pendentes.
+- **Testes 14C:** pagamento total + cancelamento, substituição, expiração T3, idempotência, autorização negativa e resumo/extrato cobertos; backend com **370 passed**.
 
 ## Aprovação e condição de parada
 

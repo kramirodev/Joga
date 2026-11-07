@@ -34,6 +34,8 @@ export const queryKeys = {
   photos: (organizationId: string, venueId: string) =>
     ["organizations", organizationId, "venues", venueId, "photos"] as const,
   bookings: (organizationId: string) => ["organizations", organizationId, "bookings"] as const,
+  financialSummary: (organizationId: string) =>
+    ["organizations", organizationId, "financial-summary"] as const,
   sports: ["sports"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
 };

@@ -102,6 +102,17 @@ function stubApi(role: Role, bookings: Booking[] = []) {
     if (url.endsWith("/members")) return jsonResponse({ members });
     if (url.endsWith("/venues")) return jsonResponse({ venues });
     if (url.endsWith("/bookings")) return jsonResponse({ bookings });
+    if (url.endsWith("/financial/summary")) {
+      return jsonResponse({
+        charged_cents: 0,
+        paid_cents: 0,
+        refunded_cents: 0,
+        pending_cents: 0,
+        released_cents: 0,
+        payments: 0,
+        refunds: 0,
+      });
+    }
     if (url.includes("/audit")) return jsonResponse({ audit: [], limit: 50, offset: 0 });
     return jsonResponse({ detail: { code: "not_found" } }, 404);
   });

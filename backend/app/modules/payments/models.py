@@ -24,6 +24,43 @@ from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 
 LEDGER_ENTRY_TYPES = ("CHARGE_CREATED", "PAYMENT_CONFIRMED", "PAYMENT_REFUNDED", "VENUE_RELEASE")
+REFUND_STATUSES = ("PENDING", "PROCESSED", "FAILED")
+
+
+class PaymentRefund(Base):
+    """Reembolso idempotente de uma cobrança Pix."""
+
+    __tablename__ = "payment_refunds"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'PROCESSED', 'FAILED')",
+            name="status_valid",
+        ),
+        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
+        UniqueConstraint("booking_payment_id", name="uq_payment_refunds_payment"),
+        Index("ix_payment_refunds_booking_created", "booking_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    booking_payment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("booking_payments.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
 
 
 class PaymentEvent(Base):

@@ -959,6 +959,8 @@ Em ambos os casos, o backend mantém um ledger financeiro interno auditável. O 
 - MED pode debitar o recebedor ou a plataforma; o evento precisa ser registrado e tratado.
 - Estorno sem saldo é evento de cauda, coberto por `p_t·V` e por contrato.
 
+Na 14C, cancelamentos e expirações do beta reembolsam integralmente as cobranças pagas via adaptador simulado. O reembolso é idempotente, registrado em `payment_refunds` e no ledger; o estorno real e a conciliação com PSP ficam para a 14B.
+
 ### 15.6 Precificação no backend
 
 A taxa aplicada é calculada pela fórmula do documento conceitual §17:
@@ -1083,6 +1085,7 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `booking_timers` | T1, T2 e T3 independentes por reserva |
 | `booking_events` | Histórico append-only de transições e ações |
 | `booking_payments` | Cobranças simuladas por participante e versão |
+| `payment_refunds` | Reembolsos idempotentes por cobrança |
 | `payment_events` | Eventos append-only de cobrança/PSP |
 | `psp_webhook_events` | Webhooks brutos e idempotência por provedor |
 | `ledger_entries` | Direitos e obrigações financeiras internas |
@@ -1168,6 +1171,8 @@ API versionada em `/api/v1`. Schemas explícitos, sem retornar modelos ORM diret
 Na Fase 12A, quadras, modalidades, agenda, bloqueios e fotos ficam sob `/api/v1/organizations/{organization_id}/venues/{venue_id}/...`, sempre escopados pela organização. O upload usa multipart, e a foto é servida por endpoint autenticado com `Cache-Control: no-store`.
 
 Na Fase 14A, a cobrança Pix é criada após o aceite da reserva, no fluxo de pagamento; o webhook público fica em `/api/v1/payments/mercadopago/webhook`, a sincronização em `/api/v1/bookings/{booking_id}/payments/{payment_id}/sync` e a reabertura de cobranças em `/api/v1/organizations/{organization_id}/bookings/{booking_id}/payments/open`.
+
+Na Fase 14C, a organização consulta `/api/v1/organizations/{organization_id}/financial/summary`, o extrato em `/api/v1/organizations/{organization_id}/bookings/{booking_id}/financial` e solicita reembolso em `/api/v1/organizations/{organization_id}/bookings/{booking_id}/refund`.
 
 Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI):
 

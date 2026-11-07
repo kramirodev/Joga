@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -18,7 +18,12 @@ from app.modules.payments.adapter import (
     ProviderStatus,
     PspAdapter,
 )
-from app.modules.payments.models import LedgerEntry, PaymentEvent, PspWebhookEvent
+from app.modules.payments.models import (
+    LedgerEntry,
+    PaymentEvent,
+    PaymentRefund,
+    PspWebhookEvent,
+)
 
 INTERNAL_PAID = {"processed", "approved", "paid"}
 INTERNAL_REFUNDED = {"refunded", "charged_back"}
@@ -225,6 +230,253 @@ class PaymentService:
         self._apply_status(booking, payment, status)
         webhook.processed_at = utcnow()
         self.session.flush()
+
+    def simulate_payment(self, actor_user_id: uuid.UUID, booking_id: uuid.UUID) -> BookingBundle:
+        """Registra pagamento simulado e mantém o ledger consistente."""
+
+        bundle = self.bookings.simulate_payment(actor_user_id, booking_id)
+        participant = self.session.scalar(
+            select(BookingParticipant).where(
+                BookingParticipant.booking_id == booking_id,
+                BookingParticipant.user_id == actor_user_id,
+                BookingParticipant.active.is_(True),
+            )
+        )
+        if participant is None:
+            return bundle
+        payment = self.session.scalar(
+            select(BookingPayment).where(
+                BookingPayment.booking_id == booking_id,
+                BookingPayment.participant_id == participant.id,
+                BookingPayment.version == bundle.booking.payment_version,
+            )
+        )
+        if payment is None or payment.status != "PAID":
+            return bundle
+        self._ledger(
+            payment,
+            "PAYMENT_CONFIRMED",
+            "CREDIT",
+            payment.amount_cents,
+            {"provider": "simulator"},
+        )
+        self._event(
+            payment,
+            "PAYMENT_SIMULATED",
+            f"simulator:{payment.id}:PAID",
+            {"provider": "simulator"},
+        )
+        self.session.flush()
+        return bundle
+
+    def refund_payment(
+        self,
+        booking_id: uuid.UUID,
+        payment_id: uuid.UUID,
+        *,
+        reason: str,
+        requested_by: uuid.UUID | None = None,
+    ) -> PaymentRefund:
+        """Estorna uma cobrança paga; a operação é idempotente por pagamento."""
+
+        booking = self.session.scalar(
+            select(Booking).where(Booking.id == booking_id).with_for_update()
+        )
+        if booking is None:
+            raise BookingNotFound
+        payment = self._payment(booking.id, payment_id)
+        existing = self.session.scalar(
+            select(PaymentRefund).where(PaymentRefund.booking_payment_id == payment.id)
+        )
+        if existing is not None and existing.status == "PROCESSED":
+            return existing
+        if payment.status == "REFUNDED":
+            if existing is not None:
+                return existing
+            raise PaymentError("payment already refunded without refund record")
+        if payment.status != "PAID":
+            raise PaymentError("only paid charges can be refunded")
+
+        if existing is None:
+            existing = PaymentRefund(
+                booking_id=booking.id,
+                booking_payment_id=payment.id,
+                amount_cents=payment.amount_cents,
+                status="PENDING",
+                reason=reason,
+                requested_by=requested_by,
+            )
+            self.session.add(existing)
+            self.session.flush()
+
+        result = self.adapter.refund(
+            provider_order_id=payment.provider_order_id or "",
+            provider_payment_id=payment.provider_payment_id,
+            amount_cents=payment.amount_cents,
+        )
+        processed = result.status.lower() in {"processed", "approved", "refunded"}
+        existing.status = "PROCESSED" if processed else "FAILED"
+        existing.provider_reference = result.refund_id
+        existing.processed_at = utcnow() if processed else None
+        if processed:
+            self.bookings.register_payment_result(
+                booking.id,
+                payment.id,
+                status="REFUNDED",
+                provider_reference=result.refund_id,
+            )
+            self._ledger(
+                payment,
+                "PAYMENT_REFUNDED",
+                "DEBIT",
+                payment.amount_cents,
+                {"provider": result.provider, "refund_id": result.refund_id},
+            )
+            self._event(
+                payment,
+                "REFUND_PROCESSED",
+                f"{result.provider}:{result.refund_id}:REFUNDED",
+                {"reason": reason, "refund_id": result.refund_id},
+            )
+        self.session.flush()
+        return existing
+
+    def refund_booking(
+        self,
+        booking_id: uuid.UUID,
+        *,
+        reason: str,
+        requested_by: uuid.UUID | None = None,
+    ) -> int:
+        """Estorna todas as cobranças pagas de uma reserva."""
+
+        payments = list(
+            self.session.scalars(
+                select(BookingPayment).where(
+                    BookingPayment.booking_id == booking_id,
+                    BookingPayment.status == "PAID",
+                )
+            ).all()
+        )
+        for payment in payments:
+            self.refund_payment(
+                booking_id,
+                payment.id,
+                reason=reason,
+                requested_by=requested_by,
+            )
+        return len(payments)
+
+    def refund_participant(
+        self,
+        booking_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        reason: str,
+        requested_by: uuid.UUID | None = None,
+    ) -> int:
+        """Estorna cobranças pagas de um participante substituído."""
+
+        participant_ids = list(
+            self.session.scalars(
+                select(BookingParticipant.id).where(
+                    BookingParticipant.booking_id == booking_id,
+                    BookingParticipant.user_id == user_id,
+                )
+            ).all()
+        )
+        if not participant_ids:
+            return 0
+        payments = list(
+            self.session.scalars(
+                select(BookingPayment).where(
+                    BookingPayment.booking_id == booking_id,
+                    BookingPayment.participant_id.in_(participant_ids),
+                    BookingPayment.status == "PAID",
+                )
+            ).all()
+        )
+        for payment in payments:
+            self.refund_payment(
+                booking_id,
+                payment.id,
+                reason=reason,
+                requested_by=requested_by,
+            )
+        return len(payments)
+
+    def refund_cancelled_bookings(self) -> int:
+        """Estorna reservas terminais que ainda tenham cobrança paga."""
+
+        booking_ids = list(
+            self.session.scalars(
+                select(Booking.id)
+                .join(BookingPayment, BookingPayment.booking_id == Booking.id)
+                .where(
+                    Booking.status.in_(
+                        {
+                            "CANCELLED",
+                            "EXPIRED",
+                            "CANCELLED_BY_VENUE",
+                            "CANCELLED_BY_PLAYER",
+                            "DECLINED",
+                        }
+                    ),
+                    BookingPayment.status == "PAID",
+                )
+                .distinct()
+            ).all()
+        )
+        count = 0
+        for booking_id in booking_ids:
+            count += self.refund_booking(booking_id, reason="booking_cancelled")
+        return count
+
+    def booking_ledger(self, booking_id: uuid.UUID) -> list[LedgerEntry]:
+        return list(
+            self.session.scalars(
+                select(LedgerEntry)
+                .where(LedgerEntry.booking_id == booking_id)
+                .order_by(LedgerEntry.created_at, LedgerEntry.id)
+            ).all()
+        )
+
+    def organization_summary(self, organization_id: uuid.UUID) -> dict[str, int]:
+        """Totais financeiros internos da organização, sem conciliação externa."""
+
+        base = (
+            select(BookingPayment)
+            .join(Booking, Booking.id == BookingPayment.booking_id)
+            .where(Booking.organization_id == organization_id)
+        )
+        payments = list(self.session.scalars(base).all())
+        released = self.session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount_cents), 0)).where(
+                LedgerEntry.booking_id.in_(
+                    select(Booking.id).where(Booking.organization_id == organization_id)
+                ),
+                LedgerEntry.entry_type == "VENUE_RELEASE",
+            )
+        )
+        return {
+            "charged_cents": sum(item.amount_cents for item in payments),
+            "paid_cents": sum(item.amount_cents for item in payments if item.status == "PAID"),
+            "refunded_cents": sum(
+                item.amount_cents for item in payments if item.status == "REFUNDED"
+            ),
+            "pending_cents": sum(
+                item.amount_cents for item in payments if item.status == "PENDING"
+            ),
+            "released_cents": int(released or 0),
+            "payments": len(payments),
+            "refunds": self.session.scalar(
+                select(func.count())
+                .select_from(PaymentRefund)
+                .join(Booking, Booking.id == PaymentRefund.booking_id)
+                .where(Booking.organization_id == organization_id)
+            )
+            or 0,
+        }
 
     def record_venue_release(self, booking_id: uuid.UUID) -> None:
         booking = self.session.get(Booking, booking_id)

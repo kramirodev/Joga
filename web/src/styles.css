@@ -795,6 +795,35 @@ select:hover {
   list-style: none;
 }
 
+.financial-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.financial-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: rgb(255 255 255 / 1.5%);
+}
+
+.financial-summary span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.financial-summary strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
 .booking-card {
   display: flex;
   align-items: center;

@@ -70,6 +70,17 @@ class ProviderStatus:
     raw: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class RefundResult:
+    """Resultado de um estorno no PSP."""
+
+    provider: str
+    refund_id: str | None
+    status: str
+    amount_cents: int
+    raw: dict[str, Any]
+
+
 class PspAdapter(Protocol):
     """Contrato mínimo para cobrança Pix e consulta de status."""
 
@@ -80,6 +91,14 @@ class PspAdapter(Protocol):
     def get_order(self, provider_order_id: str) -> ProviderStatus: ...
 
     def get_payment(self, provider_payment_id: str) -> ProviderStatus: ...
+
+    def refund(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str | None,
+        amount_cents: int,
+    ) -> RefundResult: ...
 
 
 class SimulatorPspAdapter:
@@ -127,6 +146,21 @@ class SimulatorPspAdapter:
             amount_cents=None,
             external_reference=None,
             raw={"simulated": True},
+        )
+
+    def refund(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str | None,
+        amount_cents: int,
+    ) -> RefundResult:
+        return RefundResult(
+            provider=self.provider_name,
+            refund_id=f"SIMREF-{uuid.uuid4().hex.upper()}",
+            status="processed",
+            amount_cents=amount_cents,
+            raw={"simulated": True, "order_id": provider_order_id},
         )
 
 
@@ -221,6 +255,36 @@ class MercadoPagoAdapter:
             return _parse_payment_status(response.json())
         except (KeyError, TypeError, ValueError) as exc:
             raise PspInvalidResponse("resposta inválida do Mercado Pago") from exc
+
+    def refund(
+        self,
+        *,
+        provider_order_id: str,
+        provider_payment_id: str | None,
+        amount_cents: int,
+    ) -> RefundResult:
+        if provider_payment_id is None:
+            raise PspUnavailable("pagamento do Mercado Pago sem identificador para estorno")
+        try:
+            response = self._client.post(
+                f"/v1/payments/{provider_payment_id}/refunds",
+                json={"amount": _amount_string(amount_cents)},
+                headers=self._headers,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PspUnavailable("falha ao estornar no Mercado Pago") from exc
+        try:
+            raw = response.json()
+            return RefundResult(
+                provider="mercadopago",
+                refund_id=str(raw["id"]) if raw.get("id") else None,
+                status=str(raw.get("status") or "unknown"),
+                amount_cents=amount_cents,
+                raw=raw,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PspInvalidResponse("resposta de estorno inválida do Mercado Pago") from exc
 
 
 def _parse_order(raw: dict[str, Any], request: PixChargeRequest) -> PixChargeResult:
@@ -344,6 +408,7 @@ __all__ = [
     "PspError",
     "PspInvalidResponse",
     "PspUnavailable",
+    "RefundResult",
     "SimulatorPspAdapter",
     "build_psp_adapter",
     "verify_webhook_signature",

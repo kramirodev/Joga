@@ -656,3 +656,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Correção:** a Orders API rejeitou `notification_url` no payload (`unsupported_properties`); o adaptador deixou de enviá-lo. A URL de webhook deve ser configurada no painel de Webhooks do Mercado Pago.
 - **Webhook:** ainda sem segredo configurado; o endpoint local/teste aceita sem validação, mas produção exige a chave secreta.
 - **Nenhum pagamento real** foi realizado; apenas uma ordem sandbox de R$ 1,00.
+
+### 2026-11-07 — Fase 14C: reembolsos, extrato e conciliação simulada
+
+- **Reembolsos:** cancelamento por jogador/estabelecimento, expiração T3 e substituição reembolsam cobranças pagas via PSP simulado.
+- **Modelo:** `payment_refunds` idempotente por cobrança, com status `PENDING`, `PROCESSED` e `FAILED`; ledger `PAYMENT_REFUNDED`.
+- **Conciliação:** resumo por organização (cobrado, pago, reembolsado, pendente, repassado) e extrato por reserva.
+- **Painel:** cartão de resumo financeiro na aba de reservas.
+- **Worker:** `advance_bookings` expira prazos e executa reembolsos de reservas terminais.
+- **Migração:** `bb4083b7b697`; upgrade/downgrade/upgrade e `alembic check`.
+- **Testes:** reembolso total, substituição, expiração, idempotência, autorização negativa, resumo e extrato cobertos.
+- **Fora do escopo:** reembolso real, MED, conciliação com PSP e política pós-confirmação (14B/15).
