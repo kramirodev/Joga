@@ -197,6 +197,7 @@ export type LobbyInvite = {
 };
 
 export type BookingParticipant = {
+  id: string;
   user_id: string;
   seat: number;
   active: boolean;
@@ -205,6 +206,18 @@ export type BookingParticipant = {
   confirmed_at: string | null;
   declined_at: string | null;
   replaced_by_user_id: string | null;
+};
+
+export type BookingPayment = {
+  id: string;
+  participant_id: string;
+  status: string;
+  amount_cents: number;
+  provider: string | null;
+  qr_code: string | null;
+  qr_code_base64: string | null;
+  ticket_url: string | null;
+  expires_at: string | null;
 };
 
 export type BookingTimer = {
@@ -233,6 +246,7 @@ export type Booking = {
   cancellation_reason: string | null;
   participants: BookingParticipant[];
   timers: BookingTimer[];
+  payments: BookingPayment[];
 };
 
 export class ApiError extends Error {

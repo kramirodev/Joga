@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError, bookingsApi, type Booking } from './api';
 import { loadSession, type StoredSession } from './session';
@@ -136,6 +136,10 @@ export function BookingPanel() {
           own.confirmed_at === null &&
           own.declined_at === null;
         const canPay = booking.status === 'PAYMENT_PENDING' && own?.payment_status === 'PENDING';
+        const ownPayment = own
+          ? booking.payments.find((payment) => payment.participant_id === own.id)
+          : undefined;
+        const canSimulate = canPay && ownPayment?.provider === 'simulator';
         return (
           <View key={booking.id} style={styles.card}>
             <Text style={styles.label}>{STATUS_LABELS[booking.status] ?? booking.status}</Text>
@@ -204,7 +208,25 @@ export function BookingPanel() {
               </View>
             ) : null}
 
-            {canPay ? (
+            {canPay && ownPayment?.qr_code_base64 ? (
+              <Image
+                accessibilityLabel="QR Code Pix"
+                source={{ uri: `data:image/png;base64,${ownPayment.qr_code_base64}` }}
+                style={styles.qr}
+              />
+            ) : null}
+            {canPay && ownPayment?.qr_code ? (
+              <Text selectable style={styles.pixCode}>
+                Pix copia e cola: {ownPayment.qr_code}
+              </Text>
+            ) : null}
+            {canPay && ownPayment?.ticket_url ? (
+              <Text selectable style={styles.meta}>
+                Link do Pix: {ownPayment.ticket_url}
+              </Text>
+            ) : null}
+
+            {canSimulate ? (
               <Pressable
                 accessibilityRole="button"
                 disabled={busy !== null}
@@ -246,6 +268,8 @@ const styles = StyleSheet.create({
   label: { color: '#52625a', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   value: { color: '#173b2a', fontSize: 15, lineHeight: 22 },
   meta: { color: '#52625a', fontSize: 13, lineHeight: 19 },
+  qr: { width: 200, height: 200, alignSelf: 'center', backgroundColor: '#fff' },
+  pixCode: { color: '#173b2a', fontFamily: 'monospace', fontSize: 12, lineHeight: 18 },
   actions: { gap: 8 },
   button: {
     alignItems: 'center',

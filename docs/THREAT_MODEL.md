@@ -63,6 +63,8 @@
 | Acesso indevido a reserva | Participante ou organização consultar reserva alheia | autorização por participante/organização em cada rota | testes contínuos a cada novo endpoint |
 | Custódia centralizada no beta | Dinheiro real ficar na conta do JOGA sem retenção/split de produção | escopo restrito a protótipo/beta de teste, ledger interno, repasse após `COMPLETED`, CNPJ/MEI e revisão jurídica para dinheiro real | risco jurídico/regulatório se o beta operar dinheiro real sem validação |
 | Troca de PSP sem abstração | Domínio acoplado ao Mercado Pago e difícil migrar para Pagar.me | adaptador de PSP com modos `mercadopago_beta` e `pagarme_production` | implementação da Fase 14 ainda não iniciada |
+| Webhook de pagamento forjado/replay | Confirmar reserva sem pagamento real | assinatura HMAC, consulta server-to-server, `psp_webhook_events` idempotente e ledger append-only | segredo e URL de produção ainda não configurados |
+| Divergência de valor/referência | PSP devolver valor diferente da cobrança | conferência de `amount_cents` e `external_reference` antes de aplicar status | conciliação periódica pertence à Fase 15 |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 
@@ -103,6 +105,8 @@
 - **Médio:** pagamento de reserva é simulado; PSP real, webhooks e reembolso pertencem à Fase 14.
 - **Médio:** no protótipo/beta, a custódia é centralizada e de teste; dinheiro real exige CNPJ/MEI, contrato e revisão jurídica.
 - **Médio:** produção depende de contratação do Pagar.me e validação de retenção/split/reembolso.
+- **Médio:** webhook do Mercado Pago ainda não foi validado com credenciais sandbox reais; testes usam HTTP simulado.
+- **Médio:** e-mail do pagador é obrigatório na Orders API e o cadastro atual é por telefone.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 
 ## Critérios para piloto

@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -299,7 +300,7 @@ class BookingPayment(Base):
     __table_args__ = (
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
         CheckConstraint(
-            "status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED')",
+            "status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED', 'EXPIRED')",
             name="status_valid",
         ),
         UniqueConstraint(
@@ -307,6 +308,16 @@ class BookingPayment(Base):
             "participant_id",
             "version",
             name="uq_booking_payments_participant_version",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_order_id",
+            name="uq_booking_payments_provider_order",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_payment_id",
+            name="uq_booking_payments_provider_payment",
         ),
         Index("ix_booking_payments_booking_status", "booking_id", "status"),
     )
@@ -323,7 +334,16 @@ class BookingPayment(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING", server_default=text("'PENDING'")
     )
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
     provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    qr_code: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    qr_code_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ticket_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()

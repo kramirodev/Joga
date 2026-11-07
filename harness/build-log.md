@@ -628,3 +628,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Limite:** o fluxo é de teste, não é escrow nem garantia de reembolso de produção. Dinheiro real no beta exige CNPJ/MEI, contrato e revisão jurídica; CPF fica restrito a protótipo/sandbox.
 - **Produção:** permanece o Pagar.me Flex para retenção/split/liberação controlada, conforme ADR 0021.
 - **Documentação:** ADR 0034 criada; ADR 0021, conceito v3.7, técnica §15, PLANS Fase 14, threat model e README atualizados. Nenhuma integração de PSP implementada.
+
+### 2026-11-07 — Fase 14A: Mercado Pago Orders API, webhook e ledger
+
+- **PSP:** adaptador `simulator` (local/CI) e `mercadopago` (Orders API `/v1/orders`), com uma ordem Pix por participante, `X-Idempotency-Key` e `payer.email` de teste no sandbox.
+- **Pagamento:** cobranças vinculadas à reserva, participante, vaga e versão; QR Code, copia-e-cola, ticket URL e expiração persistidos.
+- **Webhook:** rota pública com validação HMAC opcional, `psp_webhook_events` idempotente e consulta server-to-server antes de aplicar status.
+- **Confirmação:** reserva só confirma com todas as vagas ativas pagas; replay e status repetidos são idempotentes.
+- **Ledger:** `CHARGE_CREATED`, `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` e `VENUE_RELEASE` (este simulado/manual após `COMPLETED`).
+- **Mobile:** QR Code/copia-e-cola exibido apenas ao próprio participante; organização vê apenas status.
+- **Migração:** `c97807d1b140`; upgrade/downgrade/upgrade e `alembic check`.
+- **Testes:** **364 passed** com PostgreSQL; adaptador com HTTP simulado, webhook idempotente, valor divergente e autorização negativa cobertos.
+- **Fora do escopo:** dinheiro real, split, retenção de produção, reembolso real, KYC e Pagar.me (14B).

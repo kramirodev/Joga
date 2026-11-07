@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.7<br>
-**Status:** visão de produto atualizada — Mercado Pago no protótipo/beta e Pagar.me na produção<br>
+**Versão:** 3.8<br>
+**Status:** visão de produto atualizada — Fase 14A com Orders API, Pix e ledger de teste<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -20,6 +20,7 @@
 | 3.5 | 7 de novembro de 2026 | Fase 12A: quadras/espaços, modalidades, agenda, preços, bloqueios e fotos de quadra; revisão inicial pelo proprietário/administrador da organização, com revisão independente prevista para a Fase 17 |
 | 3.6 | 7 de novembro de 2026 | Fase 13A: reservas com T1/T2/T3 independentes, hold transacional, substituição sem reiniciar T3 e pagamento simulado apenas em ambiente local/teste; T2 em tempo corrido nesta fase |
 | 3.7 | 7 de novembro de 2026 | Protótipo/beta fechado usa Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034) |
+| 3.8 | 7 de novembro de 2026 | Fase 14A: Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste |
 
 ## Como interpretar as decisões neste documento
 
@@ -2023,3 +2024,4 @@ Próximos passos recomendados, em ordem:
 - Na versão 3.5, a Fase 12A passou a cobrir quadras, modalidades, agenda, preços, bloqueios e fotos de quadra; a revisão inicial de foto é feita por `OWNER`/`ADMIN`, com revisão independente na Fase 17.
 - Na versão 3.6, a Fase 13A passou a implementar reservas com T1/T2/T3 independentes, hold transacional e substituição sem reiniciar T3; T2 usa tempo corrido e o pagamento é simulado apenas em ambiente local/teste.
 - Na versão 3.7, o protótipo/beta fechado passou a usar Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034).
+- Na versão 3.8, a Fase 14A passou a usar Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste.

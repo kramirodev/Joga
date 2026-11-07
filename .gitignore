@@ -13,3 +13,5 @@ backend/var/
 .ruff_cache/
 .coverage
 htmlcov/
+
+*.swp

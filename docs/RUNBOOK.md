@@ -427,6 +427,24 @@ cd backend
 - **Produção:** Pagar.me Flex, com retenção/split e liberação controlada (ADR 0021).
 - Nenhuma credencial real de PSP deve ser configurada sem autorização.
 
+#### Fase 14A — Mercado Pago Orders API
+
+- O adaptador padrão é `simulator` (`JOGA_PSP_PROVIDER=simulator`), sem rede e sem credenciais.
+- Para sandbox, configure no `backend/.env` (não versionado):
+
+```env
+JOGA_PSP_PROVIDER=mercadopago
+JOGA_MERCADO_PAGO_ACCESS_TOKEN=TEST-...
+JOGA_MERCADO_PAGO_PAYER_EMAIL=seu-email-de-teste@testuser.com
+JOGA_MERCADO_PAGO_WEBHOOK_SECRET=...
+JOGA_MERCADO_PAGO_NOTIFICATION_URL=https://seu-dominio/api/v1/payments/mercadopago/webhook
+```
+
+- Rotas: webhook público em `POST /api/v1/payments/mercadopago/webhook`, sincronização em `POST /api/v1/bookings/{booking}/payments/{payment}/sync` e reabertura em `POST /api/v1/organizations/{org}/bookings/{booking}/payments/open`.
+- O webhook valida HMAC quando o segredo está configurado e consulta a ordem no PSP antes de mudar o estado.
+- O QR Code/copia-e-cola aparece no mobile para o próprio participante; a organização vê apenas o status.
+- Nenhum pagamento real deve ser feito no protótipo/beta.
+
 ### Quadras, agenda e fotos (Fase 12A)
 
 - A rota do painel é `/organizations/{org}/venues/{venue}`; a lista de estabelecimentos tem o atalho “Quadras e fotos”.

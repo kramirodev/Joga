@@ -127,6 +127,7 @@ export interface VenuePhotoListResponse {
 }
 
 export interface BookingParticipant {
+  id: string;
   user_id: string;
   seat: number;
   active: boolean;

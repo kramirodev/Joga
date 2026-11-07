@@ -916,6 +916,8 @@ O Pagar.me Flex é a primeira opção **de produção**, condicionada a contrato
 
 No **protótipo e beta fechado**, a ADR 0034 adota o Mercado Pago Checkout Transparente (Pix) com custódia centralizada de teste: o valor fica na conta do JOGA, o ledger registra a obrigação e o repasse ao estabelecimento ocorre após a partida ser declarada como acontecida. Esse fluxo é de teste e não substitui a retenção/split de produção.
 
+A 14A usa a **Orders API** (`/v1/orders`) com uma ordem Pix por participante, `X-Idempotency-Key`, webhook `order`, validação de assinatura quando configurada e ledger interno. O adaptador `simulator` cobre CI e desenvolvimento; o adaptador `mercadopago` exige token sandbox e não deve operar dinheiro real.
+
 Não construir processador próprio, carteira custodial ou custódia informal.
 
 ### 15.2 Modelo de cobrança
@@ -1081,6 +1083,9 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `booking_timers` | T1, T2 e T3 independentes por reserva |
 | `booking_events` | Histórico append-only de transições e ações |
 | `booking_payments` | Cobranças simuladas por participante e versão |
+| `payment_events` | Eventos append-only de cobrança/PSP |
+| `psp_webhook_events` | Webhooks brutos e idempotência por provedor |
+| `ledger_entries` | Direitos e obrigações financeiras internas |
 | `booking_state_transitions` | Histórico auditável de estados |
 | `booking_substitutions` | Substituições e vínculo com a vaga |
 | `payment_orders` | Pedido de pagamento por reserva |
@@ -1161,6 +1166,8 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 API versionada em `/api/v1`. Schemas explícitos, sem retornar modelos ORM diretamente. Datas em ISO 8601/UTC. Erros em formato consistente e sem detalhes internos.
 
 Na Fase 12A, quadras, modalidades, agenda, bloqueios e fotos ficam sob `/api/v1/organizations/{organization_id}/venues/{venue_id}/...`, sempre escopados pela organização. O upload usa multipart, e a foto é servida por endpoint autenticado com `Cache-Control: no-store`.
+
+Na Fase 14A, a cobrança Pix é criada após o aceite da reserva, no fluxo de pagamento; o webhook público fica em `/api/v1/payments/mercadopago/webhook`, a sincronização em `/api/v1/bookings/{booking_id}/payments/{payment_id}/sync` e a reabertura de cobranças em `/api/v1/organizations/{organization_id}/bookings/{booking_id}/payments/open`.
 
 Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI):
 

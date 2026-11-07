@@ -100,6 +100,24 @@ class Settings(BaseSettings):
     booking_t3_minutes: int = Field(default=60, ge=10, le=240)
     booking_payment_buffer_minutes: int = Field(default=10, ge=0, le=30)
 
+    # PSP (Fase 14A). O simulador é o padrão local/CI; o Mercado Pago exige
+    # credenciais sandbox e nunca deve ser usado com dinheiro real neste estágio.
+    psp_provider: str = Field(default="simulator", pattern="^(simulator|mercadopago)$")
+    mercado_pago_access_token: SecretStr | None = None
+    mercado_pago_webhook_secret: SecretStr | None = None
+    mercado_pago_base_url: str = Field(
+        default="https://api.mercadopago.com",
+        min_length=1,
+        max_length=200,
+    )
+    mercado_pago_payer_email: str = Field(
+        default="test_user_br@testuser.com",
+        min_length=3,
+        max_length=120,
+    )
+    mercado_pago_notification_url: str | None = Field(default=None, max_length=500)
+    psp_timeout_seconds: int = Field(default=10, ge=1, le=60)
+
     # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
     # significa que nenhum operador está autorizado.
     review_operators: str = ""
@@ -121,6 +139,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_default_secret_outside_local(self) -> Self:
+        if self.psp_provider == "mercadopago" and self.mercado_pago_access_token is None:
+            raise ValueError("JOGA_MERCADO_PAGO_ACCESS_TOKEN é obrigatório com psp=mercadopago")
         if self.environment.lower() in LOCAL_ENVIRONMENTS:
             return self
         secrets = {

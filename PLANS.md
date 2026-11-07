@@ -161,7 +161,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14 — Pagamentos Pix e reembolsos
 
-**Status:** Não iniciada. Decisão de PSP do protótipo/beta registrada na ADR 0034 (Mercado Pago Checkout Transparente, custódia centralizada de teste); produção segue com Pagar.me (ADR 0021).
+**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) implementada e validada localmente em 2026-11-07; 14B (Pagar.me produção, split/retenção e reembolso real) pendente.
 
 **Escopo:** integração com PSP, um `order` por reserva e uma cobrança Pix por participante; no protótipo/beta, Mercado Pago com custódia centralizada de teste e repasse após `COMPLETED`; em produção, split/retenção com Pagar.me; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estados financeiros individuais; reembolso integral quando a reserva não se completa; pagamentos tardios; conciliação básica.
 

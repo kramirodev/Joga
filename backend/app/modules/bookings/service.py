@@ -535,17 +535,73 @@ class BookingService:
         payment.paid_at = now
         participant.payment_status = "PAID"
         self._event(booking, actor_user_id, "payment.simulated", booking.status, booking.status)
-
-        active = self._active_participants(booking.id)
-        if active and all(item.payment_status == "PAID" for item in active):
-            booking.status = "CONFIRMED"
-            booking.confirmed_at = now
-            self._finish_timer(booking.id, "T3", "COMPLETED", now)
-            self._release_hold(booking.id, "CONFIRMED", now)
-            self._event(booking, actor_user_id, "booking.confirmed", "PAYMENT_PENDING", "CONFIRMED")
-            self._audit(actor_user_id, booking, "booking.confirmed", {})
+        self._confirm_if_all_paid(booking, actor_user_id, now)
         self.session.flush()
         return self._bundle(booking)
+
+    def register_payment_result(
+        self,
+        booking_id: uuid.UUID,
+        payment_id: uuid.UUID,
+        *,
+        status: str,
+        provider_reference: str | None = None,
+        paid_at: datetime | None = None,
+    ) -> BookingBundle:
+        """Aplica o resultado de um PSP/simulador a uma cobrança.
+
+        A confirmação da reserva só ocorre quando todas as vagas ativas estão
+        pagas; replay e estados repetidos são idempotentes.
+        """
+
+        if status not in {"PAID", "REFUNDED", "FAILED", "EXPIRED", "PENDING"}:
+            raise BookingInvalid
+        booking = self._lock_booking(booking_id)
+        payment = self.session.get(BookingPayment, payment_id)
+        if payment is None or payment.booking_id != booking.id:
+            raise BookingInvalid
+        participant = self.session.get(BookingParticipant, payment.participant_id)
+        if participant is None:
+            raise BookingInvalid
+        if payment.status == status:
+            return self._bundle(booking)
+
+        payment.status = status
+        if provider_reference:
+            payment.provider_reference = provider_reference
+        now = paid_at or utcnow()
+        if status == "PAID":
+            payment.paid_at = now
+            participant.payment_status = "PAID"
+            self._event(booking, None, "payment.confirmed", booking.status, booking.status)
+            self._confirm_if_all_paid(booking, None, now)
+        elif status == "REFUNDED":
+            participant.payment_status = "REFUNDED"
+            self._event(booking, None, "payment.refunded", booking.status, booking.status)
+        elif status in {"FAILED", "EXPIRED"}:
+            participant.payment_status = status
+            self._event(booking, None, "payment.failed", booking.status, booking.status)
+        self.session.flush()
+        return self._bundle(booking)
+
+    def _confirm_if_all_paid(
+        self,
+        booking: Booking,
+        actor_user_id: uuid.UUID | None,
+        now: datetime,
+    ) -> None:
+        if booking.status not in {"PAYMENT_PENDING", "SUBSTITUTING"}:
+            return
+        active = self._active_participants(booking.id)
+        if not active or not all(item.payment_status == "PAID" for item in active):
+            return
+        previous = booking.status
+        booking.status = "CONFIRMED"
+        booking.confirmed_at = now
+        self._finish_timer(booking.id, "T3", "COMPLETED", now)
+        self._release_hold(booking.id, "CONFIRMED", now)
+        self._event(booking, actor_user_id, "booking.confirmed", previous, "CONFIRMED")
+        self._audit(actor_user_id, booking, "booking.confirmed", {})
 
     # -- cancelamento/conclusão --------------------------------------------
 

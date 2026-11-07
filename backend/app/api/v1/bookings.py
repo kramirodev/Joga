@@ -24,6 +24,9 @@ from app.modules.bookings.service import (
 )
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.service import Forbidden, OrganizationNotFound
+from app.modules.payments.adapter import PspAdapter, PspError
+from app.modules.payments.dependency import get_psp_adapter
+from app.modules.payments.service import PaymentService
 
 router = APIRouter(tags=["bookings"])
 
@@ -50,6 +53,7 @@ class CancelRequest(BaseModel):
 
 
 class ParticipantView(BaseModel):
+    id: UUID
     user_id: UUID
     seat: int
     active: bool
@@ -83,6 +87,15 @@ class PaymentView(BaseModel):
     version: int
     amount_cents: int
     status: str
+    provider: str | None
+    provider_order_id: str | None
+    provider_payment_id: str | None
+    provider_status: str | None
+    qr_code: str | None
+    qr_code_base64: str | None
+    ticket_url: str | None
+    expires_at: datetime | None
+    last_synced_at: datetime | None
     paid_at: datetime | None
 
 
@@ -134,6 +147,7 @@ def _handle(exc: Exception) -> HTTPException:
         BookingInvalid: ("invalid_input", status.HTTP_422_UNPROCESSABLE_CONTENT),
         BookingTransitionError: ("invalid_transition", status.HTTP_409_CONFLICT),
         BookingConflict: (getattr(exc, "code", "booking_conflict"), status.HTTP_409_CONFLICT),
+        PspError: ("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE),
         BookingError: ("booking_error", status.HTTP_409_CONFLICT),
     }
     for error_type, (code, status_code) in mapping.items():
@@ -177,6 +191,7 @@ def _view(
         updated_at=booking.updated_at,
         participants=[
             ParticipantView(
+                id=item.id,
                 user_id=item.user_id,
                 seat=item.seat,
                 active=item.active,
@@ -221,6 +236,30 @@ def _view(
                 version=item.version,
                 amount_cents=item.amount_cents,
                 status=item.status,
+                provider=item.provider,
+                provider_order_id=item.provider_order_id,
+                provider_payment_id=item.provider_payment_id,
+                provider_status=item.provider_status,
+                qr_code=(
+                    item.qr_code
+                    if not include_all_payments
+                    and participant_users.get(item.participant_id) == viewer_user_id
+                    else None
+                ),
+                qr_code_base64=(
+                    item.qr_code_base64
+                    if not include_all_payments
+                    and participant_users.get(item.participant_id) == viewer_user_id
+                    else None
+                ),
+                ticket_url=(
+                    item.ticket_url
+                    if not include_all_payments
+                    and participant_users.get(item.participant_id) == viewer_user_id
+                    else None
+                ),
+                expires_at=item.expires_at,
+                last_synced_at=item.last_synced_at,
                 paid_at=item.paid_at,
             )
             for item in bundle.payments
@@ -397,12 +436,14 @@ def accept_booking(
     booking_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
     service = BookingService(session)
     try:
         bundle = service.accept(current.user_id, booking_id)
         if bundle.booking.organization_id != organization_id:
             raise BookingNotFound
+        PaymentService(session, adapter).open_charges(bundle.booking.id)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
@@ -470,12 +511,14 @@ def complete_booking(
     booking_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> BookingView:
     service = BookingService(session)
     try:
         bundle = service.complete(current.user_id, booking_id)
         if bundle.booking.organization_id != organization_id:
             raise BookingNotFound
+        PaymentService(session, adapter).record_venue_release(booking_id)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
