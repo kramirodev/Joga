@@ -26,6 +26,8 @@ class Capability(StrEnum):
     MEMBERS_MANAGE = "members:manage"
     VENUES_READ = "venues:read"
     VENUES_MANAGE = "venues:manage"
+    BOOKINGS_READ = "bookings:read"
+    BOOKINGS_MANAGE = "bookings:manage"
     AUDIT_READ = "audit:read"
 
 
@@ -39,6 +41,8 @@ ROLE_CAPABILITIES: dict[Role, frozenset[Capability]] = {
             Capability.MEMBERS_MANAGE,
             Capability.VENUES_READ,
             Capability.VENUES_MANAGE,
+            Capability.BOOKINGS_READ,
+            Capability.BOOKINGS_MANAGE,
             Capability.AUDIT_READ,
         }
     ),
@@ -48,6 +52,8 @@ ROLE_CAPABILITIES: dict[Role, frozenset[Capability]] = {
             Capability.MEMBERS_READ,
             Capability.VENUES_READ,
             Capability.VENUES_MANAGE,
+            Capability.BOOKINGS_READ,
+            Capability.BOOKINGS_MANAGE,
         }
     ),
 }

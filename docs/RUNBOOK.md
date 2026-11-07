@@ -400,7 +400,23 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. Reservas, pagamentos, KYC, clãs, moderação e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel. Reservas no mobile, pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
+
+### Reservas e temporizadores (Fase 13A)
+
+- Endpoints: `POST/GET /api/v1/bookings`, `GET /api/v1/bookings/{id}`, confirmação de participante, substituição, cancelamento e pagamento simulado; no painel, `GET /api/v1/organizations/{org}/bookings` e ações de aceite/recusa/conclusão.
+- T1 começa na criação; T2 começa quando todas as vagas confirmam; T3 começa no aceite com hold ativo. Os prazos são independentes e controlados pelo backend.
+- T2 usa tempo corrido nesta fase; horário comercial e feriados ficam pendentes.
+- O pagamento é simulado apenas em ambiente `local`/`test`/`development`/`ci`; nenhum PSP real é acionado.
+- Worker de expiração:
+
+```bash
+cd backend
+.venv/bin/python -m scripts.advance_bookings
+.venv/bin/python -m scripts.advance_bookings --loop --interval 60
+```
+
+- O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Reexecutar é seguro.
 
 ### Quadras, agenda e fotos (Fase 12A)
 

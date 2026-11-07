@@ -151,6 +151,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 13 — Reservas e temporizadores
 
+**Status:** 13A (backend de reservas, holds e T1/T2/T3) implementada e validada localmente em 2026-11-07; 13B (painel/mobile) pendente.
+
 **Escopo:** solicitação de reserva ao estabelecimento, aceite/recusa, bloqueio temporário do espaço específico, T1 (confirmação de participação), T2 (resposta do estabelecimento), T3 (bloqueio e pagamento), expiração, substituição de participantes, cancelamento antes da confirmação, origem `JOGA` e máquina de estados auditável.
 
 **Não fazer:** abrir cobrança antes do aceite e do bloqueio; confirmar reserva sem todos os pagamentos; permitir transição livre por endpoint; prorrogar bloqueio ou reiniciar prazo na substituição; cobrar comissão de reserva externa sem acordo explícito.

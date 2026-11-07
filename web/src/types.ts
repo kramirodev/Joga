@@ -126,6 +126,78 @@ export interface VenuePhotoListResponse {
   can_review: boolean;
 }
 
+export interface BookingParticipant {
+  user_id: string;
+  seat: number;
+  active: boolean;
+  contribution_cents: number;
+  payment_status: string;
+  confirmed_at: string | null;
+  declined_at: string | null;
+  replaced_by_user_id: string | null;
+}
+
+export interface BookingTimer {
+  timer_type: "T1" | "T2" | "T3";
+  status: string;
+  started_at: string;
+  deadline_at: string;
+  ended_at: string | null;
+}
+
+export interface BookingHold {
+  id: string;
+  space_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  released_at: string | null;
+}
+
+export interface BookingPayment {
+  id: string;
+  participant_id: string;
+  version: number;
+  amount_cents: number;
+  status: string;
+  paid_at: string | null;
+}
+
+export interface Booking {
+  id: string;
+  lobby_id: string;
+  organization_id: string;
+  organization_venue_id: string;
+  venue_space_id: string;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  price_cents: number;
+  currency: string;
+  seats: number;
+  policy_version: string;
+  cancellation_policy: string;
+  response_due_at: string | null;
+  payment_due_at: string | null;
+  hold_expires_at: string | null;
+  accepted_at: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  expired_at: string | null;
+  completed_at: string | null;
+  cancellation_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  participants: BookingParticipant[];
+  timers: BookingTimer[];
+  hold: BookingHold | null;
+  payments: BookingPayment[];
+}
+
+export interface BookingListResponse {
+  bookings: Booking[];
+}
+
 export interface SportCatalogItem {
   id: string;
   slug: string;

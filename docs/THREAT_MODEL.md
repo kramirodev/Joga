@@ -57,6 +57,10 @@
 | Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos, quadras, fotos ou auditoria de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | recursos de reservas/financeiro ainda não existem |
 | Upload de imagem maliciosa | Polyglot, malware, decompression bomb, EXIF com localização, arquivo acima do limite | validação real por Pillow, reencode JPEG, remoção de EXIF, limites de bytes/pixels/dimensões, storage privado e serving autorizado | antivírus dedicado e storage de produção pendentes |
 | Abuso de revisão de foto | Organização aprovar conteúdo impróprio ou foto com pessoa | revisão por `OWNER`/`ADMIN`, motivo obrigatório na rejeição, auditoria, `OPERATOR` sem revisão | revisão independente e denúncia de foto pertencem à Fase 17 |
+| Dupla reserva | Dois aceites concorrentes para o mesmo espaço/intervalo | lock da linha do espaço, verificação transacional de holds/reservas, teste PostgreSQL concorrente | exclusão por intervalo no banco ainda não usada; cobertura por serviço |
+| Timer adulterado ou reiniciado | Cliente tentar prorrogar T1/T2/T3 ou agir após o prazo | prazos no backend, timers independentes, rejeição após deadline, worker idempotente | T2 em horário comercial pendente |
+| Pagamento simulado exposto | Usar endpoint de simulação em produção | rota só permite ambiente local/teste/development/ci | revisão de configuração de deploy necessária |
+| Acesso indevido a reserva | Participante ou organização consultar reserva alheia | autorização por participante/organização em cada rota | testes contínuos a cada novo endpoint |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 
@@ -78,6 +82,8 @@
 - Fotos de quadra entram apenas por fluxo autenticado de organização, com revisão e sem pessoas identificáveis.
 - Fotos de quadra são validadas pelo conteúdo real, reencodadas em JPEG, têm EXIF removido e são servidas por endpoint autenticado com `no-store`.
 - A revisão inicial de foto é restrita a `OWNER`/`ADMIN` e auditada; `OPERATOR` não revisa.
+- Reservas são escopadas por participante ou organização; hold e confirmação usam lock transacional.
+- T1/T2/T3 são registrados em timers independentes; o pagamento simulado é bloqueado fora de ambiente local/teste.
 
 ## Riscos residuais e bloqueios
 
@@ -91,6 +97,8 @@
 - **Médio:** catálogo de avatares e moderação de nome/avatar pertencem à Fase 17.
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pertencem à Fase 17.
 - **Médio:** storage de fotos é local; provedor de produção, criptografia, backup e limpeza de órfãos não definidos.
+- **Médio:** T2 de reservas usa tempo corrido; horário comercial, feriados e dias fechados pendentes.
+- **Médio:** pagamento de reserva é simulado; PSP real, webhooks e reembolso pertencem à Fase 14.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 
 ## Critérios para piloto

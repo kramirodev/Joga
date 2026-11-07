@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     venue_photo_min_dimension: int = Field(default=200, ge=1, le=2000)
     venue_photo_output_max_dimension: int = Field(default=2000, ge=200, le=4000)
 
+    # Reservas e temporizadores (Fase 13A). T2 opera em tempo corrido nesta
+    # fase; horário comercial fica pendente de implementação.
+    booking_t1_minutes: int = Field(default=60, ge=5, le=240)
+    booking_t2_minutes: int = Field(default=30, ge=5, le=240)
+    booking_t2_max_minutes: int = Field(default=240, ge=30, le=1440)
+    booking_t3_minutes: int = Field(default=60, ge=10, le=240)
+    booking_payment_buffer_minutes: int = Field(default=10, ge=0, le=30)
+
     # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
     # significa que nenhum operador está autorizado.
     review_operators: str = ""

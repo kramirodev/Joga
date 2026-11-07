@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.5<br>
-**Status:** visão de produto atualizada — Fase 12A com quadras, agenda e fotos de quadra<br>
+**Versão:** 3.6<br>
+**Status:** visão de produto atualizada — Fase 13A com reservas, holds e T1/T2/T3<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -18,6 +18,7 @@
 | 3.3 | 6 de novembro de 2026 | Fase 7: relato de resultado em 10 minutos; três resultados; regra de 50% sem tolerância separada; segunda rodada; capitão provisório por partidas finalizadas e UUID; evidência apenas textual; revisão humana por CLI; backend-only sem MMR |
 | 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado; fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
 | 3.5 | 7 de novembro de 2026 | Fase 12A: quadras/espaços, modalidades, agenda, preços, bloqueios e fotos de quadra; revisão inicial pelo proprietário/administrador da organização, com revisão independente prevista para a Fase 17 |
+| 3.6 | 7 de novembro de 2026 | Fase 13A: reservas com T1/T2/T3 independentes, hold transacional, substituição sem reiniciar T3 e pagamento simulado apenas em ambiente local/teste; T2 em tempo corrido nesta fase |
 
 ## Como interpretar as decisões neste documento
 
@@ -674,6 +675,8 @@ Além disso, haverá um prazo máximo em tempo corrido, para que uma solicitaç�
 O JOGA deverá calcular se ainda existe tempo suficiente para a quadra responder, realizar o bloqueio e os jogadores pagarem antes da partida. Se não houver tempo suficiente, a solicitação não deverá ser enviada.
 
 A referência de 30 minutos é inicial e deverá ser validada com os primeiros estabelecimentos. Uma sugestão posterior de duas horas não deve ser tratada como decisão aprovada.
+
+> **Nota de implementação da Fase 13A:** o backend controla T1/T2/T3 com timers independentes, mas T2 usa tempo corrido nesta fase. O cálculo por horário de funcionamento, feriados e dias fechados permanece pendente.
 
 ### 11.3 T3 — Prazo de bloqueio e pagamento
 
@@ -2013,3 +2016,4 @@ Próximos passos recomendados, em ordem:
 - Na versão 3.4, o aplicativo passou a não exibir fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, e fotos ficaram restritas a quadras e estabelecimentos.
 - Foi criado o kit da partida como requisito logístico do formato, sem alterar o critério de capitão, a elegibilidade ou o MMR.
 - Na versão 3.5, a Fase 12A passou a cobrir quadras, modalidades, agenda, preços, bloqueios e fotos de quadra; a revisão inicial de foto é feita por `OWNER`/`ADMIN`, com revisão independente na Fase 17.
+- Na versão 3.6, a Fase 13A passou a implementar reservas com T1/T2/T3 independentes, hold transacional e substituição sem reiniciar T3; T2 usa tempo corrido e o pagamento é simulado apenas em ambiente local/teste.

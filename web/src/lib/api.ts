@@ -1,5 +1,7 @@
 import type {
   AuditListResponse,
+  Booking,
+  BookingListResponse,
   ChallengeResponse,
   Member,
   MemberListResponse,
@@ -337,6 +339,42 @@ export const api = {
   listAudit(organizationId: string): Promise<AuditListResponse> {
     return request<AuditListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/audit?limit=50`,
+    );
+  },
+
+  listOrganizationBookings(organizationId: string): Promise<BookingListResponse> {
+    return request<BookingListResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings`,
+    );
+  },
+
+  acceptBooking(organizationId: string, bookingId: string): Promise<Booking> {
+    return request<Booking>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/accept`,
+      { method: "POST" },
+    );
+  },
+
+  declineBooking(organizationId: string, bookingId: string, reason: string): Promise<Booking> {
+    return request<Booking>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/decline`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+
+  completeBooking(organizationId: string, bookingId: string): Promise<Booking> {
+    return request<Booking>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/complete`,
+      { method: "POST" },
     );
   },
 

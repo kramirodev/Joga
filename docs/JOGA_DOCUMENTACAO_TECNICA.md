@@ -800,6 +800,10 @@ Toda consulta ou mutação deve validar organização, associação do usuário,
 
 ## 14. Reservas, bloqueio e temporizadores
 
+### 14.0 Nota de implementação da Fase 13A
+
+A 13A implementa `bookings`, `booking_participants`, `booking_holds`, `booking_timers`, `booking_events` e `booking_payments`. A reserva nasce em `PARTICIPANT_CONFIRMATION` (T1), passa a `REQUESTED` (T2) quando todas as vagas confirmam, e a `PAYMENT_PENDING` (T3) após o aceite e o hold. T2 usa tempo corrido nesta fase; horário comercial fica pendente. O pagamento é simulado apenas em ambiente local/teste e a conclusão é operacional pelo estabelecimento; a Fase 14 substitui a simulação pelo PSP real.
+
 ### 14.1 Solicitação e aceite
 
 O fluxo começa com uma solicitação de reserva vinculada a:
@@ -1070,6 +1074,9 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `bookings` | Reservas originadas no JOGA |
 | `booking_participants` | Participantes, vagas e contribuições |
 | `booking_holds` | Bloqueios temporários e expiração |
+| `booking_timers` | T1, T2 e T3 independentes por reserva |
+| `booking_events` | Histórico append-only de transições e ações |
+| `booking_payments` | Cobranças simuladas por participante e versão |
 | `booking_state_transitions` | Histórico auditável de estados |
 | `booking_substitutions` | Substituições e vínculo com a vaga |
 | `payment_orders` | Pedido de pagamento por reserva |

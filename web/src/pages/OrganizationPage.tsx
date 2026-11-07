@@ -10,7 +10,29 @@ import { formatDate, formatError, requestIdOf, roleLabel } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import type { Member, Organization, Role, Venue } from "../types";
 
-type Tab = "members" | "venues" | "audit";
+type Tab = "members" | "venues" | "bookings" | "audit";
+
+const BOOKING_STATUS_LABELS: Record<string, string> = {
+  PARTICIPANT_CONFIRMATION: "Confirmação dos jogadores",
+  REQUESTED: "Aguardando estabelecimento",
+  DECLINED: "Recusada",
+  EXPIRED: "Expirada",
+  HOLD_CONFIRMED: "Bloqueio confirmado",
+  PAYMENT_PENDING: "Aguardando pagamentos",
+  CONFIRMED: "Confirmada",
+  CANCELLED: "Cancelada",
+  CANCELLED_BY_VENUE: "Cancelada pelo estabelecimento",
+  CANCELLED_BY_PLAYER: "Cancelada pelo jogador",
+  SUBSTITUTING: "Em substituição",
+  COMPLETED: "Concluída",
+};
+
+function money(cents: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
+}
 
 function canReadAudit(role: Role): boolean {
   return role === "OWNER" || role === "ADMIN";
@@ -162,6 +184,12 @@ export function OrganizationPage() {
     enabled: organizationId.length > 0,
   });
 
+  const bookingsQuery = useQuery({
+    queryKey: queryKeys.bookings(organizationId),
+    queryFn: async () => (await api.listOrganizationBookings(organizationId)).bookings,
+    enabled: organizationId.length > 0,
+  });
+
   const showAudit = organization ? canReadAudit(organization.role) : false;
 
   const auditQuery = useQuery({
@@ -180,6 +208,13 @@ export function OrganizationPage() {
   const invalidateVenues = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.venues(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
+    ]);
+  };
+
+  const invalidateBookings = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.bookings(organizationId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
     ]);
   };
@@ -234,21 +269,66 @@ export function OrganizationPage() {
     },
   });
 
+  const acceptBookingMutation = useMutation({
+    mutationFn: (bookingId: string) => api.acceptBooking(organizationId, bookingId),
+    onSuccess: async () => {
+      setNotice("Reserva aceita e bloqueio confirmado.");
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const declineBookingMutation = useMutation({
+    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
+      api.declineBooking(organizationId, bookingId, reason),
+    onSuccess: async () => {
+      setNotice("Reserva recusada.");
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const completeBookingMutation = useMutation({
+    mutationFn: (bookingId: string) => api.completeBooking(organizationId, bookingId),
+    onSuccess: async () => {
+      setNotice("Reserva concluída.");
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
   const loading = organizationQuery.isPending || membersQuery.isPending || venuesQuery.isPending;
-  const queryError = organizationQuery.error ?? membersQuery.error ?? venuesQuery.error;
+  const queryError =
+    organizationQuery.error ?? membersQuery.error ?? venuesQuery.error ?? bookingsQuery.error;
   const mutationError =
     renameMutation.error ??
     addMemberMutation.error ??
     addVenueMutation.error ??
-    toggleVenueMutation.error;
+    toggleVenueMutation.error ??
+    acceptBookingMutation.error ??
+    declineBookingMutation.error ??
+    completeBookingMutation.error;
   const busy =
     renameMutation.isPending ||
     addMemberMutation.isPending ||
     addVenueMutation.isPending ||
-    toggleVenueMutation.isPending;
+    toggleVenueMutation.isPending ||
+    acceptBookingMutation.isPending ||
+    declineBookingMutation.isPending ||
+    completeBookingMutation.isPending;
 
   const members = membersQuery.data ?? [];
   const venues = venuesQuery.data ?? [];
+  const bookings = bookingsQuery.data ?? [];
   const audit = auditQuery.data ?? [];
   const activeTab: Tab = tab === "audit" && !showAudit ? "members" : tab;
 
@@ -391,6 +471,15 @@ export function OrganizationPage() {
             onClick={() => setTab("venues")}
           >
             Estabelecimentos <span className="tab__count">{venues.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "bookings"}
+            className={activeTab === "bookings" ? "tab tab--active" : "tab"}
+            onClick={() => setTab("bookings")}
+          >
+            Reservas <span className="tab__count">{bookings.length}</span>
           </button>
           {showAudit ? (
             <button
@@ -594,6 +683,106 @@ export function OrganizationPage() {
                 </button>
               </form>
             </div>
+          </section>
+        ) : null}
+
+        {activeTab === "bookings" ? (
+          <section className="card">
+            <div className="section-heading">
+              <div>
+                <h2>Reservas</h2>
+                <p className="muted">
+                  Solicitações de reserva originadas no JOGA, com prazos e bloqueios controlados
+                  pelo servidor.
+                </p>
+              </div>
+            </div>
+            {bookingsQuery.isPending ? (
+              <LoadingBlock label="Carregando reservas..." />
+            ) : bookings.length === 0 ? (
+              <EmptyState title="Nenhuma reserva">
+                As solicitações aparecem aqui quando um lobby pedir uma quadra.
+              </EmptyState>
+            ) : (
+              <ul className="booking-list">
+                {bookings.map((booking) => {
+                  const activeParticipants = booking.participants.filter(
+                    (participant) => participant.active,
+                  ).length;
+                  return (
+                    <li key={booking.id} className="booking-card">
+                      <div className="booking-card__main">
+                        <strong>
+                          {formatDate(booking.starts_at)} — {formatDate(booking.ends_at)}
+                        </strong>
+                        <span className="badge badge--muted">
+                          {BOOKING_STATUS_LABELS[booking.status] ?? booking.status}
+                        </span>
+                        <small>
+                          {activeParticipants} vagas · {money(booking.price_cents)}
+                        </small>
+                        <small>
+                          {booking.timers
+                            .map(
+                              (timer) =>
+                                `${timer.timer_type} ${timer.status.toLowerCase()} até ${formatDate(
+                                  timer.deadline_at,
+                                )}`,
+                            )
+                            .join(" · ")}
+                        </small>
+                        {booking.cancellation_reason ? (
+                          <small>Motivo: {booking.cancellation_reason}</small>
+                        ) : null}
+                      </div>
+                      <div className="booking-card__actions">
+                        {booking.status === "REQUESTED" ? (
+                          <>
+                            <button
+                              type="button"
+                              className="button button--small"
+                              disabled={busy}
+                              onClick={() => acceptBookingMutation.mutate(booking.id)}
+                            >
+                              Aceitar
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--small button--danger"
+                              disabled={busy}
+                              onClick={() => {
+                                const reason = window.prompt("Motivo da recusa (obrigatório):");
+                                if (reason) {
+                                  declineBookingMutation.mutate({
+                                    bookingId: booking.id,
+                                    reason,
+                                  });
+                                }
+                              }}
+                            >
+                              Recusar
+                            </button>
+                          </>
+                        ) : null}
+                        {booking.status === "CONFIRMED" ? (
+                          <button
+                            type="button"
+                            className="button button--small"
+                            disabled={busy}
+                            onClick={() => completeBookingMutation.mutate(booking.id)}
+                          >
+                            Concluir
+                          </button>
+                        ) : null}
+                        {booking.status === "PAYMENT_PENDING" ? (
+                          <small className="muted">Aguardando pagamentos</small>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         ) : null}
 

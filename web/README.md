@@ -10,7 +10,8 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
 - Quadras/espaços, modalidades, agenda semanal, preços, bloqueios e fotos de quadra com revisão.
-- Sem reservas, pagamentos, KYC, clãs, moderação ou publicidade.
+- Reservas: lista por organização, aceite/recusa e conclusão; T1/T2/T3 controlados pelo backend.
+- Sem reservas no mobile, pagamentos reais, KYC, clãs, moderação ou publicidade.
 
 ## Desenvolvimento local
 

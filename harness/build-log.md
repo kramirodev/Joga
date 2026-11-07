@@ -602,3 +602,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migrações:** `99c1055b81b5` e `0261da35ece5`; `alembic check` sem operações pendentes e ciclo upgrade → downgrade → upgrade validado em banco descartável com PostGIS.
 - **Smoke:** quadra, modalidade, agenda, bloqueio, upload, aprovação e serving de foto no navegador, sem erro de console.
 - **Fora do escopo:** 12B (KYC/PSP), UI mobile de descoberta de quadras, reservas, pagamentos e storage de produção. Nenhum provedor externo acionado.
+
+### 2026-11-07 — Fase 13A: reservas, holds e T1/T2/T3
+
+- **Modelo:** `bookings`, `booking_participants`, `booking_holds`, `booking_timers`, `booking_events` e `booking_payments`; T1/T2/T3 independentes e hold por espaço/intervalo.
+- **Fluxo:** criação idempotente por lobby, confirmação/recusa de participante (T1), aceite/recusa do estabelecimento (T2), hold transacional, pagamento simulado (T3), substituição sem reiniciar T3, cancelamento e conclusão.
+- **Autorização:** participante só acessa as próprias reservas; organização só acessa reservas dos próprios estabelecimentos; capacidades `bookings:read`/`bookings:manage`.
+- **Concorrência:** lock da linha do espaço e verificação transacional de holds/reservas; teste PostgreSQL com dois aceites concorrentes gera um hold e um conflito.
+- **Worker:** `scripts/advance_bookings.py` expira T1/T2/T3 e libera holds vencidos; idempotente.
+- **Painel:** aba de reservas com aceite/recusa/conclusão e prazos; teste de UI cobre o aceite por operador.
+- **Testes:** **352 passed** com `JOGA_TEST_DATABASE_URL`; `ruff`, formatação e `mypy` verdes; migração `26b70fd0fbc7` com upgrade/downgrade/upgrade e `alembic check`.
+- **Fora do escopo:** 13B (jornada mobile completa), T2 em horário comercial, PSP real, reembolso real, redirecionamento de quadra e conclusão automática pelo ciclo da partida.

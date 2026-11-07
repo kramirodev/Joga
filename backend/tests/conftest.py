@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.infrastructure.database.base import Base
 from app.main import create_app
+from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401

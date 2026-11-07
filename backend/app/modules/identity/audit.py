@@ -13,7 +13,7 @@ from app.modules.identity.models import AuditLog
 def record_audit(
     session: Session,
     *,
-    actor_user_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
     action: str,
     resource_type: str,
     resource_id: uuid.UUID | str | None,

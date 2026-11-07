@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.bookings import router as bookings_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.health import router as health_router
 from app.api.v1.matches import router as matches_router
@@ -26,6 +27,7 @@ api_router.include_router(results_router)
 api_router.include_router(ratings_router)
 api_router.include_router(organizations_router)
 api_router.include_router(venues_router)
+api_router.include_router(bookings_router)
 api_router.include_router(chat_router)
 api_router.include_router(social_router)
 api_router.include_router(web_auth_router)

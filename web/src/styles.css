@@ -786,6 +786,54 @@ select:hover {
   margin-top: 0.3rem;
 }
 
+.booking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: rgb(255 255 255 / 1.5%);
+}
+
+.booking-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.booking-card__main strong,
+.booking-card__main small {
+  overflow-wrap: anywhere;
+}
+
+.booking-card__main small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.booking-card__main .badge {
+  align-self: flex-start;
+}
+
+.booking-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .audit-row {
   align-items: flex-start;
 }
@@ -903,7 +951,8 @@ select:hover {
   .member-row,
   .venue-row,
   .audit-row,
-  .schedule-row {
+  .schedule-row,
+  .booking-card {
     flex-direction: column;
     align-items: stretch;
   }
