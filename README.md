@@ -17,6 +17,7 @@ As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile.
 1. Leia [`AGENTS.md`](AGENTS.md), [`docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`](docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md), [`GOALS.md`](GOALS.md) e [`PLANS.md`](PLANS.md) para instruções, a visão de produto (referência máxima), objetivos e sequência normativa das fases.
 2. Consulte [`docs/JOGA_DOCUMENTACAO_TECNICA.md`](docs/JOGA_DOCUMENTACAO_TECNICA.md) para arquitetura e contratos-alvo; decisões ainda abertas estão identificadas por fase.
 3. Siga [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para subir backend, banco local, verificações, painel web e aplicativo Android.
+4. Consulte [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md) para bloqueios externos, dívidas técnicas e itens ainda abertos.
 4. Use [`PROMPTS.md`](PROMPTS.md) para preparar uma tarefa e [`harness/build/`](harness/build/) para revisar o escopo de cada fase.
 5. Consulte [`harness/build-log.md`](harness/build-log.md) para status e evidências observadas.
 6. [`README_INICIO.md`](README_INICIO.md) continua como guia complementar para organizar o início do trabalho.
