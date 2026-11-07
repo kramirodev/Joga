@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.3<br>
-**Status:** visão de produto atualizada — Fase 7 com regras de resultado, capitão provisório e evidência textual<br>
-**Data:** 6 de novembro de 2026<br>
+**Versão:** 3.4<br>
+**Status:** visão de produto atualizada — avatares gerados, ausência de fotos de pessoas e kit da partida<br>
+**Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -16,6 +16,7 @@
 | 3.1 | 5 de novembro de 2026 | Coeficiente 1,8 reposicionado como hipótese inicial de segurança; piso, preço variável e teto; PSP com múltiplos pagamentos individuais por reserva como condição de viabilidade |
 | 3.2 | 5 de novembro de 2026 | Fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`; 1,8 reinterpretado como fator de segurança de 95%; piso, preço variável e teto removidos; elegibilidade mínima; Pagar.me Flex como primeira opção; KYC, liberação após a partida e interface financeira do recebedor; comércio de produtos fora do escopo |
 | 3.3 | 6 de novembro de 2026 | Fase 7: relato de resultado em 10 minutos; três resultados; regra de 50% sem tolerância separada; segunda rodada; capitão provisório por partidas finalizadas e UUID; evidência apenas textual; revisão humana por CLI; backend-only sem MMR |
+| 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado; fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
 
 ## Como interpretar as decisões neste documento
 
@@ -320,6 +321,33 @@ Não haverá uma segunda etapa obrigatória de confirmação de prontidão de ci
 
 A confirmação de participação é o primeiro dos três temporizadores independentes descritos na seção 11. Ela não se confunde com o prazo de resposta do estabelecimento nem com o prazo de bloqueio e pagamento.
 
+### 8.5 Kit da partida e equipamento
+
+Uma partida coletiva também depende de equipamento. O JOGA deverá tratar esse requisito como **condição logística da partida**, não como atributo de status, elo, Trust Factor ou capitania.
+
+Cada formato terá um catálogo versionado de requisitos mínimos. Referência inicial:
+
+| Formato | Requisitos |
+|---|---|
+| Futebol 5x5 | bola |
+| Basquete 3x3 | bola |
+| Vôlei de praia | rede e bola |
+| Tênis | bolas (raquete é responsabilidade individual) |
+
+Regras:
+
+- O requisito pertence à partida, não ao jogador. Itens diferentes podem ter responsáveis diferentes.
+- Qualquer participante pode assumir um item — “eu levo a bola” — ou registrar que o local fornece. A declaração é um **compromisso**, não prova de posse.
+- A cobertura do kit é confirmada antes do check-in por um responsável logístico: quem criou o lobby manual ou um participante designado pelo grupo. Esse papel não dá autoridade sobre o resultado e não altera a capitania simbólica da seção 9.1.
+- O estado do kit é visível apenas aos participantes e ao responsável logístico, com os itens faltantes e quem assumiu cada um.
+- Partidas ranqueadas devem priorizar equipamento fornecido pelo local ou pela organização. O kit não influencia a escolha do capitão.
+- Descumprir um item assumido gera um evento de confiabilidade registrado no servidor, sujeito a confirmação e contestação. Um evento isolado não pune automaticamente.
+- O JOGA não verifica posse, não exige foto do equipamento e não usa “ter bola” como elegibilidade, recomendação ou ranking.
+- Se o kit estiver incompleto, a interface mostra o que falta e permite que outro participante assuma o item ou que a partida seja cancelada/redirecionada conforme as regras de reserva.
+- Aluguel, venda ou caução de equipamento permanecem fora do escopo inicial (seção 15).
+
+A decisão está registrada na ADR 0030.
+
 ---
 
 ## 9. Partidas, equipes e resultados
@@ -344,6 +372,8 @@ A escolha seguirá esta ordem de prioridade:
 4. Maior idade, em caso de empate nos critérios anteriores.
 
 O Trust Factor será o principal critério porque o capitão deve ser, prioritariamente, o jogador considerado mais confiável pelo sistema.
+
+A posse ou disponibilidade de equipamento não faz parte deste critério. Ela é tratada como requisito logístico da partida na seção 8.5 e não altera a capitania simbólica.
 
 **Na Fase 7, a seleção é provisória.** Como Trust Factor e MMR ainda não existem, o capitão será escolhido pelo maior número de partidas válidas concluídas (`FINALIZED`) e, em caso de empate, pelo UUID como desempate determinístico. Não será usado critério de nível. A seleção e a versão do critério ficam registradas, e capitães ou registros históricos não são alterados retroativamente. Na Fase 8, os critérios completos poderão ser aplicados a partidas futuras, incorporando Trust Factor, partidas válidas, MMR e idade quando houver dado confiável.
 
@@ -1477,6 +1507,28 @@ O ranking poderá funcionar em temporadas de duração configurável, por exempl
 
 Troféus de clã não são MMR individual. Compras futuras, assinaturas, publicidade, número bruto de membros e pagamento não concedem pontos competitivos.
 
+### 20.4 Identidade visual, avatares e ausência de fotos de pessoas
+
+O JOGA não terá fotos de pessoas no aplicativo: nem no perfil, nem no lobby, nem no chat ou no clã.
+
+A identidade visual do jogador será um **avatar ilustrado gerado**, no estilo boneco, montado a partir de um catálogo fechado de peças — tom de pele, cabelo, barba, óculos, roupas, cores e acessórios. O usuário escolhe combinações válidas; não envia imagem, não desenha livremente e não insere texto no avatar.
+
+Regras:
+
+- O catálogo de peças e combinações é definido pelo produto, versionado e validado pelo backend; o cliente não inventa atributos.
+- O avatar é escolhido no onboarding e pode ser editado depois, sempre dentro do catálogo vigente.
+- O avatar é público e não contém dado pessoal, localização, telefone, nome real ou referência a terceiros.
+- A identidade visual de clã segue a mesma regra: peças, cores e símbolos do catálogo fechado, sem upload de imagem.
+- Nome de exibição e `#tag` continuam sendo texto sujeito a validação e moderação.
+- Fotos são permitidas apenas para **quadras e estabelecimentos**, enviadas por organização autenticada, com revisão, sem pessoas identificáveis e com retenção controlada.
+- Documentos de KYC são privados, nunca exibidos no aplicativo e não se confundem com a política de mídia pública.
+- Não há upload livre de imagem, áudio, vídeo ou arquivo em perfil, lobby ou chat no MVP.
+- Avatares também podem ser usados para abuso — combinações ofensivas, assédio por identidade ou impersonação. Denúncias continuam existindo e a moderação pode restringir nome, avatar ou conta.
+- A política reduz moderação de imagem, risco de exposição de menores, doxxing, sextorsão, catfishing e impersonação, além de diminuir custo de armazenamento e revisão.
+- Qualquer mudança que permita foto de pessoa ou upload livre exige nova decisão em ADR e revisão de moderação, privacidade e retenção.
+
+A decisão está registrada na ADR 0029.
+
 ---
 
 ## 21. Integridade competitiva e operacional
@@ -1541,7 +1593,7 @@ O estabelecimento deverá ter acesso ao seu histórico e possibilidade de contes
 
 A moderação deverá abranger os chats de lobby e de clãs, com prioridade para automação e revisão humana apenas quando necessária.
 
-Como o escopo inicial dos chats será limitado a texto e referências internas do JOGA, não haverá moderação de imagens, áudios ou vídeos enviados diretamente pelos usuários.
+Como o escopo inicial dos chats será limitado a texto e referências internas do JOGA, não haverá moderação de imagens, áudios ou vídeos enviados diretamente pelos usuários. Essa regra é reforçada pela seção 20.4: o aplicativo não exibe fotos de pessoas. Fotos de quadras e estabelecimentos seguem fluxo próprio, autenticado e moderado.
 
 #### 21.5.1 Denúncia de perfil no lobby
 
@@ -1768,6 +1820,8 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 47. A CLI de revisão exige `--operator` validado contra lista autorizada e `--reason` obrigatório.
 48. Relatos e votos individuais são visíveis aos participantes; a contagem agregada e o resultado parcial só aparecem após o fechamento da rodada.
 49. Futebol 5x5 permite empate esportivo; vôlei não permite na primeira versão.
+50. O aplicativo não exibe fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, sem upload livre. Fotos são restritas a quadras e estabelecimentos, enviadas por organização autenticada e moderadas.
+51. O kit da partida é um requisito logístico do formato, assumido por participantes ou pelo responsável logístico; não é critério de capitão, elegibilidade, MMR ou Trust Factor automático, e descumprimento isolado não pune automaticamente.
 
 ### 26.2 Parâmetros iniciais
 
@@ -1790,6 +1844,8 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 - Quantidade de participantes do futebol 5x5: 10.
 - Formato do vôlei: ainda a definir.
 - Duração da partida: definida pelo formato esportivo, não pelo lobby.
+- Equipamento: catálogo inicial por formato — futebol 5x5 e basquete 3x3: bola; vôlei de praia: rede e bola; tênis: bolas.
+- Avatar: catálogo fechado de peças, sem upload de imagem.
 
 ### 26.3 Propostas em validação
 
@@ -1840,6 +1896,11 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 28. Periodicidade e amostra mínima da recalibração.
 29. Metodologia de amortecimento para evitar oscilações bruscas de preço.
 30. Estratégia de onboarding e cobrança por recebedor.
+31. Catálogo definitivo de peças de avatar, limites de combinação e critérios de moderação de nome/avatar.
+32. Processo de revisão, remoção e retenção de fotos de quadras, incluindo pessoas em segundo plano.
+33. Catálogo definitivo de equipamento por formato e se o kit é obrigatório em partidas casuais e ranqueadas.
+34. Consequências de descumprir um item assumido: limiar, contestação e efeito no Trust Factor.
+35. Definir se o responsável logístico do kit é explícito ou apenas uma confirmação coletiva, e como isso se relaciona com o criador do lobby.
 
 ### 26.5 O que este documento não decide
 
@@ -1942,3 +2003,5 @@ Próximos passos recomendados, em ordem:
 - A revisão humana da Fase 7 passou a ser feita por CLI/script auditável, sem painel administrativo.
 - Foi registrado que a Fase 7 é backend-only e não implementa nem atualiza MMR.
 - Foram separadas decisões aprovadas, parâmetros iniciais, propostas e pendências.
+- Na versão 3.4, o aplicativo passou a não exibir fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, e fotos ficaram restritas a quadras e estabelecimentos.
+- Foi criado o kit da partida como requisito logístico do formato, sem alterar o critério de capitão, a elegibilidade ou o MMR.

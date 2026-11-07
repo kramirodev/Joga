@@ -42,6 +42,8 @@ O comércio de produtos está fora do escopo inicial (ADR 0022). A camada comerc
 | Quadras públicas | Descoberta/local de encontro; reserva formal apenas se houver autorização e disponibilidade verificável |
 | Quadras privadas | Cadastro, agenda, reserva e pagamento quando habilitados |
 | Chat | Por lobby e por clã; sem chat global universal no escopo atual |
+| Identidade visual | Sem fotos de pessoas; avatar ilustrado de catálogo fechado; fotos restritas a quadras/estabelecimentos (ADR 0029) |
+| Equipamento da partida | Kit por formato com responsáveis; não é critério de capitão, MMR ou elegibilidade (ADR 0030) |
 | Clãs | Abertos ou fechados, com ranking de troféus por modalidade |
 | Reservas | Solicitação ao estabelecimento, bloqueio temporário e confirmação com pagamentos completos |
 | Pagamentos | Pix individual por participante; PSP externo com split ou custódia centralizada |
@@ -401,6 +403,23 @@ Cada usuário poderá definir uma preferência padrão:
 
 A preferência poderá ser sobrescrita para uma entrada específica na fila. O sistema deve guardar a preferência efetiva usada na formação.
 
+### 7.3 Requisitos de equipamento por formato
+
+Cada formato declara requisitos de equipamento versionados (`sport_equipment_requirements`): futebol 5x5 e basquete 3x3 exigem bola; vôlei de praia exige rede e bola; tênis exige bolas e presume raquete individual. O catálogo é do backend, não do cliente.
+
+A partida mantém o estado do kit (`match_equipment`) e as declarações de responsabilidade (`match_equipment_claims`). A declaração é um compromisso registrado, não verificação de posse.
+
+Invariantes:
+
+- o kit não é critério de capitão (seção 10.1), MMR, Trust Factor ou elegibilidade;
+- qualquer participante pode assumir um item; o mesmo item não pode ter dois responsáveis ativos sem confirmação explícita de troca;
+- a cobertura é confirmada antes do check-in e visível apenas aos participantes;
+- partidas ranqueadas priorizam equipamento fornecido pelo local ou pela organização;
+- descumprimento gera evento de confiabilidade após confirmação e contestação, nunca punição automática por evento isolado;
+- não há upload de foto de equipamento no MVP.
+
+ADR: 0030.
+
 ## 8. Matchmaking e agendamento
 
 ### 8.1 Uma única fila lógica
@@ -706,6 +725,20 @@ A elegibilidade deve incluir tempo mínimo de vínculo ao clã e controles contr
 Os pesos 50/30/20 são a fórmula-base aceita para prototipação, não devem ser implementados sem simulações e testes de abuso. Temporadas podem ter 30 ou 60 dias; a duração final permanece configurável e pendente de validação.
 
 Troféus de clã são uma classificação coletiva própria, independente do MMR individual. Nenhum ponto pode ser comprado ou concedido por publicidade.
+
+### 12.6 Política de mídia e avatares
+
+Não há fotos de pessoas no produto. Perfil, lobby, chat e clã usam avatar ilustrado gerado a partir de catálogo fechado (`user_avatars`), composto por peças, cores e acessórios versionados; o cliente escolhe apenas combinações válidas e o backend valida.
+
+- sem upload de imagem de pessoa, áudio, vídeo ou arquivo em perfil, lobby ou chat no MVP;
+- nome de exibição e `#tag` são texto moderado;
+- a identidade visual de clã usa o mesmo catálogo fechado, sem upload de imagem;
+- fotos são aceitas apenas para quadras/estabelecimentos, em fluxo autenticado de organização, com revisão, allowlist de tipo, limite de tamanho, armazenamento privado e remoção de pessoas identificáveis;
+- documentos de KYC nunca são públicos;
+- a API não aceita URL arbitrária de imagem; mídia de quadra é servida por endpoint autorizado;
+- qualquer expansão para foto de pessoa ou upload livre exige ADR e revisão de moderação, privacidade e retenção.
+
+ADR: 0029.
 
 ## 13. Organizações, quadras e onboarding do recebedor
 
@@ -1017,6 +1050,7 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | Entidade | Responsabilidade |
 |---|---|
 | `users` | Identidade central e estado da conta |
+| `user_avatars` | Avatar escolhido, peças e versão do catálogo |
 | `user_phones` | Telefone protegido, hash de busca e verificação |
 | `phone_challenges` | Desafios OTP e expiração |
 | `passkey_credentials` | Credenciais públicas e revogação |
@@ -1025,6 +1059,7 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `organizations` | Estabelecimentos e organizações |
 | `organization_memberships` | Usuários e papéis em cada organização |
 | `venues` | Estabelecimentos esportivos e geografia |
+| `venue_photos` | Fotos de quadra/estabelecimento, revisão e retenção |
 | `venue_spaces` | Quadras/espaços de um estabelecimento |
 | `venue_sports` | Vínculo entre espaço e modalidade |
 | `venue_availability` | Horários, preços, duração e exceções |
@@ -1044,6 +1079,7 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `financial_disputes` | Contestações do estabelecimento |
 | `sports` | Modalidades |
 | `sport_formats` | Composição e duração fixa por formato |
+| `sport_equipment_requirements` | Requisitos de equipamento por formato e versão |
 | `user_sport_profiles` | Perfil e preferências esportivas |
 | `availabilities` | Janelas de disponibilidade do jogador |
 | `queue_entries` | Entradas persistentes da fila |
@@ -1061,6 +1097,8 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 | `clan_leaderboard_snapshots` | Posições por esporte e temporada |
 | `matches` | Partida e estado |
 | `match_participants` | Jogadores e equipes |
+| `match_equipment` | Estado do kit por partida |
+| `match_equipment_claims` | Participante responsável por item do kit |
 | `match_result_reports` | Relatos de resultado |
 | `disputes` | Disputas e decisões |
 | `rating_accounts` | MMR por usuário/modalidade/formato |
@@ -1083,6 +1121,9 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 - Membro não pode duplicar vínculo ativo no mesmo clã.
 - Mensagem só pode ser lida por membro autorizado da conversa.
 - Participante único por lobby/partida.
+- Um item de equipamento só pode ter um responsável ativo por partida.
+- Avatar só aceita peças e combinações da versão vigente do catálogo.
+- Foto de quadra só é pública após revisão e vínculo com organização ativa.
 - Um usuário não participa de partidas simultâneas incompatíveis.
 - Apenas uma votação ativa por lobby.
 - Um voto por participante/proposta.
@@ -1115,6 +1156,7 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Organizações | Cadastro, membros, papéis e permissões |
 | Estabelecimentos | Cadastro, perfil, endereço e estado |
 | Quadras | Espaços, modalidades, horários e disponibilidade |
+| Fotos de quadra | Enviar, revisar, listar e remover |
 | KYC/recebedor | Onboarding, estado e dados contratuais |
 | Reservas | Solicitação, aceite, recusa, bloqueio, confirmação e histórico |
 | Temporizadores | T1, T2 e T3; expiração e transições |
@@ -1124,6 +1166,8 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Reembolsos | Solicitar, acompanhar e concluir |
 | Matchmaking | Entrar/sair da fila e consultar estado |
 | Lobbies | Criar, listar, entrar, sair, horário e participantes |
+| Equipamento | Catálogo por formato, assumir item, liberar item e confirmar kit |
+| Avatares | Catálogo de peças, escolher combinação e atualizar avatar |
 | Votação | Propor quadra, votar e consultar resultado |
 | Chat | Histórico paginado e envio de mensagens autorizadas |
 | Amigos | Solicitação, aceite, remoção, bloqueio e convites |
@@ -1164,7 +1208,8 @@ Toda rota que recebe IDs deve validar propriedade, participação ou papel no re
 - Proteção contra enumeração, abuso de SMS, spam e automação.
 - Logs sem tokens, OTP, telefone completo, dados bancários ou coordenadas precisas.
 - Backups criptografados e testes de restauração.
-- Uploads privados com allowlist e limites, embora upload em chat não faça parte do MVP.
+- Uploads privados com allowlist, limites e armazenamento privado; chat não aceita arquivos no MVP.
+- Nenhuma foto de pessoa ou URL arbitrária de imagem é aceita pela API; avatares vêm de catálogo fechado e fotos de quadra passam por revisão.
 - Dados de KYC e conta bancária com acesso restrito e auditoria.
 
 ### 20.2 Multi-tenancy e BOLA
@@ -1429,6 +1474,8 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 20. **Moderação:** política de conteúdo, limites de contexto, ferramenta/provedor de IA e retenção.
 21. **Precificação:** medir `q`, `C_k`, `C_c`, `τ` e `p_t`; definir `c` final e limite de elegibilidade por faixa.
 22. **Jurídico:** modelo de split/custódia, contratos com estabelecimentos, cancelamento, reembolso e retenção de valores.
+23. **Avatares e mídia:** catálogo definitivo de peças, limites de combinação, processo de revisão e remoção de fotos de quadra e retenção.
+24. **Equipamento:** catálogo definitivo por formato, obrigatoriedade em partidas casuais/ranqueadas, consequências de descumprimento e contestação.
 
 Cada decisão relevante deve ser registrada em ADR com contexto, alternativas, decisão, consequências, status e data.
 
