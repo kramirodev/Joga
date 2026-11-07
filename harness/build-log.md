@@ -640,3 +640,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `c97807d1b140`; upgrade/downgrade/upgrade e `alembic check`.
 - **Testes:** **364 passed** com PostgreSQL; adaptador com HTTP simulado, webhook idempotente, valor divergente e autorização negativa cobertos.
 - **Fora do escopo:** dinheiro real, split, retenção de produção, reembolso real, KYC e Pagar.me (14B).
+
+### 2026-11-07 — Hipótese de p_t dinâmico por Trust Factor
+
+- **Registro:** ADR 0036 documenta a hipótese de calcular a provisão de fraude `p_t` pela mediana do Trust Factor dos participantes, com faixa ilustrativa de 0,05% a 0,5%.
+- **Decisão atual:** a hipótese **não foi aprovada**; o modelo permanece com `p_t = 0,2%` fixo (ADR 0021).
+- **Motivos:** Trust Factor mede confiabilidade esportiva, não risco de pagamento; ainda está neutro/oculto; mediana é manipulável por grupos; conta nova seria penalizada; impacto financeiro por reserva é pequeno; preço variável exige revisão jurídica/LGPD e versionamento.
+- **Avaliação futura:** modo sombra, sem cobrança diferente, comparando Trust Factor/mediana com MED, chargeback e estorno sem saldo por pelo menos 90 dias.
+- **Documentação:** conceito v3.9, técnica §26 e ADR 0036 atualizados. Nenhum código ou preço foi alterado.

@@ -1501,6 +1501,7 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 23. **Avatares e mídia:** catálogo definitivo de peças, limites de combinação, storage de produção, processo de revisão independente, remoção e retenção de fotos de quadra.
 24. **Equipamento:** catálogo definitivo por formato, obrigatoriedade em partidas casuais/ranqueadas, consequências de descumprimento e contestação.
 25. **Mídia de quadra:** provedor de storage, criptografia, backup, limpeza de arquivos órfãos e política de retenção.
+26. **Provisão de fraude dinâmica:** hipótese de `p_t` pela mediana de Trust Factor registrada na ADR 0036; não implementar sem dados de MED/chargeback, score de risco separado, revisão jurídica e teste em modo sombra. O modelo atual mantém `p_t = 0,2%` fixo.
 
 Cada decisão relevante deve ser registrada em ADR com contexto, alternativas, decisão, consequências, status e data.
 

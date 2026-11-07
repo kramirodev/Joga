@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.8<br>
-**Status:** visão de produto atualizada — Fase 14A com Orders API, Pix e ledger de teste<br>
+**Versão:** 3.9<br>
+**Status:** visão de produto atualizada — hipótese de provisão de fraude dinâmica registrada; modelo fixo mantido<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -21,6 +21,7 @@
 | 3.6 | 7 de novembro de 2026 | Fase 13A: reservas com T1/T2/T3 independentes, hold transacional, substituição sem reiniciar T3 e pagamento simulado apenas em ambiente local/teste; T2 em tempo corrido nesta fase |
 | 3.7 | 7 de novembro de 2026 | Protótipo/beta fechado usa Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034) |
 | 3.8 | 7 de novembro de 2026 | Fase 14A: Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste |
+| 3.9 | 7 de novembro de 2026 | Hipótese de `p_t` dinâmico pela mediana de Trust Factor registrada; modelo atual mantém `p_t = 0,2%` fixo e avaliação futura em modo sombra (ADR 0036) |
 
 ## Como interpretar as decisões neste documento
 
@@ -1874,6 +1875,7 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 10. Formalizar as perguntas ao Pagar.me antes de qualquer contrato.
 11. Tratar a interface financeira do recebedor e o KYC como custo fixo coberto pela comissão.
 12. Revisar a política de cancelamento após confirmação junto com a regra de liberação.
+13. Avaliar, em modo sombra, uma provisão de fraude baseada na mediana de Trust Factor dos participantes, sem alterar a cobrança; hipótese registrada na ADR 0036.
 
 ### 26.4 Pendências
 
@@ -1917,6 +1919,7 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 36. Provedor de storage de fotos de produção, criptografia, backup, retenção e limpeza de arquivos órfãos.
 37. Revisão independente, denúncia e moderação de fotos de quadra na Fase 17.
 38. UI mobile de descoberta de quadras e fotos.
+39. Medir o poder preditivo de Trust Factor, mediana do grupo e outros sinais sobre MED/chargeback antes de qualquer preço dinâmico de fraude (ADR 0036).
 
 ### 26.5 O que este documento não decide
 
@@ -2025,3 +2028,4 @@ Próximos passos recomendados, em ordem:
 - Na versão 3.6, a Fase 13A passou a implementar reservas com T1/T2/T3 independentes, hold transacional e substituição sem reiniciar T3; T2 usa tempo corrido e o pagamento é simulado apenas em ambiente local/teste.
 - Na versão 3.7, o protótipo/beta fechado passou a usar Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034).
 - Na versão 3.8, a Fase 14A passou a usar Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste.
+- Na versão 3.9, foi registrada a hipótese de `p_t` dinâmico pela mediana de Trust Factor; o modelo atual mantém `p_t = 0,2%` fixo e a avaliação futura será em modo sombra (ADR 0036).
