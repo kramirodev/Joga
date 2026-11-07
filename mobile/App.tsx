@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import PasskeyProof from './modules/passkey-proof';
+import { BookingPanel } from './src/BookingPanel';
 import { CommunicationPanel } from './src/CommunicationPanel';
 import { CompetitivePanel } from './src/CompetitivePanel';
 import { IdentityPanel } from './src/IdentityPanel';
@@ -286,6 +287,10 @@ export default function App() {
       <View style={styles.divider} />
 
       <CommunicationPanel />
+
+      <View style={styles.divider} />
+
+      <BookingPanel />
 
       <View style={styles.divider} />
 

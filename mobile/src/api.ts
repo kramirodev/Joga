@@ -196,6 +196,45 @@ export type LobbyInvite = {
   responded_at: string | null;
 };
 
+export type BookingParticipant = {
+  user_id: string;
+  seat: number;
+  active: boolean;
+  contribution_cents: number;
+  payment_status: string;
+  confirmed_at: string | null;
+  declined_at: string | null;
+  replaced_by_user_id: string | null;
+};
+
+export type BookingTimer = {
+  timer_type: 'T1' | 'T2' | 'T3';
+  status: string;
+  started_at: string;
+  deadline_at: string;
+  ended_at: string | null;
+};
+
+export type Booking = {
+  id: string;
+  lobby_id: string;
+  organization_id: string;
+  organization_venue_id: string;
+  venue_space_id: string;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  price_cents: number;
+  currency: string;
+  seats: number;
+  response_due_at: string | null;
+  payment_due_at: string | null;
+  hold_expires_at: string | null;
+  cancellation_reason: string | null;
+  participants: BookingParticipant[];
+  timers: BookingTimer[];
+};
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -462,6 +501,32 @@ export const matchesApi = {
 
   get(accessToken: string, matchId: string): Promise<MatchSummary> {
     return call<MatchSummary>(`/matches/${encodeURIComponent(matchId)}`, {}, accessToken);
+  },
+};
+
+export const bookingsApi = {
+  list(accessToken: string): Promise<{ bookings: Booking[] }> {
+    return call<{ bookings: Booking[] }>('/bookings', {}, accessToken);
+  },
+
+  confirm(
+    accessToken: string,
+    bookingId: string,
+    decision: 'CONFIRM' | 'DECLINE',
+  ): Promise<Booking> {
+    return call<Booking>(
+      `/bookings/${encodeURIComponent(bookingId)}/participant-confirmation`,
+      { method: 'POST', body: JSON.stringify({ decision }) },
+      accessToken,
+    );
+  },
+
+  simulatePayment(accessToken: string, bookingId: string): Promise<Booking> {
+    return call<Booking>(
+      `/bookings/${encodeURIComponent(bookingId)}/payments/simulate`,
+      { method: 'POST' },
+      accessToken,
+    );
   },
 };
 

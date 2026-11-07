@@ -1,6 +1,6 @@
 # Fase 13 — Reservas e temporizadores
 
-**Status:** 13A (backend de reservas, bloqueios e T1/T2/T3) implementada e validada localmente em 2026-11-07; 13B (painel/mobile) pendente.
+**Status:** 13A (backend) e 13B (painel mobile de reservas e ajustes de painel) implementados e validados localmente em 2026-11-07; criação automática a partir do lobby, T2 em horário comercial e pagamentos reais pendentes.
 **Branch:** `feat/13-reservas-temporizadores`
 
 ## Fontes e contexto
@@ -107,14 +107,24 @@ JOGA_TEST_DATABASE_URL="postgresql+psycopg://joga:joga@127.0.0.1:5434/joga" \
 - Atualização de `harness/build-log.md`.
 - Relatório de limitações e pendências.
 
-## Evidências da 13A (2026-11-07)
+## 13B — painel mobile de reservas (implementado)
+
+- `mobile/src/BookingPanel.tsx` lista as reservas do jogador, mostra T1/T2/T3, vaga, contribuição e estado de pagamento.
+- Ações: confirmar/recusar participação e pagamento simulado local.
+- `mobile/src/api.ts` ganhou tipos e `bookingsApi`.
+- `App.tsx` inclui o painel após comunicação.
+- `mobile/AGENTS.md` foi atualizado para refletir a autorização da 13B.
+- Limitação: a criação da reserva ainda depende do lobby/quadra; não há seletor de quadra no mobile nesta rodada.
+
+## Evidências da 13A/13B (2026-11-07)
 
 - Backend: **352 passed** com `JOGA_TEST_DATABASE_URL`; sem PostgreSQL, os testes de concorrência são ignorados.
 - `ruff check`, `ruff format --check` e `mypy app` passam.
 - Migração `26b70fd0fbc7` aplicada; ciclo upgrade → downgrade → upgrade e `alembic check` validados em banco descartável com PostGIS.
 - Testes HTTP: T1/T2/T3, pagamento parcial, expiração, recusa, substituição, isolamento por participante e idempotência por lobby.
 - Teste PostgreSQL: dois aceites concorrentes para o mesmo espaço/intervalo geram **um hold** e um conflito.
-- Painel: aba de reservas com aceite/recusa/conclusão, coberta por teste de UI.
+- Painel web: aba de reservas com aceite/recusa/conclusão, coberta por teste de UI.
+- Mobile: `tsc --noEmit`, `eslint` e `prettier --check` passam; painel de reservas integrado ao `App.tsx`.
 - Nenhum PSP real foi acionado; pagamento é simulado apenas em ambiente local/teste.
 
 ## Aprovação e condição de parada

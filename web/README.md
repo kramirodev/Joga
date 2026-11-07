@@ -11,7 +11,7 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
 - Quadras/espaços, modalidades, agenda semanal, preços, bloqueios e fotos de quadra com revisão.
 - Reservas: lista por organização, aceite/recusa e conclusão; T1/T2/T3 controlados pelo backend.
-- Sem reservas no mobile, pagamentos reais, KYC, clãs, moderação ou publicidade.
+- Sem pagamentos reais, KYC, clãs, moderação ou publicidade.
 
 ## Desenvolvimento local
 

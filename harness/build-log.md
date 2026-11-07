@@ -613,3 +613,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Painel:** aba de reservas com aceite/recusa/conclusão e prazos; teste de UI cobre o aceite por operador.
 - **Testes:** **352 passed** com `JOGA_TEST_DATABASE_URL`; `ruff`, formatação e `mypy` verdes; migração `26b70fd0fbc7` com upgrade/downgrade/upgrade e `alembic check`.
 - **Fora do escopo:** 13B (jornada mobile completa), T2 em horário comercial, PSP real, reembolso real, redirecionamento de quadra e conclusão automática pelo ciclo da partida.
+
+### 2026-11-07 — Fase 13B: painel mobile de reservas
+
+- **Mobile:** `BookingPanel` lista reservas do jogador, exibe T1/T2/T3, vaga, contribuição e estado de pagamento; permite confirmar/recusar participação e pagamento simulado local.
+- **API mobile:** tipos de reserva e `bookingsApi` adicionados; o painel foi incluído no `App.tsx` após comunicação.
+- **Escopo:** `mobile/AGENTS.md` atualizado para autorizar a tela de reservas da 13B. A criação da reserva ainda depende do lobby/quadra; seletor de quadra no mobile e pagamento real ficam pendentes.
+- **Verificações:** `tsc --noEmit`, `eslint .` e `prettier --check .` passam. Backend e painel web seguem com **352 passed** e **18 testes** de UI.
+- **Fora do escopo:** criação automática a partir do lobby, T2 em horário comercial, PSP, reembolso real e Fase 14.

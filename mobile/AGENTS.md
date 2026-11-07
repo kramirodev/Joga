@@ -2,7 +2,7 @@
 
 ## Conexão com a governança do projeto
 
-Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre o protótipo da **Fase 1 (prova técnica mobile/nativa)**, o painel competitivo da **Fase 8C** e o painel de comunicação da **Fase 9B** (chat por lobby, amigos, convites e bloqueios). Navegação de produto completa, matchmaking, reservas e pagamentos continuam fora do escopo deste diretório até a fase correspondente.
+Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre o protótipo da **Fase 1 (prova técnica mobile/nativa)**, o painel competitivo da **Fase 8C**, o painel de comunicação da **Fase 9B** (chat por lobby, amigos, convites e bloqueios) e o painel de reservas da **Fase 13B** (T1/T2/T3, confirmação, recusa e pagamento simulado). Navegação de produto completa, pagamentos reais, KYC e demais módulos continuam fora do escopo até a fase correspondente.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
 - `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` reúne a prova de localização/passkey, o painel de identidade (`src/IdentityPanel.tsx`), o perfil (`src/ProfilePanel.tsx`), o painel competitivo (`src/CompetitivePanel.tsx`) e o painel de comunicação (`src/CommunicationPanel.tsx`).
@@ -36,7 +36,7 @@ Expo entrega breaking changes a cada SDK. Antes de escrever código que toque AP
 
 ## Regras de escopo
 
-- Não avançar para outras fases; as telas competitiva (8C) e de comunicação (9B) são as únicas telas de produto autorizadas neste diretório. Não criar, sem autorização da fase, telas de matchmaking, reservas ou pagamentos.
+- Não avançar para outras fases; as telas competitiva (8C), de comunicação (9B) e de reservas (13B) são as únicas telas de produto autorizadas neste diretório. Não criar, sem autorização da fase, telas de pagamentos reais, KYC, clãs ou publicidade.
 - Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; o ADR 0009 mantém os projetos nativos gerados e não versionados e prevê reavaliar se surgir módulo nativo próprio.
 - Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
 - Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).

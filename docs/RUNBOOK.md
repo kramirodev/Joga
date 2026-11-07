@@ -323,6 +323,8 @@ O painel **Competitivo** (Fase 8C) usa `GET /api/v1/ratings/me` e `GET /api/v1/r
 
 O painel **Comunicação** (Fase 9B/9C) usa `GET /api/v1/matches`, chat por lobby, amigos e convites. Ele abre um WebSocket autenticado para o lobby selecionado e reconcilia o histórico pela API após reconexão.
 
+O painel **Reservas** (Fase 13B) usa `GET /api/v1/bookings`, confirmação de participante e pagamento simulado local. A criação da reserva ainda depende do lobby/quadra; não há seletor de quadra no mobile nesta rodada.
+
 ### Abrir no aparelho
 
 O fluxo de identidade/passkey exige **development build** (Credential Manager, `expo-secure-store` e o módulo local não funcionam no Expo Go). O app usa `http://127.0.0.1:8000/api/v1`; faça a ponte das portas 8081 (Metro) e 8000 (API):
