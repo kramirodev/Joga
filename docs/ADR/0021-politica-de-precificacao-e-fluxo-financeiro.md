@@ -5,6 +5,8 @@
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` §12, §14, §16, §17, §18, §19 e §26; `GOALS.md`; `PLANS.md` Fases 12–15; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §13–§16.
 
+> **Nota de escopo (ADR 0034):** esta decisão permanece válida para **produção**. No protótipo e beta fechado, a ADR 0034 adota Mercado Pago Checkout Transparente com custódia centralizada de teste e repasse após a partida declarada. As duas decisões são complementares, não concorrentes.
+
 ## Contexto
 
 A versão 3.0 do documento conceitual adotou `TAXA_JOGA = 1,8 × (CUSTOS + LUCRO_ALVO)`, com piso de custos e teto de 15% a 20% do valor da quadra. A versão 3.1 reposicionou o coeficiente como hipótese inicial, mas manteve piso, preço variável e teto.
@@ -108,7 +110,7 @@ Com `q = 20%`, a referência de R$ 100 de valor mínimo mantém a taxa abaixo de
 
 ### 6. Decisão de PSP
 
-O **Pagar.me Flex** é a primeira opção, condicionada a confirmação contratual e comercial. A documentação pública sustenta:
+O **Pagar.me Flex** é a primeira opção **de produção**, condicionada a confirmação contratual e comercial. A documentação pública sustenta:
 
 - várias cobranças no mesmo `order`;
 - Pix com split;
@@ -120,6 +122,8 @@ O **Pagar.me Flex** é a primeira opção, condicionada a confirmação contratu
 O **Inter** é a alternativa centralizada: o valor fica na conta do JOGA, a quadra não saca sozinha e o reembolso é operacionalmente mais simples. Em troca, aumenta a exposição jurídica e regulatória de custódia de recursos de terceiros e exige parecer específico.
 
 Ficam excluídos como primeira opção os PSPs com tarifa fixa alta por Pix, porque o fluxo tem muitas cobranças individuais: Asaas (R$ 1,99 por Pix), AbacatePay (R$ 0,80 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50).
+
+No **protótipo e beta fechado**, a ADR 0034 adota o Mercado Pago Checkout Transparente (Pix) com custódia centralizada de teste e repasse após a partida declarada. Essa escolha não altera o Pagar.me como PSP de produção nem autoriza custódia de dinheiro real fora do desenho jurídico.
 
 ### 7. Condições de liberação e KYC
 

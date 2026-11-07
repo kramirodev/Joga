@@ -621,3 +621,10 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Escopo:** `mobile/AGENTS.md` atualizado para autorizar a tela de reservas da 13B. A criação da reserva ainda depende do lobby/quadra; seletor de quadra no mobile e pagamento real ficam pendentes.
 - **Verificações:** `tsc --noEmit`, `eslint .` e `prettier --check .` passam. Backend e painel web seguem com **352 passed** e **18 testes** de UI.
 - **Fora do escopo:** criação automática a partir do lobby, T2 em horário comercial, PSP, reembolso real e Fase 14.
+
+### 2026-11-07 — ADR 0034: Mercado Pago no protótipo/beta e Pagar.me na produção
+
+- **Decisão:** protótipo e beta fechado usam Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; o valor fica na conta do JOGA e o repasse ao estabelecimento é simulado/manual após a partida ser declarada como acontecida (`COMPLETED`).
+- **Limite:** o fluxo é de teste, não é escrow nem garantia de reembolso de produção. Dinheiro real no beta exige CNPJ/MEI, contrato e revisão jurídica; CPF fica restrito a protótipo/sandbox.
+- **Produção:** permanece o Pagar.me Flex para retenção/split/liberação controlada, conforme ADR 0021.
+- **Documentação:** ADR 0034 criada; ADR 0021, conceito v3.7, técnica §15, PLANS Fase 14, threat model e README atualizados. Nenhuma integração de PSP implementada.

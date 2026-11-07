@@ -61,6 +61,8 @@
 | Timer adulterado ou reiniciado | Cliente tentar prorrogar T1/T2/T3 ou agir após o prazo | prazos no backend, timers independentes, rejeição após deadline, worker idempotente | T2 em horário comercial pendente |
 | Pagamento simulado exposto | Usar endpoint de simulação em produção | rota só permite ambiente local/teste/development/ci | revisão de configuração de deploy necessária |
 | Acesso indevido a reserva | Participante ou organização consultar reserva alheia | autorização por participante/organização em cada rota | testes contínuos a cada novo endpoint |
+| Custódia centralizada no beta | Dinheiro real ficar na conta do JOGA sem retenção/split de produção | escopo restrito a protótipo/beta de teste, ledger interno, repasse após `COMPLETED`, CNPJ/MEI e revisão jurídica para dinheiro real | risco jurídico/regulatório se o beta operar dinheiro real sem validação |
+| Troca de PSP sem abstração | Domínio acoplado ao Mercado Pago e difícil migrar para Pagar.me | adaptador de PSP com modos `mercadopago_beta` e `pagarme_production` | implementação da Fase 14 ainda não iniciada |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 
@@ -99,6 +101,8 @@
 - **Médio:** storage de fotos é local; provedor de produção, criptografia, backup e limpeza de órfãos não definidos.
 - **Médio:** T2 de reservas usa tempo corrido; horário comercial, feriados e dias fechados pendentes.
 - **Médio:** pagamento de reserva é simulado; PSP real, webhooks e reembolso pertencem à Fase 14.
+- **Médio:** no protótipo/beta, a custódia é centralizada e de teste; dinheiro real exige CNPJ/MEI, contrato e revisão jurídica.
+- **Médio:** produção depende de contratação do Pagar.me e validação de retenção/split/reembolso.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 
 ## Critérios para piloto

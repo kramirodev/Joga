@@ -161,7 +161,9 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14 — Pagamentos Pix e reembolsos
 
-**Escopo:** integração com PSP, um `order` por reserva e uma cobrança Pix por participante; split por cobrança ou custódia centralizada conforme decisão do ADR 0021; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estados financeiros individuais; reembolso integral quando a reserva não se completa; pagamentos tardios; conciliação básica.
+**Status:** Não iniciada. Decisão de PSP do protótipo/beta registrada na ADR 0034 (Mercado Pago Checkout Transparente, custódia centralizada de teste); produção segue com Pagar.me (ADR 0021).
+
+**Escopo:** integração com PSP, um `order` por reserva e uma cobrança Pix por participante; no protótipo/beta, Mercado Pago com custódia centralizada de teste e repasse após `COMPLETED`; em produção, split/retenção com Pagar.me; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estados financeiros individuais; reembolso integral quando a reserva não se completa; pagamentos tardios; conciliação básica.
 
 **Não fazer:** construir processador próprio ou carteira custodial; armazenar dados completos de cartão; confiar no retorno visual do app; abrir cobrança antes do bloqueio; liberar valor ao estabelecimento antes da confirmação; deduzir tarifas do reembolso do jogador.
 

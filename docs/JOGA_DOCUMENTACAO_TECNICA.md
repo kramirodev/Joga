@@ -912,7 +912,9 @@ Utilizar provedor externo com recursos adequados a:
 - webhooks autenticados;
 - conciliação.
 
-O Pagar.me Flex é a primeira opção, condicionada a contrato e às respostas do ADR 0021. O Inter é a alternativa centralizada.
+O Pagar.me Flex é a primeira opção **de produção**, condicionada a contrato e às respostas do ADR 0021. O Inter é a alternativa centralizada.
+
+No **protótipo e beta fechado**, a ADR 0034 adota o Mercado Pago Checkout Transparente (Pix) com custódia centralizada de teste: o valor fica na conta do JOGA, o ledger registra a obrigação e o repasse ao estabelecimento ocorre após a partida ser declarada como acontecida. Esse fluxo é de teste e não substitui a retenção/split de produção.
 
 Não construir processador próprio, carteira custodial ou custódia informal.
 
@@ -932,6 +934,8 @@ O `order_id` do PSP é a referência externa da reserva. O ledger interno manté
 **Split (Pagar.me Flex).** Cada estabelecimento é um recebedor. A cobrança é dividida entre a parte do estabelecimento e a taxa do JOGA. O saldo fica no recebedor até a liberação. `transfer_enabled=false` desativa a transferência automática; o JOGA usa `POST /transfers` com `Idempotency-Key` para liberar. Se o recebedor puder sacar por conta própria, a retenção deixa de ser técnica e passa a ser contratual; o risco sobe e `p_t` deve refletir isso.
 
 **Custódia centralizada (Inter).** O valor fica na conta do JOGA. A quadra não saca sozinha. O repasse é feito depois da confirmação. Exige revisão jurídica e segregação contábil.
+
+**Custódia centralizada de teste (Mercado Pago, ADR 0034).** No protótipo e beta fechado, o valor fica na conta Mercado Pago do JOGA, sem split automático. O ledger interno registra reserva, participante, vaga e obrigação; o repasse ao estabelecimento é simulado ou manual após `COMPLETED`. Não é escrow, não é garantia de reembolso e não deve operar dinheiro real sem CNPJ/MEI e revisão jurídica.
 
 Em ambos os casos, o backend mantém um ledger financeiro interno auditável. O ledger não é custódia; é registro de direitos e obrigações.
 

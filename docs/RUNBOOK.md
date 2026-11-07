@@ -420,6 +420,13 @@ cd backend
 
 - O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Reexecutar é seguro.
 
+### Pagamentos no protótipo/beta (ADR 0034)
+
+- **Protótipo/beta fechado:** Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste. O valor fica na conta do JOGA; o ledger registra a obrigação e o repasse ao estabelecimento é simulado ou manual após `COMPLETED`.
+- **Não é escrow** nem garantia de reembolso de produção. Dinheiro real no beta exige CNPJ/MEI, contrato e revisão jurídica; CPF fica restrito a sandbox.
+- **Produção:** Pagar.me Flex, com retenção/split e liberação controlada (ADR 0021).
+- Nenhuma credencial real de PSP deve ser configurada sem autorização.
+
 ### Quadras, agenda e fotos (Fase 12A)
 
 - A rota do painel é `/organizations/{org}/venues/{venue}`; a lista de estabelecimentos tem o atalho “Quadras e fotos”.

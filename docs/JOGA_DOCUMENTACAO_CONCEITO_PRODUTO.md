@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.6<br>
-**Status:** visão de produto atualizada — Fase 13A com reservas, holds e T1/T2/T3<br>
+**Versão:** 3.7<br>
+**Status:** visão de produto atualizada — Mercado Pago no protótipo/beta e Pagar.me na produção<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -19,6 +19,7 @@
 | 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado; fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
 | 3.5 | 7 de novembro de 2026 | Fase 12A: quadras/espaços, modalidades, agenda, preços, bloqueios e fotos de quadra; revisão inicial pelo proprietário/administrador da organização, com revisão independente prevista para a Fase 17 |
 | 3.6 | 7 de novembro de 2026 | Fase 13A: reservas com T1/T2/T3 independentes, hold transacional, substituição sem reiniciar T3 e pagamento simulado apenas em ambiente local/teste; T2 em tempo corrido nesta fase |
+| 3.7 | 7 de novembro de 2026 | Protótipo/beta fechado usa Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034) |
 
 ## Como interpretar as decisões neste documento
 
@@ -720,6 +721,8 @@ A interface deverá exibir cada prazo com um nome claro, para evitar que o usuá
 
 A primeira versão de pagamentos das reservas utilizará exclusivamente **Pix**.
 
+No **protótipo e beta fechado**, o PSP será o **Mercado Pago Checkout Transparente** (ADR 0034), com Pix, custódia centralizada de teste e repasse após a partida declarada. Em **produção**, permanece o Pagar.me Flex com split e liberação controlada (ADR 0021).
+
 Débito e crédito serão avaliados posteriormente. Os benefícios do Pix deverão ser comunicados como vantagem econômica, sem apresentar o cartão como punição. Se futuramente houver cartão, o valor final deverá ser apresentado com transparência antes da confirmação.
 
 A tarifa do PSP não é presumidamente gratuita. O JOGA deverá negociar e medir:
@@ -779,6 +782,8 @@ Se o estabelecimento conseguir sacar o saldo por conta própria, a retenção de
 3. Rever a política de reembolso após a confirmação.
 
 Na alternativa centralizada, o valor fica na conta do JOGA e o repasse ao estabelecimento ocorre depois da confirmação. Essa custódia exige revisão jurídica, segregação contábil e não é presumida como permitida.
+
+No **protótipo e beta fechado**, a ADR 0034 permite uma custódia centralizada **de teste** no Mercado Pago: o valor fica na conta do JOGA, o ledger registra a obrigação por participante e o repasse ao estabelecimento é simulado ou manual após a partida ser declarada como acontecida (`COMPLETED`). Esse fluxo não é escrow, não promete reembolso de produção e só pode operar dinheiro real com MEI/CNPJ, contrato e revisão jurídica. A produção continua com Pagar.me e retenção controlada.
 
 ### 12.5 Portão de KYC do estabelecimento
 
@@ -2017,3 +2022,4 @@ Próximos passos recomendados, em ordem:
 - Foi criado o kit da partida como requisito logístico do formato, sem alterar o critério de capitão, a elegibilidade ou o MMR.
 - Na versão 3.5, a Fase 12A passou a cobrir quadras, modalidades, agenda, preços, bloqueios e fotos de quadra; a revisão inicial de foto é feita por `OWNER`/`ADMIN`, com revisão independente na Fase 17.
 - Na versão 3.6, a Fase 13A passou a implementar reservas com T1/T2/T3 independentes, hold transacional e substituição sem reiniciar T3; T2 usa tempo corrido e o pagamento é simulado apenas em ambiente local/teste.
+- Na versão 3.7, o protótipo/beta fechado passou a usar Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034).
