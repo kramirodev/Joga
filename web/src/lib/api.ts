@@ -22,12 +22,14 @@ let refreshInFlight: Promise<WebSessionPayload | null> | null = null;
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly requestId: string | null;
 
-  constructor(status: number, code: string, message?: string) {
+  constructor(status: number, code: string, message?: string, requestId?: string | null) {
     super(message ?? code);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.requestId = requestId ?? null;
   }
 }
 
@@ -61,6 +63,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     return undefined as T;
   }
 
+  const requestId = response.headers.get("x-request-id");
   const text = await response.text();
   if (!response.ok) {
     let code = "request_failed";
@@ -78,7 +81,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
         // Resposta não JSON: mantém a mensagem genérica.
       }
     }
-    throw new ApiError(response.status, code, message);
+    throw new ApiError(response.status, code, message, requestId);
   }
 
   if (!text) return undefined as T;

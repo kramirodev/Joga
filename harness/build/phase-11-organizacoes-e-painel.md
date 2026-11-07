@@ -1,6 +1,6 @@
 # Fase 11 — Organizações e painel de gestão
 
-**Status:** 11A (fundação backend) e 11B (painel web) implementados e validados localmente em 2026-11-06; sem deploy.
+**Status:** 11A (fundação backend), 11B (painel web) e 11C (endurecimento do painel) implementados e validados localmente em 2026-11-06/07; sem deploy.
 **Branch:** `feat/11-organizacoes-painel`
 
 ## Objetivo
@@ -40,6 +40,15 @@ Permitir que estabelecimentos esportivos administrem apenas as operações origi
 | `POST` | `/api/v1/auth/web/logout` | revoga a sessão e limpa cookies |
 
 O refresh cookie usa `Path=/api/v1/auth/web`, `HttpOnly` e `SameSite=Strict`. O cookie CSRF é legível pelo JavaScript e o header `X-CSRF-Token` é exigido em refresh/logout. Em produção, `JOGA_WEB_COOKIE_SECURE=true` e HTTPS são obrigatórios.
+
+## Escopo 11C — endurecimento do painel (implementado)
+
+- CSP estrita injetada no build do painel (`dist/index.html`), sem `unsafe-inline` nem `unsafe-eval`; `default-src`, `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `form-action`, `frame-src`, `worker-src` e `manifest-src` restritos a `'self'`.
+- `pnpm build` valida a CSP gerada e falha se faltar diretiva ou aparecer `unsafe-*`.
+- Cabeçalhos que `<meta>` não cobre — `frame-ancestors`, `X-Frame-Options`, HSTS e `Permissions-Policy` — documentados para a hospedagem em `web/README.md`.
+- Testes automatizados com Vitest, jsdom e Testing Library: cliente HTTP (CSRF, refresh em 401, erros), login/registro por OTP, proteção de rota e permissões de `OPERATOR`/`OWNER` na interface.
+- Observabilidade: `X-Request-ID` da API é exibido como referência de suporte nos erros do painel; error boundary evita tela branca.
+- CI `Web` passa a executar `pnpm test` antes do build.
 
 ## Fora do escopo imediato
 
@@ -104,6 +113,8 @@ Regras adicionais:
 - [x] Auditoria registra ator, ação, recurso e organização, sem exclusão silenciosa.
 - [x] Migração revisável, com upgrade/downgrade/check validados.
 - [x] Painel web responsivo e autenticado — login/registro por OTP, organizações, membros, estabelecimentos e auditoria validados no navegador.
+- [x] CSP estrita no build, com validação automática e cabeçalhos de hospedagem documentados.
+- [x] Testes automatizados de UI para sessão, rotas, permissões e cliente HTTP.
 - [ ] Operações de reservas/pagamentos no painel — dependem das Fases 12–15.
 
 ## Evidências de execução
@@ -114,6 +125,9 @@ Regras adicionais:
 - `ruff check`, `ruff format --check` e `mypy app` passam.
 - Migração `a1b2c3d4e5f6`: upgrade, downgrade e novo upgrade em banco descartável com PostGIS; `alembic check` sem operações pendentes.
 - Painel: `pnpm lint`, `pnpm format:check`, `pnpm typecheck` e `pnpm build` passam.
+- Painel 11C: `pnpm test` com **6 arquivos e 15 testes** passando; inclui CSRF, refresh em 401, OTP, proteção de rota e permissões de `OPERATOR`/`OWNER`.
+- CSP: `dist/index.html` contém a política estrita, sem `unsafe-inline`/`unsafe-eval`; build falha se a política regredir.
+- Navegador: `vite preview` do build carregou login sem erro de console, com CSS externo e sem script inline.
 - Smoke no navegador: criação de conta por OTP, criação de organização, criação/ativação de estabelecimento, auditoria, recarga da página com refresh, logout e login de conta existente.
 - Smoke de papéis no navegador: operador não vê edição de organização, gestão de membros nem auditoria; consegue consultar membros e criar estabelecimento.
 - CI da branch `feat/11-organizacoes-painel`: run `42211679165` verde nos jobs Backend, Web e Mobile.
@@ -121,10 +135,9 @@ Regras adicionais:
 
 ## Próximos passos
 
-1. Revisar a 11B em code review e, se aprovada, integrar a branch.
-2. Iniciar a Fase 12 somente após autorização específica: quadras, agenda, preços e KYC.
-3. Adicionar testes automatizados de UI (Vitest/Testing Library ou Playwright) antes de ampliar o painel.
-4. Definir CSP, política de origem e observabilidade do painel antes de produção.
+1. Revisar a 11B/11C em code review e, se aprovada, integrar a branch.
+2. Configurar os cabeçalhos de segurança da hospedagem (`frame-ancestors`, HSTS, `Permissions-Policy`) antes de expor o painel em produção.
+3. Iniciar a Fase 12 somente após autorização específica: quadras, agenda, preços e KYC.
 
 ## Condição de parada
 

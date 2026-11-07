@@ -463,6 +463,20 @@ select:hover {
   background: rgb(255 121 87 / 9%);
 }
 
+.notice__body {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.notice__reference {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.notice__reference code {
+  overflow-wrap: anywhere;
+}
+
 .notice--success {
   border-color: rgb(122 214 193 / 40%);
   color: #c8fff3;

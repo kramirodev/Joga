@@ -9,10 +9,25 @@ export function LoadingBlock({ label = "Carregando..." }: { label?: string }) {
   );
 }
 
-export function ErrorNotice({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorNotice({
+  message,
+  requestId,
+  onRetry,
+}: {
+  message: string;
+  requestId?: string | null;
+  onRetry?: () => void;
+}) {
   return (
     <div className="notice notice--error" role="alert">
-      <p>{message}</p>
+      <div className="notice__body">
+        <p>{message}</p>
+        {requestId ? (
+          <p className="notice__reference">
+            Referência para suporte: <code>{requestId}</code>
+          </p>
+        ) : null}
+      </div>
       {onRetry ? (
         <button type="button" className="button button--small" onClick={onRetry}>
           Tentar novamente

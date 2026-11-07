@@ -5,7 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { AppHeader } from "../components/AppHeader";
 import { EmptyState, ErrorNotice, LoadingBlock } from "../components/Feedback";
 import { api } from "../lib/api";
-import { formatError, roleLabel } from "../lib/format";
+import { formatError, requestIdOf, roleLabel } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import type { Organization } from "../types";
 
@@ -61,6 +61,7 @@ export function OrganizationsPage() {
         {queryError ? (
           <ErrorNotice
             message={formatError(queryError)}
+            requestId={requestIdOf(queryError)}
             onRetry={() => void organizationsQuery.refetch()}
           />
         ) : null}

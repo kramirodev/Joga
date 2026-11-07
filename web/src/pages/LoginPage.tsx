@@ -10,7 +10,7 @@ import {
   webRegister,
 } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
-import { formatError } from "../lib/format";
+import { formatError, requestIdOf } from "../lib/format";
 
 type Mode = "login" | "register";
 type Step = "phone" | "code";
@@ -24,7 +24,7 @@ export function LoginPage() {
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   if (user) {
     return <Navigate to="/" replace />;
@@ -50,7 +50,7 @@ export function LoginPage() {
       setChallengeId(challenge.challenge_id);
       setStep("code");
     } catch (caught) {
-      setError(formatError(caught));
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -75,7 +75,7 @@ export function LoginPage() {
       } else if (caught instanceof ApiError && caught.code === "phone_already_registered") {
         switchMode("login");
       }
-      setError(formatError(caught));
+      setError(caught);
     } finally {
       setBusy(false);
     }
@@ -129,7 +129,7 @@ export function LoginPage() {
             : "Crie a conta do responsável pelo estabelecimento. Ela também serve para o aplicativo JOGA."}
         </p>
 
-        {error ? <ErrorNotice message={error} /> : null}
+        {error ? <ErrorNotice message={formatError(error)} requestId={requestIdOf(error)} /> : null}
 
         {step === "phone" ? (
           <form className="form" onSubmit={startChallenge}>

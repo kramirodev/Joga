@@ -52,7 +52,7 @@
 | Abuso de recursos | Payload grande, muitas conexões, carga | limites de tamanho, rate limiting parcial, timeouts | rate limit global e proteção de borda pendentes |
 | Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos ou auditoria de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | painel web e recursos de reservas/financeiro ainda não existem |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
-| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção | CSP, revisão de XSS e teste de navegador automatizado pendentes |
+| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 
 ## Controles transversais
 
@@ -66,6 +66,8 @@
 - Segredos fora do Git; `.env` não versionado.
 - Logs sem PII, tokens, OTP, query string ou corpo.
 - Health live/ready e request ID para operação.
+- Erros do painel exibem o `X-Request-ID` como referência de suporte, sem detalhes internos.
+- Painel com CSP estrita no build, testes de UI automatizados e error boundary.
 - Retenção provisória e limpeza manual documentadas.
 - Fotos de quadra entram apenas por fluxo autenticado de organização, com revisão e sem pessoas identificáveis.
 
@@ -76,6 +78,7 @@
 - **Médio:** rate limiting global/borda e proteção contra abuso distribuído incompletos.
 - **Médio:** Redis/fan-out multi-processo e múltiplas instâncias não implementados.
 - **Médio:** push real e SMS dependem de provedor/credenciais.
+- **Médio:** cabeçalhos de segurança da hospedagem do painel (`frame-ancestors`, HSTS, `Permissions-Policy`) ainda não configurados.
 - **Médio:** moderação de chat e denúncias pertencem à Fase 17.
 - **Médio:** catálogo de avatares e moderação de nome/avatar pertencem à Fase 17.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.

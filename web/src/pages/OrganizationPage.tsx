@@ -6,7 +6,7 @@ import { AppHeader } from "../components/AppHeader";
 import { EmptyState, ErrorNotice, LoadingBlock } from "../components/Feedback";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
-import { formatDate, formatError, roleLabel } from "../lib/format";
+import { formatDate, formatError, requestIdOf, roleLabel } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import type { Member, Organization, Role, Venue } from "../types";
 
@@ -35,7 +35,7 @@ function MemberRow({
   currentUserId: string | null;
   onChanged: () => Promise<void>;
   onNotice: (message: string) => void;
-  onError: (message: string) => void;
+  onError: (error: unknown) => void;
 }) {
   const [role, setRole] = useState<Role>(member.role);
   const manageable = actorRole === "OWNER" || (actorRole === "ADMIN" && member.role === "OPERATOR");
@@ -47,7 +47,7 @@ function MemberRow({
       await onChanged();
       onNotice("Papel atualizado.");
     },
-    onError: (caught) => onError(formatError(caught)),
+    onError: (caught) => onError(caught),
   });
 
   const removeMember = useMutation({
@@ -56,7 +56,7 @@ function MemberRow({
       await onChanged();
       onNotice(isSelf ? "Você saiu da organização." : "Membro removido.");
     },
-    onError: (caught) => onError(formatError(caught)),
+    onError: (caught) => onError(caught),
   });
 
   const busy = changeRole.isPending || removeMember.isPending;
@@ -133,7 +133,7 @@ export function OrganizationPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
 
   const [newMemberId, setNewMemberId] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<Role>("OPERATOR");
@@ -292,6 +292,7 @@ export function OrganizationPage() {
         <main className="page">
           <ErrorNotice
             message={queryError ? formatError(queryError) : "Organização não encontrada."}
+            requestId={requestIdOf(queryError)}
             onRetry={refetchAll}
           />
           <Link className="button button--link" to="/">
@@ -362,8 +363,15 @@ export function OrganizationPage() {
             {notice}
           </div>
         ) : null}
-        {actionError ? <ErrorNotice message={actionError} /> : null}
-        {mutationError ? <ErrorNotice message={formatError(mutationError)} /> : null}
+        {actionError ? (
+          <ErrorNotice message={formatError(actionError)} requestId={requestIdOf(actionError)} />
+        ) : null}
+        {mutationError ? (
+          <ErrorNotice
+            message={formatError(mutationError)}
+            requestId={requestIdOf(mutationError)}
+          />
+        ) : null}
 
         <div className="tabs" role="tablist" aria-label="Seções da organização">
           <button
@@ -425,9 +433,9 @@ export function OrganizationPage() {
                     currentUserId={user?.id ?? null}
                     onChanged={invalidateMembers}
                     onNotice={setNotice}
-                    onError={(message) => {
+                    onError={(error) => {
                       setNotice(null);
-                      setActionError(message);
+                      setActionError(error);
                     }}
                   />
                 ))}
@@ -596,6 +604,7 @@ export function OrganizationPage() {
             {auditQuery.error ? (
               <ErrorNotice
                 message={formatError(auditQuery.error)}
+                requestId={requestIdOf(auditQuery.error)}
                 onRetry={() => void auditQuery.refetch()}
               />
             ) : auditQuery.isPending ? (

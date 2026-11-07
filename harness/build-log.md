@@ -574,3 +574,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Ambiente local:** API em 8000 (com `JOGA_DEV_FIXED_OTP=123456`) e Vite em 5173; banco local migrado para `a1b2c3d4e5f6`.
 - **CI:** run `42211679165` verde nos jobs Backend, Web e Mobile.
 - **Fora do escopo:** deploy, domínio, CSP definitiva, testes automatizados de UI, reservas, agenda, pagamentos e KYC.
+
+### 2026-11-07 — Fase 11C: CSP, testes de UI e observabilidade do painel
+
+- **Documentação:** commit `eebeac3` registra a v3.4 do conceito, as ADRs 0029 (avatares e mídia restrita) e 0030 (kit da partida), a documentação técnica e o threat model.
+- **CSP:** política estrita injetada somente no build do painel; `pnpm build` valida `dist/index.html` e falha se faltar diretiva ou aparecer `unsafe-inline`/`unsafe-eval`. `frame-ancestors`, HSTS e `Permissions-Policy` ficam documentados para a hospedagem.
+- **Testes de UI:** Vitest + jsdom + Testing Library; **6 arquivos e 15 testes** cobrindo CSRF, refresh em 401, erros da API, login/registro por OTP, proteção de rota e permissões de `OWNER`/`OPERATOR`. CI `Web` executa `pnpm test`.
+- **Observabilidade:** `ApiError` carrega o `X-Request-ID`; o painel exibe a referência de suporte nos erros e tem error boundary global.
+- **Verificações:** `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test` e `pnpm build` passam; preview do build carregou o login sem erros de console.
+- **Estado:** Fase 11 segue sem merge e sem deploy; Fase 12 não iniciada.

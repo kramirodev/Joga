@@ -21,6 +21,10 @@ export function formatDate(value: string): string {
   }).format(date);
 }
 
+export function requestIdOf(error: unknown): string | null {
+  return error instanceof ApiError ? error.requestId : null;
+}
+
 export function formatError(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return "Não foi possível concluir a operação. Tente novamente.";

@@ -97,7 +97,7 @@ jobs:
         run: pnpm exec expo install --check
 
   web:
-    name: Web (lint, formatação, tipos, build)
+    name: Web (lint, formatação, tipos, testes, build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -120,5 +120,7 @@ jobs:
         run: pnpm run format:check
       - name: Tipos
         run: pnpm run typecheck
+      - name: Testes
+        run: pnpm run test
       - name: Build
         run: pnpm run build
