@@ -648,3 +648,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Motivos:** Trust Factor mede confiabilidade esportiva, não risco de pagamento; ainda está neutro/oculto; mediana é manipulável por grupos; conta nova seria penalizada; impacto financeiro por reserva é pequeno; preço variável exige revisão jurídica/LGPD e versionamento.
 - **Avaliação futura:** modo sombra, sem cobrança diferente, comparando Trust Factor/mediana com MED, chargeback e estorno sem saldo por pelo menos 90 dias.
 - **Documentação:** conceito v3.9, técnica §26 e ADR 0036 atualizados. Nenhum código ou preço foi alterado.
+
+### 2026-11-07 — Validação sandbox real da Orders API
+
+- **Credencial:** token de usuário de teste (`@testuser.com`) validado em `GET /users/me`.
+- **Ordem Pix:** criada com sucesso em sandbox, status `action_required`, com QR Code, copia-e-cola e ticket URL.
+- **Correção:** a Orders API rejeitou `notification_url` no payload (`unsupported_properties`); o adaptador deixou de enviá-lo. A URL de webhook deve ser configurada no painel de Webhooks do Mercado Pago.
+- **Webhook:** ainda sem segredo configurado; o endpoint local/teste aceita sem validação, mas produção exige a chave secreta.
+- **Nenhum pagamento real** foi realizado; apenas uma ordem sandbox de R$ 1,00.

@@ -187,8 +187,6 @@ class MercadoPagoAdapter:
             payload["description"] = request.description
         if request.metadata:
             payload["metadata"] = request.metadata
-        if self.notification_url:
-            payload["notification_url"] = self.notification_url
         headers = {**self._headers, "X-Idempotency-Key": request.external_reference}
         try:
             response = self._client.post("/v1/orders", json=payload, headers=headers)

@@ -15,7 +15,7 @@ O Mercado Pago atualiza o Checkout Transparente para Pix via **Orders API** (`/v
 2. `external_reference` é o ID interno da cobrança (`booking_payments`), e `X-Idempotency-Key` usa o mesmo valor.
 3. O `payer.email` é obrigatório. No sandbox, usar `JOGA_MERCADO_PAGO_PAYER_EMAIL`; em produção, coletar e-mail real ou definir identidade de pagamento.
 4. O adaptador `simulator` é o padrão em local/test/CI; o adaptador `mercadopago` exige token sandbox e não pode operar dinheiro real.
-5. O webhook é público em `/api/v1/payments/mercadopago/webhook`, valida HMAC quando o segredo estiver configurado e usa `psp_webhook_events` para idempotência por evento.
+5. O webhook é público em `/api/v1/payments/mercadopago/webhook`, valida HMAC quando o segredo estiver configurado e usa `psp_webhook_events` para idempotência por evento. A Orders API não aceita `notification_url` no payload; a URL deve ser configurada no painel de Webhooks do Mercado Pago.
 6. O status só é aplicado após consulta server-to-server da ordem/pagamento; o payload do webhook não é prova suficiente.
 7. A confirmação da reserva continua no domínio de reservas e só ocorre com todas as vagas ativas pagas.
 8. O ledger é append-only: `CHARGE_CREATED`, `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` e `VENUE_RELEASE`.

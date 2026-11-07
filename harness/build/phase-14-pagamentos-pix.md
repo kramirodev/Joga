@@ -125,6 +125,7 @@ pnpm exec tsc --noEmit && pnpm exec eslint . && pnpm exec prettier --check .
 - Backend: **364 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy verdes.
 - Painel web e mobile com testes/verificações verdes; QR Code exibido no mobile.
 - Nenhuma credencial real, dinheiro real ou split de produção foi acionado.
+- **Sandbox real:** credencial de teste validada em `/users/me` e ordem Pix criada com status `action_required`, QR Code e ticket URL. Nenhum pagamento foi realizado.
 
 ## Aprovação e condição de parada
 

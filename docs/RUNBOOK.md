@@ -440,6 +440,8 @@ JOGA_MERCADO_PAGO_WEBHOOK_SECRET=...
 JOGA_MERCADO_PAGO_NOTIFICATION_URL=https://seu-dominio/api/v1/payments/mercadopago/webhook
 ```
 
+> A Orders API atual **não aceita** `notification_url` no payload da ordem. Configure a URL de webhook no painel do Mercado Pago; a variável acima serve como referência operacional.
+
 - Rotas: webhook público em `POST /api/v1/payments/mercadopago/webhook`, sincronização em `POST /api/v1/bookings/{booking}/payments/{payment}/sync` e reabertura em `POST /api/v1/organizations/{org}/bookings/{booking}/payments/open`.
 - O webhook valida HMAC quando o segredo está configurado e consulta a ordem no PSP antes de mudar o estado.
 - O QR Code/copia-e-cola aparece no mobile para o próprio participante; a organização vê apenas o status.

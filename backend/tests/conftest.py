@@ -19,6 +19,8 @@ from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
 from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.payments import models as payments_models  # noqa: F401
+from app.modules.payments.adapter import SimulatorPspAdapter
+from app.modules.payments.dependency import get_psp_adapter
 from app.modules.profile import models as profile_models  # noqa: F401
 from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
@@ -30,6 +32,7 @@ from app.modules.venues import models as venues_models  # noqa: F401
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app = create_app()
+    app.dependency_overrides[get_psp_adapter] = lambda: SimulatorPspAdapter()
     with TestClient(app) as test_client:
         yield test_client
 
