@@ -39,10 +39,12 @@ export interface MemberListResponse {
 export interface Venue {
   id: string;
   organization_id: string;
+  venue_id: string | null;
   name: string;
   city: string | null;
   state: string | null;
   address_line: string | null;
+  timezone: string;
   status: "active" | "inactive";
   created_at: string;
   updated_at: string;
@@ -50,6 +52,89 @@ export interface Venue {
 
 export interface VenueListResponse {
   venues: Venue[];
+}
+
+export interface VenueSport {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface VenueSpace {
+  id: string;
+  venue_id: string;
+  name: string;
+  description: string | null;
+  status: "active" | "inactive";
+  sports: VenueSport[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VenueSpaceListResponse {
+  spaces: VenueSpace[];
+}
+
+export interface VenueAvailability {
+  id: string;
+  space_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  price_cents: number;
+  slot_minutes: number;
+}
+
+export interface VenueAvailabilityListResponse {
+  availability: VenueAvailability[];
+}
+
+export interface VenueBlackout {
+  id: string;
+  space_id: string;
+  starts_at: string;
+  ends_at: string;
+  reason: string;
+  external_reference: string | null;
+  created_at: string;
+}
+
+export interface VenueBlackoutListResponse {
+  blackouts: VenueBlackout[];
+}
+
+export interface VenuePhoto {
+  id: string;
+  venue_id: string;
+  space_id: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "REMOVED";
+  content_type: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  caption: string | null;
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  content_url: string;
+  can_review: boolean;
+}
+
+export interface VenuePhotoListResponse {
+  photos: VenuePhoto[];
+  can_review: boolean;
+}
+
+export interface SportCatalogItem {
+  id: string;
+  slug: string;
+  name: string;
+  formats: Array<{ id: string; slug: string; name: string }>;
+}
+
+export interface SportCatalogResponse {
+  sports: SportCatalogItem[];
 }
 
 export interface AuditEvent {

@@ -518,6 +518,12 @@ export function OrganizationPage() {
                         >
                           {venue.status === "active" ? "Ativo" : "Inativo"}
                         </span>
+                        <Link
+                          className="button button--small"
+                          to={`/organizations/${organization.id}/venues/${venue.id}`}
+                        >
+                          Quadras e fotos
+                        </Link>
                         <button
                           type="button"
                           className="button button--small"

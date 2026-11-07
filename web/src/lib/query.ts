@@ -15,5 +15,24 @@ export const queryKeys = {
   organization: (organizationId: string) => ["organizations", organizationId] as const,
   members: (organizationId: string) => ["organizations", organizationId, "members"] as const,
   venues: (organizationId: string) => ["organizations", organizationId, "venues"] as const,
+  venue: (organizationId: string, venueId: string) =>
+    ["organizations", organizationId, "venues", venueId] as const,
+  spaces: (organizationId: string, venueId: string) =>
+    ["organizations", organizationId, "venues", venueId, "spaces"] as const,
+  availability: (organizationId: string, venueId: string, spaceId: string) =>
+    [
+      "organizations",
+      organizationId,
+      "venues",
+      venueId,
+      "spaces",
+      spaceId,
+      "availability",
+    ] as const,
+  blackouts: (organizationId: string, venueId: string, spaceId: string) =>
+    ["organizations", organizationId, "venues", venueId, "spaces", spaceId, "blackouts"] as const,
+  photos: (organizationId: string, venueId: string) =>
+    ["organizations", organizationId, "venues", venueId, "photos"] as const,
+  sports: ["sports"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
 };

@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +25,7 @@ from app.modules.organizations.permissions import (
     capabilities_for,
 )
 from app.modules.profile.models import UserProfile
+from app.modules.profile.models import Venue as DiscoveryVenue
 
 
 class OrganizationError(Exception):
@@ -142,6 +144,16 @@ class OrganizationService:
         if organization is None:
             raise OrganizationNotFound
         return OrganizationAccess(organization=organization, role=Role(membership.role))
+
+    def require_capability(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        capability: Capability,
+    ) -> OrganizationMembership:
+        """Expõe a verificação de capacidade para outros domínios da organização."""
+
+        return self._require_capability(actor_user_id, organization_id, capability)
 
     def update(
         self,
@@ -337,19 +349,27 @@ class OrganizationService:
         city: str | None = None,
         state: str | None = None,
         address_line: str | None = None,
+        timezone: str | None = None,
+        venue_id: uuid.UUID | None = None,
     ) -> OrganizationVenue:
         """Cria um estabelecimento vinculado à organização."""
 
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
         venue = OrganizationVenue(
             organization_id=organization_id,
+            venue_id=self._validate_discovery_venue(venue_id),
             name=_clean_venue_name(name),
             city=_clean_optional(city, max_length=120),
             state=_clean_state(state),
             address_line=_clean_optional(address_line, max_length=200),
+            timezone=_clean_timezone(timezone),
         )
-        self.session.add(venue)
-        self.session.flush()
+        try:
+            with self.session.begin_nested():
+                self.session.add(venue)
+                self.session.flush()
+        except IntegrityError as exc:
+            raise InvalidInput from exc
         record_audit(
             self.session,
             actor_user_id=actor_user_id,
@@ -401,7 +421,7 @@ class OrganizationService:
         organization_id: uuid.UUID,
         venue_id: uuid.UUID,
         *,
-        changes: Mapping[str, str | None],
+        changes: Mapping[str, Any],
     ) -> OrganizationVenue:
         """Atualiza apenas campos permitidos do estabelecimento."""
 
@@ -417,14 +437,21 @@ class OrganizationService:
 
         applied: dict[str, Any] = {}
         for field, value in changes.items():
+            cleaned: Any
             if field == "name":
                 if value is None:
                     raise InvalidInput
-                cleaned: str | None = _clean_venue_name(value)
+                cleaned = _clean_venue_name(value)
             elif field in {"city", "address_line"}:
                 cleaned = _clean_optional(value, max_length=120 if field == "city" else 200)
             elif field == "state":
                 cleaned = _clean_state(value)
+            elif field == "timezone":
+                if value is None:
+                    raise InvalidInput
+                cleaned = _clean_timezone(value)
+            elif field == "venue_id":
+                cleaned = self._validate_discovery_venue(value)
             elif field == "status":
                 if value not in {"active", "inactive"}:
                     raise InvalidInput
@@ -435,7 +462,10 @@ class OrganizationService:
             previous = getattr(venue, field)
             if previous != cleaned:
                 setattr(venue, field, cleaned)
-                applied[field] = {"from": previous, "to": cleaned}
+                applied[field] = {
+                    "from": _audit_value(previous),
+                    "to": _audit_value(cleaned),
+                }
 
         if applied:
             record_audit(
@@ -447,7 +477,10 @@ class OrganizationService:
                 resource_id=venue.id,
                 details={"changes": applied},
             )
-            self.session.flush()
+            try:
+                self.session.flush()
+            except IntegrityError as exc:
+                raise InvalidInput from exc
         return venue
 
     def list_audit(
@@ -521,6 +554,18 @@ class OrganizationService:
             raise UserNotActive
         return user
 
+    def _validate_discovery_venue(self, venue_id: object | None) -> uuid.UUID | None:
+        """Valida o vínculo com um local privado do catálogo de descoberta."""
+
+        if venue_id is None:
+            return None
+        if not isinstance(venue_id, uuid.UUID):
+            raise InvalidInput
+        venue = self.session.get(DiscoveryVenue, venue_id)
+        if venue is None or not venue.active or venue.kind != "private":
+            raise InvalidInput
+        return venue.id
+
     def _ensure_not_last_owner(
         self,
         organization_id: uuid.UUID,
@@ -584,3 +629,18 @@ def _clean_state(value: str | None) -> str | None:
     if len(normalized) != 2 or not normalized.isalpha():
         raise InvalidInput
     return normalized
+
+
+def _clean_timezone(value: str | None) -> str:
+    normalized = (value or "America/Sao_Paulo").strip()
+    if not 1 <= len(normalized) <= 64:
+        raise InvalidInput
+    try:
+        ZoneInfo(normalized)
+    except ZoneInfoNotFoundError as exc:
+        raise InvalidInput from exc
+    return normalized
+
+
+def _audit_value(value: Any) -> Any:
+    return str(value) if isinstance(value, uuid.UUID) else value

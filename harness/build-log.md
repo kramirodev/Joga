@@ -589,3 +589,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - `PLANS.md` passou a dividir a Fase 12 em **12A** (quadras, fotos e agenda) e **12B** (KYC/recebedor), com fotos de quadra explicitamente no escopo e critérios de revisão/isolamento.
 - A Fase 17 foi corrigida: não há upload livre de mídia por usuários, mas fotos de quadra têm fluxo próprio na Fase 12 e não entram na fila de denúncias.
 - Criado `harness/build/phase-12-quadras-agenda-kyc.md` com escopo, riscos, testes e condição de parada; nenhuma implementação iniciada.
+
+### 2026-11-07 — Fase 12A: quadras, fotos e agenda
+
+- **Modelo:** `venue_spaces`, `venue_sports`, `venue_availability`, `venue_blackouts` e `venue_photos`; `organization_venues` ganhou `timezone` e `venue_id` (FK opcional/única para local privado ativo do catálogo da Fase 4).
+- **API:** CRUD de quadras, substituição de modalidades, agenda semanal, bloqueios e fotos em `/api/v1/organizations/{org}/venues/{venue}/...`; autorização por organização em todas as operações.
+- **Fotos:** validação real com Pillow, reencode JPEG, remoção de EXIF, limites de bytes/pixels/dimensões, storage local privado, serving autenticado e `Cache-Control: no-store`.
+- **Revisão:** `OWNER`/`ADMIN` aprovam ou rejeitam com auditoria; `OPERATOR` gerencia quadras/fotos, mas não revisa. Revisão independente fica para a Fase 17.
+- **Painel:** rota de estabelecimento com quadras, modalidades, agenda, bloqueios e fotos; upload, preview autenticado, aprovação/rejeição e remoção.
+- **Testes backend:** **315 passed, 28 skipped** sem PostgreSQL e **344 passed** com `JOGA_TEST_DATABASE_URL`.
+- **Testes painel:** **7 arquivos e 17 testes**; `lint`, `format:check`, `typecheck` e `build` verdes.
+- **Migrações:** `99c1055b81b5` e `0261da35ece5`; `alembic check` sem operações pendentes e ciclo upgrade → downgrade → upgrade validado em banco descartável com PostGIS.
+- **Smoke:** quadra, modalidade, agenda, bloqueio, upload, aprovação e serving de foto no navegador, sem erro de console.
+- **Fora do escopo:** 12B (KYC/PSP), UI mobile de descoberta de quadras, reservas, pagamentos e storage de produção. Nenhum provedor externo acionado.

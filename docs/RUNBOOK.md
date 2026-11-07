@@ -400,7 +400,16 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. Reservas, agenda, pagamentos, KYC, clãs, moderação e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. Reservas, pagamentos, KYC, clãs, moderação e publicidade não estão implementados.
+
+### Quadras, agenda e fotos (Fase 12A)
+
+- A rota do painel é `/organizations/{org}/venues/{venue}`; a lista de estabelecimentos tem o atalho “Quadras e fotos”.
+- Endpoints principais: `/api/v1/organizations/{org}/venues/{venue}/spaces`, `.../spaces/{space}/availability`, `.../spaces/{space}/blackouts` e `.../photos`.
+- Fotos são validadas e reencodadas em JPEG, têm EXIF removido e ficam em storage privado. O padrão local é `JOGA_MEDIA_ROOT=var/media`, relativo ao diretório `backend/`; não há serving estático.
+- A foto nasce `PENDING`; `OWNER`/`ADMIN` aprova ou rejeita com motivo. `OPERATOR` pode enviar e remover, mas não revisar. A revisão independente fica para a Fase 17.
+- O serving usa `GET .../photos/{photo}/content` com autenticação e `Cache-Control: no-store`. Fotos não são públicas.
+- Em produção, defina storage de objetos, criptografia, backup, retenção e limpeza de órfãos; o diretório local não é adequado para múltiplas instâncias.
 
 ## 6. CI
 

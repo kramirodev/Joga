@@ -1,8 +1,8 @@
-# Threat model — núcleo esportivo (Fase 10A)
+# Threat model — núcleo esportivo e painel de gestão (Fases 10–12A)
 
-**Data:** 2026-11-06
-**Escopo:** identidade, perfil/descoberta, fila/matchmaking, partidas, resultados/disputas, rating, chat/social e Outbox, no backend e app mobile em desenvolvimento.
-**Fora do escopo:** reservas, pagamentos, PSP, KYC, painel de estabelecimentos, clãs, publicidade e produção comercial.
+**Data:** 2026-11-07
+**Escopo:** identidade, perfil/descoberta, fila/matchmaking, partidas, resultados/disputas, rating, chat/social, Outbox, organizações, painel web, quadras, agenda e fotos de quadra, no backend e app mobile em desenvolvimento.
+**Fora do escopo:** reservas, pagamentos, PSP, KYC, clãs, publicidade e produção comercial.
 
 ## Ativos
 
@@ -12,6 +12,8 @@
 - Relatos, evidências, decisões de disputa e MMR.
 - Mensagens de lobby, amizades, bloqueios e convites.
 - Tokens de push, IDs de idempotência e eventos de Outbox.
+- Organizações, vínculos, estabelecimentos, quadras, agenda e preços.
+- Fotos de quadra, arquivos privados e metadados de revisão.
 - Segredos de aplicação, credenciais de banco e logs.
 
 ## Atores
@@ -26,10 +28,12 @@
 ## Fronteiras de confiança
 
 1. App mobile → API HTTP/WebSocket: não confiável; toda entrada é validada.
-2. API → PostgreSQL/Redis: confiável, mas sujeita a concorrência e falhas.
-3. Workers → PostgreSQL: confiáveis, mas idempotência e locks são obrigatórios.
-4. Operador → CLI: confiável apenas se o ambiente e a lista de operadores estiverem protegidos.
-5. Provedores externos → API: não confiáveis até validação criptográfica/autenticação.
+2. Painel web → API HTTP: não confiável; cookie, CSRF e CSP reduzem abuso.
+3. API → PostgreSQL/Redis: confiável, mas sujeita a concorrência e falhas.
+4. Workers → PostgreSQL: confiáveis, mas idempotência e locks são obrigatórios.
+5. Operador → CLI: confiável apenas se o ambiente e a lista de operadores estiverem protegidos.
+6. API → storage de fotos: privado; o arquivo nunca é servido estaticamente.
+7. Provedores externos → API: não confiáveis até validação criptográfica/autenticação.
 
 ## Ameaças e controles
 
@@ -50,7 +54,9 @@
 | Dependência vulnerável | Biblioteca com CVE | versões fixadas, CI, revisão de lockfile | auditoria automatizada de CVE ainda pendente |
 | Enumeração de usuários | Buscar usuários/perfis livremente | sem endpoint global de busca; dados sociais limitados às relações | ranking expõe nome/divisão; revisar privacidade |
 | Abuso de recursos | Payload grande, muitas conexões, carga | limites de tamanho, rate limiting parcial, timeouts | rate limit global e proteção de borda pendentes |
-| Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos ou auditoria de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | painel web e recursos de reservas/financeiro ainda não existem |
+| Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos, quadras, fotos ou auditoria de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | recursos de reservas/financeiro ainda não existem |
+| Upload de imagem maliciosa | Polyglot, malware, decompression bomb, EXIF com localização, arquivo acima do limite | validação real por Pillow, reencode JPEG, remoção de EXIF, limites de bytes/pixels/dimensões, storage privado e serving autorizado | antivírus dedicado e storage de produção pendentes |
+| Abuso de revisão de foto | Organização aprovar conteúdo impróprio ou foto com pessoa | revisão por `OWNER`/`ADMIN`, motivo obrigatório na rejeição, auditoria, `OPERATOR` sem revisão | revisão independente e denúncia de foto pertencem à Fase 17 |
 | Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, `Secure` em produção, CSP estrita no build | cabeçalhos de `frame-ancestors`/HSTS na hospedagem e revisão dedicada de XSS pendentes |
 
@@ -70,6 +76,8 @@
 - Painel com CSP estrita no build, testes de UI automatizados e error boundary.
 - Retenção provisória e limpeza manual documentadas.
 - Fotos de quadra entram apenas por fluxo autenticado de organização, com revisão e sem pessoas identificáveis.
+- Fotos de quadra são validadas pelo conteúdo real, reencodadas em JPEG, têm EXIF removido e são servidas por endpoint autenticado com `no-store`.
+- A revisão inicial de foto é restrita a `OWNER`/`ADMIN` e auditada; `OPERATOR` não revisa.
 
 ## Riscos residuais e bloqueios
 
@@ -81,6 +89,8 @@
 - **Médio:** cabeçalhos de segurança da hospedagem do painel (`frame-ancestors`, HSTS, `Permissions-Policy`) ainda não configurados.
 - **Médio:** moderação de chat e denúncias pertencem à Fase 17.
 - **Médio:** catálogo de avatares e moderação de nome/avatar pertencem à Fase 17.
+- **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pertencem à Fase 17.
+- **Médio:** storage de fotos é local; provedor de produção, criptografia, backup e limpeza de órfãos não definidos.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 
 ## Critérios para piloto

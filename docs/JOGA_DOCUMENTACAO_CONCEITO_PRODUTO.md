@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.4<br>
-**Status:** visão de produto atualizada — avatares gerados, ausência de fotos de pessoas e kit da partida<br>
+**Versão:** 3.5<br>
+**Status:** visão de produto atualizada — Fase 12A com quadras, agenda e fotos de quadra<br>
 **Data:** 7 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -17,6 +17,7 @@
 | 3.2 | 5 de novembro de 2026 | Fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`; 1,8 reinterpretado como fator de segurança de 95%; piso, preço variável e teto removidos; elegibilidade mínima; Pagar.me Flex como primeira opção; KYC, liberação após a partida e interface financeira do recebedor; comércio de produtos fora do escopo |
 | 3.3 | 6 de novembro de 2026 | Fase 7: relato de resultado em 10 minutos; três resultados; regra de 50% sem tolerância separada; segunda rodada; capitão provisório por partidas finalizadas e UUID; evidência apenas textual; revisão humana por CLI; backend-only sem MMR |
 | 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado; fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
+| 3.5 | 7 de novembro de 2026 | Fase 12A: quadras/espaços, modalidades, agenda, preços, bloqueios e fotos de quadra; revisão inicial pelo proprietário/administrador da organização, com revisão independente prevista para a Fase 17 |
 
 ## Como interpretar as decisões neste documento
 
@@ -1521,6 +1522,7 @@ Regras:
 - A identidade visual de clã segue a mesma regra: peças, cores e símbolos do catálogo fechado, sem upload de imagem.
 - Nome de exibição e `#tag` continuam sendo texto sujeito a validação e moderação.
 - Fotos são permitidas apenas para **quadras e estabelecimentos**, enviadas por organização autenticada, com revisão, sem pessoas identificáveis e com retenção controlada.
+- Na Fase 12A, a revisão inicial é feita por `OWNER`/`ADMIN` da organização, com auditoria e motivo obrigatório na rejeição; a revisão independente, a denúncia de foto e a moderação de abuso entram na Fase 17.
 - Documentos de KYC são privados, nunca exibidos no aplicativo e não se confundem com a política de mídia pública.
 - Não há upload livre de imagem, áudio, vídeo ou arquivo em perfil, lobby ou chat no MVP.
 - Avatares também podem ser usados para abuso — combinações ofensivas, assédio por identidade ou impersonação. Denúncias continuam existindo e a moderação pode restringir nome, avatar ou conta.
@@ -1822,6 +1824,8 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 49. Futebol 5x5 permite empate esportivo; vôlei não permite na primeira versão.
 50. O aplicativo não exibe fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, sem upload livre. Fotos são restritas a quadras e estabelecimentos, enviadas por organização autenticada e moderadas.
 51. O kit da partida é um requisito logístico do formato, assumido por participantes ou pelo responsável logístico; não é critério de capitão, elegibilidade, MMR ou Trust Factor automático, e descumprimento isolado não pune automaticamente.
+52. Na Fase 12A, a revisão inicial de foto de quadra é feita por `OWNER`/`ADMIN` da organização, com auditoria e motivo obrigatório na rejeição; `OPERATOR` não revisa. A revisão independente e a denúncia de foto entram na Fase 17.
+53. O vínculo entre perfil comercial e local descoberto (`organization_venues.venue_id`) é opcional e único, e só aceita local privado ativo; não concede autorização de reserva nem publica o estabelecimento automaticamente.
 
 ### 26.2 Parâmetros iniciais
 
@@ -1901,6 +1905,9 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 33. Catálogo definitivo de equipamento por formato e se o kit é obrigatório em partidas casuais e ranqueadas.
 34. Consequências de descumprir um item assumido: limiar, contestação e efeito no Trust Factor.
 35. Definir se o responsável logístico do kit é explícito ou apenas uma confirmação coletiva, e como isso se relaciona com o criador do lobby.
+36. Provedor de storage de fotos de produção, criptografia, backup, retenção e limpeza de arquivos órfãos.
+37. Revisão independente, denúncia e moderação de fotos de quadra na Fase 17.
+38. UI mobile de descoberta de quadras e fotos.
 
 ### 26.5 O que este documento não decide
 
@@ -2005,3 +2012,4 @@ Próximos passos recomendados, em ordem:
 - Foram separadas decisões aprovadas, parâmetros iniciais, propostas e pendências.
 - Na versão 3.4, o aplicativo passou a não exibir fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, e fotos ficaram restritas a quadras e estabelecimentos.
 - Foi criado o kit da partida como requisito logístico do formato, sem alterar o critério de capitão, a elegibilidade ou o MMR.
+- Na versão 3.5, a Fase 12A passou a cobrir quadras, modalidades, agenda, preços, bloqueios e fotos de quadra; a revisão inicial de foto é feita por `OWNER`/`ADMIN`, com revisão independente na Fase 17.

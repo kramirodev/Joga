@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     matchmaking_min_lead_minutes: int = Field(default=120, ge=0, le=1440)
     matchmaking_max_radius_km: int = Field(default=30, ge=1, le=200)
 
+    # Fotos de quadra (Fase 12A). O storage local é privado e não é servido
+    # estaticamente; produção exige decisão de storage de objetos.
+    media_root: str = Field(default="var/media", min_length=1, max_length=500)
+    venue_photo_max_bytes: int = Field(default=5_000_000, ge=1024, le=20_000_000)
+    venue_photo_max_pixels: int = Field(default=40_000_000, ge=10_000, le=100_000_000)
+    venue_photo_max_dimension: int = Field(default=4000, ge=200, le=10_000)
+    venue_photo_min_dimension: int = Field(default=200, ge=1, le=2000)
+    venue_photo_output_max_dimension: int = Field(default=2000, ge=200, le=4000)
+
     # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
     # significa que nenhum operador está autorizado.
     review_operators: str = ""

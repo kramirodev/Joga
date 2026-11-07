@@ -21,10 +21,12 @@ const venues: Venue[] = [
   {
     id: "venue-1",
     organization_id: "org-1",
+    venue_id: null,
     name: "Quadra Central",
     city: "Rio de Janeiro",
     state: "RJ",
     address_line: null,
+    timezone: "America/Sao_Paulo",
     status: "active",
     created_at: "2026-11-01T12:00:00Z",
     updated_at: "2026-11-01T12:00:00Z",

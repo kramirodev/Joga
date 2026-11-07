@@ -9,7 +9,8 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - Refresh token em cookie `HttpOnly`; access token apenas em memória.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
-- Sem reservas, agenda, pagamentos, KYC, clãs, moderação ou publicidade.
+- Quadras/espaços, modalidades, agenda semanal, preços, bloqueios e fotos de quadra com revisão.
+- Sem reservas, pagamentos, KYC, clãs, moderação ou publicidade.
 
 ## Desenvolvimento local
 
@@ -57,6 +58,8 @@ pnpm build
 - Em produção, configure `JOGA_WEB_COOKIE_SECURE=true` e sirva o painel e a API
   no mesmo domínio/HTTPS.
 - O painel nunca acessa o banco diretamente e não cria conta separada por papel.
+- Fotos de quadra são exibidas por blob autenticado; a CSP permite `blob:` apenas em `img-src`.
+- A revisão inicial de foto é feita por `OWNER`/`ADMIN`; `OPERATOR` envia e remove, mas não revisa.
 - O build injeta uma CSP estrita em `dist/index.html`, sem `unsafe-inline` nem
   `unsafe-eval`; `pnpm build` falha se a política não estiver presente.
 - `frame-ancestors` não é aplicado por `<meta>` e precisa ser enviado pela
@@ -68,7 +71,7 @@ O `<meta>` cobre o documento, mas a hospedagem deve enviar os cabeçalhos abaixo
 Exemplo para nginx:
 
 ```nginx
-add_header Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self'" always;
+add_header Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self'" always;
 add_header X-Frame-Options "DENY" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;

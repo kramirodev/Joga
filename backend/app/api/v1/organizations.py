@@ -81,6 +81,8 @@ class VenueCreate(BaseModel):
     city: str | None = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
     address_line: str | None = Field(default=None, max_length=200)
+    timezone: str | None = Field(default=None, max_length=64)
+    venue_id: UUID | None = None
 
     @field_validator("state")
     @classmethod
@@ -93,6 +95,8 @@ class VenueUpdate(BaseModel):
     city: str | None = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
     address_line: str | None = Field(default=None, max_length=200)
+    timezone: str | None = Field(default=None, max_length=64)
+    venue_id: UUID | None = None
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
 
     @field_validator("state")
@@ -104,10 +108,12 @@ class VenueUpdate(BaseModel):
 class VenueView(BaseModel):
     id: UUID
     organization_id: UUID
+    venue_id: UUID | None
     name: str
     city: str | None
     state: str | None
     address_line: str | None
+    timezone: str
     status: str
     created_at: datetime
     updated_at: datetime
@@ -182,10 +188,12 @@ def _venue_view(venue: OrganizationVenue) -> VenueView:
     return VenueView(
         id=venue.id,
         organization_id=venue.organization_id,
+        venue_id=venue.venue_id,
         name=venue.name,
         city=venue.city,
         state=venue.state,
         address_line=venue.address_line,
+        timezone=venue.timezone,
         status=venue.status,
         created_at=venue.created_at,
         updated_at=venue.updated_at,
@@ -355,6 +363,8 @@ def create_venue(
             city=payload.city,
             state=payload.state,
             address_line=payload.address_line,
+            timezone=payload.timezone,
+            venue_id=payload.venue_id,
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001

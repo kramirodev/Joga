@@ -107,10 +107,19 @@ class OrganizationVenue(Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
+    venue_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("venues.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     state: Mapped[str | None] = mapped_column(String(2), nullable=True)
     address_line: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="America/Sao_Paulo",
+        server_default=text("'America/Sao_Paulo'"),
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
     )

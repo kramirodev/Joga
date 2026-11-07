@@ -8,6 +8,7 @@ import { queryClient } from "./lib/query";
 import { LoginPage } from "./pages/LoginPage";
 import { OrganizationPage } from "./pages/OrganizationPage";
 import { OrganizationsPage } from "./pages/OrganizationsPage";
+import { VenuePage } from "./pages/VenuePage";
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -35,6 +36,10 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<OrganizationsPage />} />
               <Route path="/organizations/:organizationId" element={<OrganizationPage />} />
+              <Route
+                path="/organizations/:organizationId/venues/:venueId"
+                element={<VenuePage />}
+              />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

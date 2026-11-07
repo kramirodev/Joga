@@ -139,7 +139,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 12 — Quadras, agenda e KYC
 
-**Status:** Não iniciada. Proposta de divisão: 12A (quadras, fotos e agenda) e 12B (KYC/recebedor); início somente após autorização explícita.
+**Status:** 12A (quadras, fotos e agenda) implementada e validada localmente em 2026-11-07; 12B (KYC/recebedor) bloqueada por decisão e contrato de PSP.
 
 **Escopo 12A — quadras, fotos e agenda:** cadastro de espaços/quadras, vínculo esporte–quadra, fotos de quadra com upload autenticado por organização, revisão, armazenamento privado, remoção e retenção; agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; ligação entre o catálogo `venues` da Fase 4 e o perfil comercial `organization_venues` da Fase 11.
 

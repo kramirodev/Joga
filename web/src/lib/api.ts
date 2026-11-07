@@ -6,8 +6,17 @@ import type {
   Organization,
   OrganizationListResponse,
   Role,
+  SportCatalogResponse,
   Venue,
+  VenueAvailability,
+  VenueAvailabilityListResponse,
+  VenueBlackout,
+  VenueBlackoutListResponse,
   VenueListResponse,
+  VenuePhoto,
+  VenuePhotoListResponse,
+  VenueSpace,
+  VenueSpaceListResponse,
   VerifyResponse,
   WebSessionPayload,
 } from "../types";
@@ -90,7 +99,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const response = await fetch(`${API_BASE}${path}`, {
@@ -101,12 +110,12 @@ async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T
   return parseResponse<T>(response);
 }
 
-async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+async function requestRaw(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
   const headers = new Headers(init.headers);
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const method = (init.method ?? "GET").toUpperCase();
@@ -124,11 +133,15 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (response.status === 401 && retry && !path.startsWith("/auth/web/")) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      return request<T>(path, init, false);
+      return requestRaw(path, init, false);
     }
   }
 
-  return parseResponse<T>(response);
+  return response;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  return parseResponse<T>(await requestRaw(path, init, retry));
 }
 
 async function doRefresh(): Promise<WebSessionPayload | null> {
@@ -234,6 +247,10 @@ function venuePath(organizationId: string, venueId?: string): string {
   return venueId ? `${base}/${encodeURIComponent(venueId)}` : base;
 }
 
+function venueBase(organizationId: string, venueId: string): string {
+  return venuePath(organizationId, venueId);
+}
+
 export const api = {
   listOrganizations(): Promise<OrganizationListResponse> {
     return request<OrganizationListResponse>("/organizations");
@@ -285,6 +302,10 @@ export const api = {
     return request<VenueListResponse>(venuePath(organizationId));
   },
 
+  getVenue(organizationId: string, venueId: string): Promise<Venue> {
+    return request<Venue>(venuePath(organizationId, venueId));
+  },
+
   createVenue(
     organizationId: string,
     payload: {
@@ -303,7 +324,9 @@ export const api = {
   updateVenue(
     organizationId: string,
     venueId: string,
-    payload: Partial<Pick<Venue, "name" | "city" | "state" | "address_line" | "status">>,
+    payload: Partial<
+      Pick<Venue, "name" | "city" | "state" | "address_line" | "timezone" | "status">
+    >,
   ): Promise<Venue> {
     return request<Venue>(venuePath(organizationId, venueId), {
       method: "PATCH",
@@ -315,5 +338,202 @@ export const api = {
     return request<AuditListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/audit?limit=50`,
     );
+  },
+
+  listSports(): Promise<SportCatalogResponse> {
+    return request<SportCatalogResponse>("/sports");
+  },
+
+  listSpaces(organizationId: string, venueId: string): Promise<VenueSpaceListResponse> {
+    return request<VenueSpaceListResponse>(`${venueBase(organizationId, venueId)}/spaces`);
+  },
+
+  createSpace(
+    organizationId: string,
+    venueId: string,
+    payload: { name: string; description: string | null },
+  ): Promise<VenueSpace> {
+    return request<VenueSpace>(`${venueBase(organizationId, venueId)}/spaces`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateSpace(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    payload: Partial<Pick<VenueSpace, "name" | "description" | "status">>,
+  ): Promise<VenueSpace> {
+    return request<VenueSpace>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  deleteSpace(organizationId: string, venueId: string, spaceId: string): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  replaceSpaceSports(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    sportIds: string[],
+  ): Promise<VenueSpace["sports"]> {
+    return request<VenueSpace["sports"]>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/sports`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ sport_ids: sportIds }),
+      },
+    );
+  },
+
+  listAvailability(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+  ): Promise<VenueAvailabilityListResponse> {
+    return request<VenueAvailabilityListResponse>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/availability`,
+    );
+  },
+
+  createAvailability(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    payload: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      slot_minutes: number;
+    },
+  ): Promise<VenueAvailability> {
+    return request<VenueAvailability>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/availability`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  deleteAvailability(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    availabilityId: string,
+  ): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(
+        spaceId,
+      )}/availability/${encodeURIComponent(availabilityId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listBlackouts(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+  ): Promise<VenueBlackoutListResponse> {
+    return request<VenueBlackoutListResponse>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/blackouts`,
+    );
+  },
+
+  createBlackout(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    payload: {
+      starts_at: string;
+      ends_at: string;
+      reason: string;
+      external_reference: string | null;
+    },
+  ): Promise<VenueBlackout> {
+    return request<VenueBlackout>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/blackouts`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  deleteBlackout(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    blackoutId: string,
+  ): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(
+        spaceId,
+      )}/blackouts/${encodeURIComponent(blackoutId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listPhotos(organizationId: string, venueId: string): Promise<VenuePhotoListResponse> {
+    return request<VenuePhotoListResponse>(`${venueBase(organizationId, venueId)}/photos`);
+  },
+
+  async uploadPhoto(
+    organizationId: string,
+    venueId: string,
+    payload: { file: File; caption?: string; spaceId?: string },
+  ): Promise<VenuePhoto> {
+    const form = new FormData();
+    form.set("file", payload.file);
+    if (payload.caption) form.set("caption", payload.caption);
+    if (payload.spaceId) form.set("space_id", payload.spaceId);
+    const response = await requestRaw(`${venueBase(organizationId, venueId)}/photos`, {
+      method: "POST",
+      body: form,
+    });
+    return parseResponse<VenuePhoto>(response);
+  },
+
+  reviewPhoto(
+    organizationId: string,
+    venueId: string,
+    photoId: string,
+    decision: "APPROVED" | "REJECTED",
+    reason?: string,
+  ): Promise<VenuePhoto> {
+    return request<VenuePhoto>(
+      `${venueBase(organizationId, venueId)}/photos/${encodeURIComponent(photoId)}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({ decision, reason: reason ?? null }),
+      },
+    );
+  },
+
+  removePhoto(organizationId: string, venueId: string, photoId: string): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/photos/${encodeURIComponent(photoId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  async fetchPhoto(contentUrl: string): Promise<Blob> {
+    const path = contentUrl.startsWith(API_BASE) ? contentUrl.slice(API_BASE.length) : contentUrl;
+    const response = await requestRaw(path);
+    if (!response.ok) {
+      await parseResponse<unknown>(response);
+    }
+    return response.blob();
   },
 };

@@ -757,6 +757,8 @@ O modelo mínimo:
 - `venue_availability`: horários regulares, preços, duração e exceções.
 
 > **Nota de implementação da Fase 11:** o catálogo de locais descobertos da Fase 4 já usa a tabela `venues` (`kind`, `lat`, `lng`, endereço e estado ativo). Para não quebrar a descoberta nem tratar local público como estabelecimento reservável, o perfil comercial da Fase 11 usa `organization_venues`, vinculado à organização. A ligação/fusão com o catálogo de descoberta e os dados geográficos fica para a Fase 12.
+>
+> **Nota de implementação da Fase 12A:** `organization_venues.venue_id` é uma FK opcional e única para `venues`, aceita apenas local privado ativo, e pode ser removida. `venue_spaces`, `venue_sports`, `venue_availability`, `venue_blackouts` e `venue_photos` implementam quadras, modalidades, agenda, bloqueios e mídia. Reservas, cobrança e KYC não fazem parte da 12A.
 
 ### 13.2 Agenda e disponibilidade
 
@@ -1147,6 +1149,8 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 
 API versionada em `/api/v1`. Schemas explícitos, sem retornar modelos ORM diretamente. Datas em ISO 8601/UTC. Erros em formato consistente e sem detalhes internos.
 
+Na Fase 12A, quadras, modalidades, agenda, bloqueios e fotos ficam sob `/api/v1/organizations/{organization_id}/venues/{venue_id}/...`, sempre escopados pela organização. O upload usa multipart, e a foto é servida por endpoint autenticado com `Cache-Control: no-store`.
+
 Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI):
 
 | Família | Exemplos de operações |
@@ -1210,6 +1214,8 @@ Toda rota que recebe IDs deve validar propriedade, participação ou papel no re
 - Backups criptografados e testes de restauração.
 - Uploads privados com allowlist, limites e armazenamento privado; chat não aceita arquivos no MVP.
 - Nenhuma foto de pessoa ou URL arbitrária de imagem é aceita pela API; avatares vêm de catálogo fechado e fotos de quadra passam por revisão.
+- Fotos de quadra validam o conteúdo real, reencodam em JPEG, removem EXIF/metadados, limitam bytes/pixels/dimensões e são servidas apenas por endpoint autorizado.
+- Na 12A, a revisão inicial é feita por `OWNER`/`ADMIN` da organização, com auditoria; a revisão independente e a denúncia de foto entram na Fase 17.
 - Dados de KYC e conta bancária com acesso restrito e auditoria.
 
 ### 20.2 Multi-tenancy e BOLA
@@ -1474,8 +1480,9 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 20. **Moderação:** política de conteúdo, limites de contexto, ferramenta/provedor de IA e retenção.
 21. **Precificação:** medir `q`, `C_k`, `C_c`, `τ` e `p_t`; definir `c` final e limite de elegibilidade por faixa.
 22. **Jurídico:** modelo de split/custódia, contratos com estabelecimentos, cancelamento, reembolso e retenção de valores.
-23. **Avatares e mídia:** catálogo definitivo de peças, limites de combinação, processo de revisão e remoção de fotos de quadra e retenção.
+23. **Avatares e mídia:** catálogo definitivo de peças, limites de combinação, storage de produção, processo de revisão independente, remoção e retenção de fotos de quadra.
 24. **Equipamento:** catálogo definitivo por formato, obrigatoriedade em partidas casuais/ranqueadas, consequências de descumprimento e contestação.
+25. **Mídia de quadra:** provedor de storage, criptografia, backup, limpeza de arquivos órfãos e política de retenção.
 
 Cada decisão relevante deve ser registrada em ADR com contexto, alternativas, decisão, consequências, status e data.
 

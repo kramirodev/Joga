@@ -17,6 +17,7 @@ from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
 from app.modules.social import models as social_models  # noqa: F401
+from app.modules.venues import models as venues_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

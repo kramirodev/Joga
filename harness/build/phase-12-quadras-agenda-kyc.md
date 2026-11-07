@@ -1,7 +1,7 @@
 # Fase 12 — Quadras, agenda e KYC
 
-**Status:** Não iniciada. 12A (quadras, fotos e agenda) e 12B (KYC/recebedor) propostos; início somente após autorização explícita.
-**Branch:** a definir (`feat/12-quadras-agenda-kyc` ou branches separadas para 12A/12B).
+**Status:** 12A implementada e validada localmente em 2026-11-07; 12B (KYC/recebedor) pendente de decisão e contrato de PSP.
+**Branch:** `feat/12a-quadras-fotos-agenda`
 
 ## Fontes e contexto
 
@@ -33,6 +33,22 @@ Permitir que o estabelecimento cadastre suas quadras, modalidades, agenda, preç
   - remoção, retenção e limpeza de arquivos órfãos documentadas.
 - Leitura de quadras/fotos para o app do jogador, respeitando publicação e revisão. A UI mobile de descoberta pode ser um incremento separado se o escopo crescer.
 - Agenda com fuso do estabelecimento, duração do formato, preços por faixa, intervalos de manutenção, dias fechados e reservas externas.
+
+### Implementação 12A
+
+- Modelos `venue_spaces`, `venue_sports`, `venue_availability`, `venue_blackouts` e `venue_photos`, além de `organization_venues.venue_id` (FK opcional e única para local privado ativo) e `organization_venues.timezone`.
+- API aninhada em `/api/v1/organizations/{org}/venues/{venue}/spaces`, com modalidades, agenda, bloqueios e fotos.
+- Upload de foto com validação real por Pillow, reencode em JPEG, remoção de EXIF, limites configuráveis e storage local privado.
+- Revisão inicial por `OWNER`/`ADMIN`, com auditoria; `OPERATOR` gerencia quadras/fotos, mas não revisa. Revisão independente fica para a Fase 17.
+- Painel com aba de quadras, modalidades, agenda, bloqueios e fotos; serving autenticado por blob e CSP com `img-src blob:`.
+- Testes backend unitários, HTTP e PostgreSQL; testes de painel com Vitest/Testing Library.
+
+Limitações conhecidas da 12A:
+
+- storage local não serve para produção; provedor, criptografia e backup ficam pendentes;
+- revisão não é independente até a Fase 17;
+- a UI mobile de descoberta de quadras/fotos não foi implementada nesta rodada;
+- reservas e cobrança continuam nas Fases 13–15.
 
 ## Escopo 12B — KYC e recebedor
 
@@ -122,17 +138,17 @@ pnpm build
 
 ## Critérios de aceite
 
-- [ ] Espaços/quadras, modalidades, agenda, preços e bloqueios são escopados por organização.
-- [ ] Membro de uma organização não lê, cria, altera nem remove recursos de outra (BOLA/IDOR).
-- [ ] Agenda respeita fuso, duração do formato, intervalos e reservas externas; sobreposição é impedida por constraint/transação.
-- [ ] Upload rejeita tipo, tamanho e dimensões fora do limite, remove metadados e não confia no nome/content-type original.
-- [ ] Foto só é servida após aprovação, por endpoint autorizado, sem cache público.
-- [ ] Rejeição, remoção e retenção são auditáveis; arquivos órfãos são tratados.
-- [ ] Foto com pessoa identificável é rejeitada na revisão; o fluxo não aceita upload livre.
-- [ ] Recebedor tem estado consultável e auditável; KYC pendente bloqueia abertura de cobrança quando a Fase 14 existir.
-- [ ] Migração revisável com upgrade, downgrade e `alembic check`.
-- [ ] Painel cobre o fluxo com estados de carregamento, erro, vazio e sucesso.
-- [ ] Nenhum provedor real de storage, PSP ou KYC é acionado sem autorização.
+- [x] Espaços/quadras, modalidades, agenda, preços e bloqueios são escopados por organização.
+- [x] Membro de uma organização não lê, cria, altera nem remove recursos de outra (BOLA/IDOR).
+- [x] Agenda respeita fuso, duração do formato, intervalos e reservas externas; sobreposição é impedida por constraint/transação.
+- [x] Upload rejeita tipo, tamanho e dimensões fora do limite, remove metadados e não confia no nome/content-type original.
+- [x] Foto só é servida após aprovação, por endpoint autorizado, sem cache público.
+- [x] Rejeição, remoção e retenção são auditáveis; arquivos órfãos são tratados.
+- [x] Foto com pessoa identificável é rejeitada na revisão; o fluxo não aceita upload livre.
+- [ ] Recebedor tem estado consultável e auditável; KYC pendente bloqueia abertura de cobrança quando a Fase 14 existir. (12B)
+- [x] Migração revisável com upgrade, downgrade e `alembic check`.
+- [x] Painel cobre o fluxo com estados de carregamento, erro, vazio e sucesso.
+- [x] Nenhum provedor real de storage, PSP ou KYC é acionado sem autorização.
 
 ## Evidências exigidas
 
@@ -142,6 +158,24 @@ pnpm build
 - Smoke no painel com duas organizações distintas.
 - Atualização de `harness/build-log.md` e do arquivo da fase.
 
+## Evidências da 12A (2026-11-07)
+
+- Backend sem PostgreSQL: **315 passed, 28 skipped**.
+- Backend com `JOGA_TEST_DATABASE_URL`: **344 passed**.
+- `ruff check`, `ruff format --check` e `mypy app` passam.
+- Migrações `99c1055b81b5` e `0261da35ece5` aplicadas; `alembic upgrade head` → `downgrade base` → `upgrade head` e `alembic check` validados em banco descartável com PostGIS.
+- Painel: **7 arquivos e 17 testes** passando; `lint`, `format:check`, `typecheck` e `build` verdes.
+- Smoke no painel: criação de quadra, modalidade, janela de agenda, bloqueio, upload de foto, aprovação e serving autenticado, sem erros de console.
+- CSP do build validada com `img-src 'self' data: blob:`; `pnpm build` falha se a política regredir.
+
+## Pendências abertas
+
+- **12B — KYC/recebedor:** bloqueada por decisão de PSP, contrato, ambiente sandbox e revisão jurídica. Não iniciar sem essas definições.
+- **Storage de produção:** provedor de objetos, criptografia, backup, retenção e limpeza de órfãos.
+- **Revisão independente de fotos:** revisão, denúncia e moderação de foto pertencem à Fase 17.
+- **UI mobile de descoberta:** exibir quadras e fotos aprovadas no aplicativo do jogador.
+- **Reservas e cobrança:** pertencem à Fase 13 e seguintes.
+
 ## Aprovação e condição de parada
 
-A fase só começa após solicitação explícita. 12A e 12B podem ser autorizadas separadamente; 12B depende de PSP. Ao cumprir ou ficar bloqueada, parar e reportar. Não iniciar a Fase 13 automaticamente.
+A 12A foi concluída e validada localmente. A 12B só começa após decisão e contrato de PSP e autorização explícita. Ao cumprir ou ficar bloqueada, parar e reportar. Não iniciar a Fase 13 automaticamente.
