@@ -139,11 +139,15 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 12 — Quadras, agenda e KYC
 
-**Escopo:** cadastro de espaços/quadras, vínculo esporte–quadra, agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; onboarding do estabelecimento como recebedor no PSP, com dados cadastrais, conta bancária na mesma titularidade e validação de identidade/KYC; estados do recebedor e regra que impede reserva paga sem recebedor ativo.
+**Status:** Não iniciada. Proposta de divisão: 12A (quadras, fotos e agenda) e 12B (KYC/recebedor); início somente após autorização explícita.
 
-**Não fazer:** exigir integração ERP/PDV; implementar logística, produtos ou estoque; permitir reserva paga para recebedor em credenciamento; representar espaço público como reservável sem autorização verificável.
+**Escopo 12A — quadras, fotos e agenda:** cadastro de espaços/quadras, vínculo esporte–quadra, fotos de quadra com upload autenticado por organização, revisão, armazenamento privado, remoção e retenção; agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; ligação entre o catálogo `venues` da Fase 4 e o perfil comercial `organization_venues` da Fase 11.
 
-**Aceite:** dois usuários não reservam o mesmo intervalo; constraints e transações protegem sobreposição; agenda respeita fuso e duração do formato; KYC pendente bloqueia a abertura de cobrança; estados do recebedor são consultáveis e auditáveis; estabelecimento só acessa a própria agenda.
+**Escopo 12B — KYC/recebedor:** onboarding do estabelecimento como recebedor no PSP, com dados cadastrais, conta bancária na mesma titularidade e validação de identidade/KYC; estados do recebedor e regra que impede reserva paga sem recebedor ativo. Depende de decisão e contrato de PSP.
+
+**Não fazer:** exigir integração ERP/PDV; implementar logística, produtos ou estoque; permitir reserva paga para recebedor em credenciamento; representar espaço público como reservável sem autorização verificável; aceitar foto de pessoa, upload livre ou URL arbitrária; publicar foto sem revisão.
+
+**Aceite:** dois usuários não reservam o mesmo intervalo; constraints e transações protegem sobreposição; agenda respeita fuso e duração do formato; KYC pendente bloqueia a abertura de cobrança; estados do recebedor são consultáveis e auditáveis; estabelecimento só acessa a própria agenda; foto só é exibida após revisão e vínculo com organização ativa; membro de outra organização não lê, envia, revisa nem remove foto; remoção e retenção são auditáveis.
 
 ## Fase 13 — Reservas e temporizadores
 
@@ -181,7 +185,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 **Escopo:** denúncia de perfil no lobby com categorias definidas e seleção de até cinco mensagens + janela limitada de contexto; moderação assistida por IA (classificação, agrupamento, priorização, medidas preventivas proporcionais e reversíveis, níveis de confiança); revisão humana em ferramenta interna separada do painel de gestão; recursos contra penalizações; histórico auditável de decisões; retenção e acesso limitados.
 
-**Não fazer:** moderação de mídias (não há upload no escopo); suspensão permanente definida apenas por IA; denúncia isolada reduzir Trust Factor; encaminhar toda conversa continuamente para análise.
+**Não fazer:** moderação de mídia enviada por usuários (o MVP não tem upload livre em perfil, lobby ou chat); moderação de fotos de quadra, que tem fluxo próprio na Fase 12; suspensão permanente definida apenas por IA; denúncia isolada reduzir Trust Factor; encaminhar toda conversa continuamente para análise.
 
 **Aceite:** só participantes do lobby denunciam e só mensagens da própria conversa podem ser anexadas; medidas proporcionais com justificativa, reversibilidade das automáticas e possibilidade de contestação; acesso a conteúdo de moderação restrito a funções autorizadas e registrado.
 

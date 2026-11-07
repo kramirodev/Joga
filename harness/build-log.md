@@ -583,3 +583,9 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Observabilidade:** `ApiError` carrega o `X-Request-ID`; o painel exibe a referência de suporte nos erros e tem error boundary global.
 - **Verificações:** `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test` e `pnpm build` passam; preview do build carregou o login sem erros de console.
 - **Estado:** Fase 11 segue sem merge e sem deploy; Fase 12 não iniciada.
+
+### 2026-11-07 — Alinhamento documental da Fase 12
+
+- `PLANS.md` passou a dividir a Fase 12 em **12A** (quadras, fotos e agenda) e **12B** (KYC/recebedor), com fotos de quadra explicitamente no escopo e critérios de revisão/isolamento.
+- A Fase 17 foi corrigida: não há upload livre de mídia por usuários, mas fotos de quadra têm fluxo próprio na Fase 12 e não entram na fila de denúncias.
+- Criado `harness/build/phase-12-quadras-agenda-kyc.md` com escopo, riscos, testes e condição de parada; nenhuma implementação iniciada.
