@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.10<br>
-**Status:** visão de produto atualizada — Fase 14C com reembolsos e conciliação no beta<br>
-**Data:** 7 de novembro de 2026<br>
+**Versão:** 3.13<br>
+**Status:** visão de produto atualizada — Ingresso JOGA, tabela 2D e natureza da intermediação (ADR 0042)<br>
+**Data:** 11 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -23,6 +23,9 @@
 | 3.8 | 7 de novembro de 2026 | Fase 14A: Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste |
 | 3.9 | 7 de novembro de 2026 | Hipótese de `p_t` dinâmico pela mediana de Trust Factor registrada; modelo atual mantém `p_t = 0,2%` fixo e avaliação futura em modo sombra (ADR 0036) |
 | 3.10 | 7 de novembro de 2026 | Fase 14C: reembolso integral em cancelamentos/expirações do beta, reembolso de substituto, extrato e resumo financeiro com PSP simulado |
+| 3.11 | 9 de novembro de 2026 | ADR 0038: reserva da quadra é o serviço contratado; desistência após confirmação e ausência não geram reembolso; substituição com substituto pagante continua reembolsando o substituído; falha da quadra/JOGA mantém reembolso integral |
+| 3.12 | 9 de novembro de 2026 | ADR 0039: fila de substitutos, cutoff de cancelamento, confirmação de presença, adaptação de formato com rodízio e desfecho financeiro pelo resultado da reserva; ADR 0038 superada |
+| 3.13 | 11 de novembro de 2026 | ADR 0042: Ingresso JOGA de R$ 3,00 como unidade de acesso; tabela 2D formato × faixa ancorada em atributo visível; passe com quantidade fixa e reset mensal; natureza jurídica de intermediação com base de cálculo na comissão; margem como saída e piso de 10% líquido; matchmaking por intenção com saldo como restrição; ADR 0021 superada no fluxo de ingresso |
 
 ## Como interpretar as decisões neste documento
 
@@ -343,13 +346,15 @@ Cada formato terá um catálogo versionado de requisitos mínimos. Referência i
 Regras:
 
 - O requisito pertence à partida, não ao jogador. Itens diferentes podem ter responsáveis diferentes.
-- Qualquer participante pode assumir um item — “eu levo a bola” — ou registrar que o local fornece. A declaração é um **compromisso**, não prova de posse.
-- A cobertura do kit é confirmada antes do check-in por um responsável logístico: quem criou o lobby manual ou um participante designado pelo grupo. Esse papel não dá autoridade sobre o resultado e não altera a capitania simbólica da seção 9.1.
+- **Itens fixos da modalidade** — rede de vôlei, cesta de basquete, trave — são responsabilidade do **estabelecimento que declarou aceitar a modalidade**. Se o local aceita vôlei, deve fornecer a rede; a falta é falha da quadra.
+- **Itens móveis** — bola, coletes, bolas de tênis — são uma marcação **opcional** do jogador ("tenho bola" / "talvez tenha") ou fornecidos pelo local. Não é compromisso obrigatório, não prova posse e não gera penalidade automática.
+- A cobertura do kit é conferida antes do check-in por um responsável logístico: quem criou o lobby manual ou um participante designado pelo grupo. É um **checklist/aviso**, não um bloqueio. Esse papel não dá autoridade sobre o resultado e não altera a capitania simbólica da seção 9.1.
+- O kit **não bloqueia** o lobby, o matchmaking, a confirmação, o pagamento, o check-in nem o início da partida. A interface mostra o que falta e permite combinar/assumir.
 - O estado do kit é visível apenas aos participantes e ao responsável logístico, com os itens faltantes e quem assumiu cada um.
 - Partidas ranqueadas devem priorizar equipamento fornecido pelo local ou pela organização. O kit não influencia a escolha do capitão.
-- Descumprir um item assumido gera um evento de confiabilidade registrado no servidor, sujeito a confirmação e contestação. Um evento isolado não pune automaticamente.
+- Não levar um item móvel marcado como "tenho" não gera penalidade automática; a marcação é informativa. A ausência de item fixo é falha do estabelecimento.
 - O JOGA não verifica posse, não exige foto do equipamento e não usa “ter bola” como elegibilidade, recomendação ou ranking.
-- Se o kit estiver incompleto, a interface mostra o que falta e permite que outro participante assuma o item ou que a partida seja cancelada/redirecionada conforme as regras de reserva.
+- Se o kit estiver incompleto, a interface mostra o que falta e permite que outro participante assuma o item; a partida não é cancelada automaticamente por causa de item móvel. Item fixo ausente é falha do estabelecimento e segue as regras de reserva/reembolso.
 - Aluguel, venda ou caução de equipamento permanecem fora do escopo inicial (seção 15).
 
 A decisão está registrada na ADR 0030.
@@ -773,7 +778,7 @@ O JOGA não construirá carteira própria nem custodiará valores de terceiros d
 - Cada participante paga sua cobrança Pix.
 - A cobrança é dividida entre a parte do estabelecimento e a taxa do JOGA.
 - O valor do estabelecimento permanece no saldo do recebedor até a liberação.
-- O JOGA solicita a liberação somente depois que **tudo estiver confirmado**, inclusive a realização da partida.
+- O JOGA solicita a liberação **2 h após o início da reserva**, depois de pagamentos confirmados, conforme a ADR 0040; o serviço contratado é a quadra, não a realização da partida.
 - A liberação é idempotente e registrada no ledger interno.
 
 A liberação não pode depender de confirmação manual indefinida. Deve existir uma regra de liberação automática após `N` horas da partida, precedida de janela de disputa. O valor de `N` permanece pendente.
@@ -825,7 +830,7 @@ O provedor precisa suportar, direta ou contratualmente:
 - Tratamento de pagamentos tardios.
 - Conciliação e relatórios.
 
-O ideal é que o PSP mantenha controle dos valores enquanto os pagamentos são concluídos e permita a distribuição somente depois da confirmação coletiva.
+O ideal é que o PSP mantenha controle dos valores enquanto os pagamentos são concluídos e permita a distribuição no horário da reserva, conforme a ADR 0040.
 
 **Se nenhum PSP conseguir oferecer um fluxo adequado de pagamentos individuais, split e liberação controlada, o lançamento das reservas com pagamento integrado deverá aguardar uma solução viável.** Essa capacidade é condição de viabilidade comercial, não um detalhe de integração.
 
@@ -946,28 +951,37 @@ O aplicativo não poderá informar que o reembolso foi concluído enquanto o PSP
 
 ### 14.3 Pagamentos tardios
 
-Pagamentos tardios de reservas canceladas também deverão passar pelo fluxo de devolução.
+Pagamentos tardios de reservas canceladas também deverão passar pelo fluxo de devolução, inclusive quando o cancelamento ocorreu depois da confirmação: a cobrança não corresponde a uma vaga ativa.
 
 O mesmo vale para pagamentos de participantes que já foram substituídos. O sistema deverá identificar a cobrança, impedir a reativação automática da reserva e iniciar o reembolso.
 
 ### 14.4 Cancelamento depois da reserva confirmada
 
-As regras de cancelamento depois de uma reserva já confirmada precisam ser definidas separadamente, respeitando as condições contratuais e a legislação aplicável.
+A política consolidada é definida pela **ADR 0039**:
 
-O valor do estabelecimento só é liberado depois que tudo estiver confirmado, inclusive a realização da partida. Se houver cancelamento antes da liberação, o estorno deve ser feito no PSP e o ledger interno deve refletir a reversão.
+- O serviço contratado é a reserva coletiva da quadra; a realização da partida é melhor esforço e depende do comparecimento dos participantes.
+- **Antes do cutoff:** o jogador que cancela não recebe reembolso. O sistema abre a janela T4 de substituição. Se um substituto pagar a vaga, o substituído recebe reembolso da própria cobrança e a reserva continua. Se não houver substituto, o lobby é cancelado, o hold é liberado e os **demais pagantes** recebem reembolso integral; quem cancelou continua sem reembolso.
+- **Depois do cutoff:** não há cancelamento voluntário com reembolso. A ausência é no-show: sem reembolso, com possibilidade de um substituto da fila ocupar a vaga já paga.
+- **Falha da quadra ou do JOGA:** reembolso integral, respeitados os direitos legais do consumidor.
+- O destino do valor não reembolsado do cancelador (compensação da quadra ou crédito de boa-fé) permanece pendente e exige evento próprio no ledger.
+
+O valor do estabelecimento é liberado 2 h após o início da reserva, conforme a ADR 0040. Se a quadra mantém o horário disponível, a reserva é entregue mesmo que a partida não ocorra; a ausência de jogadores não impede o repasse. Se a quadra falhar, não há repasse e o estorno deve refletir a reversão.
 
 Se o estabelecimento já tiver sacado o valor, a recuperação deixa de ser automática. Esse é um evento de cauda, tratado por `p_t` e por cláusula contratual específica.
 
-### 14.5 Desistência individual após confirmação
+### 14.5 Desistência individual, fila de substitutos e presença
 
-A política para desistência individual após a confirmação da reserva permanece pendente. Ela deverá considerar, no mínimo:
+A política aprovada na **ADR 0039** é:
 
-- Se a vaga pode ser substituída.
-- Se o valor é reembolsável e em qual percentual.
-- Se a quadra sofre impacto operacional.
-- Se há prazo mínimo para desistência.
-- Se a taxa de serviço é devolvida.
-- Se a desistência afeta a confiabilidade do jogador.
+- **Fila de substitutos:** cada lobby pode manter uma fila em standby. O alvo é `(titulares - quórum mínimo) + 1`, limitado a 4; na prática, muitas vezes basta **+1 para fechar o time par**. Casual é opcional; ranqueado exige pelo menos 1 substituto em standby.
+- **Substituto não é convocado** até haver vaga. Ele confirma disponibilidade em T-2h; se não confirmar, sai da fila.
+- **Antes do cutoff**, com substituto pagante: o substituído recebe reembolso; o substituto paga; T3 não reinicia.
+- **Sem substituto antes do cutoff:** o lobby é cancelado, os demais pagantes recebem reembolso e quem cancelou não recebe.
+- **Depois do cutoff/no-show:** o ausente não recebe reembolso; um substituto chamado pode jogar na **vaga já paga**, sem nova cobrança, e a quadra recebe normalmente.
+- **Presença:** pré-check-in em T-1h (obrigatório no ranqueado) e confirmação no local em T-30m, com geofence, QR/NFC, capitão ou estabelecimento. GPS não é prova isolada; o servidor valida e há fallback.
+- **Confiabilidade:** desistências e ausências geram eventos de Trust Factor em fase própria; uma ausência isolada não gera punição pesada. Cancelamentos da quadra afetam a confiabilidade comercial da quadra, não o ranking do jogador.
+- **Limite proposto:** 2 cancelamentos confirmados por 30 dias; acima disso, Trust Factor e restrição temporária a partidas ranqueadas.
+- **Transparência:** a regra deve aparecer antes do pagamento, nos termos de uso e nas condições da reserva, com exemplos claros.
 
 ### 14.6 Descumprimento pelo estabelecimento
 
@@ -998,6 +1012,27 @@ A precificação separa três coisas:
 3. **Provisão de cauda (`p_t·V`):** eventos raros, como MED, estorno sem saldo e disputa após liberação.
 
 Não contar o valor principal como perda. Não contar `C_c` duas vezes. Não usar o markup de segurança como se fosse lucro livre.
+
+### 14.9 Adaptação de formato, presença e temporizadores
+
+Quando o número de presentes não fecha o formato original, a partida pode ser adaptada para manter o jogo:
+
+| Presentes | 5x5 | 6x6 | 3x3 |
+|---:|---|---|---|
+| 12 | — | 6x6 | — |
+| 11 | — | 5x5 + 1 rodízio | — |
+| 10 | 5x5 | 5x5 | — |
+| 9 | **4x4 + 1 rodízio** | **4x4 + 1 rodízio** | **três times de 3** |
+| 8 | 4x4 | 4x4 | 4x4 ou 3x3 + 2 |
+| 7 | **3x3 + 1 rodízio** | **3x3 + 1 rodízio** | **3x3 + 1 rodízio** |
+| 6 | 3x3 | 3x3 | 3x3 |
+| menos de 6 | sem jogo | sem jogo | sem jogo |
+
+- O excedente entra em **rodízio**, não em reembolso. Reembolsar um jogador para “fechar 4x4” deixa o valor abaixo do preço da quadra; só é possível se a quadra reduzir o preço ou o JOGA conceder crédito de boa-fé.
+- Rodízio por tempo ou por evento, com fila única e registro de minutos jogados.
+- Partida adaptada de 5x5 para 4x4 não conta como 5x5 ranqueado; usar casual ou o MMR do formato efetivamente jogado.
+- Temporizadores: T1 60 min; T2 30 min comercial com máximo 60 min; T3 60 min; T4 = 25% do tempo restante, piso 30 min, teto 12 h, terminando no cutoff; cutoff de cancelamento 6 h antes; fila confirma em T-2h; pré-check-in em T-1h; presença no local em T-30m; substituto fechado em T-15m.
+- Contestação financeira e repasse (`N`) continuam **não definidos** e não se confundem com esses prazos.
 
 ---
 
@@ -1077,6 +1112,21 @@ Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrent
 - Nenhuma receita de comércio de produtos no escopo inicial.
 - Toda cobrança deverá ser explicável ao usuário antes do pagamento.
 
+### 16.7 Ingresso JOGA
+
+O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0042. Ele não é saldo em reais, não é moeda e não é transferível: é uma unidade de acesso pessoal, com preço de referência de R$ 3,00.
+
+- **O jogador vê apenas ingressos.** Reais aparecem somente no checkout de pacote e de passe.
+- **Custo da partida em ingressos** decorre de uma tabela 2D (formato × faixa). A faixa é ancorada em atributo visível — cobertura e dia/noite —, nunca no preço da quadra.
+- **Consumo na confirmação da reserva**, não no check-in. A matriz de devolução da ADR 0039 é preservada, sempre em ingressos.
+- **Passe mensal** de 10, 20, 30 ou 50 ingressos, com quantidade fixa, reset mensal e sem acumular. Ingresso comprado nunca expira.
+- **Sem mercado de saldo:** sem transferência, revenda, saque ou troca entre usuários. A única exceção é o direito de arrependimento de 7 dias.
+- **Matchmaking por intenção:** região, horário, formato e nível primeiro; o saldo é restrição sobre o resultado, não a consulta.
+
+A natureza jurídica é de **intermediação**: o saldo é obrigação com o jogador e a parte da quadra é obrigação com o estabelecimento, reconhecida na reserva. A base de cálculo pretendida dos tributos é a comissão, sujeita a parecer fiscal.
+
+Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre reservas, parcerias, patrocínios e publicidade contextual. Publicidade e customização continuam **não** sendo vantagem competitiva e os cosméticos continuam desbloqueados por XP, não comprados.
+
 ---
 
 ## 17. Política de precificação
@@ -1086,6 +1136,8 @@ Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrent
 A taxa deve cobrir o custo real de operar a reserva, o risco de cancelamento e a margem necessária para manter o serviço, sem cobrar do jogador um coeficiente arbitrário sobre custos que não existem.
 
 A política não usa piso, preço variável nem teto percentual como mecanismos independentes. Usa uma fórmula com componentes explícitos e uma regra de elegibilidade.
+
+> **Escopo.** Esta seção vale para reserva avulsa paga em reais. No **fluxo de ingresso** ela é substituída pela ADR 0042: o preço passa a vir da tabela 2D, a margem passa a ser saída (`(R − custeio) / V`) e o piso passa a ser 10% líquido no topo da faixa. Permanecem válidos os componentes de custo e a lógica de elegibilidade, recalibrados.
 
 ### 17.2 Fórmula
 

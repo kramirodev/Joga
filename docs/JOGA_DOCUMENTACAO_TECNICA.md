@@ -412,10 +412,13 @@ A partida mantém o estado do kit (`match_equipment`) e as declarações de resp
 Invariantes:
 
 - o kit não é critério de capitão (seção 10.1), MMR, Trust Factor ou elegibilidade;
-- qualquer participante pode assumir um item; o mesmo item não pode ter dois responsáveis ativos sem confirmação explícita de troca;
-- a cobertura é confirmada antes do check-in e visível apenas aos participantes;
+- o kit **não bloqueia** lobby, matchmaking, confirmação, pagamento, check-in ou início da partida;
+- itens fixos (rede, cesta, trave) são responsabilidade do estabelecimento que declarou aceitar a modalidade; a falta é falha da quadra;
+- itens móveis (bola, coletes) são marcação opcional "tenho" do participante ou fornecidos pelo local; não são compromisso obrigatório;
+- o mesmo item não pode ter dois responsáveis ativos sem confirmação explícita de troca;
+- a cobertura é conferida antes do check-in como checklist/aviso e visível apenas aos participantes;
 - partidas ranqueadas priorizam equipamento fornecido pelo local ou pela organização;
-- descumprimento gera evento de confiabilidade após confirmação e contestação, nunca punição automática por evento isolado;
+- não há evento de confiabilidade por item móvel não levado; a marcação é informativa;
 - não há upload de foto de equipamento no MVP.
 
 ADR: 0030.
@@ -627,7 +630,7 @@ Trust Factor representa confiabilidade operacional em partidas, não habilidade 
 
 Sinais possíveis: ausências confirmadas e reincidentes, cancelamentos em cima da hora, disputas confirmadas após análise e padrões de abuso. Denúncia isolada não reduz automaticamente o indicador. Decisões relevantes devem permitir contestação e gerar `trust_events` auditáveis.
 
-Na Fase 8, o Trust Factor começa neutro (`100`), fica oculto e apenas registra eventos; nenhuma penalidade automática é aplicada. A aplicação de deltas e a contestação completa pertencem à Fase 17.
+Na Fase 8, o Trust Factor começou neutro (`100`) e oculto. A ADR 0041 ativou a aplicação: no-show −30, cancelamento após confirmação −7, cancelamento antes do pagamento −2, recuperação não linear ao concluir partida e restrição temporária da fila ranqueada (7/30 dias). O score não é exposto; apenas a restrição é perceptível. Contestação formal e UI de suporte continuam pendentes.
 
 ### 11.3 Separação de sistemas
 
@@ -890,11 +893,33 @@ Se a reserva não se completa por falta de pagamento, indisponibilidade, falha d
 
 O valor principal devolvido não é perda integral. O custo relevante é a tarifa não recuperável, a devolução e o atendimento.
 
+A política consolidada é a **ADR 0039**, que supera a ADR 0038:
+
+- Após `CONFIRMED`, o desfecho financeiro depende do resultado da reserva, não apenas de `CANCELLED_BY_PLAYER`.
+- Cancelamento antes do cutoff, com substituto pagante: o substituído é reembolsado e o substituto paga; T3 não reinicia.
+- Cancelamento antes do cutoff, sem substituto: lobby cancelado, hold liberado, demais pagantes reembolsados e quem cancelou sem reembolso.
+- No-show depois do cutoff: sem reembolso; substituto da fila pode ocupar a vaga já paga, sem nova cobrança.
+- Falha da quadra/JOGA: reembolso integral.
+
+A implementação da ADR 0038 foi revertida. As fatias 1–6 da ADR 0039 entregam `lobby_substitutes`, `booking_substitutions`, `booking_refund_exclusions`, T4/T5, cancelamento individual, expiração pelo worker, atribuição com cobrança/reembolso do substituído, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias do estabelecimento, chamada automática da fila e recomendação automática de formação. O substituto paga a vaga no fluxo antes do cutoff; no no-show, ocupa a vaga já paga (`WAIVED`/`covered_by_payment_id`) sem nova cobrança. Presença usa pré-check-in, GPS com geofence e fallback apenas do estabelecimento; não há confirmação por capitão. O repasse à quadra ocorre no horário da partida (ADR 0040). Trust Factor com pesos e UI de presença ainda não existem.
+
 ### 14.7 Conclusão e liberação
 
 A reserva passa a `COMPLETED` quando a partida é realizada e confirmada conforme as regras do ciclo de partida.
 
-A liberação ao estabelecimento só ocorre depois de `COMPLETED`, dentro da janela de disputa. A liberação automática após `N` horas existe para impedir que a quadra fique refém de confirmação de jogador. `N` permanece pendente.
+A liberação ao estabelecimento ocorre 2 h após o início da reserva (`starts_at + 2h`), conforme a ADR 0040, independentemente de a partida acontecer. `JOGA_RELEASE_DELAY_HOURS` tem padrão 2. A janela de contestação após a liberação continua pendente.
+
+### 14.8 Fila de substitutos, presença e desfecho (alvo da ADR 0039)
+
+- Fila `S = (F - M) + 1`, limitada a 4; na prática, muitas vezes +1 para fechar o time par. Casual opcional; ranqueado exige ao menos 1 standby.
+- T4 = 25% do tempo restante, piso 30 min, teto 12 h, terminando no cutoff de 6 h antes.
+- Fila confirma em T-2h; pré-check-in em T-1h; presença no local em T-30m; substituto fechado em T-15m.
+- Presença validada no servidor com geofence e fallback do estabelecimento; não existe confirmação por capitão. GPS não é prova isolada; armazenar resultado e mínimo de dados.
+- Formação adaptada: 9 em 5x5 vira 4x4 + rodízio; não conta como 5x5 ranqueado.
+- A vaga do ausente pode ser ocupada por substituto sem nova cobrança; exige vínculo explícito entre vaga e pagamento.
+- O desfecho da reserva (cumprida, cancelada por falta de substituto, falha da quadra) deve ser um evento único que dispara reembolso, liberação do hold e repasse.
+- O repasse de reserva entregue sem partida realizada e o destino do valor não reembolsado continuam pendentes.
+- Fatias 1–6 implementadas: fila, chamada automática, cancelamento individual, T4/T5, expiração, exclusão de reembolso, atribuição com cobrança/reembolso, vaga paga em no-show, presença (GPS/estabelecimento), coordenadas obrigatórias e recomendação de formação. Trust Factor com pesos e UI de presença são as próximas fatias.
 
 ---
 
@@ -937,7 +962,7 @@ O `order_id` do PSP é a referência externa da reserva. O ledger interno manté
 
 **Custódia centralizada (Inter).** O valor fica na conta do JOGA. A quadra não saca sozinha. O repasse é feito depois da confirmação. Exige revisão jurídica e segregação contábil.
 
-**Custódia centralizada de teste (Mercado Pago, ADR 0034).** No protótipo e beta fechado, o valor fica na conta Mercado Pago do JOGA, sem split automático. O ledger interno registra reserva, participante, vaga e obrigação; o repasse ao estabelecimento é simulado ou manual após `COMPLETED`. Não é escrow, não é garantia de reembolso e não deve operar dinheiro real sem CNPJ/MEI e revisão jurídica.
+**Custódia centralizada de teste (Mercado Pago, ADR 0034).** No protótipo e beta fechado, o valor fica na conta Mercado Pago do JOGA, sem split automático. O ledger interno registra reserva, participante, vaga e obrigação; o repasse ao estabelecimento é simulado/manual no horário da partida (ADR 0040). Não é escrow, não é garantia de reembolso e não deve operar dinheiro real sem CNPJ/MEI e revisão jurídica.
 
 Em ambos os casos, o backend mantém um ledger financeiro interno auditável. O ledger não é custódia; é registro de direitos e obrigações.
 
@@ -986,6 +1011,24 @@ O valor é congelado na abertura da cobrança e não muda por recalibração pos
 - Interface financeira do recebedor especificada.
 - Revisão jurídica do modelo.
 
+### 15.8 Ingresso JOGA: pré-pago, intermediação e custódia
+
+Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnico do fluxo.
+
+**Unidades.** O ingresso é a unidade de acesso: preço de referência de R$ 3,00, pessoal, intransferível, sem saque, sem revenda e sem transferência entre contas. Ingresso comprado não expira; franquia de passe reseta mensalmente.
+
+**Dois momentos distintos.** A compra do pacote ou do passe é um evento de caixa e cria **passivo** (`ingressos_emitidos`). O consumo ocorre na confirmação da reserva e extingue o passivo do jogador ao mesmo tempo em que reconhece a obrigação com o estabelecimento. Nenhum dos dois é receita no momento da compra.
+
+**Conta do ingresso (três buckets).** `custeio` (quadra, PSP, imposto, operação da reserva), `faturamento` (preço do pacote/passe) e `margem` (resíduo). A margem é sempre saída: `margem = (faturamento_reconhecido − custeio) / V`. Não existe campo de comissão de entrada.
+
+**Tabela de preço em ingressos.** Fonte versionada, por formato × faixa, ancorada em atributo visível do espaço. A tabela não é calculada em tempo real por reserva; é recalibrada por ciclo e versionada. A reserva grava a versão da tabela usada, como a ADR 0021 já fazia com a taxa congelada.
+
+**Custódia.** Intermediação: a parte do estabelecimento é identificada na reserva e repassada em `starts_at + 2h` (ADR 0040). Requer conta segregada e contrato com teto de V por faixa. Enquanto não houver PSP de produção contratado, o fluxo permanece no adaptador `simulator` e no Mercado Pago de teste (ADR 0034).
+
+**PSP.** O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`. Mercado Pago no beta; produção em aberto. Pix Automático por API, Payouts em lote no Brasil e rendimento do float **não** são requisitos de MVP.
+
+**Matchmaking.** Filtra por intenção (região, janela, formato, nível, distância) e usa o saldo apenas como restrição; `MIN_TICKETS` é definido por formato e faixa. A ordenação não usa custo em ingressos.
+
 ---
 
 ## 16. Interface financeira, liberação e conciliação
@@ -1007,7 +1050,7 @@ A interface atende às obrigações de transparência aplicáveis a facilitadore
 
 ### 16.2 Regra de liberação
 
-- Liberar somente após `COMPLETED`.
+- Liberar no horário de início da reserva, conforme ADR 0040, após a reserva estar confirmada e paga.
 - Respeitar a janela de disputa.
 - Liberar automaticamente após `N` horas da partida.
 - Registrar a liberação no ledger com idempotência.
@@ -1040,6 +1083,28 @@ Tarefas periódicas comparam:
 - Cobranças pagas sem reserva correspondente.
 
 Divergências geram alerta e tarefa de investigação. Não corrigir saldo por edição manual silenciosa.
+
+### 16.5 Implementação local da 15A/15B — proposta técnica, não decisão aprovada
+
+A 15A mantém `venue_releases` por reserva concluída, com liberação após `N` horas
+(`JOGA_RELEASE_DELAY_HOURS`, padrão 2 conforme ADR 0040) e gravação idempotente
+de `VENUE_RELEASE` no ledger. `financial_disputes` registra contestações do estabelecimento;
+uma contestação `OPEN` suspende a liberação na proposta técnica. A decisão por CLI com
+`JOGA_REVIEW_OPERATORS` é provisória para testes e **não** é o modelo aprovado de moderação
+financeira.
+
+A API expõe resumo, recebíveis, extrato e contestações em
+`/api/v1/organizations/{org}/financial/...`, sempre escopados pela organização e pelas
+capacidades `financial:read`/`financial:manage`. A 15B adiciona a aba Financeiro no painel.
+`scripts.reconcile_financials.py` compara pagamentos, reembolsos, liberações e ledger, sem
+corrigir saldos; o procedimento oficial para divergência não está definido. Nenhum split,
+transferência real, MED, chargeback ou comprovante fiscal é produzido nesta implementação;
+isso permanece na 14B e nas fases seguintes.
+
+Os três relógios — pagamento (T3), contestação e repasse — continuam distintos. Apenas o
+prazo de pagamento tem requisito definido (estimativa inicial de 60 min). A janela de
+contestação e a regra de repasse/liberação **não foram aprovadas** e precisam de decisão de
+produto, ADR e revisão jurídica antes de dinheiro real.
 
 ---
 
@@ -1153,7 +1218,7 @@ O modelo abaixo é lógico. A normalização e nomenclatura final serão registr
 - Reserva só pode ser confirmada com todas as cobranças pagas.
 - Cobrança única por participante/vaga/versão da reserva.
 - Evento de pagamento e liberação são idempotentes.
-- Liberação só existe para reserva `COMPLETED` e dentro da política.
+- Liberação existe para reserva `CONFIRMED`/`COMPLETED` 2 h após o início da partida (ADR 0040).
 - Reembolso não pode exceder a cobrança original.
 - Rating aplicado uma única vez por partida/usuário/versão.
 - Desempate em 50%: a segunda rodada nunca sobrescreve o relato original.

@@ -1,0 +1,122 @@
+# ADR 0042 — Ingresso JOGA, tabela 2D e natureza da intermediação
+
+- **Status:** Aprovado como direção de produto; não implementado.
+- **Data:** 2026-11-11
+- **Decisores:** responsável pelo produto e equipe técnica.
+- **Relaciona:** ADR 0021 (precificação e fluxo financeiro), ADR 0022 (sem marketplace de produtos), ADR 0025 (MMR/rankings/cosméticos), ADR 0034 (Mercado Pago no beta), ADR 0037 (reembolsos e conciliação), ADR 0039 (cancelamento, substituição e ausência), ADR 0040 (repasse no horário da partida). Substitui a ADR 0021 **no fluxo de ingresso**, preservando dela os componentes de custo e a regra de elegibilidade.
+
+## Contexto
+
+A ADR 0021 precifica cada reserva com a fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`, resolvida como ponto fixo sobre o valor da quadra. Esse desenho tem duas características que impedem o fluxo pretendido: o jogador vê reais e vê o valor da quadra, e o pagamento acontece por reserva, obrigando o organizador a cobrar cada participante.
+
+O produto precisa de um fluxo silencioso: o jogador escolhe onde e quando jogar, usa uma unidade de acesso pré-paga e não vê preço de quadra nem equivalência em reais. A tentativa de simplesmente arredondar a fórmula para tickets produziu dois defeitos mensuráveis: saltos de preço de até 50% entre faixas vizinhas e comissão efetiva de 40% a 60%, o dobro do alvo, porque o arredondamento incide por jogador.
+
+A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa de gerar o preço e passa a ser o piso e a calibração; o preço passa a vir de uma tabela discreta. Esta ADR registra essa separação, a natureza jurídica escolhida e o desenho do ingresso, do passe e da conta do ingresso.
+
+## Decisão
+
+### 1. Natureza jurídica: intermediação
+
+1. O JOGA atua como **intermediador** entre jogador e estabelecimento no fluxo de ingresso. Não é revenda e não é instituição de pagamento.
+2. O saldo de ingressos é obrigação do JOGA **com o jogador**; a parte da quadra é obrigação **com o estabelecimento**, reconhecida no momento da reserva.
+3. A base de cálculo pretendida dos tributos sobre a receita é a **comissão** (preço do ingresso menos o valor da quadra), não o valor cheio. A confirmação é pendência fiscal bloqueante: sem parecer, não há produção com dinheiro real.
+4. A intermediação exige **conta segregada**, identificação da parte da quadra na reserva e repasse em `starts_at + 2h` (ADR 0040).
+5. A intermediação remove o JOGA da posição de dono do float: o rendimento do saldo carregado não é receita própria e não pode ser tratado como margem.
+
+### 2. Ingresso JOGA
+
+1. O ingresso é uma **unidade de acesso pessoal**, com preço de referência de **R$ 3,00**.
+2. O jogador vê apenas ingressos. Reais aparecem somente no checkout de pacote e de passe.
+3. O ingresso é **consumido na confirmação da reserva**, não no check-in. Preserva a matriz da ADR 0039.
+4. Devolução é sempre em **ingressos**, para o mesmo saldo (ADR 0039 e ADR 0037).
+5. Ingresso **comprado nunca expira**.
+6. O ingresso é **intransferível**: sem presente, revenda, transferência entre contas ou saque. A única exceção é o direito de arrependimento de 7 dias (CDC art. 49), liquidado em dinheiro.
+7. A intransferibilidade é **guardrail regulatório**, não apenas antifraude: é o que mantém o ingresso como crédito de serviço e não como conta de pagamento.
+
+### 3. Tabela 2D: formato × faixa
+
+1. O custo em ingressos depende de **formato** e de **faixa**. A faixa é ancorada em atributo visível ao jogador (cobertura, dia/noite), nunca no preço da quadra.
+2. Tabela inicial (ingressos por jogador):
+
+| Faixa | 5x5 (10) | 6x6 (12) | 4x4 (8) | 3x3 (6) |
+|---|---:|---:|---:|---:|
+| Econômica dia (até R$ 120) | 6 | 5 | 8 | 10 |
+| Econômica noite (R$ 121–150) | 7 | 6 | 9 | 12 |
+| Padrão dia (R$ 151–180) | 9 | 7 | 11 | 14 |
+| Padrão noite (R$ 181–220) | 10 | 9 | 13 | 17 |
+| Coberta (R$ 221–260) | 12 | 10 | 15 | 19 |
+| Premium (R$ 261–300) | 13 | 11 | 17 | 22 |
+
+3. **Faixas adjacentes diferem em 1 ingresso**, salvo quando a diferença coincide com mudança de atributo visível.
+4. O degrau unitário é `T / (V/n)`. Com `T = R$ 3,00` e vaga de R$ 15,00, o degrau é 20%. Preço de ingresso maior produz degraus maiores; R$ 6,20 foi rejeitado.
+5. A margem líquida resultante fica entre **17,8% e 24,5%** no topo de cada faixa, com `T = R$ 3,00` e a pilha de custos da seção 5.
+6. 4x4 arredonda para cima e gera cerca de R$ 24 por partida acima do alvo de receita. Aceito no piloto, revisável.
+
+### 4. Passe mensal
+
+1. O passe é o produto principal. Tamanhos: **10, 20, 30 e 50 ingressos por mês**.
+2. A franquia do passe é **mensal e não acumula**. Ingresso de passe não convertido em comprado.
+3. Ingressos **comprados** não expiram e formam reserva permanente.
+4. Ordem de consumo: **primeiro a franquia do passe, depois os comprados**.
+5. Ingresso de passe devolvido por cancelamento volta para a franquia do mês; se o mês já virou, não vira ingresso comprado.
+6. O benefício do passe é em **quantidade fixa**, nunca percentual sobre o preço unitário. Desconto percentual por ingresso se multiplica pelo número de ingressos da partida e derruba a margem das faixas caras abaixo do piso.
+7. O passe inclui a Temporada premium (cosméticos e status). Nunca vantagem competitiva.
+8. Renovação por Pix por ciclo no MVP. Pix Automático é opcional e posterior.
+
+### 5. Conta do ingresso e piso de margem
+
+1. Três buckets no ledger: **custeio da reserva**, **faturamento** e **margem JOGA**.
+2. Pilha de custos por partida: `C_k = R$ 3,50` (PSP e transferência), `C_c·μ·S = R$ 15,87` (provisão de cancelamento, conservadora e a recalibrar), custo fixo `R$ 4,00`, imposto de 6% sobre a comissão, custo de float de 2% do saldo carregado.
+3. **Margem é saída, não entrada.** `margem_liquida = (R − custeio) / V`. A variável `c` da ADR 0021 deixa de existir como premissa.
+4. Piso: **10% líquido**, avaliado **no topo da faixa** e **depois** do desconto do passe. Alvo: 12%.
+5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 73** na faixa de 6 ingressos. A faixa "até R$ 120" passa a ser viável e a regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
+6. Desconto de passe sai da margem, nunca do custeio. Faixa abaixo do piso não recebe desconto.
+7. A provisão de 100% do passivo é **política interna de liquidez**, não segregação jurídica. Em insolvência, o portador do ingresso é credor quiroquistário.
+
+### 6. Matchmaking
+
+1. A busca começa pela **intenção**: região, janela de horário, formato, nível e distância.
+2. O saldo é **restrição sobre o resultado**, nunca a consulta.
+3. Entre as partidas elegíveis, o ranking usa distância, horário, nível e qualidade da quadra. Custo em ingressos não é critério de ordenação.
+4. `MIN_TICKETS` é definido **por formato e faixa**, não global.
+5. Limite de busca: 3 faixas ou 2 minutos na busca instantânea; 24h na assíncrona. Sem resultado, oferecer aumento de saldo, ampliação de região/horário ou fila de espera.
+
+### 7. Crédito de estreia
+
+1. Crédito patrocinado de **1 partida** em faixa elegível (Econômica ou Padrão dia), validade de 14 dias.
+2. Definido em partidas, não em ingressos: evita saldo residual e não revela o preço unitário.
+3. Intransferível, não conversível em dinheiro, custo de marketing.
+
+### 8. PSP
+
+1. **Beta:** Mercado Pago, como já registrado na ADR 0034.
+2. **Produção:** em aberto. O Pagar.me **não** está eliminado; ele é candidato natural para split no momento da reserva.
+3. O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`.
+4. Não é requisito de MVP: Pix Automático por API, Payouts em lote no Brasil e rendimento do float.
+
+### 9. O que não muda
+
+1. **Publicidade** continua subordinada à audiência, identificada como patrocinada e proibida de alterar MMR, Trust Factor, matchmaking ou troféus de clã (Fase 18).
+2. **Customização** continua não monetária: cosméticos são desbloqueados por XP, não comprados.
+3. **Gamificação** continua sem vantagem comprada: Temporada, streak, badges e passaporte de quadras.
+4. **Zero mercado de saldo**: sem transferência, revenda, saque ou P2P.
+
+## Consequências
+
+- A ADR 0021 permanece válida para reserva avulsa sem ingresso; no fluxo de ingresso ela é substituída por esta ADR.
+- O preço de uma partida passa a ser um número inteiro de ingressos, e a margem por partida varia dentro de cada faixa.
+- O estabelecimento passa a ter **teto de V por faixa** em contrato, com reclassificação automática, aviso de 30 dias e auditoria mensal. Sem teto, a faixa sofre *band creep* até a margem zerar.
+- A receita deixa de ser por reserva e passa a ser por consumo de ingresso; a venda de pacote é passivo, não receita.
+- O imposto tem duas visões obrigatórias: na venda (caixa) e no consumo (competência).
+- Nenhuma fase comercial está implementada. Este documento não autoriza código.
+
+## Pendências
+
+1. Parecer fiscal: base de cálculo da comissão, ISS por município, retenção pelo tomador, IBS/CBS na transição.
+2. Parecer jurídico: intermediação, conta segregada, tratamento do saldo em insolvência, fluxo dos 7 dias do CDC.
+3. Recalibrar `C_c` para o fluxo de ingresso; R$ 15,87 é conservador e não definitivo.
+4. Confirmar custódia, Payouts no Brasil e Pix Automático por API em cada PSP.
+5. Definir taxonomia final de atributos (cobertura, dia/noite) e teto contratual por faixa.
+6. Revisar o arredondamento de 4x4.
+7. Definir orçamento do crédito de estreia.
+8. Decidir se o passe terá nível (bronze/prata/ouro) e se a Temporada é mensal.
