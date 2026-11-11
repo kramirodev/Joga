@@ -27,6 +27,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 | 18 | Publicidade | Quadras, estabelecimentos e marcas patrocinados, sem efeito competitivo | 13, 15 |
 | 19 | Hardening final e lançamento comercial | Hardening completo, LGPD, revisão jurídica e go-live comercial | 10–18 |
 
+> **Escopo do MVP.** Clãs e troféus (**Fase 16**) passam a integrar o MVP e são pré-requisito do primeiro evento de marketing, conforme a **ADR 0044**. A fase pode rodar em paralelo com as Fases 11 a 15, mantendo a dependência técnica da Fase 8, e precisa estar concluída antes da Fase 19.
+
 ## Fase 0 — Repositório e governança
 
 **Escopo:** desenvolver o JOGA como projeto independente, do zero, no repositório `kramirodev/Joga`; preparar documentação, governança, README e templates de PR; definir `main` estável e branches curtas. O repositório anterior pode ser consultado apenas como referência conceitual, sem dependência operacional.
@@ -171,6 +173,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 15 — Interface financeira e conciliação
 
+**Status:** 15A (liberações, contestações, extrato, recebíveis e conciliação interna) e 15B (aba Financeiro do painel) implementados como **proposta técnica local** em 2026-11-09. A ADR 0039 define a política consolidada de cancelamento, substituição, presença e ausência e supera a ADR 0038. A ADR 0038 foi revertida e as fatias 1–6 da 0039 (fila, chamada automática, cancelamento individual, T4/T5, reembolso sem o desistente, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação) estão implementadas. A ADR 0040 define o repasse 2 h após o início da partida. A ADR 0041 implementa o Trust Factor interno (penalidades, recuperação e restrição ranqueada). UI de presença/suporte continua pendente. Nenhuma decisão de prazo, repasse, moderação financeira ou tratamento de divergência foi aprovada; PSP real, MED/chargeback, comprovantes fiscais, KYC e os três relógios (pagamento, contestação e repasse) continuam pendentes.
+
 **Escopo:** interface financeira do estabelecimento com extrato por reserva e cobrança, agenda de recebíveis, status de liberação, comprovantes, dados contratuais, canal de contestação e histórico de estornos; liberação do valor somente depois da confirmação da reserva e da realização da partida; liberação automática após `N` horas, com janela de disputa; conciliação periódica; tratamento de MED, chargeback e estorno sem saldo; obrigações de transparência aplicáveis (Res. 264/349).
 
 **Não fazer:** liberar antes da confirmação; esconder taxas ou ajustes; transformar a interface em ERP; executar ajuste manual irreversível sem justificativa e auditoria; tratar saldo do recebedor como garantia automática contra MED.
@@ -178,6 +182,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 **Aceite:** liberação idempotente e registrada no ledger; extrato do estabelecimento bate com o PSP; contestação tem prazo, canal e decisão auditável; estabelecimento só vê os próprios dados; relatório de recebíveis reproduzível; eventos de MED e estorno sem saldo registrados e tratados.
 
 ## Fase 16 — Clãs e troféus
+
+**Status:** antecipada para o **escopo do MVP** pela ADR 0044. Pode rodar em paralelo às Fases 11 a 15, mantendo a dependência da Fase 8, e deve estar concluída antes do primeiro evento de marketing e antes da Fase 19. Uma fatia mínima de moderação de chat de clã entra junto com esta fase.
 
 **Escopo:** clãs abertos/fechados com membros, administradores, convites e limites; chat de clã em texto e referências internas; vínculo clã–jogador na data de cada partida; troféus por modalidade com fórmula-base 50/30/20 versionada, considerando os 10 melhores membros elegíveis, temporadas configuráveis e snapshots; ciclo de moderação do chat segue a Fase 17.
 

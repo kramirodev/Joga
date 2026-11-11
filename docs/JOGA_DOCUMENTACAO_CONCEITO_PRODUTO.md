@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.13<br>
-**Status:** visão de produto atualizada — Ingresso JOGA, tabela 2D e natureza da intermediação (ADR 0042)<br>
+**Versão:** 3.14<br>
+**Status:** visão de produto atualizada — temporada trimestral, passe e customização (ADR 0043); clãs no MVP (ADR 0044)<br>
 **Data:** 11 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -26,6 +26,7 @@
 | 3.11 | 9 de novembro de 2026 | ADR 0038: reserva da quadra é o serviço contratado; desistência após confirmação e ausência não geram reembolso; substituição com substituto pagante continua reembolsando o substituído; falha da quadra/JOGA mantém reembolso integral |
 | 3.12 | 9 de novembro de 2026 | ADR 0039: fila de substitutos, cutoff de cancelamento, confirmação de presença, adaptação de formato com rodízio e desfecho financeiro pelo resultado da reserva; ADR 0038 superada |
 | 3.13 | 11 de novembro de 2026 | ADR 0042: Ingresso JOGA de R$ 3,00 como unidade de acesso; tabela 2D formato × faixa ancorada em atributo visível; passe com quantidade fixa e reset mensal; natureza jurídica de intermediação com base de cálculo na comissão; margem como saída e piso de 10% líquido; matchmaking por intenção com saldo como restrição; ADR 0021 superada no fluxo de ingresso |
+| 3.14 | 11 de novembro de 2026 | ADR 0043: temporada trimestral e passe trimestral com franquia mensal; XP igual para todos; trilha de 30 níveis; customização em três estados e customização geral do app; estatísticas sem dado de evento. ADR 0044: clãs e troféus passam a integrar o MVP |
 
 ## Como interpretar as decisões neste documento
 
@@ -1071,7 +1072,7 @@ A monetização inicial deverá se concentrar principalmente em:
 
 Funcionalidades essenciais de jogadores, matchmaking, partidas e comunidades continuarão predominantemente gratuitas.
 
-Assinaturas Premium poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+A assinatura do produto é o **passe trimestral** definido na ADR 0043. Não criar outra assinatura apenas para adicionar uma fonte de receita.
 
 ### 16.2 Comissão sobre reservas
 
@@ -1101,7 +1102,7 @@ A publicidade avançada depende de audiência e volume de uso. Não deve ser tra
 
 ### 16.5 Assinaturas
 
-Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+O passe trimestral da ADR 0043 é a assinatura do produto: cobrança única por trimestre, franquia de ingressos entregue mês a mês, trilha de temporada, customização e estatísticas. Não existe passe mensal. Não criar uma assinatura apenas para adicionar uma fonte de receita.
 
 ### 16.6 Regras gerais de monetização
 
@@ -1128,7 +1129,21 @@ A natureza jurídica é de **intermediação**: o saldo é obrigação com o jog
 
 O saldo carregado é **passivo, não receita**. O ganho econômico do modelo pré-pago é capital de giro dispensado — não precisa ser contratado para pagar as quadras — e não rendimento de float nem receita de ingresso não usado.
 
-Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre reservas, parcerias, patrocínios e publicidade contextual. Publicidade e customização continuam **não** sendo vantagem competitiva e os cosméticos continuam desbloqueados por XP, não comprados.
+Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre reservas, parcerias, patrocínios e publicidade contextual. Publicidade e customização continuam **não** sendo vantagem competitiva.
+
+### 16.8 Temporada, passe e customização
+
+A temporada, o passe trimestral e as regras de customização estão na ADR 0043.
+
+- **Temporada de 3 meses.** Um único reset, alinhado ao passe. Não existe passe mensal.
+- **Passe trimestral** com cobrança única e franquia mensal de 10, 20, 30 ou 50 ingressos. A entrega é mensal e não pode ser adiantada.
+- **XP igual para todos.** A assinatura muda o que se desbloqueia, nunca a velocidade de progressão.
+- **Trilha de 30 níveis**, três missões semanais, streak semanal e nível do passe por temporadas consecutivas.
+- **Customização em três estados:** livre, ganho por XP e perk do passe. Traço de identidade e acessibilidade nunca são pagos.
+- **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
+- **Estatísticas** apenas sobre o que a plataforma observa. Sem mapa de calor nem dado de evento de jogo.
+- **Não são benefícios do passe:** convite de estreia, remoção de anúncios e bônus de XP.
+- **Escudo de clã** entra junto com os clãs (ADR 0044), sem vantagem competitiva.
 
 ---
 

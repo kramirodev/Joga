@@ -69,6 +69,18 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
 | Nível do passe e periodicidade da Temporada | Passe | Produto |
 
+## Clãs no MVP (ADR 0044)
+
+Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pré-requisito do primeiro evento de marketing.
+
+| Pendência | Bloqueia | Próximo passo |
+|---|---|---|
+| Corte mínimo de moderação de chat de clã | Lançamento da Fase 16 | Definir canal de denúncia e medidas mínimas |
+| Tamanho de clã, limites de entrada e regra de troca | Modelo de dados | Produto |
+| Temporada de troféus e sua relação com a temporada trimestral | Troféus | Produto |
+| Data-alvo do primeiro evento de marketing | Critério de saída da Fase 16 | Produto |
+| Catálogo cosmético por temporada (livre, XP, passe) | Customização | Produto e arte |
+
 ## Decisões financeiras não aprovadas (Fase 15)
 
 A implementação 15A/15B é uma **proposta técnica local**. Estes pontos não são regra
