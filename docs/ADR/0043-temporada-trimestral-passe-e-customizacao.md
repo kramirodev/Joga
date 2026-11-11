@@ -46,8 +46,9 @@ Ao mesmo tempo, era preciso resolver uma tensão: a ADR 0042 §10 dizia que cust
 
 1. Três missões por semana, fixas: jogar 1 partida; jogar em uma quadra nova; fazer check-in até o horário de início.
 2. As missões premiam exatamente os comportamentos que o produto precisa: frequência, descoberta e redução de no-show.
-3. **Streak:** semanas consecutivas com pelo menos uma partida. Doze semanas fecham a temporada.
-4. **Nível do passe:** bronze, prata e ouro por temporadas consecutivas concluídas. É conquista, não compra.
+3. **Streak é sequência de vitórias**, não frequência. Persiste entre temporadas e é registro pessoal do jogador: empate ou derrota zera a sequência; só resultado confirmado conta. Streak não dá XP e não dá vantagem.
+4. **Nível da temporada:** bronze (1–9), prata (10–19) e ouro (20–30) pelo nível alcançado na temporada. **Reseta na virada.** Não acumula e não depende de meses consecutivos.
+5. **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional. Não se recompensa quem não jogou. O que se faz é manter a curva barata nos primeiros níveis, para que o ingressante tardio ainda tenha progresso visível nas primeiras partidas.
 
 ### 5. Customização: três estados
 

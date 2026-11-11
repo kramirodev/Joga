@@ -1138,7 +1138,8 @@ A temporada, o passe trimestral e as regras de customização estão na ADR 0043
 - **Temporada de 3 meses.** Um único reset, alinhado ao passe. Não existe passe mensal.
 - **Passe trimestral** com cobrança única e franquia mensal de 10, 20, 30 ou 50 ingressos. A entrega é mensal e não pode ser adiantada.
 - **XP igual para todos.** A assinatura muda o que se desbloqueia, nunca a velocidade de progressão.
-- **Trilha de 30 níveis**, três missões semanais, streak semanal e nível do passe por temporadas consecutivas.
+- **Trilha de 30 níveis**, três missões semanais, **streak de vitórias** persistente e nível de temporada (bronze/prata/ouro) que reseta na virada.
+- **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional.
 - **Customização em três estados:** livre, ganho por XP e perk do passe. Traço de identidade e acessibilidade nunca são pagos.
 - **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
 - **Estatísticas** apenas sobre o que a plataforma observa. Sem mapa de calor nem dado de evento de jogo.

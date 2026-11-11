@@ -67,7 +67,7 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Arredondamento de 4x4 | Tabela 2D | Produto |
 | Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
-| Nível do passe e periodicidade da Temporada | Passe | Produto |
+| Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak de vitórias persiste |
 
 ## Clãs no MVP (ADR 0044)
 

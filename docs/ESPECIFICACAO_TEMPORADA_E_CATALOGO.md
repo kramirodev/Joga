@@ -26,7 +26,7 @@ Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), publicida
 | **Trilha** | 30 níveis por temporada. Cada nível exige 150 XP |
 | **XP** | Progresso. Único e igual para todos. Nunca comprado, nunca multiplicado por assinatura |
 | **Missão** | Tarefa semanal com recompensa de XP. Três por semana |
-| **Streak** | Semanas consecutivas com pelo menos uma partida concluída |
+| **Streak** | Vitórias consecutivas. Registro pessoal que atravessa temporadas e não reseta |
 | **Item cosmético** | Elemento visual. Existe em exatamente um dos três estados: livre, XP ou passe |
 | **Atribuição** | Registro que diz que o jogador pode usar um item, e por quê |
 
@@ -110,18 +110,25 @@ mission_progress
 
 `week_start` é a segunda-feira 00:00 em `America/Sao_Paulo`. O reset semanal é **derivado**, não uma rotina destrutiva: uma nova semana é uma nova linha.
 
-### 3.4 Streak
+### 3.4 Streak de vitórias
 
 ```text
-streaks
+win_streaks
   user_id           uuid pk
-  season_id         uuid fk
-  current_weeks     smallint
-  best_weeks        smallint
-  last_week_start   date
+  current_wins      int
+  best_wins         int
+  last_match_id     uuid
+  updated_at        timestamptz
 ```
 
-Uma semana conta se houver ao menos uma partida `COMPLETED` com presença confirmada. Recalculado a partir dos dados de partida, nunca do cliente.
+Regras:
+
+1. Vitória incrementa `current_wins`; empate ou derrota zeram.
+2. Só conta resultado **confirmado**; partida em disputa não altera o streak.
+3. Persiste entre temporadas — não é métrica de temporada e não reseta.
+4. `best_wins` é recorde histórico e nunca diminui.
+5. Não concede XP nem qualquer vantagem. É exibição de perfil.
+6. Recalculado a partir dos resultados gravados, nunca do cliente.
 
 ### 3.5 Passe
 
@@ -262,6 +269,8 @@ Limites de segurança (calibração pendente): teto diário de 400 XP e teto sem
 3. A recompensa é **reivindicada** pelo jogador (ação explícita), não creditada em silêncio. Isso cria o momento de retorno ao app.
 4. Recompensa não reivindicada até o fechamento da temporada é perdida — exceto itens `free`, que são creditados automaticamente.
 5. O fechamento da temporada gera `season_snapshot` com nível final, XP e recompensas, para auditoria e para o badge.
+6. **Nível da temporada** — bronze (1–9), prata (10–19), ouro (20–30) — é derivado do nível alcançado e **reseta na virada**. Não acumula entre temporadas. O streak de vitórias não reseta.
+7. **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional. Não se recompensa quem não jogou. A contrapartida é de desenho, não de crédito: a curva precisa ser barata nos primeiros níveis para que o ingressante tardio alcance progresso visível nas primeiras partidas.
 
 Distribuição sugerida (calibração pendente):
 
@@ -373,9 +382,8 @@ Alertas: XP negativo, XP duplicado por `ref_id`, nível inconsistente entre ledg
 
 1. **Balanceamento de XP** — confirmar 150 XP/nível, 30 níveis e os tetos diário/semanal com dados de frequência.
 2. Catálogo de arte por categoria e por temporada; definir o que é free na primeira temporada.
-3. Definir se o nível 30 exige 4.500 XP ou uma curva não linear.
+3. Definir se o nível 30 exige 4.500 XP linear ou uma curva não linear.
 4. Definir período de reivindicação de recompensa e o que acontece com não reivindicada.
 5. Definir preço final do trimestre e se haverá pagamento parcelado.
-6. Definir a regra de estreia: se o jogador novo entra no meio da temporada, começa no nível 1 ou recebe crédito parcial.
-7. Definir se streak atravessa temporadas.
-8. Definir integração dos escudos de clã (ADR 0044) ao catálogo.
+6. Definir integração dos escudos de clã (ADR 0044) ao catálogo.
+7. Definir a comunicação do reset de temporada e do reset de nível.
