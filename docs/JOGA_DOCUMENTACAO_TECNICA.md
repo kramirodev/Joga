@@ -1128,6 +1128,8 @@ Registrar impressões, cliques e conversões com minimização de dados e observ
 
 O modelo abaixo é lógico. A normalização e nomenclatura final serão registradas em `DATA_MODEL.md` e migrações. IDs internos devem ser UUID; datas de evento devem usar `timestamptz` e UTC no backend.
 
+Temporada, trilha, XP, passe e catálogo cosmético têm modelo detalhado em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md` (ADR 0043).
+
 | Entidade | Responsabilidade |
 |---|---|
 | `users` | Identidade central e estado da conta |

@@ -79,7 +79,7 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 | Tamanho de clã, limites de entrada e regra de troca | Modelo de dados | Produto |
 | Temporada de troféus e sua relação com a temporada trimestral | Troféus | Produto |
 | Data-alvo do primeiro evento de marketing | Critério de saída da Fase 16 | Produto |
-| Catálogo cosmético por temporada (livre, XP, passe) | Customização | Produto e arte |
+| Catálogo cosmético por temporada (livre, XP, passe) e balanceamento de XP | Customização | Modelo técnico em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`; falta arte e calibração |
 
 ## Decisões financeiras não aprovadas (Fase 15)
 
