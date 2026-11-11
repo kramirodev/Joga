@@ -1021,7 +1021,7 @@ Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnic
 
 **Conta do ingresso (três buckets).** `custeio` (quadra, PSP, imposto, operação da reserva), `faturamento` (preço do pacote/passe) e `margem` (resíduo). A margem é sempre saída: `margem = (faturamento_reconhecido − custeio) / V`. Não existe campo de comissão de entrada.
 
-**Tabela de preço em ingressos.** Fonte versionada, por formato × faixa, ancorada em atributo visível do espaço. A tabela não é calculada em tempo real por reserva; é recalibrada por ciclo e versionada. A reserva grava a versão da tabela usada, como a ADR 0021 já fazia com a taxa congelada.
+**Tabela de preço em ingressos.** Fonte versionada, por formato × faixa, ancorada em atributo visível do espaço. A tabela não é calculada em tempo real por reserva; é recalibrada por ciclo e versionada. A reserva grava a versão da tabela usada, como a ADR 0021 já fazia com a taxa congelada. Reajuste do estabelecimento só alcança janelas futuras sem reserva (ADR 0042 §9).
 
 **Custódia.** Intermediação: a parte do estabelecimento é identificada na reserva e repassada em `starts_at + 2h` (ADR 0040). Requer conta segregada e contrato com teto de V por faixa. Enquanto não houver PSP de produção contratado, o fluxo permanece no adaptador `simulator` e no Mercado Pago de teste (ADR 0034).
 

@@ -65,6 +65,7 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Custódia, Payouts no Brasil e Pix Automático por API em cada PSP | PSP de produção | Comercial dos PSPs |
 | Taxonomia final de atributos e teto de V por faixa | Contrato com a quadra | Produto e comercial |
 | Arredondamento de 4x4 | Tabela 2D | Produto |
+| Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
 | Nível do passe e periodicidade da Temporada | Passe | Produto |
 

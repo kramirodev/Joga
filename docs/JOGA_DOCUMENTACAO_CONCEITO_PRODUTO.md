@@ -1122,6 +1122,7 @@ O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0
 - **Passe mensal** de 10, 20, 30 ou 50 ingressos, com quantidade fixa, reset mensal e sem acumular. Ingresso comprado nunca expira.
 - **Sem mercado de saldo:** sem transferência, revenda, saque ou troca entre usuários. A única exceção é o direito de arrependimento de 7 dias.
 - **Matchmaking por intenção:** região, horário, formato e nível primeiro; o saldo é restrição sobre o resultado, não a consulta.
+- **Reajuste sem quebrar a reserva feita:** o estabelecimento reajusta apenas janelas futuras sem reserva, na virada de temporada e com aviso de 30 dias. Pausar ou fechar com reserva confirmada conta como falha da quadra e devolve os ingressos.
 
 A natureza jurídica é de **intermediação**: o saldo é obrigação com o jogador e a parte da quadra é obrigação com o estabelecimento, reconhecida na reserva. A base de cálculo pretendida dos tributos é a comissão, sujeita a parecer fiscal.
 

@@ -95,7 +95,17 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 3. O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`.
 4. Não é requisito de MVP: Pix Automático por API, Payouts em lote no Brasil e rendimento do float.
 
-### 9. O que não muda
+### 9. Reajuste de preço e pausa do estabelecimento
+
+1. O gatilho para reajuste não é "não haver nenhuma reserva", é **não haver reserva afetada**. Exigir inventário vazio congelaria o preço de qualquer quadra movimentada e obrigaria o estabelecimento a cancelar reservas para reajustar.
+2. Reajuste vale apenas para **janelas futuras sem reserva** e nunca é retroativo. A reserva confirmada mantém o preço e a versão da tabela vigentes no momento da reserva.
+3. Reajuste entra na **virada de temporada**, com aviso mínimo de 30 dias.
+4. Reajuste **dentro da faixa** é livre. Mudar de faixa exige reclassificação e só afeta reservas futuras.
+5. "Pausada" e "fechada temporariamente" são **estados de disponibilidade**, independentes de preço. Bloqueiam novas reservas e não são ferramenta de reajuste.
+6. **Pausar com reserva confirmada no período é falha do estabelecimento** (ADR 0039): devolução integral em ingressos aos jogadores, sem repasse, e evento contratual. Sem essa regra, pausar vira a rota de fuga para não honrar reserva barata.
+7. O painel registra autor, data, valor anterior, valor novo e motivo de cada reajuste e de cada pausa. Auditoria mensal.
+
+### 10. O que não muda
 
 1. **Publicidade** continua subordinada à audiência, identificada como patrocinada e proibida de alterar MMR, Trust Factor, matchmaking ou troféus de clã (Fase 18).
 2. **Customização** continua não monetária: cosméticos são desbloqueados por XP, não comprados.
