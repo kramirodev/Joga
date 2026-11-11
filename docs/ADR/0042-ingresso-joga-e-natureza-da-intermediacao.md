@@ -108,7 +108,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 ### 10. O que não muda
 
 1. **Publicidade** continua subordinada à audiência, identificada como patrocinada e proibida de alterar MMR, Trust Factor, matchmaking ou troféus de clã (Fase 18).
-2. **Customização** continua não monetária: cosméticos são desbloqueados por XP, não comprados.
+2. **Customização** permanece sem vantagem competitiva. A regra original de "cosméticos não comprados" foi **emendada pela ADR 0043 §5**: configuração é perk do passe, conquista é sempre por XP, e identidade e acessibilidade nunca são pagas.
 3. **Gamificação** continua sem vantagem comprada: Temporada, streak, badges e passaporte de quadras.
 4. **Zero mercado de saldo**: sem transferência, revenda, saque ou P2P.
 
