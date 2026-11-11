@@ -26,7 +26,7 @@ Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), publicida
 | **Trilha** | 30 níveis por temporada. Cada nível exige 150 XP |
 | **XP** | Progresso. Único e igual para todos. Nunca comprado, nunca multiplicado por assinatura |
 | **Missão** | Tarefa semanal com recompensa de XP. Três por semana |
-| **Streak** | Vitórias consecutivas. Registro pessoal que atravessa temporadas e não reseta |
+| **Streak** | Vitórias consecutivas **com validade semanal**: derrota, empate ou semana sem jogar zeram. `best_wins` é recorde permanente |
 | **Item cosmético** | Elemento visual. Existe em exatamente um dos três estados: livre, XP ou passe |
 | **Atribuição** | Registro que diz que o jogador pode usar um item, e por quê |
 
@@ -117,6 +117,7 @@ win_streaks
   user_id           uuid pk
   current_wins      int
   best_wins         int
+  last_match_week   date          -- segunda-feira da semana da última partida contada
   last_match_id     uuid
   updated_at        timestamptz
 ```
@@ -124,11 +125,12 @@ win_streaks
 Regras:
 
 1. Vitória incrementa `current_wins`; empate ou derrota zeram.
-2. Só conta resultado **confirmado**; partida em disputa não altera o streak.
-3. Persiste entre temporadas — não é métrica de temporada e não reseta.
-4. `best_wins` é recorde histórico e nunca diminui.
-5. Não concede XP nem qualquer vantagem. É exibição de perfil.
-6. Recalculado a partir dos resultados gravados, nunca do cliente.
+2. **Semana sem partida concluída zera a sequência** no fechamento da semana. Quem não jogou, perdeu.
+3. Exibição: `current_wins` vale enquanto `last_match_week >= semana_atual − 1`; caso contrário, 0. A semana corrente ainda aberta não zera — o jogador ainda pode jogar.
+4. `best_wins` é recorde histórico e nunca diminui, inclusive entre temporadas.
+5. Só conta resultado **confirmado**; partida em disputa não altera o streak.
+6. Não concede XP nem qualquer vantagem. É exibição de perfil.
+7. Recalculado a partir dos resultados gravados, nunca do cliente. O job semanal `weekly_streak_close` materializa o reset e alimenta a notificação de perda.
 
 ### 3.5 Passe
 
