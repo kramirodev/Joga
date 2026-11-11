@@ -49,7 +49,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 
 3. **Faixas adjacentes diferem em 1 ingresso**, salvo quando a diferença coincide com mudança de atributo visível.
 4. O degrau unitário é `T / (V/n)`. Com `T = R$ 3,00` e vaga de R$ 15,00, o degrau é 20%. Preço de ingresso maior produz degraus maiores; R$ 6,20 foi rejeitado.
-5. A margem líquida resultante fica entre **17,8% e 24,5%** no topo de cada faixa, com `T = R$ 3,00` e a pilha de custos da seção 5.
+5. A margem líquida resultante fica entre **19,9% e 26,9%** no topo de cada faixa, com `T = R$ 3,00` e a pilha de custos da seção 5, desconsiderando 4x4 (ver item 6).
 6. 4x4 arredonda para cima e gera cerca de R$ 24 por partida acima do alvo de receita. Aceito no piloto, revisável.
 
 ### 4. Passe mensal
@@ -66,12 +66,13 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 ### 5. Conta do ingresso e piso de margem
 
 1. Três buckets no ledger: **custeio da reserva**, **faturamento** e **margem JOGA**.
-2. Pilha de custos por partida: `C_k = R$ 3,50` (PSP e transferência), `C_c·μ·S = R$ 15,87` (provisão de cancelamento, conservadora e a recalibrar), custo fixo `R$ 4,00`, imposto de 6% sobre a comissão, custo de float de 2% do saldo carregado.
+2. Pilha de custos por partida: `C_k = R$ 3,50` (PSP e transferência), `C_c·μ·S = R$ 15,87` (provisão de cancelamento, conservadora e a recalibrar), custo fixo `R$ 4,00`, imposto de 6% sobre a comissão e **conformidade da custódia de 0,4% do saldo carregado**.
 3. **Margem é saída, não entrada.** `margem_liquida = (R − custeio) / V`. A variável `c` da ADR 0021 deixa de existir como premissa.
 4. Piso: **10% líquido**, avaliado **no topo da faixa** e **depois** do desconto do passe. Alvo: 12%.
-5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 73** na faixa de 6 ingressos. A faixa "até R$ 120" passa a ser viável e a regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
+5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 75** na faixa de 6 ingressos. A faixa "até R$ 120" passa a ser viável e a regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
 6. Desconto de passe sai da margem, nunca do custeio. Faixa abaixo do piso não recebe desconto.
 7. A provisão de 100% do passivo é **política interna de liquidez**, não segregação jurídica. Em insolvência, o portador do ingresso é credor quiroquistário.
+8. **O float não é receita, não é margem e não é lucro.** Ele é posição de balanço: caixa de um lado, obrigação do outro. Seu único efeito econômico é dispensar capital de giro — um financiamento que não precisa ser contratado. Nunca lançar rendimento de float como receita, nem breakage de ingresso não usado como resultado.
 
 ### 6. Matchmaking
 

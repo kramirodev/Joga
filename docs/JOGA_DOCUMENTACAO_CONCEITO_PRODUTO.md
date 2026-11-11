@@ -1125,6 +1125,8 @@ O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0
 
 A natureza jurídica é de **intermediação**: o saldo é obrigação com o jogador e a parte da quadra é obrigação com o estabelecimento, reconhecida na reserva. A base de cálculo pretendida dos tributos é a comissão, sujeita a parecer fiscal.
 
+O saldo carregado é **passivo, não receita**. O ganho econômico do modelo pré-pago é capital de giro dispensado — não precisa ser contratado para pagar as quadras — e não rendimento de float nem receita de ingresso não usado.
+
 Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre reservas, parcerias, patrocínios e publicidade contextual. Publicidade e customização continuam **não** sendo vantagem competitiva e os cosméticos continuam desbloqueados por XP, não comprados.
 
 ---

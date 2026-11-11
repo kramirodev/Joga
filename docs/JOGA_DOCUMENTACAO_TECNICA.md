@@ -1025,6 +1025,8 @@ Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnic
 
 **Custódia.** Intermediação: a parte do estabelecimento é identificada na reserva e repassada em `starts_at + 2h` (ADR 0040). Requer conta segregada e contrato com teto de V por faixa. Enquanto não houver PSP de produção contratado, o fluxo permanece no adaptador `simulator` e no Mercado Pago de teste (ADR 0034).
 
+**Float.** O saldo carregado é posição de balanço, nunca receita. O ledger registra `caixa_custodia`, `passivo_ingressos` e um memo de capital de giro liberado. Rendimento de conta remunerada e ingresso não consumido (breakage) não entram como receita. A única linha de custo associada é a conformidade da custódia.
+
 **PSP.** O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`. Mercado Pago no beta; produção em aberto. Pix Automático por API, Payouts em lote no Brasil e rendimento do float **não** são requisitos de MVP.
 
 **Matchmaking.** Filtra por intenção (região, janela, formato, nível, distância) e usa o saldo apenas como restrição; `MIN_TICKETS` é definido por formato e faixa. A ordenação não usa custo em ingressos.
