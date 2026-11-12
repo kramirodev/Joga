@@ -51,7 +51,7 @@ TERMINAL_BOOKING_STATUSES = frozenset(
         "COMPLETED",
     }
 )
-PAYMENT_STATUSES = ("PENDING", "PAID", "REFUNDED", "FAILED", "WAIVED")
+PAYMENT_STATUSES = ("PENDING", "PAID", "REFUNDED", "FAILED", "WAIVED", "EXPIRED", "CANCELLED")
 HOLD_STATUSES = ("ACTIVE", "RELEASED", "EXPIRED")
 TIMER_TYPES = ("T1", "T2", "T3")
 TIMER_STATUSES = ("RUNNING", "COMPLETED", "EXPIRED", "CANCELLED")
@@ -329,7 +329,7 @@ class BookingPayment(Base):
     __table_args__ = (
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
         CheckConstraint(
-            "status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED', 'EXPIRED')",
+            "status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED', 'EXPIRED', 'CANCELLED')",
             name="status_valid",
         ),
         UniqueConstraint(

@@ -49,12 +49,13 @@ Suíte completa, `ruff`, `mypy --strict` e `alembic check` verdes.
 
 ## Limitações conhecidas
 
-1. **Cobranças Pix não são canceladas.** No aceite da quadra são criadas cobranças para todos;
-   quem quita por ingresso deixa a cobrança `PENDING`. Falta encerrá-las.
-2. **Substituição não devolve o ingresso do substituto.** O fluxo de substituto ainda não
+1. **Substituição não devolve o ingresso do substituto.** O fluxo de substituto ainda não
    conhece a carteira.
-3. **No-show não consome nem devolve nada além do já consumido** — está correto pela ADR 0039,
+2. **No-show não consome nem devolve nada além do já consumido** — está correto pela ADR 0039,
    mas não há teste específico de carteira para ele.
+3. **Cobranças são criadas no aceite e depois canceladas.** Quem quita por ingresso tem a
+   cobrança `PENDING` encerrada como `CANCELLED`. As cobranças só deixariam de existir se a
+   quitação acontecesse antes do aceite.
 
 ## Próxima fatia
 

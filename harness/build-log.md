@@ -830,3 +830,10 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Corte:** continua na API (`cancellation_cutoff_hours`); depois do prazo, ninguém é reembolsado.
 - **Testes:** `tests/test_ticket_settlement.py` sobe para seis casos, incluindo os três desfechos de cancelamento; suíte completa verde.
 - **Pendente:** encerrar cobranças Pix `PENDING` de quem quitou por ingresso, e ligar a substituição à carteira.
+
+### 2026-11-12 — 14D.6b Cobranças encerradas na quitação por ingresso
+
+- **Status novo:** `booking_payments.status` passa a aceitar `CANCELLED`.
+- **Comportamento:** quem quita a vaga com ingressos tem as cobranças `PENDING` encerradas como `CANCELLED`, para não aparecerem como recebível aberto.
+- **Migração:** `a6b7283c4051` recria a constraint, e o downgrade converte `CANCELLED` em `EXPIRED`.
+- **Testes:** o caso de quitação agora confere que todas as cobranças ficaram `CANCELLED`.

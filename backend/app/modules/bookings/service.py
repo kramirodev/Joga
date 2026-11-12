@@ -629,6 +629,7 @@ class BookingService:
         participant.tickets_consumed = count
         participant.settled_with = "tickets"
         participant.payment_status = "PAID"
+        self._cancel_pending_payments(booking, participant)
         self._event(
             booking,
             actor_user_id,
@@ -639,6 +640,21 @@ class BookingService:
         self._confirm_if_all_paid(booking, actor_user_id, now)
         self.session.flush()
         return self._bundle(booking)
+
+    def _cancel_pending_payments(
+        self, booking: Booking, participant: BookingParticipant
+    ) -> None:
+        """Quem quitou por ingresso não deixa cobrança Pix aberta."""
+
+        pending = self.session.scalars(
+            select(BookingPayment).where(
+                BookingPayment.booking_id == booking.id,
+                BookingPayment.participant_id == participant.id,
+                BookingPayment.status == "PENDING",
+            )
+        ).all()
+        for payment in pending:
+            payment.status = "CANCELLED"
 
     def _refund_tickets(
         self,

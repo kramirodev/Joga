@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
-from app.modules.bookings.models import BookingParticipant
+from app.modules.bookings.models import BookingParticipant, BookingPayment
 from app.modules.bookings.service import BookingService
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
 from app.modules.organizations.models import (
@@ -184,6 +184,12 @@ def test_each_participant_settles_own_seat(client: TestClient, db_session: Sessi
     ).all()
     assert {item.tickets_consumed for item in participants} == {TICKETS_PER_SEAT}
     assert {item.settled_with for item in participants} == {"tickets"}
+
+    payments = db_session.scalars(
+        select(BookingPayment).where(BookingPayment.booking_id == uuid.UUID(booking["id"]))
+    ).all()
+    assert payments
+    assert {item.status for item in payments} == {"CANCELLED"}
 
 
 def test_settlement_is_idempotent(client: TestClient, db_session: Session) -> None:
