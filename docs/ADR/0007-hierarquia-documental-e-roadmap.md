@@ -19,8 +19,9 @@
 2. **Nome canônico:** `docs/JOGA_DOCUMENTACAO_TECNICA.md` é o nome vigente; `docs/DOCUMENTACAO_TECNICA.md` é histórico e não vigente. Referências vivas foram corrigidas; linhas históricas do `harness/build-log.md` e registros da Fase 0 são preservados como registro.
 3. **Roadmap único:** a numeração de fases passa a ser exclusivamente a de `PLANS.md`, estendida de 0–10 para 0–19:
    - 0–10 mantidos (com fase 10 delimitada como núcleo esportivo e fase 9 incluindo amigos/convites/bloqueios).
-   - 11 Organizações e gestão web; 12 Catálogo e estoque comprometido; 13 Pedidos, pagamentos e cumprimento; 14 Quadras e reservas; 15 Integridade comercial; 16 Clãs e troféus; 17 Moderação e Trust & Safety; 18 Publicidade; 19 Hardening final e lançamento comercial.
+   - 11 Organizações e gestão web; 12 Quadras, agenda e cadastro de fornecedor; 13 Reservas e temporizadores; 14 Pagamentos Pix e reembolsos; **14D Ingresso, carteira e temporada**; 15 Interface financeira e conciliação; 16 Clãs e troféus; 17 Moderação e Trust & Safety; 18 Publicidade; 19 Hardening final e lançamento comercial.
    - A tabela de fases da documentação técnica espelha esta numeração (seção 24) e não define ordem própria.
+   - **Exceção de ordem:** a ADR 0044 antecipa a Fase 16 (clãs e troféus) para o escopo do MVP, em paralelo às Fases 11–15. Esta ADR mantém a numeração; a antecipação é registrada em `PLANS.md`.
 4. **Tradução técnica dos novos requisitos:** capitães, relato/confirmação de resultado, divergências, disputas (seções técnicas 10.1–10.5), moderação e denúncias de usuários (12.4), denúncias de transação, antifraude comercial e conversa comprador-vendedor (16.5–16.6), com entidades, constraints, APIs e testes correspondentes.
 5. **Pendências não resolvidas a inventar:** divergência de exatamente 50%, abstenções/“voto válido” na votação de troca de quadra, tolerância por modalidade, prazo efetivo do relato, substituição/ausência de capitão e similares permanecem em aberto (seção 26 técnica) até decisão do produto.
 

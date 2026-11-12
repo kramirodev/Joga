@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.10<br>
-**Status:** visão de produto atualizada — Fase 14C com reembolsos e conciliação no beta<br>
-**Data:** 7 de novembro de 2026<br>
+**Versão:** 3.15<br>
+**Status:** visão de produto atualizada — escada de preços, passe com franquia mensal e ingressos grátis por nível<br>
+**Data:** 12 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -23,6 +23,11 @@
 | 3.8 | 7 de novembro de 2026 | Fase 14A: Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste |
 | 3.9 | 7 de novembro de 2026 | Hipótese de `p_t` dinâmico pela mediana de Trust Factor registrada; modelo atual mantém `p_t = 0,2%` fixo e avaliação futura em modo sombra (ADR 0036) |
 | 3.10 | 7 de novembro de 2026 | Fase 14C: reembolso integral em cancelamentos/expirações do beta, reembolso de substituto, extrato e resumo financeiro com PSP simulado |
+| 3.11 | 9 de novembro de 2026 | ADR 0038: reserva da quadra é o serviço contratado; desistência após confirmação e ausência não geram reembolso; substituição com substituto pagante continua reembolsando o substituído; falha da quadra/JOGA mantém reembolso integral |
+| 3.12 | 9 de novembro de 2026 | ADR 0039: fila de substitutos, cutoff de cancelamento, confirmação de presença, adaptação de formato com rodízio e desfecho financeiro pelo resultado da reserva; ADR 0038 superada |
+| 3.13 | 11 de novembro de 2026 | ADR 0042: Ingresso JOGA de R$ 3,00 como unidade de acesso; tabela 2D formato × faixa ancorada em atributo visível; passe com quantidade fixa e reset mensal; natureza jurídica de intermediação com base de cálculo na comissão; margem como saída e piso de 10% líquido; matchmaking por intenção com saldo como restrição; ADR 0021 superada no fluxo de ingresso |
+| 3.14 | 11 de novembro de 2026 | ADR 0043: temporada trimestral e passe trimestral com franquia mensal; XP igual para todos; trilha de 30 níveis; customização em três estados e customização geral do app; estatísticas sem dado de evento. ADR 0044: clãs e troféus passam a integrar o MVP |
+| 3.15 | 12 de novembro de 2026 | Escada de preços decrescente (3/10/30/50 a R$ 3,70/3,40/3,20/3,10); passe a R$ 3,25 com franquia mensal; ingressos grátis por nível (1 no free, 2 no passe); C_c recalibrado para R$ 0,60 por jogador; tabela 2D recomputada; produção no Inter PJ |
 
 ## Como interpretar as decisões neste documento
 
@@ -343,13 +348,15 @@ Cada formato terá um catálogo versionado de requisitos mínimos. Referência i
 Regras:
 
 - O requisito pertence à partida, não ao jogador. Itens diferentes podem ter responsáveis diferentes.
-- Qualquer participante pode assumir um item — “eu levo a bola” — ou registrar que o local fornece. A declaração é um **compromisso**, não prova de posse.
-- A cobertura do kit é confirmada antes do check-in por um responsável logístico: quem criou o lobby manual ou um participante designado pelo grupo. Esse papel não dá autoridade sobre o resultado e não altera a capitania simbólica da seção 9.1.
+- **Itens fixos da modalidade** — rede de vôlei, cesta de basquete, trave — são responsabilidade do **estabelecimento que declarou aceitar a modalidade**. Se o local aceita vôlei, deve fornecer a rede; a falta é falha da quadra.
+- **Itens móveis** — bola, coletes, bolas de tênis — são uma marcação **opcional** do jogador ("tenho bola" / "talvez tenha") ou fornecidos pelo local. Não é compromisso obrigatório, não prova posse e não gera penalidade automática.
+- A cobertura do kit é conferida antes do check-in por um responsável logístico: quem criou o lobby manual ou um participante designado pelo grupo. É um **checklist/aviso**, não um bloqueio. Esse papel não dá autoridade sobre o resultado e não altera a capitania simbólica da seção 9.1.
+- O kit **não bloqueia** o lobby, o matchmaking, a confirmação, o pagamento, o check-in nem o início da partida. A interface mostra o que falta e permite combinar/assumir.
 - O estado do kit é visível apenas aos participantes e ao responsável logístico, com os itens faltantes e quem assumiu cada um.
 - Partidas ranqueadas devem priorizar equipamento fornecido pelo local ou pela organização. O kit não influencia a escolha do capitão.
-- Descumprir um item assumido gera um evento de confiabilidade registrado no servidor, sujeito a confirmação e contestação. Um evento isolado não pune automaticamente.
+- Não levar um item móvel marcado como "tenho" não gera penalidade automática; a marcação é informativa. A ausência de item fixo é falha do estabelecimento.
 - O JOGA não verifica posse, não exige foto do equipamento e não usa “ter bola” como elegibilidade, recomendação ou ranking.
-- Se o kit estiver incompleto, a interface mostra o que falta e permite que outro participante assuma o item ou que a partida seja cancelada/redirecionada conforme as regras de reserva.
+- Se o kit estiver incompleto, a interface mostra o que falta e permite que outro participante assuma o item; a partida não é cancelada automaticamente por causa de item móvel. Item fixo ausente é falha do estabelecimento e segue as regras de reserva/reembolso.
 - Aluguel, venda ou caução de equipamento permanecem fora do escopo inicial (seção 15).
 
 A decisão está registrada na ADR 0030.
@@ -773,7 +780,7 @@ O JOGA não construirá carteira própria nem custodiará valores de terceiros d
 - Cada participante paga sua cobrança Pix.
 - A cobrança é dividida entre a parte do estabelecimento e a taxa do JOGA.
 - O valor do estabelecimento permanece no saldo do recebedor até a liberação.
-- O JOGA solicita a liberação somente depois que **tudo estiver confirmado**, inclusive a realização da partida.
+- O JOGA solicita a liberação **2 h após o início da reserva**, depois de pagamentos confirmados, conforme a ADR 0040; o serviço contratado é a quadra, não a realização da partida.
 - A liberação é idempotente e registrada no ledger interno.
 
 A liberação não pode depender de confirmação manual indefinida. Deve existir uma regra de liberação automática após `N` horas da partida, precedida de janela de disputa. O valor de `N` permanece pendente.
@@ -825,7 +832,7 @@ O provedor precisa suportar, direta ou contratualmente:
 - Tratamento de pagamentos tardios.
 - Conciliação e relatórios.
 
-O ideal é que o PSP mantenha controle dos valores enquanto os pagamentos são concluídos e permita a distribuição somente depois da confirmação coletiva.
+O ideal é que o PSP mantenha controle dos valores enquanto os pagamentos são concluídos e permita a distribuição no horário da reserva, conforme a ADR 0040.
 
 **Se nenhum PSP conseguir oferecer um fluxo adequado de pagamentos individuais, split e liberação controlada, o lançamento das reservas com pagamento integrado deverá aguardar uma solução viável.** Essa capacidade é condição de viabilidade comercial, não um detalhe de integração.
 
@@ -946,28 +953,37 @@ O aplicativo não poderá informar que o reembolso foi concluído enquanto o PSP
 
 ### 14.3 Pagamentos tardios
 
-Pagamentos tardios de reservas canceladas também deverão passar pelo fluxo de devolução.
+Pagamentos tardios de reservas canceladas também deverão passar pelo fluxo de devolução, inclusive quando o cancelamento ocorreu depois da confirmação: a cobrança não corresponde a uma vaga ativa.
 
 O mesmo vale para pagamentos de participantes que já foram substituídos. O sistema deverá identificar a cobrança, impedir a reativação automática da reserva e iniciar o reembolso.
 
 ### 14.4 Cancelamento depois da reserva confirmada
 
-As regras de cancelamento depois de uma reserva já confirmada precisam ser definidas separadamente, respeitando as condições contratuais e a legislação aplicável.
+A política consolidada é definida pela **ADR 0039**:
 
-O valor do estabelecimento só é liberado depois que tudo estiver confirmado, inclusive a realização da partida. Se houver cancelamento antes da liberação, o estorno deve ser feito no PSP e o ledger interno deve refletir a reversão.
+- O serviço contratado é a reserva coletiva da quadra; a realização da partida é melhor esforço e depende do comparecimento dos participantes.
+- **Antes do cutoff:** o jogador que cancela não recebe reembolso. O sistema abre a janela T4 de substituição. Se um substituto pagar a vaga, o substituído recebe reembolso da própria cobrança e a reserva continua. Se não houver substituto, o lobby é cancelado, o hold é liberado e os **demais pagantes** recebem reembolso integral; quem cancelou continua sem reembolso.
+- **Depois do cutoff:** não há cancelamento voluntário com reembolso. A ausência é no-show: sem reembolso, com possibilidade de um substituto da fila ocupar a vaga já paga.
+- **Falha da quadra ou do JOGA:** reembolso integral, respeitados os direitos legais do consumidor.
+- O destino do valor não reembolsado do cancelador (compensação da quadra ou crédito de boa-fé) permanece pendente e exige evento próprio no ledger.
+
+O valor do estabelecimento é liberado 2 h após o início da reserva, conforme a ADR 0040. Se a quadra mantém o horário disponível, a reserva é entregue mesmo que a partida não ocorra; a ausência de jogadores não impede o repasse. Se a quadra falhar, não há repasse e o estorno deve refletir a reversão.
 
 Se o estabelecimento já tiver sacado o valor, a recuperação deixa de ser automática. Esse é um evento de cauda, tratado por `p_t` e por cláusula contratual específica.
 
-### 14.5 Desistência individual após confirmação
+### 14.5 Desistência individual, fila de substitutos e presença
 
-A política para desistência individual após a confirmação da reserva permanece pendente. Ela deverá considerar, no mínimo:
+A política aprovada na **ADR 0039** é:
 
-- Se a vaga pode ser substituída.
-- Se o valor é reembolsável e em qual percentual.
-- Se a quadra sofre impacto operacional.
-- Se há prazo mínimo para desistência.
-- Se a taxa de serviço é devolvida.
-- Se a desistência afeta a confiabilidade do jogador.
+- **Fila de substitutos:** cada lobby pode manter uma fila em standby. O alvo é `(titulares - quórum mínimo) + 1`, limitado a 4; na prática, muitas vezes basta **+1 para fechar o time par**. Casual é opcional; ranqueado exige pelo menos 1 substituto em standby.
+- **Substituto não é convocado** até haver vaga. Ele confirma disponibilidade em T-2h; se não confirmar, sai da fila.
+- **Antes do cutoff**, com substituto pagante: o substituído recebe reembolso; o substituto paga; T3 não reinicia.
+- **Sem substituto antes do cutoff:** o lobby é cancelado, os demais pagantes recebem reembolso e quem cancelou não recebe.
+- **Depois do cutoff/no-show:** o ausente não recebe reembolso; um substituto chamado pode jogar na **vaga já paga**, sem nova cobrança, e a quadra recebe normalmente.
+- **Presença:** pré-check-in em T-1h (obrigatório no ranqueado) e confirmação no local em T-30m, com geofence, QR/NFC, capitão ou estabelecimento. GPS não é prova isolada; o servidor valida e há fallback.
+- **Confiabilidade:** desistências e ausências geram eventos de Trust Factor em fase própria; uma ausência isolada não gera punição pesada. Cancelamentos da quadra afetam a confiabilidade comercial da quadra, não o ranking do jogador.
+- **Limite proposto:** 2 cancelamentos confirmados por 30 dias; acima disso, Trust Factor e restrição temporária a partidas ranqueadas.
+- **Transparência:** a regra deve aparecer antes do pagamento, nos termos de uso e nas condições da reserva, com exemplos claros.
 
 ### 14.6 Descumprimento pelo estabelecimento
 
@@ -999,6 +1015,27 @@ A precificação separa três coisas:
 
 Não contar o valor principal como perda. Não contar `C_c` duas vezes. Não usar o markup de segurança como se fosse lucro livre.
 
+### 14.9 Adaptação de formato, presença e temporizadores
+
+Quando o número de presentes não fecha o formato original, a partida pode ser adaptada para manter o jogo:
+
+| Presentes | 5x5 | 6x6 | 3x3 |
+|---:|---|---|---|
+| 12 | — | 6x6 | — |
+| 11 | — | 5x5 + 1 rodízio | — |
+| 10 | 5x5 | 5x5 | — |
+| 9 | **4x4 + 1 rodízio** | **4x4 + 1 rodízio** | **três times de 3** |
+| 8 | 4x4 | 4x4 | 4x4 ou 3x3 + 2 |
+| 7 | **3x3 + 1 rodízio** | **3x3 + 1 rodízio** | **3x3 + 1 rodízio** |
+| 6 | 3x3 | 3x3 | 3x3 |
+| menos de 6 | sem jogo | sem jogo | sem jogo |
+
+- O excedente entra em **rodízio**, não em reembolso. Reembolsar um jogador para “fechar 4x4” deixa o valor abaixo do preço da quadra; só é possível se a quadra reduzir o preço ou o JOGA conceder crédito de boa-fé.
+- Rodízio por tempo ou por evento, com fila única e registro de minutos jogados.
+- Partida adaptada de 5x5 para 4x4 não conta como 5x5 ranqueado; usar casual ou o MMR do formato efetivamente jogado.
+- Temporizadores: T1 60 min; T2 30 min comercial com máximo 60 min; T3 60 min; T4 = 25% do tempo restante, piso 30 min, teto 12 h, terminando no cutoff; cutoff de cancelamento 6 h antes; fila confirma em T-2h; pré-check-in em T-1h; presença no local em T-30m; substituto fechado em T-15m.
+- Contestação financeira e repasse (`N`) continuam **não definidos** e não se confundem com esses prazos.
+
 ---
 
 ## 15. Comércio de produtos — fora do escopo
@@ -1029,16 +1066,18 @@ Qualquer reintrodução exige nova decisão de produto, nova especificação té
 
 A monetização inicial deverá se concentrar principalmente em:
 
-1. **Taxas de serviço nas reservas de quadras** originadas e concluídas pelo JOGA.
+1. **Margem de intermediação no Ingresso JOGA** — pacotes e passe (ADR 0042, §16.7 e §16.8).
 2. **Parcerias comerciais.**
 3. **Patrocínios.**
 4. **Publicidade contextual**, quando houver audiência suficiente.
 
 Funcionalidades essenciais de jogadores, matchmaking, partidas e comunidades continuarão predominantemente gratuitas.
 
-Assinaturas Premium poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+A assinatura do produto é o **passe trimestral** definido na ADR 0043. Não criar outra assinatura apenas para adicionar uma fonte de receita.
 
 ### 16.2 Comissão sobre reservas
+
+> **Escopo.** Esta seção descreve a comissão da **reserva avulsa**. No fluxo de ingresso, a receita é a margem entre o preço do ingresso e a cota da quadra (ADR 0042 §5), e a variável `c` não existe.
 
 O JOGA poderá cobrar uma taxa de serviço sobre reservas originadas pela plataforma.
 
@@ -1066,7 +1105,7 @@ A publicidade avançada depende de audiência e volume de uso. Não deve ser tra
 
 ### 16.5 Assinaturas
 
-Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrente justificável. Não criar uma assinatura apenas para adicionar uma fonte de receita.
+O passe trimestral da ADR 0043 é a assinatura do produto: cobrança única por trimestre, franquia de ingressos entregue mês a mês, trilha de temporada, customização e estatísticas. Não existe passe mensal. Não criar uma assinatura apenas para adicionar uma fonte de receita.
 
 ### 16.6 Regras gerais de monetização
 
@@ -1077,6 +1116,45 @@ Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrent
 - Nenhuma receita de comércio de produtos no escopo inicial.
 - Toda cobrança deverá ser explicável ao usuário antes do pagamento.
 
+### 16.7 Ingresso JOGA
+
+O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0042. Ele não é saldo em reais, não é moeda e não é transferível: é uma unidade de acesso pessoal, com preço de referência de R$ 3,10 no pacote grande e R$ 3,70 no avulso.
+
+- **O jogador vê apenas ingressos.** Reais aparecem somente no checkout de pacote e de passe.
+- **Custo da partida em ingressos** decorre de uma tabela 2D (formato × faixa). A faixa é ancorada em atributo visível — cobertura e dia/noite —, nunca no preço da quadra.
+- **Consumo na confirmação da reserva**, não no check-in. A matriz de devolução da ADR 0039 é preservada, sempre em ingressos.
+- **Passe trimestral** com franquia mensal de 10, 20, 30 ou 50 ingressos, quantidade fixa, reset mensal e sem acumular. Ingresso comprado nunca expira.
+- **Sem mercado de saldo:** sem transferência, revenda, saque ou troca entre usuários. A única exceção é o direito de arrependimento de 7 dias.
+- **Matchmaking por intenção:** região, horário, formato e nível primeiro; o saldo é restrição sobre o resultado, não a consulta.
+- **Reajuste sem quebrar a reserva feita:** o estabelecimento reajusta apenas janelas futuras sem reserva, na virada de temporada e com aviso de 30 dias. Pausar ou fechar com reserva confirmada conta como falha da quadra e devolve os ingressos.
+
+A natureza jurídica é de **intermediação**: o saldo é obrigação com o jogador e a parte da quadra é obrigação com o estabelecimento, reconhecida na reserva. A base de cálculo pretendida dos tributos é a comissão, sujeita a parecer fiscal.
+
+O saldo carregado é **passivo, não receita**. O ganho econômico do modelo pré-pago é capital de giro dispensado — não precisa ser contratado para pagar as quadras — e não rendimento de float nem receita de ingresso não usado.
+
+Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre reservas, parcerias, patrocínios e publicidade contextual. Publicidade e customização continuam **não** sendo vantagem competitiva.
+
+### 16.8 Temporada, passe e customização
+
+A temporada, o passe trimestral e as regras de customização estão na ADR 0043.
+
+- **Temporada de 3 meses.** Um único reset, alinhado ao passe. Não existe passe mensal.
+- **Passe trimestral** com cobrança única e franquia mensal de 10, 20, 30 ou 50 ingressos, a **R$ 3,25 por ingresso** (R$ 32,50 a R$ 162,50 por mês). A entrega é mensal e não pode ser adiantada.
+- **Pacotes com preço decrescente:** 3 a R$ 3,70 · 10 a R$ 3,40 · 30 a R$ 3,20 · 50 a R$ 3,10. O avulso é mais caro de propósito; é ele que financia o pacote grande.
+- **Ingressos grátis por nível:** o tier gratuito recebe 1 a cada 5 níveis (até 6 por temporada) e o passe recebe 2 (até 12). Expiram no fim da temporada.
+- O passe custa mais por ingresso que o pacote grande porque entrega algo fora do dinheiro real: franquia mensal, ingressos grátis, Temporada e cosméticos.
+- **XP igual para todos.** A assinatura muda o que se desbloqueia, nunca a velocidade de progressão.
+- **Trilha de 30 níveis**, três missões semanais, **streak de vitórias com validade semanal** e nível de temporada (bronze/prata/ouro) que reseta na virada e **é visível para todos, inclusive no free**.
+- **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional.
+- **Customização em três estados:** livre, ganho por XP e perk do passe. Traço de identidade e acessibilidade nunca são pagos.
+- **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
+- **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual, partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução do MMR, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor nem dado de evento de jogo.
+- **Não são benefícios do passe:** convite de estreia, remoção de anúncios, bônus de XP, badges, escudo de clã e as estatísticas essenciais.
+- **Inteligência de rede** no passe: mapa de calor de horários, densidade competitiva por quadra e ocupação, sempre em faixas e com apresentação simples. Free vê a lista de quadras mais usadas. Não é filtro de busca.
+- **Busca por CEP é benefício do passe.** O plano gratuito usa apenas a localização do aparelho. A busca por CEP permite declarar intenção em qualquer lugar e sobrecarrega o motor com partidas que não vão acontecer; a barreira de custo reduz o volume e dá uma vantagem real ao assinante.
+- **Lobby privado é benefício do passe.**
+- **Escudo de clã é livre** — o clã aparece no perfil de todo jogador. Do passe, só o **destaque no perfil do clã**.
+
 ---
 
 ## 17. Política de precificação
@@ -1086,6 +1164,8 @@ Assinaturas poderão ser avaliadas futuramente, desde que exista valor recorrent
 A taxa deve cobrir o custo real de operar a reserva, o risco de cancelamento e a margem necessária para manter o serviço, sem cobrar do jogador um coeficiente arbitrário sobre custos que não existem.
 
 A política não usa piso, preço variável nem teto percentual como mecanismos independentes. Usa uma fórmula com componentes explícitos e uma regra de elegibilidade.
+
+> **Escopo.** Esta seção vale para reserva avulsa paga em reais. No **fluxo de ingresso** ela é substituída pela ADR 0042: o preço passa a vir da tabela 2D, a margem passa a ser saída (`(R − custeio) / V`) e o piso passa a ser 10% líquido no topo da faixa. Permanecem válidos os componentes de custo e a lógica de elegibilidade, recalibrados.
 
 ### 17.2 Fórmula
 
@@ -1326,52 +1406,32 @@ O exemplo documentado de `POST /transfers` do Pagar.me retorna `fee: 367`. Se a 
 
 Abaixo de aproximadamente **R$ 100**, a taxa ultrapassa 25% no cenário de 20% de conclusão. A resposta correta não é subsidiar a reserva: é não oferecer pagamento integrado naquela faixa, renegociar o preço da quadra ou aumentar a conclusão operacional.
 
-### 18.8 PSP: Pagar.me Flex e alternativa centralizada
+### 18.8 PSP: Inter em produção e Mercado Pago no teste
 
-A pesquisa comparou PSPs com foco em Pix individual, split, saldo por recebedor e liberação controlada.
+> **Escopo.** O split e o recebedor analisados aqui valem para o fluxo de **reserva avulsa**. No fluxo de ingresso (ADR 0042) a cobrança é por pacote ou passe, sem split e sem recebedor de marketplace.
 
-**Pagar.me Flex — primeira opção, condicionada.**
+**Inter PJ — produção.**
 
-A documentação V5 sustenta:
+- Conta corrente, não conta de pagamento: o dinheiro cai direto na conta da PJ.
+- API Pix e de extratos gratuita; Pix de saída gratuito.
+- **0,90% no QR dinâmico imediato**, mínimo de R$ 0,10 e teto de R$ 1,50. O teto faz o passe grande custar 0,35% por real transacionado.
+- Usar o **QR imediato**, não o com vencimento (0,99%).
+- Dispensa segundo provedor para o repasse: recebe e paga pela mesma conta.
 
-- várias cobranças no mesmo `order`, enquanto o pedido estiver aberto;
-- Pix com split;
-- split por valor fixo (`flat`) ou percentual (`percentage`);
-- recebedor com conta digital e saldo próprio;
-- `POST /transfers` com `recipient_id` e `Idempotency-Key`;
-- `transfer_enabled=false` para desativar transferência automática;
-- estorno com regras de split.
+**Mercado Pago — protótipo e beta fechado (ADR 0034).** Já integrado. Restrito ao teste: libera o saldo do vendedor com prazo e só paga contas Mercado Pago.
 
-O Flex não publica tarifa Pix específica. Os 0,99% divulgados são da oferta Essencial e **não podem** ser tratados como tarifa garantida. A tarifa do Flex precisa ser negociada.
+**Pagar.me — reserva técnica.** Forte em split e recebedores; é o candidato natural se o produto migrar para cobrança na reserva, em que a quadra já é conhecida no momento da cobrança.
 
-**Inter — alternativa centralizada.**
+**Por que a tarifa fixa foi descartada:** Asaas (R$ 2,15 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50) cobram por cobrança. Com dez cobranças por partida, a tarifa fixa consome uma parte desproporcional do valor da quadra.
 
-O Inter oferece Pix com tarifa pública de 0,90% por QR Code imediato (mínimo de R$ 0,10 e máximo de R$ 1,50 por transação, com faixas gratuitas mensais). O valor fica na conta do JOGA; a quadra não saca sozinha e o reembolso é operacionalmente mais simples. Em troca, aumenta a exposição jurídica e regulatória de custódia de recursos de terceiros.
+Perguntas abertas para o Inter antes do contrato:
 
-| Critério | Pagar.me Flex (split) | Inter (centralizado) |
-|---|---|---|
-| Quem custodia | PSP, no saldo do recebedor | JOGA |
-| Quadra saca antes | risco a confirmar | impossível |
-| Reembolso | estorno no PSP | do saldo do JOGA |
-| Inadimplência da quadra | risco no estorno | risco no repasse |
-| Fardo regulatório | obrigações de facilitador de pagamento | possível enquadramento como facilitador |
-| Interface financeira do recebedor | obrigatória | não se aplica |
-| Complexidade de código | ledger de liberação | ledger + repasse + conciliação |
-
-**PSPs com tarifa fixa alta por Pix foram excluídos como primeira opção:** Asaas (R$ 1,99 por Pix), AbacatePay (R$ 0,80 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50). Com dez cobranças por reserva, a tarifa fixa consome uma parte desproporcional do valor da quadra.
-
-A decisão e as perguntas abertas estão no ADR 0021. O JOGA não deve fechar contrato sem resposta formal sobre:
-
-1. aprovação como cliente PSP com split no Flex;
-2. tarifa Pix negociada;
-3. mensalidade, setup ou cobrança por recebedor;
-4. tarifa por split, transferência ou saque;
-5. saque autônomo do estabelecimento com `transfer_enabled=false`;
-6. liberação por `POST /transfers` somente após confirmação;
-7. disponibilidade imediata do Pix no saldo do recebedor;
-8. retenção de saldo para novos recebedores;
-9. comportamento do estorno Pix com split na V5;
-10. responsabilidade e efeito do MED sem saldo.
+1. aceite escrito da atividade (crédito pré-pago de serviços) e do perfil transacional;
+2. tarifa confirmada para conta PJ de LTDA;
+3. teto e mínimo por transação aplicados a volume;
+4. estorno parcial de Pix por API, após liquidação, com prazo;
+5. webhook e idempotência por `txid`;
+6. limite de requisições, sandbox e prazo de onboarding.
 
 ### 18.9 Financiamento dos cancelamentos
 
@@ -1391,6 +1451,8 @@ provisão total = R$ 15,87
 ```
 
 O custo esperado de cancelamento é financiado pela parcela `C_c·μ·S` embutida na taxa de todas as reservas: as reservas que concluem pagam a provisão que cobre as que cancelam. A comissão `c·V` permanece separada, para custo fixo e lucro. O buffer `S` existe para a variância, não para o valor principal.
+
+> **No fluxo de ingresso** (ADR 0042) o `q` sobe, porque o pagamento sai do caminho, e o `C_c` cai, porque cancelar devolve ingresso e não dinheiro. Com `q = 75%` e `C_c = R$ 0,47`, a provisão é **R$ 0,60 por jogador** — não R$ 15,87 por reserva. Ver ADR 0042 §5.
 
 Para continuidade histórica: no desenho antigo, a comissão mais o markup sobre a reserva concluída cobriam o custo dos cancelamentos. Com `V = R$ 180`, `c = 10%`, `C_k ≈ R$ 4,86` e markup de 80%, o ponto de equilíbrio ocorria com `C_c ≈ R$ 5,47`. Esse número continua útil como referência de quanto custo de cancelamento a comissão mais o buffer suportavam. Na fórmula nova, se `C_c` subir acima do previsto, a taxa sobe e a reserva pode se tornar inelegível; não há prejuízo silencioso.
 
@@ -1741,10 +1803,10 @@ O roadmap abaixo representa uma visão de produto, não substitui a ordem técni
 | 7. Moderação | Denúncias de perfil, análise contextual por IA e revisão humana |
 | 8. Descoberta de espaços | Espaços públicos e particulares, informações operacionais e compatibilidade |
 | 9. Painel de gestão de quadras | Organizações, espaços, permissões, horários, exceções e histórico |
-| 10. Onboarding e interface financeira | KYC do recebedor, agenda de recebíveis, contratos, comprovantes e contestação |
+| 10. Onboarding e interface financeira | Cadastro do fornecedor e chave de repasse, agenda de recebíveis, contratos, comprovantes e contestação |
 | 11. Solicitação e confirmação de reservas | Solicitação ao estabelecimento, aceite, recusa e compromisso condicional |
 | 12. Bloqueio temporário e disponibilidade | Bloqueio do espaço específico, expiração e prevenção de sobreposição |
-| 13. Pagamentos Pix e split | Cobranças simultâneas, PSP, split, webhooks, conciliação e confirmação |
+| 13. Pagamentos Pix e ingresso | PSP, cobrança por pacote e passe, webhooks, conciliação e repasse ao fornecedor |
 | 14. Substituição, cancelamentos e reembolsos | Substituição dentro da janela, cancelamentos, reembolsos, MED e estados financeiros |
 | 15. Clãs e rankings | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
 | 16. Moderação e Trust & Safety | Denúncias de perfil, análise contextual por IA e revisão humana |
@@ -1814,7 +1876,7 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 26. O backend controla todos os prazos; notificações e o relógio do dispositivo não são fonte oficial.
 27. O JOGA não construirá carteira própria nem custódia financeira informal.
 28. Se nenhum PSP atender ao fluxo de pagamentos individuais, split e liberação controlada, o lançamento do pagamento integrado deverá aguardar.
-29. O Pagar.me Flex é a primeira opção de PSP, condicionada a confirmação contratual; o Inter é a alternativa centralizada.
+29. O **Inter PJ** é o PSP de produção; o Mercado Pago fica no protótipo e beta; o Pagar.me é reserva técnica e candidato do fluxo de reserva avulsa.
 30. Um estabelecimento com recebedor em credenciamento não pode originar reserva paga; o KYC é portão de elegibilidade.
 31. A quadra só recebe a liberação depois que tudo estiver confirmado, inclusive a realização da partida; a liberação automática após `N` horas e a janela de disputa dependem de definição.
 32. A interface financeira do estabelecimento é escopo obrigatório quando houver split (Res. 264/349).

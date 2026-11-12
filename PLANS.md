@@ -20,12 +20,17 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 | 11 | Organizações e painel de gestão | Organizações, membros, papéis, isolamento e painel web dos estabelecimentos (JOGA y GESTÃO) | 3 |
 | 12 | Quadras, agenda e KYC | Espaços, agenda, preços, bloqueios e onboarding/KYC do recebedor | 11 |
 | 13 | Reservas e temporizadores | Solicitação, aceite, bloqueio, T1/T2/T3, substituição e máquina de estados | 12 |
-| 14 | Pagamentos Pix e reembolsos | PSP, cobranças individuais, split/custódia, webhooks, ledger e reembolsos | 13 |
-| 15 | Interface financeira e conciliação | Extrato, recebíveis, liberação, contestação e conciliação do estabelecimento | 14 |
+| 14 | Pagamentos Pix e reembolsos | PSP, cobrança por compra, webhooks, ledger, estorno parcial e repasse | 13 |
+| 14D | Ingresso, carteira e temporada | Pacotes e passe, tabela 2D, carteira de ingressos, XP, trilha e catálogo cosmético | 12, 14 |
+| 15 | Interface financeira e conciliação | Extrato, repasses a receber, contestação e conciliação do estabelecimento | 14, 14D |
 | 16 | Clãs e troféus | Clãs abertos/fechados, chat de clã, troféus por modalidade e temporadas | 8 |
 | 17 | Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | 9, 16 |
 | 18 | Publicidade | Quadras, estabelecimentos e marcas patrocinados, sem efeito competitivo | 13, 15 |
 | 19 | Hardening final e lançamento comercial | Hardening completo, LGPD, revisão jurídica e go-live comercial | 10–18 |
+
+> **Escopo do MVP.** Clãs e troféus (**Fase 16**) passam a integrar o MVP e são pré-requisito do primeiro evento de marketing, conforme a **ADR 0044**. A fase pode rodar em paralelo com as Fases 11 a 15, mantendo a dependência técnica da Fase 8, e precisa estar concluída antes da Fase 19.
+
+> **Reescopo pelo ingresso.** As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 0042 mudou três objetos — a cobrança, o reembolso e o recebedor — e a Fase **14D** concentra o modelo novo. O impacto fase a fase está em `docs/PENDENCIAS.md`, seção "Reescopo das Fases 11–15".
 
 ## Fase 0 — Repositório e governança
 
@@ -139,11 +144,11 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 12 — Quadras, agenda e KYC
 
-**Status:** 12A (quadras, fotos e agenda) implementada e validada localmente em 2026-11-07; 12B (KYC/recebedor) bloqueada por decisão e contrato de PSP.
+**Status:** 12A (quadras, fotos e agenda) implementada e validada localmente em 2026-11-07; 12B (cadastro do estabelecimento como fornecedor e chave de repasse) pendente.
 
-**Escopo 12A — quadras, fotos e agenda:** cadastro de espaços/quadras, vínculo esporte–quadra, fotos de quadra com upload autenticado por organização, revisão, armazenamento privado, remoção e retenção; agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; ligação entre o catálogo `venues` da Fase 4 e o perfil comercial `organization_venues` da Fase 11.
+**Escopo 12A — quadras, fotos e agenda:** cadastro de espaços/quadras, **faixa de preço com atributo visível e teto de valor (ADR 0042 §9)**, vínculo esporte–quadra, fotos de quadra com upload autenticado por organização, revisão, armazenamento privado, remoção e retenção; agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; ligação entre o catálogo `venues` da Fase 4 e o perfil comercial `organization_venues` da Fase 11.
 
-**Escopo 12B — KYC/recebedor:** onboarding do estabelecimento como recebedor no PSP, com dados cadastrais, conta bancária na mesma titularidade e validação de identidade/KYC; estados do recebedor e regra que impede reserva paga sem recebedor ativo. Depende de decisão e contrato de PSP.
+**Escopo 12B — fornecedor e repasse:** dados cadastrais do estabelecimento, chave Pix ou conta bancária de titularidade do próprio CNPJ, contrato de intermediação com teto de valor por faixa e regra que impede reserva paga sem chave de repasse validada. Não há KYC de recebedor de marketplace: a quadra é fornecedora, paga por Pix.
 
 **Não fazer:** exigir integração ERP/PDV; implementar logística, produtos ou estoque; permitir reserva paga para recebedor em credenciamento; representar espaço público como reservável sem autorização verificável; aceitar foto de pessoa, upload livre ou URL arbitrária; publicar foto sem revisão.
 
@@ -153,31 +158,45 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 **Status:** 13A (backend de reservas, holds e T1/T2/T3) e 13B (painel mobile de reservas e ajustes de painel) implementados e validados localmente em 2026-11-07; criação automática a partir do lobby, T2 em horário comercial e pagamentos reais pendentes.
 
-**Escopo:** solicitação de reserva ao estabelecimento, aceite/recusa, bloqueio temporário do espaço específico, T1 (confirmação de participação), T2 (resposta do estabelecimento), T3 (bloqueio e pagamento), expiração, substituição de participantes, cancelamento antes da confirmação, origem `JOGA` e máquina de estados auditável.
+**Escopo:** solicitação de reserva ao estabelecimento, aceite/recusa, bloqueio temporário do espaço específico, T1 (confirmação de participação), T2 (resposta do estabelecimento), T3 (bloqueio e confirmação do acesso), expiração, substituição de participantes, cancelamento antes da confirmação, origem `JOGA` e máquina de estados auditável. **No fluxo de ingresso não há cobrança na reserva:** o ingresso é consumido na confirmação (ADR 0042). O fluxo de reserva avulsa mantém a cobrança por participante.
 
-**Não fazer:** abrir cobrança antes do aceite e do bloqueio; confirmar reserva sem todos os pagamentos; permitir transição livre por endpoint; prorrogar bloqueio ou reiniciar prazo na substituição; cobrar comissão de reserva externa sem acordo explícito.
+**Não fazer:** abrir cobrança antes do aceite e do bloqueio; confirmar reserva sem todos os pagamentos no fluxo avulso ou sem saldo no fluxo de ingresso; permitir transição livre por endpoint; prorrogar bloqueio ou reiniciar prazo na substituição; cobrar comissão de reserva externa sem acordo explícito.
 
-**Aceite:** dois usuários não bloqueiam o mesmo intervalo; timers controlados pelo backend e idempotentes; substituição não duplica vaga nem cobrança; reserva não confirma com pagamento incompleto; usuário só atua em reservas das quais participa; matriz de transições válidas/inválidas testada.
+**Aceite:** dois usuários não bloqueiam o mesmo intervalo; timers controlados pelo backend e idempotentes; substituição não duplica vaga nem cobrança; no fluxo avulso a reserva não confirma com pagamento incompleto e no fluxo de ingresso não confirma sem saldo suficiente; usuário só atua em reservas das quais participa; matriz de transições válidas/inválidas testada.
 
 ## Fase 14 — Pagamentos Pix e reembolsos
 
-**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Pagar.me produção, split/retenção e reembolso real) pendente.
+**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Inter PJ em produção, Pix, estorno parcial e repasse) pendente.
 
-**Escopo:** integração com PSP, um `order` por reserva e uma cobrança Pix por participante; no protótipo/beta, Mercado Pago com custódia centralizada de teste e repasse após `COMPLETED`; em produção, split/retenção com Pagar.me; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estados financeiros individuais; reembolso integral quando a reserva não se completa; pagamentos tardios; conciliação básica.
+**Escopo:** integração com PSP, uma cobrança Pix por compra de pacote ou passe; Mercado Pago no protótipo/beta e **Inter PJ em produção**; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estorno parcial de Pix para os 7 dias do CDC; repasse ao estabelecimento em `starts_at + 2h` (ADR 0040); conciliação básica. O fluxo de ingresso segue a ADR 0042 e não usa split nem recebedor de marketplace.
 
 **Não fazer:** construir processador próprio ou carteira custodial; armazenar dados completos de cartão; confiar no retorno visual do app; abrir cobrança antes do bloqueio; liberar valor ao estabelecimento antes da confirmação; deduzir tarifas do reembolso do jogador.
 
 **Aceite:** status financeiro só muda por evento autenticado ou consulta server-to-server; replay de webhook não duplica pagamento, vaga ou reembolso; reembolso devolve principal e taxa; cobrança de participante substituído vai para reembolso; ledger e PSP permanecem conciliáveis; autorização negativa entre reservas testada.
 
+## Fase 14D — Ingresso, carteira e temporada
+
+**Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
+
+**Escopo:** ingresso como unidade de acesso pré-paga; pacotes com escada de preço (3/10/30/50) e passe trimestral com franquia mensal; tabela 2D formato × faixa, versionada e congelada na reserva; consumo na confirmação e devolução em ingresso conforme a ADR 0039; carteira com três buckets (custeio, faturamento e margem) e provisão de 100% do passivo; XP em ledger append-only; trilha de 30 níveis, missões semanais, streak de vitórias e nível de temporada; catálogo cosmético em três estados, com atribuição e revogação de itens de passe; ingressos grátis por nível; inteligência de rede; crédito de estreia.
+
+**Não fazer:** recorrência automática ou Pix Automático; transferência, revenda ou saque de ingresso; validade para ingresso comprado; lançar rendimento de float ou breakage como receita; mapa de calor de evento de jogo; qualquer item que altere MMR, Trust Factor, matchmaking ou troféu de clã.
+
+**Aceite:** compra idempotente por chave; consumo idempotente por reserva; devolução em ingresso conforme a matriz da ADR 0039; tabela versionada e gravada na reserva; XP sem duplicidade por `ref_id`; nível e atribuição reconstruíveis a partir do ledger; item de passe revogado ao fim do ciclo; nenhum item altera competitividade; ledger conciliável com o PSP; painel de passivo e cobertura de caixa.
+
 ## Fase 15 — Interface financeira e conciliação
 
-**Escopo:** interface financeira do estabelecimento com extrato por reserva e cobrança, agenda de recebíveis, status de liberação, comprovantes, dados contratuais, canal de contestação e histórico de estornos; liberação do valor somente depois da confirmação da reserva e da realização da partida; liberação automática após `N` horas, com janela de disputa; conciliação periódica; tratamento de MED, chargeback e estorno sem saldo; obrigações de transparência aplicáveis (Res. 264/349).
+**Status:** 15A (liberações, contestações, extrato, recebíveis e conciliação interna) e 15B (aba Financeiro do painel) implementados como **proposta técnica local** em 2026-11-09. A ADR 0039 define a política consolidada de cancelamento, substituição, presença e ausência e supera a ADR 0038. A ADR 0038 foi revertida e as fatias 1–6 da 0039 (fila, chamada automática, cancelamento individual, T4/T5, reembolso sem o desistente, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação) estão implementadas. A ADR 0040 define o repasse 2 h após o início da partida. A ADR 0041 implementa o Trust Factor interno (penalidades, recuperação e restrição ranqueada). UI de presença/suporte continua pendente. Nenhuma decisão de prazo, repasse, moderação financeira ou tratamento de divergência foi aprovada; PSP real, MED/chargeback, comprovantes fiscais, KYC e os três relógios (pagamento, contestação e repasse) continuam pendentes.
 
-**Não fazer:** liberar antes da confirmação; esconder taxas ou ajustes; transformar a interface em ERP; executar ajuste manual irreversível sem justificativa e auditoria; tratar saldo do recebedor como garantia automática contra MED.
+**Escopo:** interface financeira do estabelecimento com extrato por reserva e por repasse, agenda de repasses a receber, status de repasse, comprovantes, dados contratuais, canal de contestação e histórico de estornos; **repasse em `starts_at + 2h`** (ADR 0040); conciliação periódica; tratamento de MED, chargeback e estorno sem saldo; obrigações de transparência aplicáveis (Res. 264/349). O fluxo de ingresso não usa split nem recebedor: o estabelecimento é fornecedor e recebe por Pix.
 
-**Aceite:** liberação idempotente e registrada no ledger; extrato do estabelecimento bate com o PSP; contestação tem prazo, canal e decisão auditável; estabelecimento só vê os próprios dados; relatório de recebíveis reproduzível; eventos de MED e estorno sem saldo registrados e tratados.
+**Não fazer:** repassar antes da confirmação; esconder taxas ou ajustes; transformar a interface em ERP; executar ajuste manual irreversível sem justificativa e auditoria; tratar repasse como garantia automática contra MED.
+
+**Aceite:** repasse idempotente e registrado no ledger; extrato do estabelecimento bate com o PSP; contestação tem prazo, canal e decisão auditável; estabelecimento só vê os próprios dados; relatório de repasses reproduzível; eventos de MED e estorno sem saldo registrados e tratados.
 
 ## Fase 16 — Clãs e troféus
+
+**Status:** antecipada para o **escopo do MVP** pela ADR 0044. Pode rodar em paralelo às Fases 11 a 15, mantendo a dependência da Fase 8, e deve estar concluída antes do primeiro evento de marketing e antes da Fase 19. Uma fatia mínima de moderação de chat de clã entra junto com esta fase.
 
 **Escopo:** clãs abertos/fechados com membros, administradores, convites e limites; chat de clã em texto e referências internas; vínculo clã–jogador na data de cada partida; troféus por modalidade com fórmula-base 50/30/20 versionada, considerando os 10 melhores membros elegíveis, temporadas configuráveis e snapshots; ciclo de moderação do chat segue a Fase 17.
 
