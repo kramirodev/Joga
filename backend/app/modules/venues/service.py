@@ -8,11 +8,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.modules.bookings.models import Booking
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.organizations.models import OrganizationMembership, OrganizationVenue
@@ -23,6 +26,7 @@ from app.modules.organizations.service import (
     OrganizationService,
     VenueNotFound,
 )
+from app.modules.pricing.service import PriceAboveCeiling, resolve_band
 from app.modules.profile.models import Sport
 from app.modules.venues.models import (
     VenueAvailability,
@@ -36,6 +40,16 @@ from app.modules.venues.storage import PhotoNotFound as StoredPhotoNotFound
 from app.modules.venues.storage import PhotoStorage, PhotoStorageError
 
 REVIEWER_ROLES = frozenset({Role.OWNER, Role.ADMIN})
+
+# Reservas que ainda podem acontecer: bloqueiam reajuste da janela afetada.
+ACTIVE_BOOKING_STATUSES = (
+    "PARTICIPANT_CONFIRMATION",
+    "REQUESTED",
+    "HOLD_CONFIRMED",
+    "PAYMENT_PENDING",
+    "CONFIRMED",
+    "SUBSTITUTING",
+)
 
 
 class VenueError(Exception):
@@ -72,6 +86,12 @@ class VenueConflict(VenueError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class PriceNotEligible(VenueInvalid):
+    """O valor da quadra não cabe em nenhuma faixa de preço ativa."""
+
+    code = "price_above_band"
 
 
 @dataclass(frozen=True)
@@ -116,6 +136,7 @@ class VenueService:
         *,
         name: str,
         description: str | None = None,
+        is_covered: bool = False,
     ) -> VenueSpace:
         venue, _ = self._venue_access(
             actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
@@ -124,6 +145,7 @@ class VenueService:
             organization_venue_id=venue.id,
             name=_clean_name(name),
             description=_clean_optional(description, 280),
+            is_covered=bool(is_covered),
         )
         try:
             with self.session.begin_nested():
@@ -218,6 +240,8 @@ class VenueService:
                 if value not in {"active", "inactive"}:
                     raise VenueInvalid
                 cleaned = value
+            elif field == "is_covered":
+                cleaned = bool(value)
             else:
                 raise VenueInvalid
             previous = getattr(space, field)
@@ -330,6 +354,7 @@ class VenueService:
             end_time=end_time,
             price_cents=price_cents,
             slot_minutes=slot_minutes,
+            band_id=self._band_id_for(price_cents),
         )
         try:
             with self.session.begin_nested():
@@ -389,11 +414,16 @@ class VenueService:
         self._ensure_no_availability_overlap(
             space.id, weekday, start_time, end_time, exclude_id=availability.id
         )
+        if price_cents != availability.price_cents and self._has_future_booking(
+            space.id, weekday, start_time, end_time
+        ):
+            raise VenueConflict("availability_has_future_booking")
         availability.weekday = weekday
         availability.start_time = start_time
         availability.end_time = end_time
         availability.price_cents = price_cents
         availability.slot_minutes = slot_minutes
+        availability.band_id = self._band_id_for(price_cents)
         try:
             self.session.flush()
         except IntegrityError as exc:
@@ -784,6 +814,38 @@ class VenueService:
             query = query.where(VenueAvailability.id != exclude_id)
         if self.session.scalar(query) is not None:
             raise VenueConflict("availability_overlap")
+
+    def _band_id_for(self, price_cents: int) -> uuid.UUID:
+        """Faixa da tabela 2D que cobre o valor da quadra (ADR 0042 §3)."""
+        try:
+            return resolve_band(self.session, price_cents).id
+        except PriceAboveCeiling as exc:
+            raise PriceNotEligible from exc
+
+    def _has_future_booking(
+        self,
+        space_id: uuid.UUID,
+        weekday: int,
+        start_time: time,
+        end_time: time,
+    ) -> bool:
+        """Reserva futura na mesma janela impede reajuste (ADR 0042 §9)."""
+        tz = ZoneInfo(get_settings().default_timezone)
+        rows = self.session.execute(
+            select(Booking.starts_at, Booking.ends_at).where(
+                Booking.venue_space_id == space_id,
+                Booking.starts_at >= utcnow(),
+                Booking.status.in_(ACTIVE_BOOKING_STATUSES),
+            )
+        ).all()
+        for starts_at, ends_at in rows:
+            local_start = starts_at.astimezone(tz)
+            local_end = ends_at.astimezone(tz)
+            if local_start.isoweekday() != weekday:
+                continue
+            if local_start.time() < end_time and local_end.time() > start_time:
+                return True
+        return False
 
     def _audit(
         self,

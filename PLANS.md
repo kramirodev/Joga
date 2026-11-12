@@ -176,6 +176,8 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
+**Status:** fatia **14D.1 (faixas de preço e teto) implementada** em 2026-11-12 — catálogo `pricing_bands`, resolução por teto, `is_covered`, guarda de reajuste com reserva futura e `GET /api/v1/pricing/bands`. Demais fatias pendentes.
+
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 
 **Escopo:** ingresso como unidade de acesso pré-paga; pacotes com escada de preço (3/10/30/50) e passe trimestral com franquia mensal; tabela 2D formato × faixa, versionada e congelada na reserva; consumo na confirmação e devolução em ingresso conforme a ADR 0039; carteira com três buckets (custeio, faturamento e margem) e provisão de 100% do passivo; XP em ledger append-only; trilha de 30 níveis, missões semanais, streak de vitórias e nível de temporada; catálogo cosmético em três estados, com atribuição e revogação de itens de passe; ingressos grátis por nível; inteligência de rede; crédito de estreia.

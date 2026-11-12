@@ -21,6 +21,8 @@ from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.payments import models as payments_models  # noqa: F401
 from app.modules.payments.adapter import SimulatorPspAdapter
 from app.modules.payments.dependency import get_psp_adapter
+from app.modules.pricing import models as pricing_models  # noqa: F401
+from app.modules.pricing.service import seed_default_bands
 from app.modules.profile import models as profile_models  # noqa: F401
 from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
@@ -52,6 +54,8 @@ def db_session() -> Iterator[Session]:
     )
     Base.metadata.create_all(engine)
     with Session(engine) as session:
+        seed_default_bands(session)
+        session.commit()
         yield session
     Base.metadata.drop_all(engine)
     engine.dispose()

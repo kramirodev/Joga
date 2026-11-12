@@ -26,6 +26,8 @@ from app.modules.organizations.models import (
     OrganizationVenue,
 )
 from app.modules.organizations.permissions import Role
+from app.modules.pricing import models as pricing_models  # noqa: F401
+from app.modules.pricing.service import seed_default_bands
 from app.modules.profile.models import Sport, SportFormat
 from app.modules.venues.models import VenueAvailability, VenueSpace
 
@@ -53,6 +55,9 @@ def engine() -> Iterator[Engine]:
         schema_translate_map={None: SCHEMA}
     )
     Base.metadata.create_all(database_engine)
+    with Session(bind=database_engine) as seed_session:
+        seed_default_bands(seed_session)
+        seed_session.commit()
     yield database_engine
 
     Base.metadata.drop_all(database_engine)

@@ -31,6 +31,7 @@ from app.modules.venues.service import (
     AvailabilityNotFound,
     BlackoutNotFound,
     PhotoNotFound,
+    PriceNotEligible,
     ReviewNotAllowed,
     SpaceNotFound,
     SpaceRecord,
@@ -50,12 +51,14 @@ router = APIRouter(
 class SpaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=280)
+    is_covered: bool = False
 
 
 class SpaceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=280)
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
+    is_covered: bool | None = None
 
 
 class SportView(BaseModel):
@@ -73,6 +76,7 @@ class SpaceView(BaseModel):
     venue_id: UUID
     name: str
     description: str | None
+    is_covered: bool
     status: str
     sports: list[SportView]
     created_at: datetime
@@ -107,6 +111,7 @@ class AvailabilityView(BaseModel):
     end_time: time
     price_cents: int
     slot_minutes: int
+    band_id: UUID | None
 
 
 class AvailabilityListResponse(BaseModel):
@@ -177,6 +182,7 @@ def _handle(exc: Exception) -> HTTPException:
         ReviewNotAllowed: ("review_not_allowed", status.HTTP_403_FORBIDDEN),
         Forbidden: ("forbidden", status.HTTP_403_FORBIDDEN),
         InvalidPhoto: ("invalid_photo", status.HTTP_422_UNPROCESSABLE_CONTENT),
+        PriceNotEligible: ("price_above_band", status.HTTP_422_UNPROCESSABLE_CONTENT),
         VenueInvalid: ("invalid_input", status.HTTP_422_UNPROCESSABLE_CONTENT),
         VenueConflict: (getattr(exc, "code", "conflict"), status.HTTP_409_CONFLICT),
         PhotoStorageError: ("photo_storage_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE),
@@ -200,6 +206,7 @@ def _space_view(record: SpaceRecord) -> SpaceView:
         venue_id=space.organization_venue_id,
         name=space.name,
         description=space.description,
+        is_covered=space.is_covered,
         status=space.status,
         sports=[_sport_view(sport) for sport in record.sports],
         created_at=space.created_at,
@@ -216,6 +223,7 @@ def _availability_view(item: VenueAvailability) -> AvailabilityView:
         end_time=item.end_time,
         price_cents=item.price_cents,
         slot_minutes=item.slot_minutes,
+        band_id=item.band_id,
     )
 
 
@@ -283,6 +291,7 @@ def create_space(
             venue_id,
             name=payload.name,
             description=payload.description,
+            is_covered=payload.is_covered,
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001

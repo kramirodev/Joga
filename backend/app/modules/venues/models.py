@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, time
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -47,6 +48,9 @@ class VenueSpace(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    is_covered: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
     )
@@ -110,6 +114,9 @@ class VenueAvailability(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     slot_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    band_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pricing_bands.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

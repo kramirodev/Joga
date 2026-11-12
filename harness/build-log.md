@@ -765,3 +765,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** **400 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Painel: **19 testes**, lint, typecheck e build verdes.
 - **Trust Factor:** ADR 0041; no-show −30, cancelamento pós-confirmação −7, pré-pagamento −2, recuperação não linear e restrição ranqueada 7/30 dias.
 - **Pendente:** UI de presença/fila, UI de suporte e conciliação/repasse real com PSP.
+
+### 2026-11-12 — 14D.1 Faixas de preço e teto da quadra
+
+- **Catálogo:** `pricing_bands` versionada com as seis faixas da ADR 0042 §3 (R$ 120/150/180/220/260/300).
+- **Resolução:** por **teto**, não por escolha — a menor faixa ativa cujo `max_price_cents` cobre o preço. Impede a quadra de se declarar acima do próprio preço.
+- **Atributo:** `venue_spaces.is_covered`, exposto no cadastro e na listagem. Alimenta rótulo e filtro; não decide a faixa.
+- **Snapshot:** `venue_availability.band_id` grava a faixa no momento da escrita.
+- **Reajuste:** bloqueado com `409 availability_has_future_booking` quando há reserva futura na mesma janela; permitido quando não há.
+- **Fora do teto:** preço acima de R$ 300 retorna `422 price_above_band`.
+- **API:** `GET /api/v1/pricing/bands`.
+- **Migração:** `a1c2e3f40517`; upgrade aplicado no banco local e faixas conferidas. Backfill das janelas existentes pela menor faixa que cobre o preço.
+- **Testes:** suíte completa verde, incluindo `tests/test_pricing_bands.py`; ruff e mypy --strict sem achados.
+- **Pendente na fatia:** vigência de preço (`price_effective_from`) para reajuste com reserva recorrente e reclassificação contratual com aviso de 30 dias.
