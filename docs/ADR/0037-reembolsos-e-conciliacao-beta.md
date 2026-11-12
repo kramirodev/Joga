@@ -1,6 +1,6 @@
 # ADR 0037 — Reembolsos e conciliação no beta com PSP simulado
 
-- **Status:** Aprovado para a 14C em 2026-11-07; reembolso real e conciliação com PSP ficam para a 14B.
+- **Status:** Aprovado para a 14C em 2026-11-07; reembolso real e conciliação com PSP ficam para a 14B. Emendado pelas **ADRs 0038 e 0039**; para desistência após confirmação, prevalece a **ADR 0039**.
 - **Data:** 2026-11-07
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0021 (Pagar.me em produção); ADR 0034 (Mercado Pago no beta); ADR 0035 (Orders API/ledger); `docs/JOGA_DOCUMENTACAO_TECNICA.md` §15 e §16.
@@ -15,11 +15,13 @@ A 14A criou cobranças Pix, webhook e ledger, mas ainda não havia reembolso qua
 2. O reembolso é registrado em `payment_refunds`, com um registro único por cobrança e status `PENDING`, `PROCESSED` ou `FAILED`.
 3. O processo é idempotente: repetir cancelamento/reembolso não duplica registro, ledger ou evento.
 4. O ledger registra `PAYMENT_REFUNDED` e o adaptador simulado processa o estorno sem rede.
-5. O repasse ao estabelecimento (`VENUE_RELEASE`) é registrado apenas para reserva `COMPLETED`, depois do pagamento confirmado, e é simulado/manual no beta.
+5. O repasse ao estabelecimento (`VENUE_RELEASE`) segue a ADR 0040: reserva `CONFIRMED`/`COMPLETED` com pagamento, liberação no horário da partida, simulado/manual no beta.
 6. A substituição de participante reembolsa apenas a cobrança do participante substituído; a nova vaga gera nova cobrança e mantém o prazo de T3.
-7. A política de reembolso real, cancelamento após confirmação e conciliação com PSP continua pendente para a 14B.
+7. A política de reembolso real e conciliação com PSP continua pendente para a 14B; a desistência após confirmação é definida pela ADR 0039.
 8. O worker `advance_bookings` expira prazos e reembolsa reservas pagas que chegaram a estado terminal.
 9. A organização consulta resumo financeiro e extrato por reserva; não há conciliação externa com PSP nesta fase.
+
+> **Emenda (ADRs 0038 e 0039):** o item 1 vale para estados anteriores à confirmação. Após `CONFIRMED`, o desfecho segue a ADR 0039: com substituto pagante, o substituído é reembolsado; sem substituto, o lobby é cancelado, os demais pagantes são reembolsados e quem cancelou não recebe; no-show não recebe reembolso.
 
 ## Alternativas consideradas
 

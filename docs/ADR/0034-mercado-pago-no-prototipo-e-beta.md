@@ -5,6 +5,8 @@
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** `docs/ADR/0021-politica-de-precificacao-e-fluxo-financeiro.md`; `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` §12; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §15; `PLANS.md` Fase 14.
 
+> **Nota de escopo (ADR 0042):** a decisão de produção mudou para o **Inter PJ** (ADR 0042 §8). O Mercado Pago continua restrito ao protótipo e beta fechado; o modo `pagarme_production` permanece apenas como reserva técnica.
+
 ## Contexto
 
 O JOGA ainda está em protótipo e beta fechado. Nessa etapa, o objetivo é validar a jornada de pagamento Pix, o fluxo de reserva e a conciliação sem assumir o custo e a complexidade de uma operação financeira de produção. O custo de manter um CNPJ/MEI ativo (cerca de R$ 80 por mês) é relevante para o momento, mas não é uma mensalidade do PSP.
@@ -18,7 +20,7 @@ O Mercado Pago oferece Checkout Transparente com Pix, cobrança percentual por t
 3. No beta, o valor fica centralizado na conta Mercado Pago do JOGA, com registro no ledger interno por reserva, participante e vaga. Não há split automático para o estabelecimento nesta fase.
 4. O repasse ao estabelecimento é **simulado ou manual** e só ocorre depois que a partida for declarada como acontecida (`COMPLETED`). Não chamar esse fluxo de escrow, custódia definitiva ou garantia de produção.
 5. O domínio de pagamentos deve usar um **adaptador de PSP** com modos distintos:
-   - `mercadopago_beta`: custódia centralizada de teste, Pix, ledger interno e repasse após `COMPLETED`;
+   - `mercadopago_beta`: custódia centralizada de teste, Pix, ledger interno e repasse no horário da partida (ADR 0040);
    - `pagarme_production`: split/retenção e liberação controlada, conforme ADR 0021.
 6. O backend não deve assumir que o PSP de beta oferece split, retenção ou reembolso integral. O ledger e a máquina de estados continuam sendo a fonte interna de direitos e obrigações.
 7. Produção continua com **Pagar.me Flex** para prender o valor e liberar após a partida, condicionada a contrato e validação. O Mercado Pago não substitui essa decisão.

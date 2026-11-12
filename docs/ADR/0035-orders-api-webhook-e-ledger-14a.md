@@ -5,6 +5,8 @@
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0034 (Mercado Pago no beta); ADR 0021 (Pagar.me na produção); `docs/JOGA_DOCUMENTACAO_TECNICA.md` §15; `PLANS.md` Fase 14.
 
+> **Nota de escopo (ADR 0042):** o fluxo de ingresso cobra por compra de pacote ou passe, não por participante. Esta ADR descreve a 14A e permanece válida para a reserva avulsa.
+
 ## Contexto
 
 O Mercado Pago atualiza o Checkout Transparente para Pix via **Orders API** (`/v1/orders`), com uma ordem contendo transações/pagamentos. A API antiga de `/v1/payments` continua existindo, mas não é o fluxo principal documentado para Pix. O JOGA precisa de uma cobrança por participante, idempotência, webhook confiável e um ledger interno que não dependa do PSP.
@@ -19,7 +21,7 @@ O Mercado Pago atualiza o Checkout Transparente para Pix via **Orders API** (`/v
 6. O status só é aplicado após consulta server-to-server da ordem/pagamento; o payload do webhook não é prova suficiente.
 7. A confirmação da reserva continua no domínio de reservas e só ocorre com todas as vagas ativas pagas.
 8. O ledger é append-only: `CHARGE_CREATED`, `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` e `VENUE_RELEASE`.
-9. `VENUE_RELEASE` no beta é um registro simulado/manual após `COMPLETED`; não movimenta dinheiro.
+9. `VENUE_RELEASE` no beta é um registro simulado/manual no horário da partida (ADR 0040); não movimenta dinheiro.
 10. Não há split, retenção ou reembolso real na 14A.
 
 ## Alternativas consideradas
