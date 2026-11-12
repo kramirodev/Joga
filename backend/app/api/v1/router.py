@@ -13,6 +13,7 @@ from app.api.v1.payments import router as payments_router
 from app.api.v1.presence import router as presence_router
 from app.api.v1.pricing import router as pricing_router
 from app.api.v1.profile import router as profile_router
+from app.api.v1.progress import router as progress_router
 from app.api.v1.ratings import router as ratings_router
 from app.api.v1.results import router as results_router
 from app.api.v1.social import router as social_router
@@ -33,6 +34,7 @@ api_router.include_router(ratings_router)
 api_router.include_router(organizations_router)
 api_router.include_router(venues_router)
 api_router.include_router(pricing_router)
+api_router.include_router(progress_router)
 api_router.include_router(bookings_router)
 api_router.include_router(substitutions_router)
 api_router.include_router(tickets_router)

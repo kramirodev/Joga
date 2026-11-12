@@ -837,3 +837,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Comportamento:** quem quita a vaga com ingressos tem as cobranças `PENDING` encerradas como `CANCELLED`, para não aparecerem como recebível aberto.
 - **Migração:** `a6b7283c4051` recria a constraint, e o downgrade converte `CANCELLED` em `EXPIRED`.
 - **Testes:** o caso de quitação agora confere que todas as cobranças ficaram `CANCELLED`.
+
+### 2026-11-12 — 14D.7 Temporada, XP, nível e streak (núcleo)
+
+- **Modelo:** `seasons`, `xp_events` (append-only com chave única), `season_progress` e `win_streaks`.
+- **Regras:** 150 XP por nível, 30 níveis, tiers bronze/prata/ouro, reset na virada, XP igual para todos.
+- **Streak:** vitória soma; empate ou derrota zera; semana inteira sem jogar zera na leitura, mas a semana aberta não zera.
+- **Serviço:** `level_for`, `tier_for`, `award_xp`, `record_match_result`, `effective_streak`, `seed_current_season`.
+- **API:** `GET /api/v1/me/progress`.
+- **Migração:** `b7c8394d5162`, com a temporada 2026-Q4 semeada; upgrade, downgrade e novo upgrade aplicados.
+- **Testes:** `tests/test_season.py` com seis casos; suíte completa verde.
+- **Pendente:** trilha com recompensas, missões, gancho de XP na partida, ingressos grátis por nível e fechamento de temporada.
