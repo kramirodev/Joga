@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    UniqueConstraint,
     Uuid,
     func,
     text,
@@ -135,4 +136,148 @@ class WinStreak(Base):
         default=utcnow,
         onupdate=utcnow,
         server_default=func.now(),
+    )
+
+
+class SeasonItem(Base):
+    """Item cosmético de temporada. Substitui o catálogo completo no piloto."""
+
+    __tablename__ = "season_items"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('accessory','emote','lobby_animation','entry_icon','badge')",
+            name="category_valid",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    season_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), nullable=True
+    )
+    code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    category: Mapped[str] = mapped_column(String(20), nullable=False)
+    artwork_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class SeasonTrackLevel(Base):
+    """Degrau da trilha: XP exigido, item e ingressos grátis."""
+
+    __tablename__ = "season_track_levels"
+    __table_args__ = (
+        CheckConstraint("level BETWEEN 1 AND 30", name="level_valid"),
+        CheckConstraint("xp_required >= 0", name="xp_non_negative"),
+        CheckConstraint("free_tickets >= 0", name="tickets_non_negative"),
+        CheckConstraint("track IN ('free', 'pass')", name="track_valid"),
+    )
+
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), primary_key=True
+    )
+    level: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    xp_required: Mapped[int] = mapped_column(Integer, nullable=False)
+    item_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    free_tickets: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    track: Mapped[str] = mapped_column(
+        String(6), nullable=False, default="free", server_default=text("'free'")
+    )
+
+
+class SeasonClaim(Base):
+    """Recompensa de nível reivindicada. Impede resgate duplicado."""
+
+    __tablename__ = "season_claims"
+    __table_args__ = (CheckConstraint("level BETWEEN 1 AND 30", name="level_valid"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), primary_key=True
+    )
+    level: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class Badge(Base):
+    """Insígnia ou medalha exibida no perfil.
+
+    `kind` separa os dois conceitos: insígnia é de temporada ou fundador;
+    medalha é conquista competitiva e não se confunde com insígnia.
+    """
+
+    __tablename__ = "badges"
+    __table_args__ = (
+        CheckConstraint("kind IN ('season', 'founder', 'medal')", name="kind_valid"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    season_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("seasons.id", ondelete="SET NULL"), nullable=True
+    )
+    artwork_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class PlayerBadge(Base):
+    """Insígnia conquistada. Até três equipadas no perfil."""
+
+    __tablename__ = "player_badges"
+    __table_args__ = (
+        UniqueConstraint("user_id", "badge_id", name="uq_player_badges_user_badge"),
+        CheckConstraint(
+            "equipped_slot IS NULL OR equipped_slot BETWEEN 1 AND 3",
+            name="slot_valid",
+        ),
+        Index(
+            "uq_player_badges_user_slot",
+            "user_id",
+            "equipped_slot",
+            unique=True,
+            postgresql_where=text("equipped_slot IS NOT NULL"),
+            sqlite_where=text("equipped_slot IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    badge_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("badges.id", ondelete="CASCADE"), nullable=False
+    )
+    equipped_slot: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    awarded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class PlayerItem(Base):
+    """Item cosmético conquistado. Placeholder até o catálogo completo."""
+
+    __tablename__ = "player_items"
+    __table_args__ = (UniqueConstraint("user_id", "item_code", name="uq_player_items"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    item_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    season_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("seasons.id", ondelete="SET NULL"), nullable=True
+    )
+    awarded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

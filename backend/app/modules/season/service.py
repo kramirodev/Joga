@@ -17,7 +17,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import utcnow
-from app.modules.season.models import Season, SeasonProgress, WinStreak, XpEvent
+from app.modules.season.models import (
+    Badge,
+    PlayerBadge,
+    PlayerItem,
+    Season,
+    SeasonClaim,
+    SeasonItem,
+    SeasonProgress,
+    SeasonTrackLevel,
+    WinStreak,
+    XpEvent,
+)
+from app.modules.tickets.service import grant
 
 XP_PER_LEVEL = 150
 MAX_LEVEL = 30
@@ -201,3 +213,225 @@ def record_match_result(
     record.last_match_id = match_id
     session.flush()
     return record
+
+# -- trilha, itens e insígnias (14D.8) -----------------------------------
+
+# Sete itens por temporada, distribuídos pela trilha (ADR 0043 §5).
+TRACK_ITEMS: tuple[tuple[int, str, str, str, str], ...] = (
+    (4, "q4_emote_joinha", "Emote Joinha", "emote", "free"),
+    (8, "q4_headband", "Faixa de Cabeça", "accessory", "free"),
+    (12, "q4_entry_bolt", "Ícone Relâmpago", "entry_icon", "pass"),
+    (17, "q4_emote_clap", "Emote Palmas", "emote", "free"),
+    (21, "q4_lobby_smoke", "Entrada Fumaça", "lobby_animation", "pass"),
+    (26, "q4_glasses", "Óculos Escuros", "accessory", "pass"),
+    (30, "q4_badge_season", "Insígnia da Temporada", "badge", "free"),
+)
+
+FREE_TICKET_LEVELS = (5, 10, 15, 20, 25, 30)
+MAX_EQUIPPED_BADGES = 3
+
+
+class ClaimError(SeasonError):
+    """Recompensa indisponível ou já reivindicada."""
+
+
+def seed_season_track(session: Session, season: Season) -> None:
+    """Cria itens, insígnia e os 30 degraus da temporada. Idempotente."""
+
+    existing_items = set(session.scalars(select(SeasonItem.code)).all())
+    for _level, code, name, category, _track in TRACK_ITEMS:
+        if code in existing_items:
+            continue
+        session.add(
+            SeasonItem(
+                season_id=season.id,
+                code=code,
+                name=name,
+                category=category,
+                artwork_ref=f"placeholder/{code}",
+            )
+        )
+    session.flush()
+
+    badge_code = f"season_{season.code.lower().replace('-', '_')}"
+    if session.scalars(select(Badge).where(Badge.code == badge_code)).first() is None:
+        session.add(
+            Badge(
+                code=badge_code,
+                name=f"Temporada {season.code}",
+                kind="season",
+                season_id=season.id,
+                artwork_ref=f"placeholder/{badge_code}",
+            )
+        )
+        session.flush()
+
+    items_by_level = {level: (code, track) for level, code, _n, _c, track in TRACK_ITEMS}
+    existing_levels = set(
+        session.execute(
+            select(SeasonTrackLevel.level).where(SeasonTrackLevel.season_id == season.id)
+        ).all()
+    )
+    for level in range(1, MAX_LEVEL + 1):
+        if (level,) in existing_levels:
+            continue
+        entry = items_by_level.get(level)
+        item_code: str | None = entry[0] if entry else None
+        track_value = entry[1] if entry else "free"
+        session.add(
+            SeasonTrackLevel(
+                season_id=season.id,
+                level=level,
+                xp_required=xp_for_level(level),
+                item_code=item_code,
+                free_tickets=1 if level in FREE_TICKET_LEVELS else 0,
+                track=track_value,
+            )
+        )
+    session.flush()
+
+
+def track_for(session: Session, season: Season) -> list[SeasonTrackLevel]:
+    return list(
+        session.scalars(
+            select(SeasonTrackLevel)
+            .where(SeasonTrackLevel.season_id == season.id)
+            .order_by(SeasonTrackLevel.level.asc())
+        ).all()
+    )
+
+
+def claimed_levels(session: Session, user_id: uuid.UUID, season: Season) -> set[int]:
+    return {
+        row[0]
+        for row in session.execute(
+            select(SeasonClaim.level).where(
+                SeasonClaim.user_id == user_id,
+                SeasonClaim.season_id == season.id,
+            )
+        ).all()
+    }
+
+
+def claim_level(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    season: Season,
+    level: int,
+) -> tuple[SeasonClaim, str | None, int]:
+    """Reivindica a recompensa do nível. Idempotente por (usuário, temporada, nível)."""
+
+    row = session.get(SeasonTrackLevel, (season.id, level))
+    if row is None:
+        raise ClaimError("level_not_found")
+
+    existing = session.get(SeasonClaim, (user_id, season.id, level))
+    if existing is not None:
+        return existing, row.item_code, row.free_tickets
+
+    progress = get_progress(session, user_id, season)
+    xp_total = progress.xp_total if progress else 0
+    if xp_total < row.xp_required:
+        raise ClaimError("level_locked")
+    if row.track == "pass":
+        # Sem modelo de passe ainda: a trilha paga fica bloqueada no piloto.
+        raise ClaimError("pass_required")
+
+    claim = SeasonClaim(user_id=user_id, season_id=season.id, level=level)
+    session.add(claim)
+
+    if row.item_code:
+        item = session.scalars(
+            select(SeasonItem).where(SeasonItem.code == row.item_code)
+        ).first()
+        if item is not None and item.category == "badge":
+            badge = session.scalars(
+                select(Badge).where(Badge.code == f"season_{season.code.lower().replace('-', '_')}")
+            ).first()
+            if badge is not None:
+                award_badge(session, user_id=user_id, badge=badge)
+        elif item is not None:
+            already = session.scalars(
+                select(PlayerItem).where(
+                    PlayerItem.user_id == user_id,
+                    PlayerItem.item_code == item.code,
+                )
+            ).first()
+            if already is None:
+                session.add(
+                    PlayerItem(user_id=user_id, item_code=item.code, season_id=season.id)
+                )
+
+    if row.free_tickets:
+        grant(
+            session,
+            user_id,
+            row.free_tickets,
+            source="free_level",
+            idempotency_key=f"free_level:{season.id}:{level}:{user_id}",
+            ref_type="season_level",
+            ref_id=season.id,
+        )
+
+    session.flush()
+    return claim, row.item_code, row.free_tickets
+
+
+def award_badge(session: Session, *, user_id: uuid.UUID, badge: Badge) -> PlayerBadge:
+    existing = session.scalars(
+        select(PlayerBadge).where(
+            PlayerBadge.user_id == user_id,
+            PlayerBadge.badge_id == badge.id,
+        )
+    ).first()
+    if existing is not None:
+        return existing
+    record = PlayerBadge(user_id=user_id, badge_id=badge.id)
+    session.add(record)
+    session.flush()
+    return record
+
+
+def equip_badge(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    badge_id: uuid.UUID,
+    slot: int,
+) -> PlayerBadge:
+    """Equipa a insígnia em um dos três espaços do perfil."""
+
+    if not 1 <= slot <= MAX_EQUIPPED_BADGES:
+        raise ClaimError("slot_invalid")
+    record = session.scalars(
+        select(PlayerBadge).where(
+            PlayerBadge.user_id == user_id,
+            PlayerBadge.badge_id == badge_id,
+        )
+    ).first()
+    if record is None:
+        raise ClaimError("badge_not_owned")
+
+    occupied = session.scalars(
+        select(PlayerBadge).where(
+            PlayerBadge.user_id == user_id,
+            PlayerBadge.equipped_slot == slot,
+            PlayerBadge.badge_id != badge_id,
+        )
+    ).first()
+    if occupied is not None:
+        occupied.equipped_slot = None
+    record.equipped_slot = slot
+    session.flush()
+    return record
+
+
+def list_badges(session: Session, user_id: uuid.UUID) -> list[tuple[PlayerBadge, Badge]]:
+    rows = session.execute(
+        select(PlayerBadge, Badge)
+        .join(Badge, Badge.id == PlayerBadge.badge_id)
+        .where(PlayerBadge.user_id == user_id)
+        .order_by(PlayerBadge.awarded_at.desc())
+    ).all()
+    return [(row[0], row[1]) for row in rows]

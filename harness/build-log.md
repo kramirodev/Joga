@@ -848,3 +848,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `b7c8394d5162`, com a temporada 2026-Q4 semeada; upgrade, downgrade e novo upgrade aplicados.
 - **Testes:** `tests/test_season.py` com seis casos; suíte completa verde.
 - **Pendente:** trilha com recompensas, missões, gancho de XP na partida, ingressos grátis por nível e fechamento de temporada.
+
+### 2026-11-12 — 14D.8 Trilha, itens e insígnias
+
+- **Decisões de produto:** 7 itens por temporada; nível 30 entrega a insígnia; insígnia não é medalha; até 3 insígnias equipadas no perfil.
+- **Catálogo:** `season_items` com acessório, emote, animação de lobby, ícone de entrada e insígnia; arte em `placeholder/<code>`.
+- **Trilha:** `season_track_levels` com 30 níveis, itens em 4/8/12/17/21/26/30 e ingressos grátis em 5/10/15/20/25/30.
+- **Resgate:** `claim_level` valida XP, recusa trilha paga sem passe e é idempotente por nível.
+- **Insígnias:** `badges`, `player_badges` (até 3 slots) e `player_items`.
+- **API:** `GET /me/progress/track`, `POST /me/progress/track/{level}/claim`, `GET /me/progress/badges`, `PUT /me/progress/badges/equip`.
+- **Migração:** `c8d94a5e6273`, com a trilha da 2026-Q4 semeada; upgrade, downgrade e novo upgrade aplicados.
+- **Testes:** `tests/test_season_track.py` com seis casos; suíte completa verde.
+- **Pendente:** arte final, passe como assinatura, equipar item de avatar, medalhas, fechamento de temporada, missões e gancho de XP.

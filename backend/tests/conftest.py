@@ -28,7 +28,7 @@ from app.modules.ratelimit import models as ratelimit_models  # noqa: F401
 from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
 from app.modules.season import models as season_models  # noqa: F401
-from app.modules.season.service import seed_current_season
+from app.modules.season.service import seed_current_season, seed_season_track
 from app.modules.social import models as social_models  # noqa: F401
 from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.tickets.service import seed_default_packs
@@ -60,7 +60,8 @@ def db_session() -> Iterator[Session]:
     with Session(engine) as session:
         seed_default_bands(session)
         seed_default_packs(session)
-        seed_current_season(session)
+        season = seed_current_season(session)
+        seed_season_track(session, season)
         session.commit()
         yield session
     Base.metadata.drop_all(engine)

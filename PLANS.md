@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.7** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039 e núcleo de temporada (XP, nível, tier e streak). Faltam trilha com recompensas, missões e o gancho de XP nas partidas — a trilha depende de decisão de produto sobre quais itens entram por faixa.
+**Status:** fatias **14D.1 a 14D.8** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, núcleo de temporada e trilha com 7 itens e insígnia de temporada (arte em placeholder). Faltam missões semanais e o gancho de XP nas partidas.
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 
