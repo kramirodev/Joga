@@ -125,7 +125,7 @@ def test_price_above_last_ceiling_is_rejected(
     assert response["body"]["detail"]["code"] == "price_above_band"
 
 
-def test_price_change_is_blocked_by_future_booking(
+def test_price_change_applies_only_to_new_bookings(
     client: TestClient, db_session: Session
 ) -> None:
     api = api_client(client, db_session)
@@ -189,14 +189,13 @@ def test_price_change_is_blocked_by_future_booking(
     response = api.patch(
         f"{base}/spaces/{space_id}/availability/{availability_id}",
         headers=bearer(token),
-        json={"price_cents": 11_000},
+        json={"price_cents": 13_000},
     )
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "availability_has_future_booking"
+    assert response.status_code == 200, response.text
 
-    unchanged = api.patch(
-        f"{base}/spaces/{space_id}/availability/{availability_id}",
-        headers=bearer(token),
-        json={"slot_minutes": 90},
-    )
-    assert unchanged.status_code == 200, unchanged.text
+    # A reserva já feita mantém o preço com que foi criada.
+    booking = db_session.query(Booking).one()
+    db_session.refresh(booking)
+    assert booking.price_cents == 12_000
+    # A reserva nova usaria a faixa nova (R$ 130 cabe em "Econômica noite").
+    assert response.json()["band_id"] != created["body"]["band_id"]

@@ -66,7 +66,7 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Taxonomia final de atributos e teto de V por faixa | Contrato com a quadra | Produto e comercial |
 | Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real (3,3%/6,7% da receita) e conversão no piloto |
 | Busca por CEP restrita ao passe | Definido | Definir como o usuário free que mudou de cidade ou planeja jogar fora resolve isso (ex.: troca de cidade base com limite) |
-| Vigência de preço (`price_effective_from`) | 14D.1 entregou teto e guarda de reajuste | Sem vigência, reajuste fica bloqueado com reserva recorrente na mesma janela |
+| Reclassificação de faixa com aviso de 30 dias | 14D.1 entregou teto e reajuste | Decorrido: a quadra reajusta e a faixa é recalculada; falta o aviso contratual de 30 dias |
 | Arredondamento de 4x4 | Tabela 2D | Produto |
 | Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
@@ -90,7 +90,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingr
 
 | Fase | Divergência | O que fazer | Estado |
 |---|---|---|---|
-| **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e guarda de reajuste. Falta vigência de preço e reclassificação com aviso |
+| **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e reajuste que vale só para reservas novas |
 | **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | Pendente |
 | **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | Pendente |
 | **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | Pendente |

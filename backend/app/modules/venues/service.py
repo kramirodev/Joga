@@ -8,14 +8,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.modules.bookings.models import Booking
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.organizations.models import OrganizationMembership, OrganizationVenue
@@ -40,16 +38,6 @@ from app.modules.venues.storage import PhotoNotFound as StoredPhotoNotFound
 from app.modules.venues.storage import PhotoStorage, PhotoStorageError
 
 REVIEWER_ROLES = frozenset({Role.OWNER, Role.ADMIN})
-
-# Reservas que ainda podem acontecer: bloqueiam reajuste da janela afetada.
-ACTIVE_BOOKING_STATUSES = (
-    "PARTICIPANT_CONFIRMATION",
-    "REQUESTED",
-    "HOLD_CONFIRMED",
-    "PAYMENT_PENDING",
-    "CONFIRMED",
-    "SUBSTITUTING",
-)
 
 
 class VenueError(Exception):
@@ -414,10 +402,6 @@ class VenueService:
         self._ensure_no_availability_overlap(
             space.id, weekday, start_time, end_time, exclude_id=availability.id
         )
-        if price_cents != availability.price_cents and self._has_future_booking(
-            space.id, weekday, start_time, end_time
-        ):
-            raise VenueConflict("availability_has_future_booking")
         availability.weekday = weekday
         availability.start_time = start_time
         availability.end_time = end_time
@@ -574,7 +558,6 @@ class VenueService:
         if space_id is not None:
             self._space(venue.id, space_id)
 
-        from app.core.config import get_settings
 
         settings = get_settings()
         processed = process_photo(
@@ -821,31 +804,6 @@ class VenueService:
             return resolve_band(self.session, price_cents).id
         except PriceAboveCeiling as exc:
             raise PriceNotEligible from exc
-
-    def _has_future_booking(
-        self,
-        space_id: uuid.UUID,
-        weekday: int,
-        start_time: time,
-        end_time: time,
-    ) -> bool:
-        """Reserva futura na mesma janela impede reajuste (ADR 0042 §9)."""
-        tz = ZoneInfo(get_settings().default_timezone)
-        rows = self.session.execute(
-            select(Booking.starts_at, Booking.ends_at).where(
-                Booking.venue_space_id == space_id,
-                Booking.starts_at >= utcnow(),
-                Booking.status.in_(ACTIVE_BOOKING_STATUSES),
-            )
-        ).all()
-        for starts_at, ends_at in rows:
-            local_start = starts_at.astimezone(tz)
-            local_end = ends_at.astimezone(tz)
-            if local_start.isoweekday() != weekday:
-                continue
-            if local_start.time() < end_time and local_end.time() > start_time:
-                return True
-        return False
 
     def _audit(
         self,

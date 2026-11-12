@@ -25,8 +25,8 @@ estabelecimento não consegue mais se classificar numa faixa acima do próprio p
 | Snapshot | `venue_availability.band_id` grava a faixa no momento da escrita | A reserva precisa saber com qual tabela foi precificada |
 | Atributo visível | `venue_spaces.is_covered` | Alimenta o rótulo e o filtro de busca; não decide a faixa |
 | Teto | Preço acima da última faixa (R$ 300) é rejeitado com `price_above_band` | Fora da tabela não há preço em ingressos |
-| Reajuste | Bloqueado quando existe reserva futura na mesma janela | ADR 0042 §9: só se reajusta janela sem reserva afetada |
-| Reajuste sem reserva | Permitido a qualquer momento nesta fatia | A regra de virada de temporada e 30 dias de aviso entra na fatia de temporada |
+| Reajuste | Vale para **reservas novas**; as já feitas mantêm preço e faixa | O preço é congelado na reserva, então não existe reserva afetada |
+| Reajuste sem reserva | Permitido a qualquer momento | A tabela 2D é que é recalibrada por ciclo, não a quadra |
 
 ## Implementação
 
@@ -56,17 +56,13 @@ Faixas semeadas (versão 1):
 
 - faixa resolvida pelo teto (R$ 120 → econômica; R$ 121 → próxima).
 - preço acima da última faixa retorna `422 price_above_band`.
-- reajuste com reserva futura retorna `409 availability_has_future_booking`.
-- alteração que não mexe no preço continua permitida.
+- reajuste é aceito e **só afeta reservas novas**: a reserva já criada mantém o `price_cents`.
 
 Suíte completa, `ruff` e `mypy --strict` verdes em 2026-11-12.
 
 ## Limitações conhecidas
 
-1. **Reajuste com reserva recorrente.** Se a quadra tem reserva toda semana na mesma janela,
-   o reajuste fica bloqueado indefinidamente. A solução correta é uma coluna de vigência
-   (`price_effective_from`) para o novo preço valer só a partir de uma data futura. Fica para
-   a fatia de temporada.
+1. **Reajuste com reserva recorrente — resolvido.** O preço vale para reservas novas; as já feitas mantêm o valor congelado. Não há mais bloqueio.
 2. **Preço por janela, não por quadra.** Uma quadra com preço de dia e de noite tem duas
    faixas. É coerente com a tabela, mas o painel precisa deixar isso explícito.
 3. **A faixa não é renegociada.** Mudar de faixa hoje só acontece mudando o preço; a
