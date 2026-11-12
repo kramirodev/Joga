@@ -25,14 +25,32 @@ Ao mesmo tempo, era preciso resolver uma tensão: a ADR 0042 §10 dizia que cust
 
 1. **Não existe passe mensal.** Um plano, uma cadência, um reset.
 2. Cobrança **única por trimestre**; a franquia de ingressos é **entregue mês a mês**.
-3. Tamanhos por mês: **10, 20, 30 e 50** ingressos. No trimestre: 30, 60, 90 e 150.
+3. Tamanhos por mês: **10, 20, 30 e 50** ingressos. No trimestre: 30, 60, 90 e 150. Preço: **R$ 3,25 por ingresso**.
+
+| Plano | Ingressos/mês | Preço/mês | Trimestre | Margem/trimestre |
+|---|---:|---:|---:|---:|
+| Jogador | 10 | R$ 32,50 | R$ 97,50 | R$ 14,78 |
+| Craque | 20 | R$ 65,00 | R$ 195,00 | R$ 29,56 |
+| Time | 30 | R$ 97,50 | R$ 292,50 | R$ 44,34 |
+| Elenco | 50 | R$ 162,50 | R$ 487,50 | R$ 73,90 |
+
 4. A entrega mensal é deliberada e não deve ser trocada por entrega adiantada:
    - entrega adiantada recria o "passe como banco", que a ADR 0042 eliminou;
    - a franquia mensal cria **três momentos de engajamento** em vez de um;
    - reduz o passivo e o saldo carregado num produto ainda em validação.
 5. A cobrança trimestral resolve por construção a arbitragem de "assinar, cancelar e ficar com o saldo": o trimestre pago entrega o trimestre.
-6. Desconto máximo de **5%** sobre o preço do ingresso (R$ 2,85). Acima disso a faixa Premium fura o piso de margem da ADR 0042.
+6. **O passe não tem desconto por ingresso.** Seu preço é R$ 3,25 — acima do pacote grande (R$ 3,10). O valor percebido é compensado fora do dinheiro real: franquia mensal, ingressos grátis por nível e Temporada. Vender o passe abaixo do pacote grande derruba a margem das faixas caras e ainda destrói a âncora de preço.
 7. A renovação é por Pix por ciclo no MVP. Pix Automático continua fora do MVP.
+
+### 2.1 Ingressos grátis por nível
+
+1. **Free:** 1 ingresso a cada 5 níveis (5, 10, 15, 20, 25, 30). Teto de **6 por temporada**.
+2. **Passe:** 2 ingressos a cada 5 níveis. Teto de **12 por temporada**.
+3. Expiram no fim da temporada. São franquia, não ingresso comprado, e não acumulam.
+4. Não dão XP, não substituem a trilha e não podem ser convertidos em dinheiro.
+5. **Custo do programa:** 3,3% da receita no free e 6,7% no passe, porque a progressão é proporcional ao volume jogado (1 nível ≈ 1 partida, 6 ingressos por partida). Por isso o passe custa R$ 3,25: com R$ 3,10 a margem não absorveria os 6,7%.
+6. Depois do programa, o piso líquido de 10% da ADR 0042 continua respeitado — no topo da faixa de R$ 150, a margem cai de 14,1% para 10,1%.
+
 
 ### 3. Trilha e XP
 

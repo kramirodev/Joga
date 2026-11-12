@@ -139,9 +139,12 @@ pass_plans
   id                uuid pk
   code              text unique          -- "jogador", "craque", "time", "elenco"
   monthly_tickets   smallint             -- 10, 20, 30, 50
-  quarterly_price   numeric(10,2)
+  quarterly_price   numeric(10,2)        -- 97,50 / 195,00 / 292,50 / 487,50
+  unit_price        numeric(10,4)        -- 3,25
   active            bool
 ```
+
+Preço unitário do passe: **R$ 3,25**, acima do pacote grande (R$ 3,10). O passe não dá desconto por ingresso; compensa em franquia mensal, ingressos grátis por nível e Temporada.
 
 ```text
 pass_subscriptions
@@ -273,6 +276,7 @@ Limites de segurança (calibração pendente): teto diário de 400 XP e teto sem
 5. O fechamento da temporada gera `season_snapshot` com nível final, XP e recompensas, para auditoria e para o badge.
 6. **Nível da temporada** — bronze (1–9), prata (10–19), ouro (20–30) — é derivado do nível alcançado e **reseta na virada**. Não acumula entre temporadas. O streak de vitórias não reseta.
 7. **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional. Não se recompensa quem não jogou. A contrapartida é de desenho, não de crédito: a curva precisa ser barata nos primeiros níveis para que o ingressante tardio alcance progresso visível nas primeiras partidas.
+8. **Ingressos grátis por nível:** free recebe 1 a cada 5 níveis (máx. 6 por temporada); passe recebe 2 (máx. 12). São franquia: expiram no fim da temporada e não acumulam. Custo de 3,3% e 6,7% da receita respectivamente.
 
 Distribuição sugerida (calibração pendente):
 

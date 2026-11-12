@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.14<br>
-**Status:** visão de produto atualizada — temporada trimestral, passe e customização (ADR 0043); clãs no MVP (ADR 0044)<br>
-**Data:** 11 de novembro de 2026<br>
+**Versão:** 3.15<br>
+**Status:** visão de produto atualizada — escada de preços, passe com franquia mensal e ingressos grátis por nível<br>
+**Data:** 12 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -27,6 +27,7 @@
 | 3.12 | 9 de novembro de 2026 | ADR 0039: fila de substitutos, cutoff de cancelamento, confirmação de presença, adaptação de formato com rodízio e desfecho financeiro pelo resultado da reserva; ADR 0038 superada |
 | 3.13 | 11 de novembro de 2026 | ADR 0042: Ingresso JOGA de R$ 3,00 como unidade de acesso; tabela 2D formato × faixa ancorada em atributo visível; passe com quantidade fixa e reset mensal; natureza jurídica de intermediação com base de cálculo na comissão; margem como saída e piso de 10% líquido; matchmaking por intenção com saldo como restrição; ADR 0021 superada no fluxo de ingresso |
 | 3.14 | 11 de novembro de 2026 | ADR 0043: temporada trimestral e passe trimestral com franquia mensal; XP igual para todos; trilha de 30 níveis; customização em três estados e customização geral do app; estatísticas sem dado de evento. ADR 0044: clãs e troféus passam a integrar o MVP |
+| 3.15 | 12 de novembro de 2026 | Escada de preços decrescente (3/10/30/50 a R$ 3,70/3,40/3,20/3,10); passe a R$ 3,25 com franquia mensal; ingressos grátis por nível (1 no free, 2 no passe); C_c recalibrado para R$ 0,60 por jogador; tabela 2D recomputada; produção no Inter PJ |
 
 ## Como interpretar as decisões neste documento
 
@@ -1136,7 +1137,10 @@ Ficam inalteradas as fontes de receita das seções 16.1 a 16.6: comissão sobre
 A temporada, o passe trimestral e as regras de customização estão na ADR 0043.
 
 - **Temporada de 3 meses.** Um único reset, alinhado ao passe. Não existe passe mensal.
-- **Passe trimestral** com cobrança única e franquia mensal de 10, 20, 30 ou 50 ingressos. A entrega é mensal e não pode ser adiantada.
+- **Passe trimestral** com cobrança única e franquia mensal de 10, 20, 30 ou 50 ingressos, a **R$ 3,25 por ingresso** (R$ 32,50 a R$ 162,50 por mês). A entrega é mensal e não pode ser adiantada.
+- **Pacotes com preço decrescente:** 3 a R$ 3,70 · 10 a R$ 3,40 · 30 a R$ 3,20 · 50 a R$ 3,10. O avulso é mais caro de propósito; é ele que financia o pacote grande.
+- **Ingressos grátis por nível:** o tier gratuito recebe 1 a cada 5 níveis (até 6 por temporada) e o passe recebe 2 (até 12). Expiram no fim da temporada.
+- O passe custa mais por ingresso que o pacote grande porque entrega algo fora do dinheiro real: franquia mensal, ingressos grátis, Temporada e cosméticos.
 - **XP igual para todos.** A assinatura muda o que se desbloqueia, nunca a velocidade de progressão.
 - **Trilha de 30 níveis**, três missões semanais, **streak de vitórias com validade semanal** e nível de temporada (bronze/prata/ouro) que reseta na virada.
 - **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional.

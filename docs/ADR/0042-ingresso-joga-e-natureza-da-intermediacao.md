@@ -40,17 +40,28 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 
 | Faixa | 5x5 (10) | 6x6 (12) | 4x4 (8) | 3x3 (6) |
 |---|---:|---:|---:|---:|
-| Econômica dia (até R$ 120) | 6 | 5 | 8 | 10 |
-| Econômica noite (R$ 121–150) | 7 | 6 | 9 | 12 |
-| Padrão dia (R$ 151–180) | 9 | 7 | 11 | 14 |
-| Padrão noite (R$ 181–220) | 10 | 9 | 13 | 17 |
-| Coberta (R$ 221–260) | 12 | 10 | 15 | 19 |
-| Premium (R$ 261–300) | 13 | 11 | 17 | 22 |
+| Econômica dia (até R$ 120) | 5 | 4 | 6 | 8 |
+| Econômica noite (R$ 121–150) | 6 | 5 | 8 | 10 |
+| Padrão dia (R$ 151–180) | 7 | 6 | 9 | 12 |
+| Padrão noite (R$ 181–220) | 9 | 7 | 11 | 14 |
+| Coberta (R$ 221–260) | 10 | 9 | 13 | 17 |
+| Premium (R$ 261–300) | 12 | 10 | 14 | 19 |
 
-3. **Faixas adjacentes diferem em 1 ingresso**, salvo quando a diferença coincide com mudança de atributo visível.
-4. O degrau unitário é `T / (V/n)`. Com `T = R$ 3,00` e vaga de R$ 15,00, o degrau é 20%. Preço de ingresso maior produz degraus maiores; R$ 6,20 foi rejeitado.
-5. A margem líquida resultante fica entre **19,9% e 26,9%** no topo de cada faixa, com `T = R$ 3,00` e a pilha de custos da seção 5, desconsiderando 4x4 (ver item 6).
+3. **Faixas adjacentes diferem em 1 ingresso**, salvo quando a diferença coincide com mudança de atributo visível. Os saltos de 2 ocorrem nas fronteiras de atributo (Padrão dia e Coberta).
+4. O degrau unitário é `T / (V/n)`. Com `T = R$ 3,10` e vaga de R$ 15,00, o degrau é 21%. Preço de ingresso maior produz degraus maiores; R$ 6,20 foi rejeitado.
+5. A margem líquida resultante fica entre **10,2% e 22,6%** no topo de cada faixa, com `T = R$ 3,10` e a pilha de custos da seção 5.
 6. 4x4 arredonda para cima e gera cerca de R$ 24 por partida acima do alvo de receita. Aceito no piloto, revisável.
+7. O preço unitário é **decrescente por tamanho de compra**, para que o pacote grande seja viável sem encarecer o avulso:
+
+| Oferta | Ingressos | Unitário | Total |
+|---|---:|---:|---:|
+| Avulso | 3 | R$ 3,70 | R$ 11,10 |
+| Pequeno | 10 | R$ 3,40 | R$ 34,00 |
+| Médio | 30 | R$ 3,20 | R$ 96,00 |
+| Grande | 50 | R$ 3,10 | R$ 155,00 |
+| Passe | franquia mensal | R$ 3,25 | — |
+
+8. A tabela é calibrada no **menor preço praticado** (R$ 3,10, pacote grande). Todo preço acima disso é margem adicional. O passe é mais caro por ingresso que o pacote grande porque entrega franquia mensal, ingressos grátis por nível e Temporada — não é desconto, é assinatura.
 
 ### 4. Passe mensal
 
@@ -66,10 +77,10 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 ### 5. Conta do ingresso e piso de margem
 
 1. Três buckets no ledger: **custeio da reserva**, **faturamento** e **margem JOGA**.
-2. Pilha de custos por partida: `C_k = R$ 3,50` (PSP e transferência), `C_c·μ·S = R$ 15,87` (provisão de cancelamento, conservadora e a recalibrar), custo fixo `R$ 4,00`, imposto de 6% sobre a comissão e **conformidade da custódia de 0,4% do saldo carregado**.
+2. Pilha de custos por partida: **PSP de 0,99%** sobre a receita, **provisão de cancelamento de R$ 0,60 por jogador** (`C_c = R$ 0,47` por reserva cancelada, validado de baixo para cima: atendimento, reembolso CDC, reprocessamento da fila; não há tarifa de PSP a recuperar nem devolução em dinheiro), custo fixo de `R$ 4,00`, imposto de 6% sobre a comissão e **conformidade da custódia de 0,4% do saldo carregado**.
 3. **Margem é saída, não entrada.** `margem_liquida = (R − custeio) / V`. A variável `c` da ADR 0021 deixa de existir como premissa.
-4. Piso: **10% líquido**, avaliado **no topo da faixa** e **depois** do desconto do passe. Alvo: 12%.
-5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 75** na faixa de 6 ingressos. A faixa "até R$ 120" passa a ser viável e a regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
+4. Piso: **10% líquido**, avaliado **no topo da faixa** e **depois** do programa de ingressos grátis. Alvo: 12%.
+5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 125** na faixa de 5 ingressos. A regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
 6. Desconto de passe sai da margem, nunca do custeio. Faixa abaixo do piso não recebe desconto.
 7. A provisão de 100% do passivo é **política interna de liquidez**, não segregação jurídica. Em insolvência, o portador do ingresso é credor quiroquistário.
 8. **O float não é receita, não é margem e não é lucro.** Ele é posição de balanço: caixa de um lado, obrigação do outro. Seu único efeito econômico é dispensar capital de giro — um financiamento que não precisa ser contratado. Nunca lançar rendimento de float como receita, nem breakage de ingresso não usado como resultado.
@@ -90,10 +101,11 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 
 ### 8. PSP
 
-1. **Beta:** Mercado Pago, como já registrado na ADR 0034.
-2. **Produção:** em aberto. O Pagar.me **não** está eliminado; ele é candidato natural para split no momento da reserva.
-3. O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`.
-4. Não é requisito de MVP: Pix Automático por API, Payouts em lote no Brasil e rendimento do float.
+1. **Teste:** Mercado Pago, como já registrado na ADR 0034.
+2. **Produção: Inter PJ.** Conta corrente (não conta de pagamento), API Pix e de extratos gratuita, Pix de saída gratuito. Taxa: **0,90% no QR dinâmico imediato** (mínimo R$ 0,10, teto R$ 1,50). O teto faz o passe grande custar 0,35% por real. Usar QR imediato, não o com vencimento (0,99%).
+3. **Reserva técnica: Pagar.me**, não por taxa, mas como segunda conta operacional contra congelamento.
+4. O `PspAdapter` expõe três operações abstratas: `create_pix_charge`, `create_subscription` e `create_payout`.
+5. **Não são requisitos:** Pix Automático por API, Payouts em lote, escrow, motor de assinatura e rendimento do float. O passe é compra única trimestral, não recorrência.
 
 ### 9. Reajuste de preço e pausa do estabelecimento
 

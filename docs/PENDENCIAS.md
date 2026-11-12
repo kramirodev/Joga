@@ -1,6 +1,6 @@
 # Pendências abertas do JOGA
 
-**Atualizado em:** 11 de novembro de 2026
+**Atualizado em:** 12 de novembro de 2026
 
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
@@ -8,7 +8,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 
 | Pendência | Fase | Impacto | Próximo passo |
 |---|---|---|---|
-| PSP de produção (Pagar.me) | 14B | Sem split, retenção, estorno real e conciliação | Contratar/validar PSP, credenciais e contrato |
+| PSP de produção (Inter PJ) | 14B | Sem Pix real, estorno, repasse e conciliação | Contratar conta PJ, validar taxa de 0,90% e perfil transacional |
 | KYC do recebedor | 12B | Reserva paga não pode abrir sem recebedor `ACTIVE` | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
 | Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
@@ -61,9 +61,10 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 |---|---|---|
 | Parecer fiscal: base de cálculo da comissão, ISS por município, retenção pelo tomador, IBS/CBS na transição | Produção com dinheiro real | Contador e advogado tributário |
 | Parecer jurídico: intermediação, conta segregada, saldo em insolvência, 7 dias do CDC | Contrato e termos de uso | Advogado |
-| Recalibrar `C_c` para o fluxo de ingresso | Congela a tabela 2D | Medir com dados de cancelamento do piloto |
+| `C_c` recalibrado para R$ 0,47 por reserva cancelada (`q` = 75%) | Feito | Validar `q` e `C_c` com dados reais do piloto; a tabela se move ±1 ingresso por faixa |
 | Custódia, Payouts no Brasil e Pix Automático por API em cada PSP | PSP de produção | Comercial dos PSPs |
 | Taxonomia final de atributos e teto de V por faixa | Contrato com a quadra | Produto e comercial |
+| Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real (3,3%/6,7% da receita) e conversão no piloto |
 | Arredondamento de 4x4 | Tabela 2D | Produto |
 | Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
