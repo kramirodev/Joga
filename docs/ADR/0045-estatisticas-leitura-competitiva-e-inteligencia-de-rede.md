@@ -25,6 +25,7 @@ A decisão é a **Leitura A**: "MMR" nas estatísticas é a **leitura visível**
 3. `RD`, volatilidade, fórmula e parâmetros internos nunca são exibidos.
 4. Sem isso, o jogador não entende as consequências das próprias ações. É requisito de confiança, não perk.
 5. A taxa de presença é histórica e pessoal. **Não é o Trust Factor** e não expõe o score interno.
+6. **Divisão não é nível.** "Divisão" é a leitura competitiva derivada do MMR, por modalidade, e não reseta com a temporada. "Nível" é o degrau da temporada (1–30) e a faixa bronze/prata/ouro, que reseta a cada trimestre (ADR 0043 §4). São dois "elos" distintos, ambos visíveis a todos; a interface não usa a mesma palavra nem o mesmo ícone para os dois.
 
 ### 2. Estatísticas do passe
 

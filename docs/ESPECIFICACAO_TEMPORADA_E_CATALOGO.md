@@ -29,6 +29,10 @@ Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), estatíst
 | **Streak** | Vitórias consecutivas **com validade semanal**: derrota, empate ou semana sem jogar zeram. `best_wins` é recorde permanente |
 | **Item cosmético** | Elemento visual. Existe em exatamente um dos três estados: livre, XP ou passe |
 | **Atribuição** | Registro que diz que o jogador pode usar um item, e por quê |
+| **Divisão** | Leitura **competitiva** derivada do MMR, por modalidade. Visível a todos, sempre sem número bruto (ADR 0045) |
+| **Nível** | Degrau da **temporada** (1–30) e faixa bronze/prata/ouro. Reseta a cada trimestre |
+
+> **Divisão não é nível.** "Divisão" é competitiva, por modalidade e não reseta com a temporada. "Nível" é de temporada, reseta a cada trimestre. A interface não pode usar a mesma palavra para os dois, nem o mesmo ícone.
 
 ---
 
