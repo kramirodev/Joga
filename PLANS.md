@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.5** implementadas em 2026-11-12. A quitação por ingresso usa o modelo A (cada participante debita o próprio saldo). Falta devolução em ingresso no cancelamento (14D.6).
+**Status:** fatias **14D.1 a 14D.6** implementadas em 2026-11-12. Quitação por ingresso no modelo A e devolução em ingresso conforme a ADR 0039. Falta a temporada (14D.7) e encerrar as cobranças Pix pendentes.
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 

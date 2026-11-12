@@ -38,7 +38,7 @@ from app.modules.pricing.service import PricingBandError as PricingError
 from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.trust import TrustService
-from app.modules.tickets.service import InsufficientTickets, consume
+from app.modules.tickets.service import InsufficientTickets, consume, refund
 from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
@@ -640,6 +640,31 @@ class BookingService:
         self.session.flush()
         return self._bundle(booking)
 
+    def _refund_tickets(
+        self,
+        booking: Booking,
+        *,
+        exclude_user_id: uuid.UUID | None = None,
+    ) -> None:
+        """Devolve ingressos consumidos, conforme a matriz da ADR 0039.
+
+        A devolução é idempotente pela chave `booking_cancel:{booking_id}:{user}`.
+        """
+
+        for participant in self._active_participants(booking.id):
+            if participant.tickets_consumed <= 0:
+                continue
+            if exclude_user_id is not None and participant.user_id == exclude_user_id:
+                continue
+            refund(
+                self.session,
+                participant.user_id,
+                participant.tickets_consumed,
+                ref_type="booking_cancel",
+                ref_id=booking.id,
+            )
+            participant.payment_status = "REFUNDED"
+
     def _tickets_per_seat(self, booking: Booking) -> int:
         """Resolve a tabela 2D para a reserva: faixa da janela × formato do lobby."""
 
@@ -744,6 +769,12 @@ class BookingService:
             target,
             reason=booking.cancellation_reason,
         )
+        if by_venue:
+            # Falha do estabelecimento: todos recebem os ingressos de volta.
+            self._refund_tickets(booking)
+        else:
+            # ADR 0039: quem cancelou perde; os demais recebem.
+            self._refund_tickets(booking, exclude_user_id=actor_user_id)
         self._audit(
             actor_user_id,
             booking,
@@ -781,6 +812,8 @@ class BookingService:
             "CANCELLED",
             reason=booking.cancellation_reason,
         )
+        # Reserva que não se confirma: todos recebem os ingressos de volta.
+        self._refund_tickets(booking)
         self._audit(
             None,
             booking,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import BookingParticipant
+from app.modules.bookings.service import BookingService
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
 from app.modules.organizations.models import (
     Organization,
@@ -46,6 +47,7 @@ def bearer(token: str) -> dict[str, str]:
 
 def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> dict:
     users = [make_user(db_session) for _ in range(SEATS)]
+    owner_id = make_user(db_session)
     _, format_ = make_format(db_session, team_size=TEAM_SIZE)
     organization = Organization(name="Arena Ingresso")
     db_session.add(organization)
@@ -53,7 +55,7 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
     db_session.add(
         OrganizationMembership(
             organization_id=organization.id,
-            user_id=users[0],
+            user_id=owner_id,
             role=Role.OWNER.value,
         )
     )
@@ -117,6 +119,7 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
     return {
         "users": users,
         "tokens": [make_token(db_session, user_id) for user_id in users],
+        "owner_token": make_token(db_session, owner_id),
         "organization": organization,
         "venue": venue,
         "space": space,
@@ -149,7 +152,7 @@ def open_booking(api: TestClient, context: dict) -> dict:
 
     accepted = api.post(
         f"/api/v1/organizations/{context['organization'].id}/bookings/{booking['id']}/accept",
-        headers=bearer(context["tokens"][0]),
+        headers=bearer(context["owner_token"]),
     )
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["status"] == "PAYMENT_PENDING"
@@ -216,3 +219,67 @@ def test_insufficient_tickets_blocks_settlement(
 
     current = api.get(f"/api/v1/bookings/{booking['id']}", headers=bearer(context["tokens"][0]))
     assert current.json()["status"] == "PAYMENT_PENDING"
+
+
+def _settle_all(api: TestClient, context: dict, booking: dict) -> None:
+    for token in context["tokens"]:
+        response = api.post(
+            f"/api/v1/bookings/{booking['id']}/settle-with-tickets", headers=bearer(token)
+        )
+        assert response.status_code == 200, response.text
+
+
+def test_venue_cancellation_refunds_everyone(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    booking = open_booking(api, context)
+    _settle_all(api, context, booking)
+
+    cancelled = api.post(
+        f"/api/v1/bookings/{booking['id']}/cancel",
+        headers=bearer(context["owner_token"]),
+        json={"reason": "quadra fechou"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    for user_id in context["users"]:
+        assert get_balance(db_session, user_id) == TICKETS_PER_SEAT
+
+
+def test_player_cancellation_refunds_only_the_others(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    booking = open_booking(api, context)
+    _settle_all(api, context, booking)
+
+    cancelled = api.post(
+        f"/api/v1/bookings/{booking['id']}/cancel",
+        headers=bearer(context["tokens"][0]),
+        json={"reason": "imprevisto"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    assert get_balance(db_session, context["users"][0]) == 0
+    for user_id in context["users"][1:]:
+        assert get_balance(db_session, user_id) == TICKETS_PER_SEAT
+
+
+def test_system_cancellation_refunds_everyone(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    booking = open_booking(api, context)
+    _settle_all(api, context, booking)
+
+    BookingService(db_session).cancel_by_system(
+        uuid.UUID(booking["id"]), reason="sem substituto"
+    )
+    db_session.flush()
+
+    for user_id in context["users"]:
+        assert get_balance(db_session, user_id) == TICKETS_PER_SEAT

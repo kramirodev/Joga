@@ -822,3 +822,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `f5a6172b3949`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
 - **Testes:** `tests/test_ticket_settlement.py` com três casos; suíte completa verde.
 - **Pendente:** devolução em ingresso no cancelamento e parar de criar cobranças Pix quando a quitação é por ingresso.
+
+### 2026-11-12 — 14D.6 Devolução em ingresso no cancelamento
+
+- **Regra:** a matriz da ADR 0039 passa a valer sobre a carteira. Cancelamento pela quadra ou pelo sistema devolve para todos; cancelamento pelo jogador devolve só para os demais.
+- **Serviço:** `_refund_tickets` com chave `booking_cancel:{booking_id}:{user}` — repetir não devolve duas vezes.
+- **Corte:** continua na API (`cancellation_cutoff_hours`); depois do prazo, ninguém é reembolsado.
+- **Testes:** `tests/test_ticket_settlement.py` sobe para seis casos, incluindo os três desfechos de cancelamento; suíte completa verde.
+- **Pendente:** encerrar cobranças Pix `PENDING` de quem quitou por ingresso, e ligar a substituição à carteira.
