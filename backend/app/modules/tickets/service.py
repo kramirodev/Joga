@@ -15,7 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.modules.tickets.models import TicketBalance, TicketLedgerEntry
+from app.modules.identity.clock import utcnow
+from app.modules.tickets.models import (
+    TicketBalance,
+    TicketLedgerEntry,
+    TicketPack,
+    TicketPurchase,
+)
 
 
 class TicketError(Exception):
@@ -28,6 +34,96 @@ class InsufficientTickets(TicketError):
 
 class TicketConflict(TicketError):
     """Chave de idempotência reutilizada com efeito diferente."""
+
+
+class PackNotFound(TicketError):
+    """Pacote inexistente ou inativo."""
+
+
+class PurchaseNotFound(TicketError):
+    """Compra inexistente ou de outro jogador."""
+
+
+DEFAULT_PACKS: tuple[tuple[str, str, int, int], ...] = (
+    ("avulso", "Avulso", 3, 370),
+    ("pequeno", "Pequeno", 10, 340),
+    ("medio", "Médio", 30, 320),
+    ("grande", "Grande", 50, 310),
+)
+
+
+def seed_default_packs(session: Session) -> None:
+    """Garante os pacotes da escada de preço. Idempotente."""
+
+    existing = set(session.scalars(select(TicketPack.code)).all())
+    for code, label, tickets, unit_price_cents in DEFAULT_PACKS:
+        if code in existing:
+            continue
+        session.add(
+            TicketPack(
+                code=code,
+                label=label,
+                tickets=tickets,
+                unit_price_cents=unit_price_cents,
+            )
+        )
+    session.flush()
+
+
+def list_packs(session: Session) -> Sequence[TicketPack]:
+    return session.scalars(
+        select(TicketPack)
+        .where(TicketPack.active.is_(True))
+        .order_by(TicketPack.tickets.asc())
+    ).all()
+
+
+def get_pack(session: Session, code: str) -> TicketPack:
+    pack = session.scalars(
+        select(TicketPack).where(TicketPack.code == code, TicketPack.active.is_(True))
+    ).first()
+    if pack is None:
+        raise PackNotFound
+    return pack
+
+
+def create_purchase(session: Session, user_id: uuid.UUID, pack_code: str) -> TicketPurchase:
+    """Registra a intenção de compra. A cobrança real entra na Fase 14B."""
+
+    pack = get_pack(session, pack_code)
+    purchase = TicketPurchase(
+        user_id=user_id,
+        pack_id=pack.id,
+        tickets=pack.tickets,
+        amount_cents=pack.amount_cents,
+    )
+    session.add(purchase)
+    session.flush()
+    return purchase
+
+
+def confirm_purchase(
+    session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
+) -> tuple[TicketPurchase, int]:
+    """Marca a compra como paga e credita os ingressos, sem duplicar."""
+
+    purchase = session.get(TicketPurchase, purchase_id)
+    if purchase is None or purchase.user_id != user_id:
+        raise PurchaseNotFound
+    if purchase.status == "paid":
+        return purchase, get_balance(session, user_id)
+    purchase.status = "paid"
+    purchase.paid_at = purchase.paid_at or utcnow()
+    balance = grant(
+        session,
+        user_id,
+        purchase.tickets,
+        source="purchase",
+        idempotency_key=f"purchase:{purchase.id}",
+        ref_type="purchase",
+        ref_id=purchase.id,
+    )
+    return purchase, balance
 
 
 def get_balance(session: Session, user_id: uuid.UUID) -> int:

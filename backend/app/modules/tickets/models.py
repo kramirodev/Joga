@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -29,6 +30,66 @@ TICKET_SOURCES = (
     "refund",
     "admin",
 )
+
+PURCHASE_STATUSES = ("pending", "paid", "cancelled")
+
+
+class TicketPack(Base):
+    """Pacote de ingressos à venda. Preço decrescente por tamanho (ADR 0042 §3)."""
+
+    __tablename__ = "ticket_packs"
+    __table_args__ = (
+        CheckConstraint("tickets > 0", name="tickets_positive"),
+        CheckConstraint("unit_price_cents > 0", name="unit_price_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(60), nullable=False)
+    tickets: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+    @property
+    def amount_cents(self) -> int:
+        return self.tickets * self.unit_price_cents
+
+
+class TicketPurchase(Base):
+    """Intenção de compra de pacote. A cobrança real entra na Fase 14B."""
+
+    __tablename__ = "ticket_purchases"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'paid', 'cancelled')",
+            name="status_valid",
+        ),
+        CheckConstraint("tickets > 0", name="tickets_positive"),
+        CheckConstraint("amount_cents > 0", name="amount_positive"),
+        Index("ix_ticket_purchases_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    pack_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ticket_packs.id", ondelete="RESTRICT"), nullable=False
+    )
+    tickets: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TicketLedgerEntry(Base):

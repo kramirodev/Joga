@@ -29,6 +29,7 @@ from app.modules.ratings import models as ratings_models  # noqa: F401
 from app.modules.results import models as results_models  # noqa: F401
 from app.modules.social import models as social_models  # noqa: F401
 from app.modules.tickets import models as tickets_models  # noqa: F401
+from app.modules.tickets.service import seed_default_packs
 from app.modules.venues import models as venues_models  # noqa: F401
 
 
@@ -56,6 +57,7 @@ def db_session() -> Iterator[Session]:
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         seed_default_bands(session)
+        seed_default_packs(session)
         session.commit()
         yield session
     Base.metadata.drop_all(engine)

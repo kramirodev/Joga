@@ -799,3 +799,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `d3e4f5061927`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
 - **Testes:** `tests/test_tickets.py` com sete casos; suíte completa verde, ruff e mypy sem achados.
 - **Pendente na fatia:** compra não credita, reserva não consome e devolução ainda é em dinheiro.
+
+### 2026-11-12 — 14D.4 Pacotes e compra de ingressos
+
+- **Catálogo:** `ticket_packs` semeado com a escada da ADR 0042 (3 @ 3,70 · 10 @ 3,40 · 30 @ 3,20 · 50 @ 3,10).
+- **Compra:** `ticket_purchases` com valor congelado; `POST /me/tickets/purchases` cria a intenção `pending`.
+- **Confirmação:** `POST /me/tickets/purchases/{id}/confirm` só existe em ambiente local — dinheiro real depende da 14B.
+- **Crédito:** `grant` com chave `purchase:{id}`; confirmar duas vezes não duplica.
+- **API:** `GET /me/tickets/packs` expõe a escada; o preço unitário já é exibido ao jogador.
+- **Migração:** `e4f5061a2838`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_ticket_purchases.py` com seis casos; suíte completa verde.
+- **Pendente:** cobrança Pix, cancelamento e o consumo na reserva.
