@@ -25,7 +25,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 
 ### 2. Ingresso JOGA
 
-1. O ingresso é uma **unidade de acesso pessoal**, com preço de referência de **R$ 3,00**.
+1. O ingresso é uma **unidade de acesso pessoal**, com preço de referência de **R$ 3,10** (pacote grande, base da tabela) e R$ 3,70 no avulso.
 2. O jogador vê apenas ingressos. Reais aparecem somente no checkout de pacote e de passe.
 3. O ingresso é **consumido na confirmação da reserva**, não no check-in. Preserva a matriz da ADR 0039.
 4. Devolução é sempre em **ingressos**, para o mesmo saldo (ADR 0039 e ADR 0037).
@@ -63,7 +63,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 
 8. A tabela é calibrada no **menor preço praticado** (R$ 3,10, pacote grande). Todo preço acima disso é margem adicional. O passe é mais caro por ingresso que o pacote grande porque entrega franquia mensal, ingressos grátis por nível e Temporada — não é desconto, é assinatura.
 
-### 4. Passe mensal
+### 4. Passe trimestral com franquia mensal
 
 1. O passe é o produto principal. Tamanhos: **10, 20, 30 e 50 ingressos por mês**.
 2. A franquia do passe é **mensal e não acumula**. Ingresso de passe não convertido em comprado.
@@ -81,7 +81,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 3. **Margem é saída, não entrada.** `margem_liquida = (R − custeio) / V`. A variável `c` da ADR 0021 deixa de existir como premissa.
 4. Piso: **10% líquido**, avaliado **no topo da faixa** e **depois** do programa de ingressos grátis. Alvo: 12%.
 5. Com intermediação, o piso de 10% se sustenta até quadra de aproximadamente **R$ 125** na faixa de 5 ingressos. A regra de 25% da ADR 0021 deixa de se aplicar ao fluxo de ingresso.
-6. Desconto de passe sai da margem, nunca do custeio. Faixa abaixo do piso não recebe desconto.
+6. **O passe não tem desconto por ingresso.** Seu benefício é franquia mensal, ingressos grátis por nível e Temporada. Faixa abaixo do piso não recebe benefício adicional.
 7. A provisão de 100% do passivo é **política interna de liquidez**, não segregação jurídica. Em insolvência, o portador do ingresso é credor quiroquistário.
 8. **O float não é receita, não é margem e não é lucro.** Ele é posição de balanço: caixa de um lado, obrigação do outro. Seu único efeito econômico é dispensar capital de giro — um financiamento que não precisa ser contratado. Nunca lançar rendimento de float como receita, nem breakage de ingresso não usado como resultado.
 

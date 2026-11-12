@@ -1116,12 +1116,12 @@ O passe trimestral da ADR 0043 é a assinatura do produto: cobrança única por 
 
 ### 16.7 Ingresso JOGA
 
-O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0042. Ele não é saldo em reais, não é moeda e não é transferível: é uma unidade de acesso pessoal, com preço de referência de R$ 3,00.
+O fluxo comercial principal passa a ser o **Ingresso JOGA**, registrado na ADR 0042. Ele não é saldo em reais, não é moeda e não é transferível: é uma unidade de acesso pessoal, com preço de referência de R$ 3,10 no pacote grande e R$ 3,70 no avulso.
 
 - **O jogador vê apenas ingressos.** Reais aparecem somente no checkout de pacote e de passe.
 - **Custo da partida em ingressos** decorre de uma tabela 2D (formato × faixa). A faixa é ancorada em atributo visível — cobertura e dia/noite —, nunca no preço da quadra.
 - **Consumo na confirmação da reserva**, não no check-in. A matriz de devolução da ADR 0039 é preservada, sempre em ingressos.
-- **Passe mensal** de 10, 20, 30 ou 50 ingressos, com quantidade fixa, reset mensal e sem acumular. Ingresso comprado nunca expira.
+- **Passe trimestral** com franquia mensal de 10, 20, 30 ou 50 ingressos, quantidade fixa, reset mensal e sem acumular. Ingresso comprado nunca expira.
 - **Sem mercado de saldo:** sem transferência, revenda, saque ou troca entre usuários. A única exceção é o direito de arrependimento de 7 dias.
 - **Matchmaking por intenção:** região, horário, formato e nível primeiro; o saldo é restrição sobre o resultado, não a consulta.
 - **Reajuste sem quebrar a reserva feita:** o estabelecimento reajusta apenas janelas futuras sem reserva, na virada de temporada e com aviso de 30 dias. Pausar ou fechar com reserva confirmada conta como falha da quadra e devolve os ingressos.
@@ -1148,6 +1148,7 @@ A temporada, o passe trimestral e as regras de customização estão na ADR 0043
 - **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
 - **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual, partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução do MMR, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor nem dado de evento de jogo.
 - **Não são benefícios do passe:** convite de estreia, remoção de anúncios, bônus de XP, badges, escudo de clã e as estatísticas essenciais.
+- **Inteligência de rede** no passe: mapa de calor de horários, densidade competitiva por quadra e ocupação, sempre em faixas e com apresentação simples. Free vê a lista de quadras mais usadas. Não é filtro de busca.
 - **Lobby privado é benefício do passe.**
 - **Escudo de clã é livre** — o clã aparece no perfil de todo jogador. Do passe, só o **destaque no perfil do clã**.
 
@@ -1402,52 +1403,32 @@ O exemplo documentado de `POST /transfers` do Pagar.me retorna `fee: 367`. Se a 
 
 Abaixo de aproximadamente **R$ 100**, a taxa ultrapassa 25% no cenário de 20% de conclusão. A resposta correta não é subsidiar a reserva: é não oferecer pagamento integrado naquela faixa, renegociar o preço da quadra ou aumentar a conclusão operacional.
 
-### 18.8 PSP: Pagar.me Flex e alternativa centralizada
+### 18.8 PSP: Inter em produção e Mercado Pago no teste
 
-A pesquisa comparou PSPs com foco em Pix individual, split, saldo por recebedor e liberação controlada.
+> **Escopo.** O split e o recebedor analisados aqui valem para o fluxo de **reserva avulsa**. No fluxo de ingresso (ADR 0042) a cobrança é por pacote ou passe, sem split e sem recebedor de marketplace.
 
-**Pagar.me Flex — primeira opção, condicionada.**
+**Inter PJ — produção.**
 
-A documentação V5 sustenta:
+- Conta corrente, não conta de pagamento: o dinheiro cai direto na conta da PJ.
+- API Pix e de extratos gratuita; Pix de saída gratuito.
+- **0,90% no QR dinâmico imediato**, mínimo de R$ 0,10 e teto de R$ 1,50. O teto faz o passe grande custar 0,35% por real transacionado.
+- Usar o **QR imediato**, não o com vencimento (0,99%).
+- Dispensa segundo provedor para o repasse: recebe e paga pela mesma conta.
 
-- várias cobranças no mesmo `order`, enquanto o pedido estiver aberto;
-- Pix com split;
-- split por valor fixo (`flat`) ou percentual (`percentage`);
-- recebedor com conta digital e saldo próprio;
-- `POST /transfers` com `recipient_id` e `Idempotency-Key`;
-- `transfer_enabled=false` para desativar transferência automática;
-- estorno com regras de split.
+**Mercado Pago — protótipo e beta fechado (ADR 0034).** Já integrado. Restrito ao teste: libera o saldo do vendedor com prazo e só paga contas Mercado Pago.
 
-O Flex não publica tarifa Pix específica. Os 0,99% divulgados são da oferta Essencial e **não podem** ser tratados como tarifa garantida. A tarifa do Flex precisa ser negociada.
+**Pagar.me — reserva técnica.** Forte em split e recebedores; é o candidato natural se o produto migrar para cobrança na reserva, em que a quadra já é conhecida no momento da cobrança.
 
-**Inter — alternativa centralizada.**
+**Por que a tarifa fixa foi descartada:** Asaas (R$ 2,15 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50) cobram por cobrança. Com dez cobranças por partida, a tarifa fixa consome uma parte desproporcional do valor da quadra.
 
-O Inter oferece Pix com tarifa pública de 0,90% por QR Code imediato (mínimo de R$ 0,10 e máximo de R$ 1,50 por transação, com faixas gratuitas mensais). O valor fica na conta do JOGA; a quadra não saca sozinha e o reembolso é operacionalmente mais simples. Em troca, aumenta a exposição jurídica e regulatória de custódia de recursos de terceiros.
+Perguntas abertas para o Inter antes do contrato:
 
-| Critério | Pagar.me Flex (split) | Inter (centralizado) |
-|---|---|---|
-| Quem custodia | PSP, no saldo do recebedor | JOGA |
-| Quadra saca antes | risco a confirmar | impossível |
-| Reembolso | estorno no PSP | do saldo do JOGA |
-| Inadimplência da quadra | risco no estorno | risco no repasse |
-| Fardo regulatório | obrigações de facilitador de pagamento | possível enquadramento como facilitador |
-| Interface financeira do recebedor | obrigatória | não se aplica |
-| Complexidade de código | ledger de liberação | ledger + repasse + conciliação |
-
-**PSPs com tarifa fixa alta por Pix foram excluídos como primeira opção:** Asaas (R$ 1,99 por Pix), AbacatePay (R$ 0,80 por Pix) e OpenPix (0,80% com mínimo de R$ 0,50). Com dez cobranças por reserva, a tarifa fixa consome uma parte desproporcional do valor da quadra.
-
-A decisão e as perguntas abertas estão no ADR 0021. O JOGA não deve fechar contrato sem resposta formal sobre:
-
-1. aprovação como cliente PSP com split no Flex;
-2. tarifa Pix negociada;
-3. mensalidade, setup ou cobrança por recebedor;
-4. tarifa por split, transferência ou saque;
-5. saque autônomo do estabelecimento com `transfer_enabled=false`;
-6. liberação por `POST /transfers` somente após confirmação;
-7. disponibilidade imediata do Pix no saldo do recebedor;
-8. retenção de saldo para novos recebedores;
-9. comportamento do estorno Pix com split na V5;
-10. responsabilidade e efeito do MED sem saldo.
+1. aceite escrito da atividade (crédito pré-pago de serviços) e do perfil transacional;
+2. tarifa confirmada para conta PJ de LTDA;
+3. teto e mínimo por transação aplicados a volume;
+4. estorno parcial de Pix por API, após liquidação, com prazo;
+5. webhook e idempotência por `txid`;
+6. limite de requisições, sandbox e prazo de onboarding.
 
 ### 18.9 Financiamento dos cancelamentos
 
@@ -1467,6 +1448,8 @@ provisão total = R$ 15,87
 ```
 
 O custo esperado de cancelamento é financiado pela parcela `C_c·μ·S` embutida na taxa de todas as reservas: as reservas que concluem pagam a provisão que cobre as que cancelam. A comissão `c·V` permanece separada, para custo fixo e lucro. O buffer `S` existe para a variância, não para o valor principal.
+
+> **No fluxo de ingresso** (ADR 0042) o `q` sobe, porque o pagamento sai do caminho, e o `C_c` cai, porque cancelar devolve ingresso e não dinheiro. Com `q = 75%` e `C_c = R$ 0,47`, a provisão é **R$ 0,60 por jogador** — não R$ 15,87 por reserva. Ver ADR 0042 §5.
 
 Para continuidade histórica: no desenho antigo, a comissão mais o markup sobre a reserva concluída cobriam o custo dos cancelamentos. Com `V = R$ 180`, `c = 10%`, `C_k ≈ R$ 4,86` e markup de 80%, o ponto de equilíbrio ocorria com `C_c ≈ R$ 5,47`. Esse número continua útil como referência de quanto custo de cancelamento a comissão mais o buffer suportavam. Na fórmula nova, se `C_c` subir acima do previsto, a taxa sobe e a reserva pode se tornar inelegível; não há prejuízo silencioso.
 
@@ -1817,10 +1800,10 @@ O roadmap abaixo representa uma visão de produto, não substitui a ordem técni
 | 7. Moderação | Denúncias de perfil, análise contextual por IA e revisão humana |
 | 8. Descoberta de espaços | Espaços públicos e particulares, informações operacionais e compatibilidade |
 | 9. Painel de gestão de quadras | Organizações, espaços, permissões, horários, exceções e histórico |
-| 10. Onboarding e interface financeira | KYC do recebedor, agenda de recebíveis, contratos, comprovantes e contestação |
+| 10. Onboarding e interface financeira | Cadastro do fornecedor e chave de repasse, agenda de recebíveis, contratos, comprovantes e contestação |
 | 11. Solicitação e confirmação de reservas | Solicitação ao estabelecimento, aceite, recusa e compromisso condicional |
 | 12. Bloqueio temporário e disponibilidade | Bloqueio do espaço específico, expiração e prevenção de sobreposição |
-| 13. Pagamentos Pix e split | Cobranças simultâneas, PSP, split, webhooks, conciliação e confirmação |
+| 13. Pagamentos Pix e ingresso | PSP, cobrança por pacote e passe, webhooks, conciliação e repasse ao fornecedor |
 | 14. Substituição, cancelamentos e reembolsos | Substituição dentro da janela, cancelamentos, reembolsos, MED e estados financeiros |
 | 15. Clãs e rankings | Clãs abertos/fechados, chat e ranking competitivo por modalidade |
 | 16. Moderação e Trust & Safety | Denúncias de perfil, análise contextual por IA e revisão humana |
@@ -1890,7 +1873,7 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 26. O backend controla todos os prazos; notificações e o relógio do dispositivo não são fonte oficial.
 27. O JOGA não construirá carteira própria nem custódia financeira informal.
 28. Se nenhum PSP atender ao fluxo de pagamentos individuais, split e liberação controlada, o lançamento do pagamento integrado deverá aguardar.
-29. O Pagar.me Flex é a primeira opção de PSP, condicionada a confirmação contratual; o Inter é a alternativa centralizada.
+29. O **Inter PJ** é o PSP de produção; o Mercado Pago fica no protótipo e beta; o Pagar.me é reserva técnica e candidato do fluxo de reserva avulsa.
 30. Um estabelecimento com recebedor em credenciamento não pode originar reserva paga; o KYC é portão de elegibilidade.
 31. A quadra só recebe a liberação depois que tudo estiver confirmado, inclusive a realização da partida; a liberação automática após `N` horas e a janela de disputa dependem de definição.
 32. A interface financeira do estabelecimento é escopo obrigatório quando houver split (Res. 264/349).

@@ -46,10 +46,10 @@ O comércio de produtos está fora do escopo inicial (ADR 0022). A camada comerc
 | Equipamento da partida | Kit por formato com responsáveis; não é critério de capitão, MMR ou elegibilidade (ADR 0030) |
 | Clãs | Abertos ou fechados, com ranking de troféus por modalidade |
 | Reservas | Solicitação ao estabelecimento, bloqueio temporário e confirmação com pagamentos completos |
-| Pagamentos | Pix individual por participante; PSP externo com split ou custódia centralizada |
-| Custódia | Sem carteira própria; liberação ao estabelecimento somente após a reserva e a partida |
-| KYC do recebedor | Obrigatório antes de abrir reserva paga |
-| Interface financeira | Obrigatória para o estabelecimento quando houver split (Res. 264/349) |
+| Pagamentos | Ingresso pré-pago: Pix por compra de pacote ou passe. No fluxo de reserva avulsa, Pix por participante |
+| Custódia | Sem carteira própria; o saldo de ingressos é passivo do JOGA e o repasse ao fornecedor ocorre em `starts_at + 2h` |
+| Cadastro do fornecedor | Validação de CNPJ e chave de repasse antes de abrir reserva paga |
+| Interface financeira | Extrato e repasses por fornecedor. Obrigações de split (Res. 264/349) só se aplicam ao fluxo de reserva avulsa |
 | Dados oficiais | PostgreSQL como fonte da verdade |
 | Backend | FastAPI em monólito modular |
 | Redis | Cache, limites, presença e distribuição efêmera; não fonte oficial |
@@ -86,8 +86,8 @@ O comércio de produtos está fora do escopo inicial (ADR 0022). A camada comerc
 - Resultados, disputas, MMR individual e Trust Factor esportivo.
 - Cadastro de estabelecimentos, quadras e agenda.
 - Solicitação de reserva, bloqueio temporário e máquina de estados.
-- Pagamento Pix individual, split ou custódia centralizada e reembolsos.
-- Onboarding/KYC do recebedor e portão de elegibilidade.
+- Ingresso pré-pago: Pix na compra de pacote ou passe, consumo na confirmação da reserva e reembolso em ingresso.
+- Onboarding do fornecedor (CNPJ e chave de repasse) e portão de elegibilidade.
 - Interface financeira do estabelecimento, liberação e conciliação.
 - Cancelamentos e reembolsos com trilha de auditoria.
 - Denúncias de usuários e moderação de chats de lobby e clã, com revisão humana.
@@ -164,7 +164,7 @@ O painel web pode ser desenvolvido em React + TypeScript, mas o framework final 
 - Autenticação, autorização e isolamento multi-tenant.
 - Casos de uso e transições de estado.
 - Transações de banco, controle de agenda e reserva.
-- Integração com provedor de pagamento e KYC do recebedor.
+- Integração com provedor de pagamento e cadastro do fornecedor.
 - Verificação de webhooks, eventos financeiros e idempotência.
 - Outbox, rate limits, paginação, validação e contratos OpenAPI.
 
@@ -925,6 +925,8 @@ A liberação ao estabelecimento ocorre 2 h após o início da reserva (`starts_
 
 ## 15. Pagamentos Pix, split e custódia
 
+> **Escopo.** Esta seção descreve o fluxo de **reserva avulsa**, em que cada participante paga a própria vaga. O **fluxo de ingresso** (ADR 0042) é diferente: a cobrança acontece na compra de pacote ou passe, sem split e sem recebedor de marketplace, e o repasse ao estabelecimento é feito pela conta do JOGA. Ver §15.8.
+
 ### 15.1 Provedor
 
 Utilizar provedor externo com recursos adequados a:
@@ -937,7 +939,7 @@ Utilizar provedor externo com recursos adequados a:
 - webhooks autenticados;
 - conciliação.
 
-O Pagar.me Flex é a primeira opção **de produção**, condicionada a contrato e às respostas do ADR 0021. O Inter é a alternativa centralizada.
+**Produção: Inter PJ** (ADR 0042 §8). Conta corrente, não conta de pagamento; API Pix e de extratos gratuita; **0,90% no QR dinâmico imediato**, mínimo de R$ 0,10 e teto de R$ 1,50; Pix de saída gratuito. O **Pagar.me** permanece como reserva técnica e como candidato caso o produto migre para cobrança na reserva. O split e o recebedor valem apenas para esse fluxo de reserva avulsa.
 
 No **protótipo e beta fechado**, a ADR 0034 adota o Mercado Pago Checkout Transparente (Pix) com custódia centralizada de teste: o valor fica na conta do JOGA, o ledger registra a obrigação e o repasse ao estabelecimento ocorre após a partida ser declarada como acontecida. Esse fluxo é de teste e não substitui a retenção/split de produção.
 
@@ -1015,7 +1017,7 @@ O valor é congelado na abertura da cobrança e não muda por recalibração pos
 
 Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnico do fluxo.
 
-**Unidades.** O ingresso é a unidade de acesso: preço de referência de R$ 3,00, pessoal, intransferível, sem saque, sem revenda e sem transferência entre contas. Ingresso comprado não expira; franquia de passe reseta mensalmente.
+**Unidades.** O ingresso é a unidade de acesso: preço de referência de R$ 3,10 (pacote grande) a R$ 3,70 (avulso), pessoal, intransferível, sem saque, sem revenda e sem transferência entre contas. Ingresso comprado não expira; franquia de passe reseta mensalmente.
 
 **Dois momentos distintos.** A compra do pacote ou do passe é um evento de caixa e cria **passivo** (`ingressos_emitidos`). O consumo ocorre na confirmação da reserva e extingue o passivo do jogador ao mesmo tempo em que reconhece a obrigação com o estabelecimento. Nenhum dos dois é receita no momento da compra.
 
@@ -1497,11 +1499,11 @@ Pipeline recomendado:
 | 9. Comunidade em tempo real | Chat de lobby, amigos, convites, WebSocket, Outbox e push | Texto e links internos; sem chat global ou mídia livre |
 | 10. Hardening e piloto (núcleo esportivo) | Segurança, carga, observabilidade, backup/restore e piloto | Go-live comercial fica na fase 19 |
 | 11. Organizações e painel de gestão | Organizações, papéis, BOLA e painel web (JOGA y GESTÃO) | Framework web com ADR; sem reservas pagas |
-| 12. Quadras, agenda e KYC | Espaços, agenda, preços, bloqueios e onboarding do recebedor | Reserva paga bloqueada sem recebedor ativo |
+| 12. Quadras, agenda e fornecedor | Espaços, agenda, preços, bloqueios, cadastro do fornecedor e chave de repasse | Reserva paga bloqueada sem chave de repasse validada |
 | 13. Reservas e temporizadores | Solicitação, aceite, hold, T1/T2/T3, substituição e estados | Sem cobrança antes do aceite e do bloqueio |
-| 14. Pagamentos Pix e reembolsos | Cobranças individuais, split/custódia, webhooks, ledger e reembolsos | Sem carteira própria; status só por evento do PSP |
+| 14. Ingresso, Pix e reembolsos | Cobrança por pacote e passe, webhooks, ledger, estorno parcial e repasse | Sem carteira própria; status só por evento do PSP |
 | 15. Interface financeira e conciliação | Extrato, recebíveis, liberação, contestação e conciliação | Sem liberação antes da partida; Res. 264/349 |
-| 16. Clãs e troféus | Clãs, chat de clã, troféus por modalidade e temporadas | Fórmula validada por simulações e controles antiabuso |
+| 16. Clãs e troféus | Clãs, chat de clã, troféus por modalidade e temporadas | Fórmula validada por simulações e controles antiabuso. **Antecipada ao MVP pela ADR 0044, em paralelo às Fases 11–15** |
 | 17. Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | Denúncia isolada não altera Trust Factor |
 | 18. Publicidade | Campanhas patrocinadas | Publicidade nunca altera competitividade |
 | 19. Hardening final e lançamento comercial | Segurança completa, LGPD, revisão jurídica e go-live comercial | Produção somente com critérios atendidos |

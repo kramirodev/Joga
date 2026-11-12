@@ -141,11 +141,11 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 12 — Quadras, agenda e KYC
 
-**Status:** 12A (quadras, fotos e agenda) implementada e validada localmente em 2026-11-07; 12B (KYC/recebedor) bloqueada por decisão e contrato de PSP.
+**Status:** 12A (quadras, fotos e agenda) implementada e validada localmente em 2026-11-07; 12B (cadastro do estabelecimento como fornecedor e chave de repasse) pendente.
 
 **Escopo 12A — quadras, fotos e agenda:** cadastro de espaços/quadras, vínculo esporte–quadra, fotos de quadra com upload autenticado por organização, revisão, armazenamento privado, remoção e retenção; agenda, preços, intervalos, bloqueios, exceções e registro de reservas externas para evitar conflito; ligação entre o catálogo `venues` da Fase 4 e o perfil comercial `organization_venues` da Fase 11.
 
-**Escopo 12B — KYC/recebedor:** onboarding do estabelecimento como recebedor no PSP, com dados cadastrais, conta bancária na mesma titularidade e validação de identidade/KYC; estados do recebedor e regra que impede reserva paga sem recebedor ativo. Depende de decisão e contrato de PSP.
+**Escopo 12B — fornecedor e repasse:** dados cadastrais do estabelecimento, chave Pix ou conta bancária de titularidade do próprio CNPJ, contrato de intermediação com teto de valor por faixa e regra que impede reserva paga sem chave de repasse validada. Não há KYC de recebedor de marketplace: a quadra é fornecedora, paga por Pix.
 
 **Não fazer:** exigir integração ERP/PDV; implementar logística, produtos ou estoque; permitir reserva paga para recebedor em credenciamento; representar espaço público como reservável sem autorização verificável; aceitar foto de pessoa, upload livre ou URL arbitrária; publicar foto sem revisão.
 
@@ -163,9 +163,9 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14 — Pagamentos Pix e reembolsos
 
-**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Pagar.me produção, split/retenção e reembolso real) pendente.
+**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Inter PJ em produção, Pix, estorno parcial e repasse) pendente.
 
-**Escopo:** integração com PSP, um `order` por reserva e uma cobrança Pix por participante; no protótipo/beta, Mercado Pago com custódia centralizada de teste e repasse após `COMPLETED`; em produção, split/retenção com Pagar.me; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estados financeiros individuais; reembolso integral quando a reserva não se completa; pagamentos tardios; conciliação básica.
+**Escopo:** integração com PSP, uma cobrança Pix por compra de pacote ou passe; Mercado Pago no protótipo/beta e **Inter PJ em produção**; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estorno parcial de Pix para os 7 dias do CDC; repasse ao estabelecimento em `starts_at + 2h` (ADR 0040); conciliação básica. O fluxo de ingresso segue a ADR 0042 e não usa split nem recebedor de marketplace.
 
 **Não fazer:** construir processador próprio ou carteira custodial; armazenar dados completos de cartão; confiar no retorno visual do app; abrir cobrança antes do bloqueio; liberar valor ao estabelecimento antes da confirmação; deduzir tarifas do reembolso do jogador.
 

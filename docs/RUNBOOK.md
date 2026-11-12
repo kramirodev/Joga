@@ -161,6 +161,18 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_MATCHMAKING_SLOT_MINUTES` | `30` |
 | `JOGA_MATCHMAKING_MIN_LEAD_MINUTES` | `120` |
 | `JOGA_MATCHMAKING_MAX_RADIUS_KM` | `30` |
+| `JOGA_RELEASE_DELAY_HOURS` | `2`; repasse 2 h após o início da partida (ADR 0040) |
+| `JOGA_BOOKING_T2_MAX_MINUTES` | `60`; teto da resposta da quadra (ADR 0039) |
+| `JOGA_CANCELLATION_CUTOFF_HOURS` | `6`; cutoff proposto na ADR 0039 |
+| `JOGA_SUBSTITUTION_WINDOW_PERCENT` | `25`; janela T4 proporcional ao tempo restante |
+| `JOGA_SUBSTITUTION_WINDOW_MIN_MINUTES` | `30`; piso da janela T4 |
+| `JOGA_SUBSTITUTION_WINDOW_MAX_HOURS` | `12`; teto da janela T4 |
+| `JOGA_LATE_SUBSTITUTION_WINDOW_MINUTES` | `15`; janela de substituto em no-show |
+| `JOGA_PRESENCE_OPEN_LEAD_MINUTES` | `60`; abertura do pré-check-in/presença |
+| `JOGA_PRESENCE_CLOSE_LEAD_MINUTES` | `30`; fechamento e no-show automático |
+| `JOGA_PRESENCE_RADIUS_M` | `200`; raio do geofence |
+| `JOGA_PRESENCE_MAX_ACCURACY_M` | `100`; precisão máxima aceita no GPS |
+| `JOGA_REVIEW_OPERATORS` | vazio; operadores autorizados a decidir contestações financeiras |
 
 Nunca versionar `.env`, credenciais reais ou segredos. `.env.example` só contém placeholders.
 
@@ -175,7 +187,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m alembic check
 ```
 
-`alembic check` compara os modelos com o banco e deve retornar “No new upgrade operations detected”. A CI executa essa verificação depois de reaplicar as migrações.
+`alembic check` compara os modelos com o banco e deve retornar “No new upgrade operations detected”. A CI executa essa verificação depois de reaplicar as migrações. A migração `c15a1b2c3d4e` cria `venue_releases` e `financial_disputes` e faz backfill das liberações simuladas da 14C.
 
 Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey; `b8d2f4a6c910` cria catálogo, perfil, disponibilidade, região e locais (com seeds `futebol-5x5` e `volei-6x6`); `c5e1a7d3f208` cria fila, lobbies, participantes e rodadas; `d7f2b9c4e615` cria partidas, participantes e transições; `e1a4c7d9b230` cria resultados, disputas, capitão e idempotência; `f2b5d8e1a7c3` cria contadores de rate limiting.
 
@@ -402,7 +414,7 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel. Reservas no mobile, pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel. A Fase 15 acrescentou a aba Financeiro com extrato, recebíveis, liberação simulada e contestação. Reservas no mobile, pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
 
 ### Reservas e temporizadores (Fase 13A)
 
@@ -418,15 +430,25 @@ cd backend
 .venv/bin/python -m scripts.advance_bookings --loop --interval 60
 ```
 
-- O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Também reembolsa reservas terminais com cobranças pagas. Reexecutar é seguro.
+- O worker libera holds vencidos, expira T1/T2 e cancela T3 sem pagamento completo. Também reembolsa reservas terminais com cobranças pagas; a exceção de desistência pós-confirmação segue a política consolidada da ADR 0039. Reexecutar é seguro.
+- **ADR 0039 — fatia 1:** fila de substitutos, cancelamento individual após `CONFIRMED`, T4/T5, expiração e exclusão de reembolso de quem desistiu.
+- Endpoints: `POST/DELETE/GET /api/v1/lobbies/{lobby}/substitutes`, `POST /api/v1/bookings/{booking}/participant-cancellations`, `GET /api/v1/bookings/{booking}/substitutions`, `POST /api/v1/bookings/{booking}/substitutions/{substitution}/assign`, `.../accept`, `.../decline` e `POST /api/v1/bookings/{booking}/participants/{user}/no-show`.
+- Ao abrir uma vaga, o sistema chama automaticamente o primeiro substituto `STANDBY` (`CALLED`, timeout de 5 min). O substituto aceita ou recusa; se recusar/expirar, chama o próximo. A atribuição manual continua disponível.
+- A atribuição antes do cutoff cria uma cobrança para o substituto. Quando ele paga, a vaga é marcada `FILLED` e o substituído é reembolsado. Se não pagar até T4, a atribuição expira.
+- No no-show após o cutoff, a vaga nasce `paid_seat=True`: o substituto ocupa a vaga já paga (`WAIVED`/`covered_by_payment_id`), sem nova cobrança e sem reembolso ao ausente. Sem substituto, a vaga expira, mas a reserva continua `CONFIRMED`.
+- Presença: `POST /bookings/{id}/pre-check-in`, `POST /bookings/{id}/presence` e `GET /bookings/{id}/presence`. O estabelecimento deve informar `latitude`/`longitude` no cadastro. GPS só marca `PRESENT` dentro de `JOGA_PRESENCE_RADIUS_M`/`JOGA_PRESENCE_MAX_ACCURACY_M`; caso contrário fica `UNVERIFIED` e exige confirmação do estabelecimento (`VENUE`). Não existe confirmação por capitão.
+- O worker `advance_bookings` fecha presença em T-30m, marca ausentes como `NO_SHOW` e cria vaga paga para cada um. Também calcula a formação recomendada: par = dois times; ímpar = `NxN + 1 rodízio`; abaixo de 4 presentes = sem quórum. O campo `formation_note` é apenas recomendação, sem cronômetro controlado pelo JOGA.
+- O worker `advance_bookings` expira T4: cancela o lobby/reserva, libera o hold e reembolsa os demais pagantes, sem reembolsar quem desistiu.
+- Trust Factor interno (ADR 0041): no-show −30, cancelamento após confirmação −7, cancelamento antes do pagamento −2, recuperação não linear ao concluir partida e restrição ranqueada de 7/30 dias. O score não é exposto.
+- Ainda pendente: UI de presença/fila e UI de suporte para revisar restrições; a integração completa com o ciclo da partida continua parcial.
 - A organização consulta o resumo em `GET /api/v1/organizations/{org}/financial/summary` e o extrato em `GET /api/v1/organizations/{org}/bookings/{booking}/financial`.
 - Reembolso manual: `POST /api/v1/organizations/{org}/bookings/{booking}/refund` com motivo. No beta, o adaptador simulado processa o estorno.
 
 ### Pagamentos no protótipo/beta (ADR 0034)
 
-- **Protótipo/beta fechado:** Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste. O valor fica na conta do JOGA; o ledger registra a obrigação e o repasse ao estabelecimento é simulado ou manual após `COMPLETED`.
+- **Protótipo/beta fechado:** Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste. O valor fica na conta do JOGA; o ledger registra a obrigação e o repasse ao estabelecimento é simulado/manual no horário da partida (ADR 0040).
 - **Não é escrow** nem garantia de reembolso de produção. Dinheiro real no beta exige CNPJ/MEI, contrato e revisão jurídica; CPF fica restrito a sandbox.
-- **Produção:** Pagar.me Flex, com retenção/split e liberação controlada (ADR 0021).
+- **Produção:** Inter PJ, conta corrente com API Pix e de extratos (ADR 0042 §8). O Pagar.me fica como reserva técnica e como candidato do fluxo de reserva avulsa.
 - Nenhuma credencial real de PSP deve ser configurada sem autorização.
 
 #### Fase 14A — Mercado Pago Orders API
@@ -448,6 +470,53 @@ JOGA_MERCADO_PAGO_NOTIFICATION_URL=https://seu-dominio/api/v1/payments/mercadopa
 - O webhook valida HMAC quando o segredo está configurado e consulta a ordem no PSP antes de mudar o estado.
 - O QR Code/copia-e-cola aparece no mobile para o próprio participante; a organização vê apenas o status.
 - Nenhum pagamento real deve ser feito no protótipo/beta.
+
+### Interface financeira e conciliação (Fase 15)
+
+> **Proposta técnica local, não política aprovada.** O prazo de liberação, a janela de
+> contestação, o modelo de repasse, a moderação financeira e o tratamento de divergência
+> não foram aprovados. O repasse à quadra ocorre no horário da partida (ADR 0040,
+> `JOGA_RELEASE_DELAY_HOURS=2` por padrão); a CLI é provisória para testes e `FAILED` é uma
+> salvaguarda técnica.
+>
+> A política de cancelamento/substituição/presença é a **ADR 0039**. O código já reverteu a
+> ADR 0038 e tem as fatias 1–6 (fila, chamada automática, cancelamento individual, T4/T5,
+> reembolso sem o desistente, atribuição/pagamento, vaga paga em no-show, presença, localização
+> e recomendação de formação). O Trust Factor está na ADR 0041; UI de presença/suporte ainda não existe.
+
+- Três relógios distintos: pagamento (T3), contestação e repasse. Hoje só o primeiro está
+  definido como requisito; os outros dois continuam pendentes.
+- Resumo: `GET /api/v1/organizations/{org}/financial/summary` inclui `pending_release_cents` e `disputed_cents`.
+- Recebíveis: `GET /api/v1/organizations/{org}/financial/receivables?status=PENDING`.
+- Extrato: `GET /api/v1/organizations/{org}/financial/statement`.
+- Contestações: `GET/POST /api/v1/organizations/{org}/financial/disputes` e `GET .../{dispute_id}`.
+- A reserva `CONFIRMED` ou `COMPLETED` ganha liberação com `eligible_at = starts_at + JOGA_RELEASE_DELAY_HOURS` (padrão 2 h, ADR 0040). Contestações `OPEN` suspendem a liberação na proposta técnica.
+- Worker de liberação (reexecutável):
+
+```powershell
+Set-Location C:\prog\joga\backend
+.venv\Scripts\python.exe -m scripts.release_payments
+.venv\Scripts\python.exe -m scripts.release_payments --loop --interval 60
+```
+
+- Decisão interna de contestação (**provisória para teste**; não é o modelo aprovado de moderação financeira e não há painel interno):
+
+```powershell
+$env:JOGA_REVIEW_OPERATORS = "operador-1"
+.venv\Scripts\python.exe -m scripts.review_financial_dispute `
+  --dispute-id <uuid> --operator operador-1 `
+  --decision ACCEPTED --reason "Justificativa auditável"
+```
+
+- Conciliação interna (relata divergências, não corrige saldo):
+
+```powershell
+.venv\Scripts\python.exe -m scripts.reconcile_financials
+.venv\Scripts\python.exe -m scripts.reconcile_financials --organization-id <uuid> --json
+```
+
+- O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação.
+- Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, KYC e a política de repasse continuam pendentes.
 
 ### Quadras, agenda e fotos (Fase 12A)
 
@@ -491,7 +560,7 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
 - Fases 5, 6, 7 e 8 estão implementadas no backend e no mobile; a Fase 9 está em implementação (9A backend). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
-- Reservas de quadras, pagamentos Pix, split, KYC de recebedor, interface financeira, clãs, moderação e publicidade **não estão implementados**. Não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
+- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais, clãs, moderação e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
 - Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
 - O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
 

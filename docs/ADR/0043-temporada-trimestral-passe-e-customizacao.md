@@ -122,10 +122,22 @@ Os ajustes de **acessibilidade** listados na seção 5 permanecem livres para to
 3. **Destaque no perfil do clã** (moldura, cor e posição em evidência) é o único item de clã no passe.
 4. Troféu de clã continua sendo conquista, conforme a ADR 0025.
 
+### 10. Inteligência de rede
+
+1. É dado sobre a **rede**, não sobre pessoas: horário e dia de maior movimento, quadras mais usadas, densidade competitiva por quadra e ocupação.
+2. **Faixas e rótulos, nunca números.** "Alta competitividade", não MMR médio. O MMR segue oculto (ADR 0025).
+3. **Apresentação simples, sem exigir interpretação.** Cada bloco é um cartão com um título, uma frase e uma escala visual de 3 a 5 níveis. Exemplo: *"Arena X — movimento alto, terça e quinta à noite"*. Sem eixo, sem legenda, sem tabela.
+4. **Atualização diária.** Nunca tempo real.
+5. **Não é filtro de matchmaking.** O painel informa onde e quando jogar; não restringe a busca nem permite selecionar partidas por nível. A linha é de informação, não de controle.
+6. **Free:** quadras mais usadas e os próprios horários. **Passe:** mapa de calor da rede, densidade competitiva por quadra, ocupação e tendência.
+7. Mostrar também os **horários com mais vaga**, para equilibrar o efeito de atração do mapa de pico.
+8. Não exibir taxa de cancelamento por quadra, MMR absoluto de ninguém nem dado de adversário antes da partida.
+9. O mesmo painel, visto pelo estabelecimento, é insumo do painel de gestão: ocupação, horário morto e perfil do público.
+
 ## Consequências
 
 - Um único calendário: temporada, passe e reset coincidem no trimestre.
-- O passe passa a ser vendido como **acesso à temporada**, não como ingresso com desconto. O desconto é secundário.
+- O passe passa a ser vendido como **acesso à temporada**, não como ingresso com desconto. **Não existe desconto por ingresso:** o passe custa R$ 3,25 e o pacote grande R$ 3,10.
 - A trilha tem 30 níveis, não 10; o passe não altera a velocidade de progressão.
 - A customização deixa de ser integralmente não monetária. A ADR 0042 §10 é emendada pela seção 5 desta ADR: configuração é perk; conquista é XP.
 - O catálogo cosmético precisa de versionamento por temporada, com itens que não retornam.

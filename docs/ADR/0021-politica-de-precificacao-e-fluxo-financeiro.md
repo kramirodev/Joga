@@ -7,6 +7,8 @@
 
 > **Nota de escopo (ADR 0034):** esta decisão permanece válida para **produção**. No protótipo e beta fechado, a ADR 0034 adota Mercado Pago Checkout Transparente com custódia centralizada de teste e repasse após a partida declarada. As duas decisões são complementares, não concorrentes.
 
+> **Nota de escopo (ADR 0042):** no **fluxo de ingresso pré-pago**, esta ADR é substituída pela ADR 0042 — tabela 2D, margem como saída, piso líquido de 10% e produção no Inter PJ. A fórmula e a regra de elegibilidade daqui continuam valendo para **reserva avulsa**.
+
 ## Contexto
 
 A versão 3.0 do documento conceitual adotou `TAXA_JOGA = 1,8 × (CUSTOS + LUCRO_ALVO)`, com piso de custos e teto de 15% a 20% do valor da quadra. A versão 3.1 reposicionou o coeficiente como hipótese inicial, mas manteve piso, preço variável e teto.
