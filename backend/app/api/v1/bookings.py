@@ -380,6 +380,27 @@ def confirm_participation(
     return _view(bundle, viewer_user_id=current.user_id)
 
 
+@router.post(
+    "/bookings/{booking_id}/settle-with-tickets",
+    response_model=BookingView,
+)
+def settle_with_tickets(
+    booking_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> BookingView:
+    """Quita a própria vaga com ingressos da carteira (ADR 0042 §2)."""
+
+    service = BookingService(session)
+    try:
+        bundle = service.settle_with_tickets(current.user_id, booking_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _view(bundle, viewer_user_id=current.user_id)
+
+
 @router.post("/bookings/{booking_id}/substitutions", response_model=BookingView)
 def substitute_participant(
     booking_id: UUID,

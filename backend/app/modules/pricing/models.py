@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -50,3 +51,25 @@ class PricingBand(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
+
+
+class PricingBandTicket(Base):
+    """Quantos ingressos cada jogador gasta, por faixa e tamanho de time.
+
+    É a tabela 2D da ADR 0042 §3: a faixa define o preço, o formato define a
+    divisão entre os jogadores.
+    """
+
+    __tablename__ = "pricing_band_tickets"
+    __table_args__ = (
+        CheckConstraint("team_size > 0", name="team_size_positive"),
+        CheckConstraint("tickets > 0", name="tickets_positive"),
+        UniqueConstraint("band_id", "team_size", name="uq_pricing_band_tickets"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    band_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pricing_bands.id", ondelete="CASCADE"), nullable=False
+    )
+    team_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    tickets: Mapped[int] = mapped_column(Integer, nullable=False)

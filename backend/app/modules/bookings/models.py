@@ -159,6 +159,11 @@ class BookingParticipant(Base):
             "payment_status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED')",
             name="payment_status_valid",
         ),
+        CheckConstraint(
+            "settled_with IS NULL OR settled_with IN ('pix', 'tickets')",
+            name="settled_with_valid",
+        ),
+        CheckConstraint("tickets_consumed >= 0", name="tickets_consumed_non_negative"),
         Index(
             "uq_booking_participants_active_seat",
             "booking_id",
@@ -192,6 +197,10 @@ class BookingParticipant(Base):
     contribution_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     payment_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING", server_default=text("'PENDING'")
+    )
+    settled_with: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    tickets_consumed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

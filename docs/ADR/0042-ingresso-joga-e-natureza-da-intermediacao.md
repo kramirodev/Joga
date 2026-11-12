@@ -32,6 +32,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 5. Ingresso **comprado nunca expira**.
 6. O ingresso é **intransferível**: sem presente, revenda, transferência entre contas ou saque. A única exceção é o direito de arrependimento de 7 dias (CDC art. 49), liquidado em dinheiro.
 7. A intransferibilidade é **guardrail regulatório**, não apenas antifraude: é o que mantém o ingresso como crédito de serviço e não como conta de pagamento.
+8. **O débito é sempre do saldo do próprio jogador.** Cada participante quita a própria vaga com os próprios ingressos; a partida confirma quando todas as vagas ativas estão quitadas, por ingresso ou por Pix. Nunca se debita a conta de outra pessoa.
 
 ### 3. Tabela 2D: formato × faixa
 

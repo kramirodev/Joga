@@ -810,3 +810,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `e4f5061a2838`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
 - **Testes:** `tests/test_ticket_purchases.py` com seis casos; suíte completa verde.
 - **Pendente:** cobrança Pix, cancelamento e o consumo na reserva.
+
+### 2026-11-12 — 14D.5 Quitação da vaga por ingressos (modelo A)
+
+- **Decisão:** cada participante debita o próprio saldo; a reserva confirma quando todas as vagas ativas estão quitadas. Registrado na ADR 0042 §2 item 8.
+- **Tabela 2D:** `pricing_band_tickets` com 24 linhas (6 faixas × 4 tamanhos de time).
+- **Modelo:** `booking_participants.settled_with` (`pix`/`tickets`) e `tickets_consumed`.
+- **Serviço:** `settle_with_tickets` resolve janela → faixa → formato, consome a carteira e chama `_confirm_if_all_paid`.
+- **API:** `POST /api/v1/bookings/{id}/settle-with-tickets`.
+- **Erros:** `409 insufficient_tickets` sem alterar a reserva; `409 tickets_not_configured` quando a matriz não cobre o formato.
+- **Migração:** `f5a6172b3949`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_ticket_settlement.py` com três casos; suíte completa verde.
+- **Pendente:** devolução em ingresso no cancelamento e parar de criar cobranças Pix quando a quitação é por ingresso.

@@ -34,8 +34,11 @@ from app.modules.organizations.service import (
     OrganizationNotFound,
     OrganizationService,
 )
+from app.modules.pricing.service import PricingBandError as PricingError
+from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.trust import TrustService
+from app.modules.tickets.service import InsufficientTickets, consume
 from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
@@ -588,6 +591,100 @@ class BookingService:
             self._event(booking, None, "payment.failed", booking.status, booking.status)
         self.session.flush()
         return self._bundle(booking)
+
+    def settle_with_tickets(
+        self,
+        actor_user_id: uuid.UUID,
+        booking_id: uuid.UUID,
+    ) -> BookingBundle:
+        """Cada participante quita a própria vaga com ingressos (ADR 0042 §2).
+
+        O débito é do saldo do próprio jogador: o ingresso é pessoal e
+        intransferível. A reserva confirma quando todas as vagas ativas estão
+        quitadas, seja por Pix ou por ingresso.
+        """
+
+        booking = self._lock_booking(booking_id)
+        participant = self._active_participant(booking.id, actor_user_id)
+        if participant is None:
+            raise BookingForbidden
+        if participant.tickets_consumed > 0:
+            return self._bundle(booking)
+        if booking.status != "PAYMENT_PENDING":
+            raise BookingTransitionError
+
+        count = self._tickets_per_seat(booking)
+        try:
+            consume(
+                self.session,
+                actor_user_id,
+                count,
+                ref_type="booking",
+                ref_id=booking.id,
+            )
+        except InsufficientTickets as exc:
+            raise BookingConflict("insufficient_tickets") from exc
+
+        now = utcnow()
+        participant.tickets_consumed = count
+        participant.settled_with = "tickets"
+        participant.payment_status = "PAID"
+        self._event(
+            booking,
+            actor_user_id,
+            "participant.settled_with_tickets",
+            booking.status,
+            booking.status,
+        )
+        self._confirm_if_all_paid(booking, actor_user_id, now)
+        self.session.flush()
+        return self._bundle(booking)
+
+    def _tickets_per_seat(self, booking: Booking) -> int:
+        """Resolve a tabela 2D para a reserva: faixa da janela × formato do lobby."""
+
+        venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
+        space = self.session.get(VenueSpace, booking.venue_space_id)
+        lobby = self.session.get(Lobby, booking.lobby_id)
+        if venue is None or space is None or lobby is None:
+            raise BookingInvalid
+        fmt = self.session.get(SportFormat, lobby.format_id)
+        if fmt is None:
+            raise BookingInvalid
+        availability = self._availability_for(booking, venue, space)
+        if availability.band_id is None:
+            raise BookingConflict("band_missing")
+        try:
+            return tickets_for(self.session, availability.band_id, fmt.team_size)
+        except PricingError as exc:
+            raise BookingConflict("tickets_not_configured") from exc
+
+    def _availability_for(
+        self,
+        booking: Booking,
+        venue: OrganizationVenue,
+        space: VenueSpace,
+    ) -> VenueAvailability:
+        try:
+            tz = ZoneInfo(venue.timezone)
+        except Exception as exc:  # noqa: BLE001
+            raise BookingInvalid from exc
+        local_start = booking.starts_at.astimezone(tz)
+        local_end = booking.ends_at.astimezone(tz)
+        availability = self.session.scalar(
+            select(VenueAvailability)
+            .where(
+                VenueAvailability.venue_space_id == space.id,
+                VenueAvailability.weekday == local_start.isoweekday(),
+                VenueAvailability.start_time <= local_start.time(),
+                VenueAvailability.end_time >= local_end.time(),
+            )
+            .order_by(VenueAvailability.start_time)
+            .limit(1)
+        )
+        if availability is None:
+            raise BookingConflict("space_unavailable")
+        return availability
 
     def _confirm_if_all_paid(
         self,
