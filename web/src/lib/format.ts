@@ -59,6 +59,14 @@ export function formatError(error: unknown): string {
       return "Organização não encontrada ou fora do seu acesso.";
     case "venue_not_found":
       return "Estabelecimento não encontrado ou fora do seu acesso.";
+    case "booking_not_found":
+      return "Reserva não encontrada ou fora do seu acesso.";
+    case "release_not_found":
+      return "A reserva ainda não tem valor liberável.";
+    case "dispute_not_found":
+      return "Contestação não encontrada ou fora do seu acesso.";
+    case "dispute_already_open":
+      return "Já existe uma contestação em análise para esta reserva.";
     case "csrf_failed":
       return "Sessão inválida. Recarregue a página e entre novamente.";
     case "invalid_refresh_token":

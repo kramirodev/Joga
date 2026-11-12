@@ -27,6 +27,14 @@ QUEUE_STATUSES = ("waiting", "matched", "cancelled", "expired")
 LOBBY_ORIGINS = ("matchmaking", "manual")
 LOBBY_STATUSES = ("scheduled", "cancelled", "completed")
 RUN_STATUSES = ("running", "completed", "failed")
+SUBSTITUTE_STATUSES = (
+    "STANDBY",
+    "CALLED",
+    "CONFIRMED",
+    "PLAYED",
+    "DECLINED",
+    "NO_SHOW",
+)
 
 
 class QueueEntry(Base):
@@ -158,6 +166,46 @@ class LobbyParticipant(Base):
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class LobbySubstitute(Base):
+    """Fila de substitutos em standby para um lobby (ADR 0039)."""
+
+    __tablename__ = "lobby_substitutes"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('STANDBY', 'CALLED', 'CONFIRMED', 'PLAYED', 'DECLINED', 'NO_SHOW')",
+            name="status_valid",
+        ),
+        CheckConstraint("position > 0", name="position_positive"),
+        UniqueConstraint("lobby_id", "user_id", name="uq_lobby_substitutes_user"),
+        Index("ix_lobby_substitutes_lobby_status", "lobby_id", "status", "position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    lobby_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("lobbies.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="STANDBY", server_default=text("'STANDBY'")
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
     )
 
 

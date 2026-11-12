@@ -30,6 +30,7 @@ from app.modules.matchmaking.policy import (
 )
 from app.modules.profile.models import Availability, SportFormat, UserRegion, UserSportProfile
 from app.modules.ratings.models import RatingAccount
+from app.modules.ratings.trust import TrustService
 
 MMR_ALGORITHM_VERSION = "mmr_v1"
 MAX_RANKED_TEAM_SPAN = 800.0
@@ -57,6 +58,10 @@ class RegionRequired(QueueError):
 
 class AlreadyQueued(QueueError):
     """Já existe entrada ativa para o mesmo usuário, formato e modo."""
+
+
+class RankedRestricted(QueueError):
+    """Trust Factor restringe temporariamente a fila ranqueada."""
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,10 @@ class MatchmakingService:
             raise RegionRequired("defina uma região antes de entrar na fila")
 
         current = ensure_utc(now or utcnow())
+        if mode == "ranked" and TrustService(self._session).is_ranked_restricted(
+            user_id, now=current
+        ):
+            raise RankedRestricted("restrição temporária para partidas ranqueadas")
         existing = self._session.scalar(
             select(QueueEntry).where(
                 QueueEntry.user_id == user_id,

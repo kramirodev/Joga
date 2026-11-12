@@ -44,6 +44,8 @@ export interface Venue {
   city: string | null;
   state: string | null;
   address_line: string | null;
+  latitude: number | null;
+  longitude: number | null;
   timezone: string;
   status: "active" | "inactive";
   created_at: string;
@@ -205,8 +207,73 @@ export interface OrganizationFinancialSummary {
   refunded_cents: number;
   pending_cents: number;
   released_cents: number;
+  pending_release_cents: number;
+  disputed_cents: number;
   payments: number;
   refunds: number;
+}
+
+export type ReleaseStatus = "PENDING" | "RELEASED" | "FAILED" | "REVERSED";
+export type DisputeStatus = "OPEN" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
+
+export interface Receivable {
+  booking_id: string;
+  release_id: string;
+  amount_cents: number;
+  status: ReleaseStatus;
+  eligible_at: string;
+  released_at: string | null;
+  starts_at: string;
+  ends_at: string;
+  has_open_dispute: boolean;
+  dispute_id: string | null;
+}
+
+export interface ReceivableListResponse {
+  receivables: Receivable[];
+  limit: number;
+  offset: number;
+}
+
+export interface FinancialStatementEntry {
+  id: string;
+  booking_id: string;
+  booking_payment_id: string | null;
+  entry_type: string;
+  direction: "CREDIT" | "DEBIT";
+  amount_cents: number;
+  status: string;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface FinancialStatementListResponse {
+  entries: FinancialStatementEntry[];
+  limit: number;
+  offset: number;
+}
+
+export interface FinancialDispute {
+  id: string;
+  organization_id: string;
+  booking_id: string;
+  release_id: string | null;
+  amount_cents: number;
+  status: DisputeStatus;
+  reason: string;
+  evidence: string | null;
+  decision_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FinancialDisputeListResponse {
+  disputes: FinancialDispute[];
+  limit: number;
+  offset: number;
 }
 
 export interface SportCatalogItem {

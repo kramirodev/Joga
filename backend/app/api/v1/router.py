@@ -10,10 +10,12 @@ from app.api.v1.matches import router as matches_router
 from app.api.v1.matchmaking import router as matchmaking_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.payments import router as payments_router
+from app.api.v1.presence import router as presence_router
 from app.api.v1.profile import router as profile_router
 from app.api.v1.ratings import router as ratings_router
 from app.api.v1.results import router as results_router
 from app.api.v1.social import router as social_router
+from app.api.v1.substitutions import router as substitutions_router
 from app.api.v1.venues import router as venues_router
 from app.api.v1.web_auth import router as web_auth_router
 from app.api.v1.ws import router as ws_router
@@ -29,6 +31,8 @@ api_router.include_router(ratings_router)
 api_router.include_router(organizations_router)
 api_router.include_router(venues_router)
 api_router.include_router(bookings_router)
+api_router.include_router(substitutions_router)
+api_router.include_router(presence_router)
 api_router.include_router(payments_router)
 api_router.include_router(chat_router)
 api_router.include_router(social_router)

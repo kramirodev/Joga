@@ -60,7 +60,13 @@ def create_venue(
     response = api.post(
         f"/api/v1/organizations/{organization_id}/venues",
         headers=bearer(token),
-        json={"name": name, "city": "Rio de Janeiro", "state": "rj"},
+        json={
+            "name": name,
+            "city": "Rio de Janeiro",
+            "state": "rj",
+            "latitude": -22.9,
+            "longitude": -43.2,
+        },
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -129,7 +135,11 @@ def test_cross_organization_access_is_denied_with_404(
         api.post(
             f"{base}/venues",
             headers=bearer(second_token),
-            json={"name": "Quadra Invasora"},
+            json={
+                "name": "Quadra Invasora",
+                "latitude": -22.9,
+                "longitude": -43.2,
+            },
         ),
         api.get(f"{base}/audit", headers=bearer(second_token)),
     ]

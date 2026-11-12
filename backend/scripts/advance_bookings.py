@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
+from app.modules.bookings.presence import BookingPresenceService
 from app.modules.bookings.service import BookingService
+from app.modules.bookings.substitutions import BookingSubstitutionService
 from app.modules.payments.adapter import build_psp_adapter
 from app.modules.payments.service import PaymentService
 
@@ -26,6 +28,8 @@ def run_once(session: Session) -> int:
     adapter = build_psp_adapter()
     try:
         expired = BookingService(session).expire_due()
+        no_shows = BookingPresenceService(session).close_due()
+        substitutions = BookingSubstitutionService(session).expire_due()
         refunds = PaymentService(session, adapter).refund_cancelled_bookings()
         session.commit()
     except Exception:
@@ -36,7 +40,14 @@ def run_once(session: Session) -> int:
         close = getattr(adapter, "close", None)
         if callable(close):
             close()
-    logger.info("reservas: temporizadores_expirados=%s reembolsos=%s", expired, refunds)
+    logger.info(
+        "reservas: temporizadores_expirados=%s no_shows=%s "
+        "substituicoes_expiradas=%s reembolsos=%s",
+        expired,
+        no_shows,
+        substitutions,
+        refunds,
+    )
     return 0
 
 

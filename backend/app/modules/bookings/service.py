@@ -20,6 +20,7 @@ from app.modules.bookings.models import (
     BookingHold,
     BookingParticipant,
     BookingPayment,
+    BookingSubstitution,
     BookingTimer,
 )
 from app.modules.identity.audit import record_audit
@@ -34,6 +35,7 @@ from app.modules.organizations.service import (
     OrganizationService,
 )
 from app.modules.profile.models import SportFormat
+from app.modules.ratings.trust import TrustService
 from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
@@ -246,6 +248,12 @@ class BookingService:
         else:
             participant.declined_at = now
             participant.active = False
+            TrustService(self.session).apply_event(
+                actor_user_id,
+                "cancel_before_payment",
+                details={"booking_id": str(booking.id), "seat": participant.seat},
+                now=now,
+            )
             self._event(
                 booking, actor_user_id, "participant.declined", booking.status, booking.status
             )
@@ -504,7 +512,6 @@ class BookingService:
             return self._bundle(booking)
         if booking.status not in {"PAYMENT_PENDING", "SUBSTITUTING"}:
             raise BookingTransitionError
-        self._ensure_timer_open(booking.id, "T3")
         participant = self._active_participant(booking.id, actor_user_id)
         if participant is None:
             raise BookingForbidden
@@ -520,6 +527,14 @@ class BookingService:
         )
         if payment is None:
             raise BookingInvalid
+        awaiting_substitution = self.session.scalar(
+            select(BookingSubstitution.id).where(
+                BookingSubstitution.substitute_payment_id == payment.id,
+                BookingSubstitution.status == "AWAITING_PAYMENT",
+            )
+        )
+        if awaiting_substitution is None:
+            self._ensure_timer_open(booking.id, "T3")
         now = utcnow()
         payment.status = "PAID"
         payment.paid_at = now
@@ -641,6 +656,43 @@ class BookingService:
         self.session.flush()
         return self._bundle(booking)
 
+    def cancel_by_system(
+        self,
+        booking_id: uuid.UUID,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> BookingBundle:
+        """Cancela a reserva por decisão do sistema (T4 sem substituto)."""
+
+        booking = self._lock_booking(booking_id)
+        if booking.status in TERMINAL_BOOKING_STATUSES:
+            return self._bundle(booking)
+
+        moment = now or utcnow()
+        previous = booking.status
+        booking.status = "CANCELLED"
+        booking.cancelled_at = moment
+        booking.cancellation_reason = _clean_reason(reason)
+        self._release_hold(booking.id, "CANCELLED", moment)
+        self._finish_running_timers(booking.id, "CANCELLED", moment)
+        self._event(
+            booking,
+            None,
+            "booking.cancelled",
+            previous,
+            "CANCELLED",
+            reason=booking.cancellation_reason,
+        )
+        self._audit(
+            None,
+            booking,
+            "booking.cancelled",
+            {"status": "CANCELLED", "reason": booking.cancellation_reason},
+        )
+        self.session.flush()
+        return self._bundle(booking)
+
     def complete(self, actor_user_id: uuid.UUID, booking_id: uuid.UUID) -> BookingBundle:
         booking = self._lock_booking(booking_id)
         self.organizations.require_capability(
@@ -652,6 +704,15 @@ class BookingService:
             raise BookingTransitionError
         booking.status = "COMPLETED"
         booking.completed_at = utcnow()
+        trust = TrustService(self.session)
+        for participant in self._active_participants(booking.id):
+            if participant.presence_status == "PRESENT":
+                trust.apply_event(
+                    participant.user_id,
+                    "match_completed",
+                    details={"booking_id": str(booking.id)},
+                    now=booking.completed_at,
+                )
         self._event(booking, actor_user_id, "booking.completed", "CONFIRMED", "COMPLETED")
         self._audit(actor_user_id, booking, "booking.completed", {})
         self.session.flush()

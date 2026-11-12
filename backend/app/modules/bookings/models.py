@@ -55,6 +55,8 @@ PAYMENT_STATUSES = ("PENDING", "PAID", "REFUNDED", "FAILED", "WAIVED")
 HOLD_STATUSES = ("ACTIVE", "RELEASED", "EXPIRED")
 TIMER_TYPES = ("T1", "T2", "T3")
 TIMER_STATUSES = ("RUNNING", "COMPLETED", "EXPIRED", "CANCELLED")
+SUBSTITUTION_STATUSES = ("OPEN", "CALLED", "AWAITING_PAYMENT", "FILLED", "EXPIRED", "CANCELLED")
+PRESENCE_STATUSES = ("PENDING", "PRESENT", "UNVERIFIED", "NO_SHOW")
 
 
 class Booking(Base):
@@ -128,6 +130,11 @@ class Booking(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    presence_closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    players_per_team: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    formation_note: Mapped[str | None] = mapped_column(String(120), nullable=True)
     cancellation_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
@@ -192,6 +199,19 @@ class BookingParticipant(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pre_checked_in_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    presence_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PENDING", server_default=text("'PENDING'")
+    )
+    presence_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    presence_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    presence_distance_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    presence_accuracy_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
@@ -354,4 +374,95 @@ class BookingPayment(Base):
         default=utcnow,
         onupdate=utcnow,
         server_default=func.now(),
+    )
+
+
+class BookingSubstitution(Base):
+    """Vaga aberta após desistência, com prazo T4 para substituição (ADR 0039)."""
+
+    __tablename__ = "booking_substitutions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OPEN', 'CALLED', 'AWAITING_PAYMENT', 'FILLED', 'EXPIRED', 'CANCELLED')",
+            name="status_valid",
+        ),
+        CheckConstraint("seat > 0", name="seat_positive"),
+        Index("ix_booking_substitutions_booking_status", "booking_id", "status"),
+        Index("ix_booking_substitutions_deadline", "status", "deadline_at"),
+        Index(
+            "uq_booking_substitutions_open_seat",
+            "booking_id",
+            "seat",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+            sqlite_where=text("status = 'OPEN'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    seat: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    outgoing_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    filled_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    substitute_payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("booking_payments.id", ondelete="SET NULL"), nullable=True
+    )
+    covered_by_payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("booking_payments.id", ondelete="SET NULL"), nullable=True
+    )
+    called_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    call_deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    call_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    paid_seat: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="OPEN", server_default=text("'OPEN'")
+    )
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+    )
+
+
+class BookingRefundExclusion(Base):
+    """Participante que não deve ser reembolsado em cancelamento (ADR 0039)."""
+
+    __tablename__ = "booking_refund_exclusions"
+    __table_args__ = (
+        UniqueConstraint("booking_id", "user_id", name="uq_booking_refund_exclusions_user"),
+        Index("ix_booking_refund_exclusions_booking", "booking_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

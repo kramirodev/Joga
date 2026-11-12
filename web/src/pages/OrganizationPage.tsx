@@ -10,7 +10,7 @@ import { formatDate, formatError, requestIdOf, roleLabel } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import type { Member, Organization, Role, Venue } from "../types";
 
-type Tab = "members" | "venues" | "bookings" | "audit";
+type Tab = "members" | "venues" | "bookings" | "financial" | "audit";
 
 const BOOKING_STATUS_LABELS: Record<string, string> = {
   PARTICIPANT_CONFIRMATION: "Confirmação dos jogadores",
@@ -34,7 +34,32 @@ function money(cents: number): string {
   }).format(cents / 100);
 }
 
+const RELEASE_STATUS_LABELS: Record<string, string> = {
+  PENDING: "A liberar",
+  RELEASED: "Liberado",
+  FAILED: "Falhou",
+  REVERSED: "Revertido",
+};
+
+const DISPUTE_STATUS_LABELS: Record<string, string> = {
+  OPEN: "Em análise",
+  ACCEPTED: "Procedente",
+  REJECTED: "Improcedente",
+  WITHDRAWN: "Retirada",
+};
+
+const LEDGER_ENTRY_LABELS: Record<string, string> = {
+  CHARGE_CREATED: "Cobrança criada",
+  PAYMENT_CONFIRMED: "Pagamento confirmado",
+  PAYMENT_REFUNDED: "Reembolso",
+  VENUE_RELEASE: "Repasse ao estabelecimento",
+};
+
 function canReadAudit(role: Role): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+function canManageFinancial(role: Role): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
@@ -164,6 +189,8 @@ export function OrganizationPage() {
   const [venueCity, setVenueCity] = useState("");
   const [venueState, setVenueState] = useState("");
   const [venueAddress, setVenueAddress] = useState("");
+  const [venueLatitude, setVenueLatitude] = useState("");
+  const [venueLongitude, setVenueLongitude] = useState("");
 
   const organizationQuery = useQuery({
     queryKey: queryKeys.organization(organizationId),
@@ -196,7 +223,26 @@ export function OrganizationPage() {
     enabled: organizationId.length > 0,
   });
 
+  const receivablesQuery = useQuery({
+    queryKey: queryKeys.receivables(organizationId),
+    queryFn: async () => (await api.listReceivables(organizationId)).receivables,
+    enabled: organizationId.length > 0,
+  });
+
+  const statementQuery = useQuery({
+    queryKey: queryKeys.statement(organizationId),
+    queryFn: async () => (await api.getFinancialStatement(organizationId)).entries,
+    enabled: organizationId.length > 0,
+  });
+
+  const disputesQuery = useQuery({
+    queryKey: queryKeys.disputes(organizationId),
+    queryFn: async () => (await api.listFinancialDisputes(organizationId)).disputes,
+    enabled: organizationId.length > 0,
+  });
+
   const showAudit = organization ? canReadAudit(organization.role) : false;
+  const canManageFinances = organization ? canManageFinancial(organization.role) : false;
 
   const auditQuery = useQuery({
     queryKey: queryKeys.audit(organizationId),
@@ -218,11 +264,20 @@ export function OrganizationPage() {
     ]);
   };
 
+  const invalidateFinancial = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.receivables(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.statement(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.disputes(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
+    ]);
+  };
+
   const invalidateBookings = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.bookings(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
+      invalidateFinancial(),
     ]);
   };
 
@@ -254,12 +309,16 @@ export function OrganizationPage() {
         city: venueCity.trim() || null,
         state: venueState.trim() || null,
         address_line: venueAddress.trim() || null,
+        latitude: Number(venueLatitude),
+        longitude: Number(venueLongitude),
       }),
     onSuccess: async () => {
       setVenueName("");
       setVenueCity("");
       setVenueState("");
       setVenueAddress("");
+      setVenueLatitude("");
+      setVenueLongitude("");
       setNotice("Estabelecimento cadastrado.");
       await invalidateVenues();
     },
@@ -313,13 +372,33 @@ export function OrganizationPage() {
     },
   });
 
+  const openDisputeMutation = useMutation({
+    mutationFn: (payload: { bookingId: string; reason: string }) =>
+      api.openFinancialDispute(organizationId, {
+        booking_id: payload.bookingId,
+        reason: payload.reason,
+      }),
+    onSuccess: async () => {
+      setActionError(null);
+      setNotice("Contestação registrada e liberação suspensa até a análise.");
+      await invalidateFinancial();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
   const loading = organizationQuery.isPending || membersQuery.isPending || venuesQuery.isPending;
   const queryError =
     organizationQuery.error ??
     membersQuery.error ??
     venuesQuery.error ??
     bookingsQuery.error ??
-    financialSummaryQuery.error;
+    financialSummaryQuery.error ??
+    receivablesQuery.error ??
+    statementQuery.error ??
+    disputesQuery.error;
   const mutationError =
     renameMutation.error ??
     addMemberMutation.error ??
@@ -327,7 +406,8 @@ export function OrganizationPage() {
     toggleVenueMutation.error ??
     acceptBookingMutation.error ??
     declineBookingMutation.error ??
-    completeBookingMutation.error;
+    completeBookingMutation.error ??
+    openDisputeMutation.error;
   const busy =
     renameMutation.isPending ||
     addMemberMutation.isPending ||
@@ -335,12 +415,16 @@ export function OrganizationPage() {
     toggleVenueMutation.isPending ||
     acceptBookingMutation.isPending ||
     declineBookingMutation.isPending ||
-    completeBookingMutation.isPending;
+    completeBookingMutation.isPending ||
+    openDisputeMutation.isPending;
 
   const members = membersQuery.data ?? [];
   const venues = venuesQuery.data ?? [];
   const bookings = bookingsQuery.data ?? [];
   const financialSummary = financialSummaryQuery.data;
+  const receivables = receivablesQuery.data ?? [];
+  const statement = statementQuery.data ?? [];
+  const disputes = disputesQuery.data ?? [];
   const audit = auditQuery.data ?? [];
   const activeTab: Tab = tab === "audit" && !showAudit ? "members" : tab;
 
@@ -492,6 +576,18 @@ export function OrganizationPage() {
             onClick={() => setTab("bookings")}
           >
             Reservas <span className="tab__count">{bookings.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "financial"}
+            className={activeTab === "financial" ? "tab tab--active" : "tab"}
+            onClick={() => setTab("financial")}
+          >
+            Financeiro
+            {receivables.length > 0 ? (
+              <span className="tab__count">{receivables.length}</span>
+            ) : null}
           </button>
           {showAudit ? (
             <button
@@ -690,6 +786,34 @@ export function OrganizationPage() {
                     placeholder="Rua, número e complemento"
                   />
                 </label>
+                <div className="form-row">
+                  <label className="field">
+                    <span>Latitude</span>
+                    <input
+                      type="number"
+                      value={venueLatitude}
+                      onChange={(event) => setVenueLatitude(event.target.value)}
+                      min={-90}
+                      max={90}
+                      step="any"
+                      placeholder="-22.9"
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Longitude</span>
+                    <input
+                      type="number"
+                      value={venueLongitude}
+                      onChange={(event) => setVenueLongitude(event.target.value)}
+                      min={-180}
+                      max={180}
+                      step="any"
+                      placeholder="-43.2"
+                      required
+                    />
+                  </label>
+                </div>
                 <button type="submit" className="button button--primary" disabled={busy}>
                   Cadastrar estabelecimento
                 </button>
@@ -817,6 +941,160 @@ export function OrganizationPage() {
                     </li>
                   );
                 })}
+              </ul>
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === "financial" ? (
+          <section className="card">
+            <div className="section-heading">
+              <div>
+                <h2>Financeiro</h2>
+                <p className="muted">
+                  Extrato, agenda de recebíveis e contestações das reservas originadas no JOGA.
+                  Configuração técnica local: prazos e política de liberação ainda não aprovados.
+                </p>
+              </div>
+            </div>
+
+            {financialSummary ? (
+              <div className="financial-summary">
+                <div>
+                  <span>Cobrado</span>
+                  <strong>{money(financialSummary.charged_cents)}</strong>
+                </div>
+                <div>
+                  <span>Pago</span>
+                  <strong>{money(financialSummary.paid_cents)}</strong>
+                </div>
+                <div>
+                  <span>A liberar</span>
+                  <strong>{money(financialSummary.pending_release_cents)}</strong>
+                </div>
+                <div>
+                  <span>Liberado</span>
+                  <strong>{money(financialSummary.released_cents)}</strong>
+                </div>
+                <div>
+                  <span>Em contestação</span>
+                  <strong>{money(financialSummary.disputed_cents)}</strong>
+                </div>
+                <div>
+                  <span>Reembolsado</span>
+                  <strong>{money(financialSummary.refunded_cents)}</strong>
+                </div>
+                <div>
+                  <span>Pendente</span>
+                  <strong>{money(financialSummary.pending_cents)}</strong>
+                </div>
+              </div>
+            ) : null}
+
+            <h3>Agenda de recebíveis</h3>
+            {receivablesQuery.isPending ? (
+              <LoadingBlock label="Carregando recebíveis..." />
+            ) : receivables.length === 0 ? (
+              <EmptyState title="Nenhum recebível">
+                Reservas concluídas aparecem aqui com o prazo de liberação.
+              </EmptyState>
+            ) : (
+              <ul className="booking-list">
+                {receivables.map((item) => (
+                  <li key={item.release_id} className="booking-card">
+                    <div className="booking-card__main">
+                      <strong>
+                        {formatDate(item.starts_at)} — {formatDate(item.ends_at)}
+                      </strong>
+                      <span className="badge badge--muted">
+                        {RELEASE_STATUS_LABELS[item.status] ?? item.status}
+                      </span>
+                      <small>
+                        {money(item.amount_cents)} · previsão técnica de liberação em{" "}
+                        {formatDate(item.eligible_at)}
+                      </small>
+                      {item.released_at ? (
+                        <small>
+                          Liberação técnica registrada em {formatDate(item.released_at)}
+                        </small>
+                      ) : null}
+                      {item.has_open_dispute ? (
+                        <small>
+                          Contestação em análise — liberação suspensa nesta proposta técnica.
+                        </small>
+                      ) : null}
+                    </div>
+                    {canManageFinances && item.status === "PENDING" && !item.has_open_dispute ? (
+                      <div className="booking-card__actions">
+                        <button
+                          type="button"
+                          className="button button--small"
+                          disabled={busy}
+                          onClick={() => {
+                            const reason = window.prompt("Motivo da contestação (obrigatório):");
+                            if (reason && reason.trim()) {
+                              openDisputeMutation.mutate({
+                                bookingId: item.booking_id,
+                                reason: reason.trim(),
+                              });
+                            }
+                          }}
+                        >
+                          Contestar
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <h3>Contestações</h3>
+            {disputes.length === 0 ? (
+              <EmptyState title="Nenhuma contestação">
+                Contestações abertas pelo estabelecimento aparecem aqui com a decisão.
+              </EmptyState>
+            ) : (
+              <ul className="booking-list">
+                {disputes.map((item) => (
+                  <li key={item.id} className="booking-card">
+                    <div className="booking-card__main">
+                      <strong>{money(item.amount_cents)}</strong>
+                      <span className="badge badge--muted">
+                        {DISPUTE_STATUS_LABELS[item.status] ?? item.status}
+                      </span>
+                      <small>Motivo: {item.reason}</small>
+                      {item.decision_reason ? <small>Decisão: {item.decision_reason}</small> : null}
+                      <small>Aberta em {formatDate(item.created_at)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <h3>Extrato</h3>
+            {statementQuery.isPending ? (
+              <LoadingBlock label="Carregando extrato..." />
+            ) : statement.length === 0 ? (
+              <EmptyState title="Extrato vazio">
+                Cobranças, pagamentos, reembolsos e repasses aparecem aqui.
+              </EmptyState>
+            ) : (
+              <ul className="booking-list">
+                {statement.map((entry) => (
+                  <li key={entry.id} className="booking-card">
+                    <div className="booking-card__main">
+                      <strong>{LEDGER_ENTRY_LABELS[entry.entry_type] ?? entry.entry_type}</strong>
+                      <span className="badge badge--muted">
+                        {entry.direction === "CREDIT" ? "crédito" : "débito"}
+                      </span>
+                      <small>
+                        {money(entry.amount_cents)} · {formatDate(entry.created_at)}
+                      </small>
+                      <small className="mono">Reserva {entry.booking_id.slice(0, 8)}</small>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </section>

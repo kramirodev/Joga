@@ -667,3 +667,101 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `bb4083b7b697`; upgrade/downgrade/upgrade e `alembic check`.
 - **Testes:** reembolso total, substituição, expiração, idempotência, autorização negativa, resumo e extrato cobertos.
 - **Fora do escopo:** reembolso real, MED, conciliação com PSP e política pós-confirmação (14B/15).
+
+### 2026-11-09 — Fase 15A/15B: interface financeira e conciliação (proposta técnica)
+
+- **Status:** implementação técnica de referência. `N`, modelo de repasse, moderação financeira e tratamento de divergência **não foram aprovados**.
+- **Modelo:** `venue_releases` (valor por reserva, `PENDING`/`RELEASED`/`FAILED`/`REVERSED`, prazo e referência) e `financial_disputes` (motivo, evidência, decisão, operador e timestamps), com índice parcial que impede duas contestações abertas por reserva.
+- **Liberação:** reserva só entra em `COMPLETED`; `eligible_at = completed_at + JOGA_RELEASE_DELAY_HOURS` (default técnico de 24 h, **não aprovado**). O ledger `VENUE_RELEASE` é gravado apenas na liberação, de forma idempotente.
+- **Contestação:** `OWNER`/`ADMIN` abrem pelo painel ou API; contestação aberta suspende a liberação na proposta técnica. Decisão por CLI com `JOGA_REVIEW_OPERATORS` (**provisória para teste; modelo não aprovado**); decisão `ACCEPTED` libera, `REJECTED` mantém o prazo.
+- **API:** resumo estendido (`pending_release_cents`, `disputed_cents`), `financial/receivables`, `financial/statement`, `financial/disputes` (GET/POST/detalhe) e capacidades `financial:read`/`financial:manage`.
+- **Worker:** `scripts/release_payments.py` cria liberações faltantes e libera o que venceu, sem duplicar ledger. `scripts/reconcile_financials.py` compara pagamentos, reembolsos, liberações e ledger e reporta divergências.
+- **Painel:** aba **Financeiro** com resumo, recebíveis, contestações e extrato; `OPERATOR` lê, mas não contesta.
+- **Migração:** `c15a1b2c3d4e` com backfill das liberações da 14C; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **376 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Painel: **19 testes**, lint, formatação, typecheck e build verdes. Evidência técnica, não aprovação de política.
+- **Fora do escopo:** dinheiro real, split/retenção, MED/chargeback, comprovantes fiscais, KYC, exportação e definição comercial de `N` (14B/15 futura).
+- **Decisões pendentes:** `N` de liberação, janela de contestação, regra de repasse, moderação financeira, tratamento oficial de divergência e PSP real.
+
+### 2026-11-09 — ADR 0038: desistência após confirmação e ausência de jogadores
+
+- **Decisão aprovada:** o serviço contratado é a reserva coletiva da quadra; a partida é melhor esforço.
+- **Desistência após confirmação:** sem reembolso, salvo substituição efetiva por jogador pagante (reembolso apenas do substituído, sem reiniciar T3).
+- **Ausência/no-show:** sem reembolso ao faltante; partida inviabilizada só por ausências não gera reembolso automático aos presentes.
+- **Falha da quadra/JOGA:** reembolso integral, preservados os direitos legais do consumidor.
+- **Relação com a 14C:** a ADR 0038 emenda o item 1 da ADR 0037 apenas para desistência após confirmação.
+- **Implementação:** ver entrada seguinte.
+- **Sem alteração de código na rodada da ADR.** Termos de uso e tela de pagamento dependem de revisão jurídica.
+
+### 2026-11-09 — Implementação da ADR 0038 no cancelamento
+
+- **Modelo:** `bookings.cancellation_refund_allowed` (nullable; `NULL` = legado/reembolsável, `false` = desistência pós-confirmação sem reembolso).
+- **Cancelamento:** `BookingService.cancel` grava a decisão na própria reserva; o endpoint genérico distingue jogador (criador) de organização (quadra). Cancelamento pela quadra e anterior à confirmação continuam reembolsáveis.
+- **Worker:** `PaymentService.refund_cancelled_bookings` ignora reservas com `cancellation_refund_allowed=false`, evitando que o reembolso automático desfaça a regra.
+- **Contrato:** novas reservas usam `policy_version="v2"` e `cancellation_policy="no_refund_after_confirmation"`; reservas antigas mantêm os valores anteriores.
+- **Testes:** **380 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Casos cobertos: desistência pós-confirmação sem reembolso, worker sem efeito, desistência antes da confirmação com reembolso, cancelamento pela quadra com reembolso e membro da organização usando o endpoint genérico como falha da quadra.
+- **Migração:** `e2f3a4b5c6d7`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Pendência:** o valor não reembolsado permanece no ledger sem regra específica de repasse/liberação à quadra; não liberar automaticamente sem decisão.
+
+### 2026-11-09 — ADR 0039: política consolidada de cancelamento, substituição e presença
+
+- **Decisão:** a ADR 0039 supera a ADR 0038. O destino financeiro passa a depender do desfecho da reserva, não apenas de `CANCELLED_BY_PLAYER`.
+- **Fila de substitutos:** alvo `(F - M) + 1`, limitado a 4; na prática, muitas vezes +1 para fechar o time par. Casual opcional; ranqueado exige standby.
+- **Temporizadores:** T2 com máximo de 60 min; T4 = 25% do tempo restante, piso 30 min, teto 12 h, terminando no cutoff; cutoff de 6 h antes; fila em T-2h; pré-check-in em T-1h; presença em T-30m; substituto fechado em T-15m.
+- **Presença:** pré-check-in + confirmação no local com geofence/QR/NFC/capitão; GPS não é prova isolada; validação no servidor e retenção mínima.
+- **Formato:** 9 em 5x5 vira 4x4 + rodízio; partida adaptada não conta como 5x5 ranqueado.
+- **Financeiro:** substituto chamado após cutoff ocupa a vaga já paga, sem nova cobrança; cancelador sem reembolso; demais pagantes reembolsados quando o lobby é cancelado antes do cutoff; no-show sem reembolso.
+- **Código:** a implementação da ADR 0038 foi revertida na fatia seguinte.
+- **Pendências:** percentual do T4, cutoff definitivo, destino do valor não reembolsado, modelo de vaga paga, evidência/LGPD, limite mensal, integração match/booking e revisão jurídica.
+
+### 2026-11-09 — ADR 0039, fatia 1: fila, T4/T5, cancelamento e reembolso
+
+- **Reversão da 0038:** coluna `cancellation_refund_allowed`, migração, lógica no cancelamento/worker, campos de API e testes foram removidos; `cancellation_policy` voltou a `full_refund_until_confirmed`/`policy_version="v1"`.
+- **Modelo:** `lobby_substitutes` (fila em standby), `booking_substitutions` (vaga/T4), `booking_refund_exclusions` (quem não deve ser reembolsado) e `booking_participants.left_at`.
+- **API:** `POST/DELETE/GET /lobbies/{id}/substitutes`, `POST /bookings/{id}/participant-cancellations` e `GET /bookings/{id}/substitutions`.
+- **Regra:** cancelamento individual só em `CONFIRMED` e antes do cutoff de 6 h; T4 = 25% do tempo restante (30 min–12 h); cria exclusão de reembolso do desistente. T2 passa a ter teto de 60 min.
+- **Expiração:** worker `advance_bookings` expira T4, cancela reserva/lobby, libera hold e reembolsa os demais pagantes; o desistente permanece `PAID` e não é reembolsado.
+- **Cancelamento integral pelo jogador:** também respeita cutoff e exclusão; cancelamento pela quadra continua reembolsando todos.
+- **Migração:** `f4b5c6d7e8f9`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **382 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Casos: fila/idempotência, cancelamento antes do cutoff, bloqueio após cutoff, expiração com reembolso dos demais, worker sem reembolsar o desistente, acesso negado e cancelamento integral do jogador.
+- **Pendente na fatia 1:** atribuição/pagamento do substituto (entregue na fatia 2), vaga paga em no-show, T6–T9/check-in, adaptação, integração com partida/Trust Factor e destino do valor não reembolsado.
+
+### 2026-11-09 — ADR 0039, fatia 2: atribuição e pagamento do substituto
+
+- **Atribuição:** `POST /bookings/{id}/substitutions/{substitution_id}/assign` cria participante ativo, nova versão de cobrança `PENDING`, marca a vaga `AWAITING_PAYMENT` e a fila como `CONFIRMED`.
+- **Pagamento:** o substituto paga pela cobrança normal; ao confirmar `PAID`, a vaga vira `FILLED`, a fila vira `PLAYED` e o substituído é reembolsado.
+- **Falha:** se o substituto não pagar até T4, a vaga expira, o participante substituto é desativado, a cobrança fica `FAILED`, o lobby/reserva é cancelado e os demais pagantes são reembolsados; o desistente continua sem reembolso.
+- **Autorização:** criador da reserva ou membro da organização com `bookings:manage`.
+- **Migração:** `a5c6d7e8f9a0` adiciona `substitute_payment_id` e o status `AWAITING_PAYMENT`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **385 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Casos: atribuição, pagamento e reembolso do substituído, expiração sem pagamento, fila `CONFIRMED`/`PLAYED`, acesso negado e cancelamento integral.
+- **Pendente na fatia 2:** vaga paga em no-show (entregue na fatia 3), T6–T9/presença, adaptação e integração com partida/Trust Factor.
+
+### 2026-11-09 — ADR 0039, fatia 3: vaga paga em no-show
+
+- **No-show:** `POST /bookings/{id}/participants/{user}/no-show` exige cutoff vencido e cria vaga `paid_seat=True`; o ausente permanece sem reembolso.
+- **Substituto sem cobrança:** ao atribuir, o participante entra com `payment_status=WAIVED` e a vaga aponta `covered_by_payment_id` para a cobrança paga do ausente. Não há nova cobrança nem reembolso.
+- **Sem substituto:** a vaga expira, mas a reserva continua `CONFIRMED`; a quadra recebe normalmente, pois o horário foi entregue.
+- **Modelo:** `booking_substitutions.paid_seat` e `covered_by_payment_id`; evita ciclo de FK entre participantes e pagamentos.
+- **Migração:** `b6d7e8f9a0b1`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **388 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Casos: no-show pago, substituto `WAIVED`, fila `PLAYED`, expiração sem cancelar a reserva, cutoff e acesso negado.
+- **Pendente na fatia 3:** T6–T9 (entregue na fatia 4), adaptação e integração com partida/Trust Factor.
+
+### 2026-11-09 — ADR 0039, fatia 4: presença e no-show automático
+
+- **Modelo:** `bookings.presence_closed_at` e, por participante, `pre_checked_in_at`, `presence_status`, `presence_method`, `presence_confirmed_at`, `presence_distance_m` e `presence_accuracy_m`.
+- **API:** `POST /bookings/{id}/pre-check-in`, `POST /bookings/{id}/presence` e `GET /bookings/{id}/presence`.
+- **GPS:** valida no servidor com distância haversine, raio de 200 m e precisão máxima de 100 m. Local sem coordenadas ou fora do raio/precisão fica `UNVERIFIED`; somente o estabelecimento pode confirmar como `PRESENT` (sem capitão).
+- **Fechamento:** worker `advance_bookings` fecha presença em T-30m, marca `PENDING`/`UNVERIFIED` como `NO_SHOW` e cria vaga `paid_seat=True` para cada ausente.
+- **Migração:** `c7e8f9a0b1c2`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **393 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Casos: geofence dentro/fora, local sem coordenadas, estabelecimento confirmando outro, GPS negado para terceiro, janela e fechamento automático.
+- **Pendente na fatia 4:** adaptação, UI e Trust Factor.
+
+### 2026-11-09 — Localização, chamada automática, formação e repasse
+
+- **Localização:** `organization_venues.latitude/longitude` obrigatórios no cadastro; presença usa essas coordenadas e cai para o `venues` vinculado. Sem coordenadas, GPS fica `UNVERIFIED` e só o estabelecimento confirma.
+- **Chamada automática:** só chama **um** substituto por vez e **somente quando o número de ativos está ímpar**. Se fica par, ninguém é chamado; chamada pendente é devolvida à fila. `CALLED` com timeout de 5 min, accept/decline e próximo da fila.
+- **Formação:** `bookings.players_per_team` e `formation_note`. Par = dois times; ímpar = `NxN + 1 rodízio`; **não há quórum mínimo fixo**: 2+ presentes formam dois times, 1 não forma. É recomendação, sem cronômetro controlado.
+- **Repasse:** ADR 0040; `eligible_at = starts_at + 2h` e `JOGA_RELEASE_DELAY_HOURS=2`. Reserva `CONFIRMED`/`COMPLETED` com pagamento gera liberação após 2 h; cancelamento antes do início não gera repasse.
+- **Migrações:** `d8f9a0b1c2d3`, `e9a0b1c2d3e4`, `f0a1b2c3d4e5` e `b2c3d4e5f6a1`; upgrade, downgrade, novo upgrade e `alembic check` limpos.
+- **Testes:** **400 passed** com `JOGA_TEST_DATABASE_URL`; ruff, formatação e mypy sem achados. Painel: **19 testes**, lint, typecheck e build verdes.
+- **Trust Factor:** ADR 0041; no-show −30, cancelamento pós-confirmação −7, pré-pagamento −2, recuperação não linear e restrição ranqueada 7/30 dias.
+- **Pendente:** UI de presença/fila, UI de suporte e conciliação/repasse real com PSP.

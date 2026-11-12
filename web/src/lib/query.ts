@@ -36,6 +36,12 @@ export const queryKeys = {
   bookings: (organizationId: string) => ["organizations", organizationId, "bookings"] as const,
   financialSummary: (organizationId: string) =>
     ["organizations", organizationId, "financial-summary"] as const,
+  receivables: (organizationId: string) =>
+    ["organizations", organizationId, "financial-receivables"] as const,
+  statement: (organizationId: string) =>
+    ["organizations", organizationId, "financial-statement"] as const,
+  disputes: (organizationId: string) =>
+    ["organizations", organizationId, "financial-disputes"] as const,
   sports: ["sports"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
 };

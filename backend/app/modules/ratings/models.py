@@ -128,6 +128,9 @@ class TrustAccount(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     score: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default="100")
+    ranked_restricted_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

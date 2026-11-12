@@ -349,12 +349,15 @@ class OrganizationService:
         city: str | None = None,
         state: str | None = None,
         address_line: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
         timezone: str | None = None,
         venue_id: uuid.UUID | None = None,
     ) -> OrganizationVenue:
         """Cria um estabelecimento vinculado à organização."""
 
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
+        clean_latitude, clean_longitude = _clean_coordinates(latitude, longitude)
         venue = OrganizationVenue(
             organization_id=organization_id,
             venue_id=self._validate_discovery_venue(venue_id),
@@ -362,6 +365,8 @@ class OrganizationService:
             city=_clean_optional(city, max_length=120),
             state=_clean_state(state),
             address_line=_clean_optional(address_line, max_length=200),
+            latitude=clean_latitude,
+            longitude=clean_longitude,
             timezone=_clean_timezone(timezone),
         )
         try:
@@ -436,6 +441,23 @@ class OrganizationService:
             raise VenueNotFound
 
         applied: dict[str, Any] = {}
+        changes = dict(changes)
+        if "latitude" in changes or "longitude" in changes:
+            clean_latitude, clean_longitude = _clean_coordinates(
+                changes.pop("latitude", venue.latitude),
+                changes.pop("longitude", venue.longitude),
+            )
+            for field, coordinate in (
+                ("latitude", clean_latitude),
+                ("longitude", clean_longitude),
+            ):
+                previous = getattr(venue, field)
+                if previous != coordinate:
+                    setattr(venue, field, coordinate)
+                    applied[field] = {
+                        "from": _audit_value(previous),
+                        "to": _audit_value(coordinate),
+                    }
         for field, value in changes.items():
             cleaned: Any
             if field == "name":
@@ -611,6 +633,17 @@ def _clean_venue_name(value: str) -> str:
     if not 2 <= len(normalized) <= 120:
         raise InvalidInput
     return normalized
+
+
+def _clean_coordinates(
+    latitude: float | None,
+    longitude: float | None,
+) -> tuple[float, float]:
+    if latitude is None or longitude is None:
+        raise InvalidInput
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise InvalidInput
+    return float(latitude), float(longitude)
 
 
 def _clean_optional(value: str | None, *, max_length: int) -> str | None:

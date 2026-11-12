@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     String,
@@ -100,6 +101,14 @@ class OrganizationVenue(Base):
             "status IN ('active', 'inactive')",
             name="status_valid",
         ),
+        CheckConstraint(
+            "latitude IS NULL OR latitude BETWEEN -90 AND 90",
+            name="latitude_valid",
+        ),
+        CheckConstraint(
+            "longitude IS NULL OR longitude BETWEEN -180 AND 180",
+            name="longitude_valid",
+        ),
         Index("ix_organization_venues_organization_id", "organization_id"),
     )
 
@@ -114,6 +123,8 @@ class OrganizationVenue(Base):
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     state: Mapped[str | None] = mapped_column(String(2), nullable=True)
     address_line: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     timezone: Mapped[str] = mapped_column(
         String(64),
         nullable=False,

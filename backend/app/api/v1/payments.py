@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
-from app.modules.bookings.service import BookingService
+from app.modules.bookings.service import BookingNotFound, BookingService
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.permissions import Capability
 from app.modules.organizations.service import (
@@ -25,7 +25,13 @@ from app.modules.organizations.service import (
 )
 from app.modules.payments.adapter import PspAdapter, PspError, verify_webhook_signature
 from app.modules.payments.dependency import get_psp_adapter
-from app.modules.payments.models import PaymentRefund
+from app.modules.payments.financial import (
+    DisputeConflict,
+    DisputeNotFound,
+    FinancialService,
+    ReleaseNotFound,
+)
+from app.modules.payments.models import FinancialDispute, PaymentRefund
 from app.modules.payments.service import PaymentError, PaymentNotFound, PaymentService
 
 router = APIRouter(tags=["payments"])
@@ -84,8 +90,95 @@ class OrganizationSummaryResponse(BaseModel):
     refunded_cents: int
     pending_cents: int
     released_cents: int
+    pending_release_cents: int
+    disputed_cents: int
     payments: int
     refunds: int
+
+
+class ReceivableView(BaseModel):
+    booking_id: UUID
+    release_id: UUID
+    amount_cents: int
+    status: str
+    eligible_at: datetime
+    released_at: datetime | None
+    starts_at: datetime
+    ends_at: datetime
+    has_open_dispute: bool
+    dispute_id: UUID | None
+
+
+class ReceivableListResponse(BaseModel):
+    receivables: list[ReceivableView]
+    limit: int
+    offset: int
+
+
+class StatementEntryView(BaseModel):
+    id: UUID
+    booking_id: UUID
+    booking_payment_id: UUID | None
+    entry_type: str
+    direction: str
+    amount_cents: int
+    status: str
+    details: dict[str, Any] | None
+    created_at: datetime
+
+
+class StatementListResponse(BaseModel):
+    entries: list[StatementEntryView]
+    limit: int
+    offset: int
+
+
+class DisputeCreateRequest(BaseModel):
+    booking_id: UUID
+    reason: str = Field(min_length=1, max_length=500)
+    evidence: str | None = Field(default=None, max_length=2000)
+
+
+class DisputeView(BaseModel):
+    id: UUID
+    organization_id: UUID
+    booking_id: UUID
+    release_id: UUID | None
+    amount_cents: int
+    status: str
+    reason: str
+    evidence: str | None
+    decision_reason: str | None
+    decided_by: str | None
+    decided_at: datetime | None
+    created_by: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DisputeListResponse(BaseModel):
+    disputes: list[DisputeView]
+    limit: int
+    offset: int
+
+
+def _dispute_view(dispute: FinancialDispute) -> DisputeView:
+    return DisputeView(
+        id=dispute.id,
+        organization_id=dispute.organization_id,
+        booking_id=dispute.booking_id,
+        release_id=dispute.release_id,
+        amount_cents=dispute.amount_cents,
+        status=dispute.status,
+        reason=dispute.reason,
+        evidence=dispute.evidence,
+        decision_reason=dispute.decision_reason,
+        decided_by=dispute.decided_by,
+        decided_at=dispute.decided_at,
+        created_by=dispute.created_by,
+        created_at=dispute.created_at,
+        updated_at=dispute.updated_at,
+    )
 
 
 def _error(code: str, status_code: int) -> HTTPException:
@@ -329,3 +422,159 @@ def booking_financial(
             for item in refunds
         ],
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/financial/receivables",
+    response_model=ReceivableListResponse,
+)
+def list_receivables(
+    organization_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    status_filter: Annotated[
+        str | None,
+        Query(alias="status", pattern="^(PENDING|RELEASED|FAILED|REVERSED)$"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ReceivableListResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
+    rows = FinancialService(session).list_receivables(
+        organization_id,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+    return ReceivableListResponse(
+        receivables=[
+            ReceivableView(
+                booking_id=booking.id,
+                release_id=release.id,
+                amount_cents=release.amount_cents,
+                status=release.status,
+                eligible_at=release.eligible_at,
+                released_at=release.released_at,
+                starts_at=booking.starts_at,
+                ends_at=booking.ends_at,
+                has_open_dispute=dispute_id is not None,
+                dispute_id=dispute_id,
+            )
+            for release, booking, dispute_id in rows
+        ],
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/financial/statement",
+    response_model=StatementListResponse,
+)
+def financial_statement(
+    organization_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> StatementListResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
+    entries = FinancialService(session).statement(organization_id, limit=limit, offset=offset)
+    return StatementListResponse(
+        entries=[
+            StatementEntryView(
+                id=item.id,
+                booking_id=item.booking_id,
+                booking_payment_id=item.booking_payment_id,
+                entry_type=item.entry_type,
+                direction=item.direction,
+                amount_cents=item.amount_cents,
+                status=item.status,
+                details=item.details,
+                created_at=item.created_at,
+            )
+            for item in entries
+        ],
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/financial/disputes",
+    response_model=DisputeListResponse,
+)
+def list_disputes(
+    organization_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    status_filter: Annotated[
+        str | None,
+        Query(alias="status", pattern="^(OPEN|ACCEPTED|REJECTED|WITHDRAWN)$"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> DisputeListResponse:
+    _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
+    disputes = FinancialService(session).list_disputes(
+        organization_id,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+    return DisputeListResponse(
+        disputes=[_dispute_view(item) for item in disputes],
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/financial/disputes",
+    response_model=DisputeView,
+    status_code=status.HTTP_201_CREATED,
+)
+def open_dispute(
+    organization_id: UUID,
+    payload: DisputeCreateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> DisputeView:
+    _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_MANAGE)
+    try:
+        dispute = FinancialService(session).open_dispute(
+            actor_user_id=current.user_id,
+            organization_id=organization_id,
+            booking_id=payload.booking_id,
+            reason=payload.reason,
+            evidence=payload.evidence,
+        )
+        session.commit()
+    except BookingNotFound as exc:
+        session.rollback()
+        raise _error("booking_not_found", status.HTTP_404_NOT_FOUND) from exc
+    except ReleaseNotFound as exc:
+        session.rollback()
+        raise _error("release_not_found", status.HTTP_404_NOT_FOUND) from exc
+    except DisputeConflict as exc:
+        session.rollback()
+        raise _error("dispute_already_open", status.HTTP_409_CONFLICT) from exc
+    return _dispute_view(dispute)
+
+
+@router.get(
+    "/organizations/{organization_id}/financial/disputes/{dispute_id}",
+    response_model=DisputeView,
+)
+def get_dispute(
+    organization_id: UUID,
+    dispute_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> DisputeView:
+    _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
+    try:
+        dispute = FinancialService(session).get_dispute(organization_id, dispute_id)
+    except DisputeNotFound as exc:
+        raise _error("dispute_not_found", status.HTTP_404_NOT_FOUND) from exc
+    return _dispute_view(dispute)

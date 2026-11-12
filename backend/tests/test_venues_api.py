@@ -46,7 +46,13 @@ def create_venue(api: TestClient, token: str, organization_id: str, name: str) -
     response = api.post(
         f"/api/v1/organizations/{organization_id}/venues",
         headers=bearer(token),
-        json={"name": name, "city": "Rio de Janeiro", "state": "RJ"},
+        json={
+            "name": name,
+            "city": "Rio de Janeiro",
+            "state": "RJ",
+            "latitude": -22.9,
+            "longitude": -43.2,
+        },
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -136,7 +142,12 @@ def test_venue_can_link_only_private_discovery_venue(
     created = api.post(
         f"/api/v1/organizations/{organization['id']}/venues",
         headers=bearer(token),
-        json={"name": "Arena Vinculada", "venue_id": str(private.id)},
+        json={
+            "name": "Arena Vinculada",
+            "venue_id": str(private.id),
+            "latitude": -22.9,
+            "longitude": -43.2,
+        },
     )
     assert created.status_code == 201, created.text
     assert created.json()["venue_id"] == str(private.id)
@@ -144,14 +155,24 @@ def test_venue_can_link_only_private_discovery_venue(
     public_link = api.post(
         f"/api/v1/organizations/{organization['id']}/venues",
         headers=bearer(token),
-        json={"name": "Arena Pública", "venue_id": str(public.id)},
+        json={
+            "name": "Arena Pública",
+            "venue_id": str(public.id),
+            "latitude": -22.9,
+            "longitude": -43.2,
+        },
     )
     assert public_link.status_code == 422
 
     duplicate = api.post(
         f"/api/v1/organizations/{organization['id']}/venues",
         headers=bearer(token),
-        json={"name": "Arena Duplicada", "venue_id": str(private.id)},
+        json={
+            "name": "Arena Duplicada",
+            "venue_id": str(private.id),
+            "latitude": -22.9,
+            "longitude": -43.2,
+        },
     )
     assert duplicate.status_code == 422
 

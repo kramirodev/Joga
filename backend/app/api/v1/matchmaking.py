@@ -21,6 +21,7 @@ from app.modules.matchmaking.service import (
     InvalidFormat,
     InvalidMode,
     MatchmakingService,
+    RankedRestricted,
     RegionRequired,
     SportProfileRequired,
 )
@@ -136,6 +137,8 @@ def enqueue(
         raise _error(status.HTTP_409_CONFLICT, "region_required") from None
     except AlreadyQueued:
         raise _error(status.HTTP_409_CONFLICT, "already_queued") from None
+    except RankedRestricted:
+        raise _error(status.HTTP_403_FORBIDDEN, "ranked_restricted") from None
     except IntegrityError:
         session.rollback()
         raise _error(status.HTTP_409_CONFLICT, "already_queued") from None

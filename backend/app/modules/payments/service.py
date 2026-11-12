@@ -10,9 +10,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.modules.bookings.models import Booking, BookingParticipant, BookingPayment
+from app.modules.bookings.models import (
+    Booking,
+    BookingParticipant,
+    BookingPayment,
+    BookingRefundExclusion,
+    BookingSubstitution,
+)
 from app.modules.bookings.service import BookingBundle, BookingNotFound, BookingService
 from app.modules.identity.clock import utcnow
+from app.modules.matchmaking.models import LobbySubstitute
 from app.modules.payments.adapter import (
     PixChargeRequest,
     ProviderStatus,
@@ -266,6 +273,7 @@ class PaymentService:
             f"simulator:{payment.id}:PAID",
             {"provider": "simulator"},
         )
+        self._finalize_substitution(payment)
         self.session.flush()
         return bundle
 
@@ -347,17 +355,24 @@ class PaymentService:
         *,
         reason: str,
         requested_by: uuid.UUID | None = None,
+        exclude_user_ids: set[uuid.UUID] | None = None,
     ) -> int:
-        """Estorna todas as cobranças pagas de uma reserva."""
+        """Estorna todas as cobranças pagas de uma reserva.
 
-        payments = list(
-            self.session.scalars(
-                select(BookingPayment).where(
-                    BookingPayment.booking_id == booking_id,
-                    BookingPayment.status == "PAID",
-                )
-            ).all()
+        ``exclude_user_ids`` implementa a ADR 0039: quem desistiu após a
+        confirmação não recebe reembolso quando o lobby é cancelado.
+        """
+
+        statement = select(BookingPayment).where(
+            BookingPayment.booking_id == booking_id,
+            BookingPayment.status == "PAID",
         )
+        if exclude_user_ids:
+            statement = statement.join(
+                BookingParticipant,
+                BookingParticipant.id == BookingPayment.participant_id,
+            ).where(BookingParticipant.user_id.not_in(exclude_user_ids))
+        payments = list(self.session.scalars(statement).all())
         for payment in payments:
             self.refund_payment(
                 booking_id,
@@ -429,7 +444,18 @@ class PaymentService:
         )
         count = 0
         for booking_id in booking_ids:
-            count += self.refund_booking(booking_id, reason="booking_cancelled")
+            excluded = set(
+                self.session.scalars(
+                    select(BookingRefundExclusion.user_id).where(
+                        BookingRefundExclusion.booking_id == booking_id
+                    )
+                ).all()
+            )
+            count += self.refund_booking(
+                booking_id,
+                reason="booking_cancelled",
+                exclude_user_ids=excluded,
+            )
         return count
 
     def booking_ledger(self, booking_id: uuid.UUID) -> list[LedgerEntry]:
@@ -444,20 +470,15 @@ class PaymentService:
     def organization_summary(self, organization_id: uuid.UUID) -> dict[str, int]:
         """Totais financeiros internos da organização, sem conciliação externa."""
 
+        from app.modules.payments.financial import FinancialService
+
         base = (
             select(BookingPayment)
             .join(Booking, Booking.id == BookingPayment.booking_id)
             .where(Booking.organization_id == organization_id)
         )
         payments = list(self.session.scalars(base).all())
-        released = self.session.scalar(
-            select(func.coalesce(func.sum(LedgerEntry.amount_cents), 0)).where(
-                LedgerEntry.booking_id.in_(
-                    select(Booking.id).where(Booking.organization_id == organization_id)
-                ),
-                LedgerEntry.entry_type == "VENUE_RELEASE",
-            )
-        )
+        totals = FinancialService(self.session).release_totals(organization_id)
         return {
             "charged_cents": sum(item.amount_cents for item in payments),
             "paid_cents": sum(item.amount_cents for item in payments if item.status == "PAID"),
@@ -467,7 +488,9 @@ class PaymentService:
             "pending_cents": sum(
                 item.amount_cents for item in payments if item.status == "PENDING"
             ),
-            "released_cents": int(released or 0),
+            "released_cents": totals["released_cents"],
+            "pending_release_cents": totals["pending_release_cents"],
+            "disputed_cents": totals["disputed_cents"],
             "payments": len(payments),
             "refunds": self.session.scalar(
                 select(func.count())
@@ -479,41 +502,11 @@ class PaymentService:
         }
 
     def record_venue_release(self, booking_id: uuid.UUID) -> None:
-        booking = self.session.get(Booking, booking_id)
-        if booking is None:
-            raise BookingNotFound
-        if booking.status != "COMPLETED":
-            return
-        exists = self.session.scalar(
-            select(LedgerEntry).where(
-                LedgerEntry.booking_id == booking.id,
-                LedgerEntry.entry_type == "VENUE_RELEASE",
-            )
-        )
-        if exists is not None:
-            return
-        total = sum(
-            payment.amount_cents
-            for payment in self.session.scalars(
-                select(BookingPayment).where(
-                    BookingPayment.booking_id == booking.id,
-                    BookingPayment.status == "PAID",
-                )
-            ).all()
-        )
-        if total <= 0:
-            return
-        self.session.add(
-            LedgerEntry(
-                booking_id=booking.id,
-                booking_payment_id=None,
-                entry_type="VENUE_RELEASE",
-                direction="CREDIT",
-                amount_cents=total,
-                details={"simulated": True, "provider": self.adapter.provider_name},
-            )
-        )
-        self.session.flush()
+        """Compatibilidade 14C: agora apenas agenda a liberação da Fase 15."""
+
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).ensure_release(booking_id)
 
     def _payment(self, booking_id: uuid.UUID, payment_id: uuid.UUID) -> BookingPayment:
         payment = self.session.get(BookingPayment, payment_id)
@@ -564,6 +557,43 @@ class PaymentService:
             f"PSP_{internal}",
             f"{status.provider}:{status.provider_order_id}:{internal}",
             {"provider_status": status.status, "status_detail": status.status_detail},
+        )
+        if internal == "PAID":
+            self._finalize_substitution(payment)
+
+    def _finalize_substitution(self, payment: BookingPayment) -> None:
+        """Fecha a vaga quando o substituto paga e devolve a cobrança do saiu."""
+
+        if payment.status != "PAID":
+            return
+        substitution = self.session.scalar(
+            select(BookingSubstitution)
+            .where(
+                BookingSubstitution.substitute_payment_id == payment.id,
+                BookingSubstitution.status == "AWAITING_PAYMENT",
+            )
+            .with_for_update()
+        )
+        if substitution is None:
+            return
+        substitution.status = "FILLED"
+        substitution.resolved_at = utcnow()
+        booking = self.session.get(Booking, payment.booking_id)
+        if booking is not None and substitution.filled_by_user_id is not None:
+            queue_entry = self.session.scalar(
+                select(LobbySubstitute).where(
+                    LobbySubstitute.lobby_id == booking.lobby_id,
+                    LobbySubstitute.user_id == substitution.filled_by_user_id,
+                )
+            )
+            if queue_entry is not None:
+                queue_entry.status = "PLAYED"
+                queue_entry.played_at = substitution.resolved_at
+        self.refund_participant(
+            payment.booking_id,
+            substitution.outgoing_user_id,
+            reason="participant_replaced",
+            requested_by=None,
         )
 
     def _event(

@@ -3,11 +3,15 @@ import type {
   Booking,
   BookingListResponse,
   ChallengeResponse,
+  FinancialDispute,
+  FinancialDisputeListResponse,
+  FinancialStatementListResponse,
   Member,
   MemberListResponse,
   Organization,
   OrganizationFinancialSummary,
   OrganizationListResponse,
+  ReceivableListResponse,
   Role,
   SportCatalogResponse,
   Venue,
@@ -316,6 +320,8 @@ export const api = {
       city: string | null;
       state: string | null;
       address_line: string | null;
+      latitude: number;
+      longitude: number;
     },
   ): Promise<Venue> {
     return request<Venue>(venuePath(organizationId), {
@@ -328,7 +334,17 @@ export const api = {
     organizationId: string,
     venueId: string,
     payload: Partial<
-      Pick<Venue, "name" | "city" | "state" | "address_line" | "timezone" | "status">
+      Pick<
+        Venue,
+        | "name"
+        | "city"
+        | "state"
+        | "address_line"
+        | "latitude"
+        | "longitude"
+        | "timezone"
+        | "status"
+      >
     >,
   ): Promise<Venue> {
     return request<Venue>(venuePath(organizationId, venueId), {
@@ -352,6 +368,37 @@ export const api = {
   getOrganizationFinancialSummary(organizationId: string): Promise<OrganizationFinancialSummary> {
     return request<OrganizationFinancialSummary>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/summary`,
+    );
+  },
+
+  listReceivables(organizationId: string): Promise<ReceivableListResponse> {
+    return request<ReceivableListResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/receivables`,
+    );
+  },
+
+  getFinancialStatement(organizationId: string): Promise<FinancialStatementListResponse> {
+    return request<FinancialStatementListResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/statement`,
+    );
+  },
+
+  listFinancialDisputes(organizationId: string): Promise<FinancialDisputeListResponse> {
+    return request<FinancialDisputeListResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes`,
+    );
+  },
+
+  openFinancialDispute(
+    organizationId: string,
+    payload: { booking_id: string; reason: string; evidence?: string | null },
+  ): Promise<FinancialDispute> {
+    return request<FinancialDispute>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
     );
   },
 

@@ -24,6 +24,7 @@ from app.modules.payments.models import (
     PaymentEvent,
     PaymentRefund,
     PspWebhookEvent,
+    VenueRelease,
 )
 from app.modules.payments.service import PaymentMismatch, PaymentNotFound, PaymentService
 from tests.helpers_results import make_token, make_user
@@ -163,14 +164,21 @@ def test_open_charges_and_webhooks_confirm_booking(
         headers=bearer(context["tokens"][0]),
     )
     assert completed.status_code == 200, completed.text
-    releases = db_session.scalars(
-        select(LedgerEntry).where(
-            LedgerEntry.booking_id == booking.id,
-            LedgerEntry.entry_type == "VENUE_RELEASE",
+    release = db_session.scalar(select(VenueRelease).where(VenueRelease.booking_id == booking.id))
+    assert release is not None
+    assert release.status == "PENDING"
+    assert release.amount_cents == 40_000
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(LedgerEntry)
+            .where(
+                LedgerEntry.booking_id == booking.id,
+                LedgerEntry.entry_type == "VENUE_RELEASE",
+            )
         )
-    ).all()
-    assert len(releases) == 1
-    assert releases[0].amount_cents == 40_000
+        == 0
+    )
 
 
 def test_amount_mismatch_does_not_confirm(
@@ -434,7 +442,8 @@ def test_financial_summary_and_booking_ledger(
         f"/api/v1/organizations/{context['organization'].id}/financial/summary",
         headers=bearer(context["tokens"][0]),
     )
-    assert summary.json()["released_cents"] == 40_000
+    assert summary.json()["released_cents"] == 0
+    assert summary.json()["pending_release_cents"] == 40_000
 
     financial = api.get(
         f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/financial",
@@ -442,7 +451,7 @@ def test_financial_summary_and_booking_ledger(
     )
     assert financial.status_code == 200, financial.text
     body = financial.json()
-    assert len(body["ledger"]) == 9
+    assert len(body["ledger"]) == 8
     assert body["refunds"] == []
 
 

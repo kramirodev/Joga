@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.config import get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.bookings.models import BookingRefundExclusion
 from app.modules.bookings.service import (
     BookingBundle,
     BookingConflict,
@@ -22,6 +25,7 @@ from app.modules.bookings.service import (
     BookingService,
     BookingTransitionError,
 )
+from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.service import Forbidden, OrganizationNotFound
 from app.modules.payments.adapter import PspAdapter, PspError
@@ -62,6 +66,9 @@ class ParticipantView(BaseModel):
     confirmed_at: datetime | None
     declined_at: datetime | None
     replaced_by_user_id: UUID | None
+    presence_status: str
+    presence_method: str | None
+    presence_confirmed_at: datetime | None
 
 
 class TimerView(BaseModel):
@@ -121,6 +128,9 @@ class BookingView(BaseModel):
     cancelled_at: datetime | None
     expired_at: datetime | None
     completed_at: datetime | None
+    presence_closed_at: datetime | None
+    players_per_team: int | None
+    formation_note: str | None
     cancellation_reason: str | None
     created_at: datetime
     updated_at: datetime
@@ -186,6 +196,9 @@ def _view(
         cancelled_at=booking.cancelled_at,
         expired_at=booking.expired_at,
         completed_at=booking.completed_at,
+        presence_closed_at=booking.presence_closed_at,
+        players_per_team=booking.players_per_team,
+        formation_note=booking.formation_note,
         cancellation_reason=booking.cancellation_reason,
         created_at=booking.created_at,
         updated_at=booking.updated_at,
@@ -204,6 +217,9 @@ def _view(
                 confirmed_at=item.confirmed_at,
                 declined_at=item.declined_at,
                 replaced_by_user_id=item.replaced_by_user_id,
+                presence_status=item.presence_status,
+                presence_method=item.presence_method,
+                presence_confirmed_at=item.presence_confirmed_at,
             )
             for item in bundle.participants
         ],
@@ -424,11 +440,38 @@ def cancel_booking(
 ) -> BookingView:
     service = BookingService(session)
     try:
-        bundle = service.cancel(current.user_id, booking_id, reason=payload.reason)
+        existing = service.get(current.user_id, booking_id)
+        by_venue = existing.booking.created_by != current.user_id and service.viewer_is_org(
+            current.user_id, existing.booking
+        )
+        if not by_venue:
+            starts_at = existing.booking.starts_at
+            if starts_at.tzinfo is None:
+                starts_at = starts_at.replace(tzinfo=UTC)
+            cutoff = starts_at - timedelta(hours=get_settings().cancellation_cutoff_hours)
+            if utcnow() >= cutoff:
+                raise BookingConflict("cancellation_closed")
+        bundle = service.cancel(
+            current.user_id,
+            booking_id,
+            reason=payload.reason,
+            by_venue=by_venue,
+        )
+        excluded: set[UUID] = set()
+        if not by_venue:
+            excluded = set(
+                session.scalars(
+                    select(BookingRefundExclusion.user_id).where(
+                        BookingRefundExclusion.booking_id == booking_id
+                    )
+                ).all()
+            )
+            excluded.add(current.user_id)
         PaymentService(session, adapter).refund_booking(
             booking_id,
             reason=payload.reason,
             requested_by=current.user_id,
+            exclude_user_ids=excluded or None,
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001

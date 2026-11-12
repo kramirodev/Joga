@@ -14,9 +14,11 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +27,8 @@ from app.modules.identity.clock import utcnow
 
 LEDGER_ENTRY_TYPES = ("CHARGE_CREATED", "PAYMENT_CONFIRMED", "PAYMENT_REFUNDED", "VENUE_RELEASE")
 REFUND_STATUSES = ("PENDING", "PROCESSED", "FAILED")
+RELEASE_STATUSES = ("PENDING", "RELEASED", "FAILED", "REVERSED")
+DISPUTE_STATUSES = ("OPEN", "ACCEPTED", "REJECTED", "WITHDRAWN")
 
 
 class PaymentRefund(Base):
@@ -145,4 +149,103 @@ class LedgerEntry(Base):
     details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class VenueRelease(Base):
+    """Valor devido ao estabelecimento por uma reserva concluída (Fase 15)."""
+
+    __tablename__ = "venue_releases"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'RELEASED', 'FAILED', 'REVERSED')",
+            name="status_valid",
+        ),
+        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
+        UniqueConstraint("booking_id", name="uq_venue_releases_booking"),
+        Index("ix_venue_releases_org_status_eligible", "organization_id", "status", "eligible_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+    )
+
+
+class FinancialDispute(Base):
+    """Contestação do estabelecimento sobre valores de uma reserva (Fase 15)."""
+
+    __tablename__ = "financial_disputes"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OPEN', 'ACCEPTED', 'REJECTED', 'WITHDRAWN')",
+            name="status_valid",
+        ),
+        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
+        Index(
+            "ix_financial_disputes_org_status_created", "organization_id", "status", "created_at"
+        ),
+        Index(
+            "uq_financial_disputes_open_booking",
+            "booking_id",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+            sqlite_where=text("status = 'OPEN'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
+    )
+    release_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("venue_releases.id", ondelete="SET NULL"), nullable=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="OPEN", server_default="OPEN"
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
     )

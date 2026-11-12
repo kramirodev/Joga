@@ -25,6 +25,8 @@ const venue: Venue = {
   city: "Rio de Janeiro",
   state: "RJ",
   address_line: null,
+  latitude: -22.9,
+  longitude: -43.2,
   timezone: "America/Sao_Paulo",
   status: "active",
   created_at: "2026-11-01T12:00:00Z",

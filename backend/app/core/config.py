@@ -96,9 +96,22 @@ class Settings(BaseSettings):
     # fase; horário comercial fica pendente de implementação.
     booking_t1_minutes: int = Field(default=60, ge=5, le=240)
     booking_t2_minutes: int = Field(default=30, ge=5, le=240)
-    booking_t2_max_minutes: int = Field(default=240, ge=30, le=1440)
+    booking_t2_max_minutes: int = Field(default=60, ge=30, le=60)
     booking_t3_minutes: int = Field(default=60, ge=10, le=240)
     booking_payment_buffer_minutes: int = Field(default=10, ge=0, le=30)
+
+    # Cancelamento e substituição (ADR 0039). O cutoff e a janela são
+    # propostas iniciais; não são regra financeira aprovada.
+    cancellation_cutoff_hours: int = Field(default=6, ge=1, le=168)
+    substitution_window_percent: int = Field(default=25, ge=1, le=100)
+    substitution_window_min_minutes: int = Field(default=30, ge=5, le=240)
+    substitution_window_max_hours: int = Field(default=12, ge=1, le=72)
+    late_substitution_window_minutes: int = Field(default=15, ge=5, le=30)
+    substitution_call_timeout_minutes: int = Field(default=5, ge=2, le=15)
+    presence_open_lead_minutes: int = Field(default=60, ge=5, le=240)
+    presence_close_lead_minutes: int = Field(default=30, ge=5, le=120)
+    presence_radius_m: int = Field(default=200, ge=50, le=1000)
+    presence_max_accuracy_m: int = Field(default=100, ge=10, le=500)
 
     # PSP (Fase 14A). O simulador é o padrão local/CI; o Mercado Pago exige
     # credenciais sandbox e nunca deve ser usado com dinheiro real neste estágio.
@@ -117,6 +130,10 @@ class Settings(BaseSettings):
     )
     mercado_pago_notification_url: str | None = Field(default=None, max_length=500)
     psp_timeout_seconds: int = Field(default=10, ge=1, le=60)
+
+    # Liberação ao estabelecimento: no horário da partida (ADR 0039). O atraso
+    # opcional existe apenas para operação; o padrão é zero.
+    release_delay_hours: int = Field(default=2, ge=0, le=720)
 
     # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
     # significa que nenhum operador está autorizado.

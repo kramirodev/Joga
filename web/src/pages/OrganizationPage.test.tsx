@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AuthContext } from "../lib/auth-context";
-import type { Booking, Member, Organization, Role, Venue } from "../types";
+import type { Booking, Member, Organization, Receivable, Role, Venue } from "../types";
 import { OrganizationPage } from "./OrganizationPage";
 
 const members: Member[] = [
@@ -26,6 +26,8 @@ const venues: Venue[] = [
     city: "Rio de Janeiro",
     state: "RJ",
     address_line: null,
+    latitude: -22.9,
+    longitude: -43.2,
     timezone: "America/Sao_Paulo",
     status: "active",
     created_at: "2026-11-01T12:00:00Z",
@@ -72,6 +74,19 @@ const booking: Booking = {
   payments: [],
 };
 
+const receivable: Receivable = {
+  booking_id: "booking-1",
+  release_id: "release-1",
+  amount_cents: 40000,
+  status: "PENDING",
+  eligible_at: "2026-12-16T19:00:00Z",
+  released_at: null,
+  starts_at: "2026-12-15T18:00:00Z",
+  ends_at: "2026-12-15T19:00:00Z",
+  has_open_dispute: false,
+  dispute_id: null,
+};
+
 function organizationFor(role: Role): Organization {
   return {
     id: "org-1",
@@ -91,7 +106,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function stubApi(role: Role, bookings: Booking[] = []) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/api/v1/organizations/org-1")) {
       return jsonResponse(organizationFor(role));
@@ -109,9 +124,41 @@ function stubApi(role: Role, bookings: Booking[] = []) {
         refunded_cents: 0,
         pending_cents: 0,
         released_cents: 0,
+        pending_release_cents: 40000,
+        disputed_cents: 0,
         payments: 0,
         refunds: 0,
       });
+    }
+    if (url.endsWith("/financial/receivables")) {
+      return jsonResponse({ receivables: [receivable], limit: 50, offset: 0 });
+    }
+    if (url.endsWith("/financial/statement")) {
+      return jsonResponse({ entries: [], limit: 50, offset: 0 });
+    }
+    if (url.endsWith("/financial/disputes")) {
+      if (init?.method === "POST") {
+        return jsonResponse(
+          {
+            id: "dispute-1",
+            organization_id: "org-1",
+            booking_id: "booking-1",
+            release_id: "release-1",
+            amount_cents: 40000,
+            status: "OPEN",
+            reason: "Valor divergente",
+            evidence: null,
+            decision_reason: null,
+            decided_by: null,
+            decided_at: null,
+            created_by: "user-1",
+            created_at: "2026-12-01T12:00:00Z",
+            updated_at: "2026-12-01T12:00:00Z",
+          },
+          201,
+        );
+      }
+      return jsonResponse({ disputes: [], limit: 50, offset: 0 });
     }
     if (url.includes("/audit")) return jsonResponse({ audit: [], limit: 50, offset: 0 });
     return jsonResponse({ detail: { code: "not_found" } }, 404);
@@ -161,6 +208,10 @@ describe("OrganizationPage — permissões na interface", () => {
     expect(screen.getByText("Quadra Central")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Novo estabelecimento" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(false);
+
+    await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
+    expect(await screen.findByText(/previsão técnica de liberação em/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Contestar" })).not.toBeInTheDocument();
   });
 
   it("proprietário vê edição, gestão de membros e auditoria", async () => {
@@ -175,6 +226,28 @@ describe("OrganizationPage — permissões na interface", () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(true),
     );
+  });
+
+  it("proprietário contesta um recebível pendente", async () => {
+    const fetchMock = stubApi("OWNER");
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Valor divergente");
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
+    await user.click(await screen.findByRole("button", { name: "Contestar" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/financial/disputes") &&
+            (init as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    promptSpy.mockRestore();
   });
 
   it("operador aceita uma reserva pendente", async () => {
