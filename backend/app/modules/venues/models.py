@@ -103,6 +103,7 @@ class VenueAvailability(Base):
             name="uq_venue_availability_space_weekday_start",
         ),
         Index("ix_venue_availability_space_weekday", "venue_space_id", "weekday"),
+        Index("ix_venue_availability_band_id", "band_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
