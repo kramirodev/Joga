@@ -362,7 +362,8 @@ Mesmo sem site público para consumidores, será necessário um domínio técnic
 
 - Solicitar localização somente quando uma funcionalidade precisar dela.
 - Priorizar uso em primeiro plano; não solicitar rastreamento contínuo em segundo plano no MVP.
-- Oferecer localização aproximada e busca manual por região.
+- Oferecer localização aproximada. **A busca por CEP ou região é benefício do passe** (ADR 0043 §4): o plano gratuito busca apenas pela localização do aparelho.
+- A busca por CEP existe para reduzir intenção falsa no motor: sem barreira, o jogador declara intenção em qualquer lugar e o matchmaking tenta formar partidas que não vão acontecer.
 - Não revelar a posição residencial exata de um jogador a outros participantes.
 - Não armazenar histórico de deslocamento.
 - Consultas geoespaciais devem aplicar raio máximo, paginação e índices GiST.
@@ -1502,6 +1503,7 @@ Pipeline recomendado:
 | 12. Quadras, agenda e fornecedor | Espaços, agenda, preços, bloqueios, cadastro do fornecedor e chave de repasse | Reserva paga bloqueada sem chave de repasse validada |
 | 13. Reservas e temporizadores | Solicitação, aceite, hold, T1/T2/T3, substituição e estados | Sem cobrança antes do aceite e do bloqueio |
 | 14. Ingresso, Pix e reembolsos | Cobrança por pacote e passe, webhooks, ledger, estorno parcial e repasse | Sem carteira própria; status só por evento do PSP |
+| 14D. Ingresso, carteira e temporada | Tabela 2D, carteira de ingressos, XP, trilha, catálogo e inteligência de rede | Nenhum item altera competitividade; ledger conciliável |
 | 15. Interface financeira e conciliação | Extrato, recebíveis, liberação, contestação e conciliação | Sem liberação antes da partida; Res. 264/349 |
 | 16. Clãs e troféus | Clãs, chat de clã, troféus por modalidade e temporadas | Fórmula validada por simulações e controles antiabuso. **Antecipada ao MVP pela ADR 0044, em paralelo às Fases 11–15** |
 | 17. Moderação e Trust & Safety | Denúncias de perfil, análise contextual, medidas e revisão humana | Denúncia isolada não altera Trust Factor |

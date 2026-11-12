@@ -65,6 +65,7 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Custódia, Payouts no Brasil e Pix Automático por API em cada PSP | PSP de produção | Comercial dos PSPs |
 | Taxonomia final de atributos e teto de V por faixa | Contrato com a quadra | Produto e comercial |
 | Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real (3,3%/6,7% da receita) e conversão no piloto |
+| Busca por CEP restrita ao passe | Definido | Definir como o usuário free que mudou de cidade ou planeja jogar fora resolve isso (ex.: troca de cidade base com limite) |
 | Arredondamento de 4x4 | Tabela 2D | Produto |
 | Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
@@ -81,6 +82,26 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 | Temporada de troféus e sua relação com a temporada trimestral | Troféus | Produto |
 | Data-alvo do primeiro evento de marketing | Critério de saída da Fase 16 | Produto |
 | Catálogo cosmético por temporada (livre, XP, passe) e balanceamento de XP | Customização | Modelo técnico em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`; falta arte e calibração |
+
+## Reescopo das Fases 11–15 (ADR 0042/0043)
+
+As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingresso mudou três objetos: a cobrança, o reembolso e o recebedor. Nada disso é ajuste de texto — é reescopo de schema e de máquina de estados.
+
+| Fase | Divergência | O que fazer | Estado |
+|---|---|---|---|
+| **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | Pendente |
+| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | Pendente |
+| **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | Pendente |
+| **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | Pendente |
+| **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | Pendente |
+| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor**; "recebíveis" viram "repasse a receber" | Pendente (código não commitado) |
+| **10** | Threat model cita adaptadores de PSP antigos | Atualizar para Inter e para o fluxo de ingresso | Pendente |
+
+**Fases 0–10 não mudam.** Identidade, perfil, matchmaking, partidas, resultados, MMR e tempo real são indiferentes ao meio de pagamento.
+
+**Fase nova:** `14D — Ingresso, carteira e temporada` foi criada no `PLANS.md`. O ingresso, a temporada e o catálogo não tinham fase; agora têm escopo, dependências e critérios de aceite.
+
+**Risco de execução:** a 13 e a 14A estão implementadas com testes. Mexer no T3 e no modelo de cobrança derruba cobertura existente. Tratar como reescopo de fase, com arquivo próprio em `harness/build/`, não como patch.
 
 ## Decisões financeiras não aprovadas (Fase 15)
 

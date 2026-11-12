@@ -1151,6 +1151,7 @@ A temporada, o passe trimestral e as regras de customização estão na ADR 0043
 - **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual, partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução do MMR, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor nem dado de evento de jogo.
 - **Não são benefícios do passe:** convite de estreia, remoção de anúncios, bônus de XP, badges, escudo de clã e as estatísticas essenciais.
 - **Inteligência de rede** no passe: mapa de calor de horários, densidade competitiva por quadra e ocupação, sempre em faixas e com apresentação simples. Free vê a lista de quadras mais usadas. Não é filtro de busca.
+- **Busca por CEP é benefício do passe.** O plano gratuito usa apenas a localização do aparelho. A busca por CEP permite declarar intenção em qualquer lugar e sobrecarrega o motor com partidas que não vão acontecer; a barreira de custo reduz o volume e dá uma vantagem real ao assinante.
 - **Lobby privado é benefício do passe.**
 - **Escudo de clã é livre** — o clã aparece no perfil de todo jogador. Do passe, só o **destaque no perfil do clã**.
 

@@ -92,6 +92,7 @@ A saída foi separar o que a fórmula faz do que a tabela faz: a fórmula deixa 
 3. Entre as partidas elegíveis, o ranking usa distância, horário, nível e qualidade da quadra. Custo em ingressos não é critério de ordenação.
 4. `MIN_TICKETS` é definido **por formato e faixa**, não global.
 5. Limite de busca: 3 faixas ou 2 minutos na busca instantânea; 24h na assíncrona. Sem resultado, oferecer aumento de saldo, ampliação de região/horário ou fila de espera.
+6. **A origem da busca é a localização do aparelho.** Busca por **CEP** é benefício do passe (ADR 0043 §4): declarar intenção em qualquer lugar enche o motor de partidas que não vão acontecer, e a barreira de custo reduz esse volume.
 
 ### 7. Crédito de estreia
 
