@@ -281,3 +281,28 @@ class PlayerItem(Base):
     awarded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
+
+
+class MissionProgress(Base):
+    """Progresso semanal de missão. O reset é uma linha nova por semana."""
+
+    __tablename__ = "mission_progress"
+    __table_args__ = (
+        CheckConstraint("progress >= 0", name="progress_non_negative"),
+        Index("ix_mission_progress_user_week", "user_id", "week_start"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    mission_code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    progress: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -860,3 +860,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `c8d94a5e6273`, com a trilha da 2026-Q4 semeada; upgrade, downgrade e novo upgrade aplicados.
 - **Testes:** `tests/test_season_track.py` com seis casos; suíte completa verde.
 - **Pendente:** arte final, passe como assinatura, equipar item de avatar, medalhas, fechamento de temporada, missões e gancho de XP.
+
+### 2026-11-12 — 14D.9 Missões semanais e gancho de XP
+
+- **Gatilhos:** partida concluída com presença `PRESENT` credita 100 XP; primeira visita à quadra credita 50 XP.
+- **Missões:** `play_one` e `new_venue` avançam na conclusão e pagam 40 XP; `on_time_checkin` existe na definição e ainda não é chamada.
+- **Idempotência:** `match:{booking_id}:{user}`, `venue:{space_id}:{user}` e `mission:{season}:{week}:{code}:{user}`.
+- **Modelo:** `mission_progress` com PK `(user_id, season_id, week_start, mission_code)`; reset por linha nova, sem rotina destrutiva.
+- **Sem temporada ativa:** o gancho é silencioso e não quebra a conclusão da partida.
+- **API:** `GET /api/v1/me/progress/missions`.
+- **Migração:** `d9e95b6f7384`; upgrade, downgrade e novo upgrade aplicados.
+- **Testes:** `tests/test_season_hooks.py` com três casos; suíte completa verde.
+- **Pendente:** XP de vitória (depende do resultado confirmado), missão de check-in e fechamento de temporada.

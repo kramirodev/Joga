@@ -38,6 +38,14 @@ from app.modules.pricing.service import PricingBandError as PricingError
 from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.trust import TrustService
+from app.modules.season.service import (
+    SeasonNotFound,
+    active_season,
+    award_match_xp,
+    award_new_venue_xp,
+    record_mission,
+    week_start,
+)
 from app.modules.tickets.service import InsufficientTickets, consume, refund
 from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
 
@@ -641,6 +649,66 @@ class BookingService:
         self.session.flush()
         return self._bundle(booking)
 
+    def _award_season_progress(
+        self,
+        booking: Booking,
+        participants: list[BookingParticipant],
+        now: datetime,
+    ) -> None:
+        """XP e missões de partida concluída (ADR 0043). Silencioso sem temporada."""
+
+        try:
+            season = active_season(self.session, now)
+        except SeasonNotFound:
+            return
+        week = week_start(now)
+        for participant in participants:
+            award_match_xp(
+                self.session,
+                user_id=participant.user_id,
+                season=season,
+                booking_id=booking.id,
+            )
+            record_mission(
+                self.session,
+                user_id=participant.user_id,
+                season=season,
+                week=week,
+                code="play_one",
+                now=now,
+            )
+            if self._is_first_visit(participant.user_id, booking.venue_space_id, booking.id):
+                award_new_venue_xp(
+                    self.session,
+                    user_id=participant.user_id,
+                    season=season,
+                    space_id=booking.venue_space_id,
+                )
+                record_mission(
+                    self.session,
+                    user_id=participant.user_id,
+                    season=season,
+                    week=week,
+                    code="new_venue",
+                    now=now,
+                )
+
+    def _is_first_visit(
+        self, user_id: uuid.UUID, space_id: uuid.UUID, booking_id: uuid.UUID
+    ) -> bool:
+        other = self.session.scalar(
+            select(Booking.id)
+            .join(BookingParticipant, BookingParticipant.booking_id == Booking.id)
+            .where(
+                Booking.venue_space_id == space_id,
+                Booking.id != booking_id,
+                Booking.status == "COMPLETED",
+                BookingParticipant.user_id == user_id,
+            )
+            .limit(1)
+        )
+        return other is None
+
     def _cancel_pending_payments(
         self, booking: Booking, participant: BookingParticipant
     ) -> None:
@@ -851,14 +919,19 @@ class BookingService:
         booking.status = "COMPLETED"
         booking.completed_at = utcnow()
         trust = TrustService(self.session)
-        for participant in self._active_participants(booking.id):
-            if participant.presence_status == "PRESENT":
-                trust.apply_event(
-                    participant.user_id,
-                    "match_completed",
-                    details={"booking_id": str(booking.id)},
-                    now=booking.completed_at,
-                )
+        present = [
+            participant
+            for participant in self._active_participants(booking.id)
+            if participant.presence_status == "PRESENT"
+        ]
+        for participant in present:
+            trust.apply_event(
+                participant.user_id,
+                "match_completed",
+                details={"booking_id": str(booking.id)},
+                now=booking.completed_at,
+            )
+        self._award_season_progress(booking, present, booking.completed_at)
         self._event(booking, actor_user_id, "booking.completed", "CONFIRMED", "COMPLETED")
         self._audit(actor_user_id, booking, "booking.completed", {})
         self.session.flush()

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.modules.identity.clock import utcnow
 from app.modules.season.models import (
     Badge,
+    MissionProgress,
     PlayerBadge,
     PlayerItem,
     Season,
@@ -435,3 +436,121 @@ def list_badges(session: Session, user_id: uuid.UUID) -> list[tuple[PlayerBadge,
         .order_by(PlayerBadge.awarded_at.desc())
     ).all()
     return [(row[0], row[1]) for row in rows]
+
+
+# -- missões e gancho de partida (14D.9) ---------------------------------
+
+# Missões semanais: alvo e XP. As três premiam comportamento que o produto quer.
+MISSION_DEFINITIONS: dict[str, tuple[int, int]] = {
+    "play_one": (1, 40),
+    "new_venue": (1, 40),
+    "on_time_checkin": (1, 40),
+}
+
+MATCH_XP = 100
+NEW_VENUE_XP = 50
+
+
+def record_mission(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    season: Season,
+    week: date,
+    code: str,
+    now: datetime | None = None,
+) -> MissionProgress | None:
+    """Avança uma missão semanal e credita o XP na conclusão."""
+
+    definition = MISSION_DEFINITIONS.get(code)
+    if definition is None:
+        return None
+    target, xp_reward = definition
+    moment = now or utcnow()
+
+    row = session.get(MissionProgress, (user_id, season.id, week, code))
+    if row is None:
+        row = MissionProgress(
+            user_id=user_id,
+            season_id=season.id,
+            week_start=week,
+            mission_code=code,
+            progress=0,
+        )
+        session.add(row)
+    if row.completed_at is not None:
+        return row
+
+    row.progress += 1
+    if row.progress >= target:
+        row.completed_at = moment
+        award_xp(
+            session,
+            user_id=user_id,
+            season=season,
+            amount=xp_reward,
+            source="mission",
+            idempotency_key=f"mission:{season.id}:{week.isoformat()}:{code}:{user_id}",
+            ref_type="mission",
+            ref_id=season.id,
+        )
+    session.flush()
+    return row
+
+
+def award_match_xp(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    season: Season,
+    booking_id: uuid.UUID,
+) -> SeasonProgress:
+    """100 XP por partida concluída. Idempotente por reserva e jogador."""
+
+    return award_xp(
+        session,
+        user_id=user_id,
+        season=season,
+        amount=MATCH_XP,
+        source="match",
+        idempotency_key=f"match:{booking_id}:{user_id}",
+        ref_type="booking",
+        ref_id=booking_id,
+    )
+
+
+def award_new_venue_xp(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    season: Season,
+    space_id: uuid.UUID,
+) -> SeasonProgress:
+    """50 XP pela primeira partida em uma quadra. Idempotente por quadra."""
+
+    return award_xp(
+        session,
+        user_id=user_id,
+        season=season,
+        amount=NEW_VENUE_XP,
+        source="new_venue",
+        idempotency_key=f"venue:{space_id}:{user_id}",
+        ref_type="venue",
+        ref_id=space_id,
+    )
+
+
+def missions_for(
+    session: Session, *, user_id: uuid.UUID, season: Season, week: date
+) -> list[MissionProgress]:
+    return list(
+        session.scalars(
+            select(MissionProgress)
+            .where(
+                MissionProgress.user_id == user_id,
+                MissionProgress.season_id == season.id,
+                MissionProgress.week_start == week,
+            )
+            .order_by(MissionProgress.mission_code.asc())
+        ).all()
+    )

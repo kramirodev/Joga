@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -18,6 +18,7 @@ from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.season.models import Badge, Season, SeasonItem, SeasonTrackLevel
 from app.modules.season.service import (
     MAX_LEVEL,
+    MISSION_DEFINITIONS,
     ClaimError,
     SeasonNotFound,
     active_season,
@@ -28,9 +29,11 @@ from app.modules.season.service import (
     get_progress,
     level_for,
     list_badges,
+    missions_for,
     streak_for,
     tier_for,
     track_for,
+    week_start,
     xp_for_level,
 )
 
@@ -274,4 +277,47 @@ def equip_player_badge(
         kind=badge.kind if badge else "",
         equipped_slot=record.equipped_slot,
         awarded_at=record.awarded_at,
+    )
+
+
+class MissionView(BaseModel):
+    code: str
+    progress: int
+    target: int
+    xp_reward: int
+    completed: bool
+
+
+class MissionListResponse(BaseModel):
+    week_start: date
+    missions: list[MissionView]
+
+
+@router.get("/missions", response_model=MissionListResponse)
+def read_missions(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> MissionListResponse:
+    """Missões da semana corrente. O reset é uma linha nova por semana."""
+
+    season = _require_season(session, utcnow())
+    week = week_start(utcnow())
+    rows = {
+        row.mission_code: row
+        for row in missions_for(
+            session, user_id=current.user_id, season=season, week=week
+        )
+    }
+    return MissionListResponse(
+        week_start=week,
+        missions=[
+            MissionView(
+                code=code,
+                progress=rows[code].progress if code in rows else 0,
+                target=target,
+                xp_reward=xp_reward,
+                completed=code in rows and rows[code].completed_at is not None,
+            )
+            for code, (target, xp_reward) in MISSION_DEFINITIONS.items()
+        ],
     )
