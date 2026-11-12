@@ -1142,13 +1142,14 @@ A temporada, o passe trimestral e as regras de customização estão na ADR 0043
 - **Ingressos grátis por nível:** o tier gratuito recebe 1 a cada 5 níveis (até 6 por temporada) e o passe recebe 2 (até 12). Expiram no fim da temporada.
 - O passe custa mais por ingresso que o pacote grande porque entrega algo fora do dinheiro real: franquia mensal, ingressos grátis, Temporada e cosméticos.
 - **XP igual para todos.** A assinatura muda o que se desbloqueia, nunca a velocidade de progressão.
-- **Trilha de 30 níveis**, três missões semanais, **streak de vitórias com validade semanal** e nível de temporada (bronze/prata/ouro) que reseta na virada.
+- **Trilha de 30 níveis**, três missões semanais, **streak de vitórias com validade semanal** e nível de temporada (bronze/prata/ouro) que reseta na virada e **é visível para todos, inclusive no free**.
 - **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional.
 - **Customização em três estados:** livre, ganho por XP e perk do passe. Traço de identidade e acessibilidade nunca são pagos.
 - **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
-- **Estatísticas** apenas sobre o que a plataforma observa. Sem mapa de calor nem dado de evento de jogo.
-- **Não são benefícios do passe:** convite de estreia, remoção de anúncios e bônus de XP.
-- **Escudo de clã** entra junto com os clãs (ADR 0044), sem vantagem competitiva.
+- **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual, partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução do MMR, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor nem dado de evento de jogo.
+- **Não são benefícios do passe:** convite de estreia, remoção de anúncios, bônus de XP, badges, escudo de clã e as estatísticas essenciais.
+- **Lobby privado é benefício do passe.**
+- **Escudo de clã é livre** — o clã aparece no perfil de todo jogador. Do passe, só o **destaque no perfil do clã**.
 
 ---
 
