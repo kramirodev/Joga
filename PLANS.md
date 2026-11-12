@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 (faixas de preço e teto)** e **14D.2 (fornecedor e chave de repasse)** implementadas em 2026-11-12 — `pricing_bands`, resolução por teto, `is_covered`, reajuste válido só para reservas novas, `GET /api/v1/pricing/bands`, CNPJ e chave Pix com `payout_ready`. Demais fatias pendentes.
+**Status:** fatias **14D.1 (faixas de preço e teto)**, **14D.2 (fornecedor e chave de repasse)** e **14D.3 (carteira de ingressos e ledger)** implementadas em 2026-11-12. Falta ligar a carteira à compra e à reserva (14D.4).
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 

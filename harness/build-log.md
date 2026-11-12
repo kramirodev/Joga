@@ -789,3 +789,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `c2d3e4f50618`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
 - **Testes:** `tests/test_payout.py` com seis casos; suíte completa verde, ruff e mypy sem achados.
 - **Pendente na fatia:** KYC contratual, histórico de chaves e chamada do portão na abertura de reserva.
+
+### 2026-11-12 — 14D.3 Carteira de ingressos e ledger
+
+- **Modelo:** `ticket_ledger` append-only com `idempotency_key` única e `ticket_balances` como projeção com `CHECK balance >= 0`.
+- **Serviço:** `grant`, `consume`, `refund` com chaves determinísticas por `ref_type:ref_id:user`, impedindo débito ou crédito duplicado.
+- **API:** `GET /api/v1/me/tickets` com saldo e últimos movimentos, escopado por usuário.
+- **Concorrência:** `SELECT ... FOR UPDATE` na linha de saldo antes de aplicar o movimento.
+- **Migração:** `d3e4f5061927`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_tickets.py` com sete casos; suíte completa verde, ruff e mypy sem achados.
+- **Pendente na fatia:** compra não credita, reserva não consome e devolução ainda é em dinheiro.

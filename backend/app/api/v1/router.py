@@ -17,6 +17,7 @@ from app.api.v1.ratings import router as ratings_router
 from app.api.v1.results import router as results_router
 from app.api.v1.social import router as social_router
 from app.api.v1.substitutions import router as substitutions_router
+from app.api.v1.tickets import router as tickets_router
 from app.api.v1.venues import router as venues_router
 from app.api.v1.web_auth import router as web_auth_router
 from app.api.v1.ws import router as ws_router
@@ -34,6 +35,7 @@ api_router.include_router(venues_router)
 api_router.include_router(pricing_router)
 api_router.include_router(bookings_router)
 api_router.include_router(substitutions_router)
+api_router.include_router(tickets_router)
 api_router.include_router(presence_router)
 api_router.include_router(payments_router)
 api_router.include_router(chat_router)
