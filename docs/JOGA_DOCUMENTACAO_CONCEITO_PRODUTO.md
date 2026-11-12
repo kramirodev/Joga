@@ -1066,7 +1066,7 @@ Qualquer reintrodução exige nova decisão de produto, nova especificação té
 
 A monetização inicial deverá se concentrar principalmente em:
 
-1. **Taxas de serviço nas reservas de quadras** originadas e concluídas pelo JOGA.
+1. **Margem de intermediação no Ingresso JOGA** — pacotes e passe (ADR 0042, §16.7 e §16.8).
 2. **Parcerias comerciais.**
 3. **Patrocínios.**
 4. **Publicidade contextual**, quando houver audiência suficiente.
@@ -1076,6 +1076,8 @@ Funcionalidades essenciais de jogadores, matchmaking, partidas e comunidades con
 A assinatura do produto é o **passe trimestral** definido na ADR 0043. Não criar outra assinatura apenas para adicionar uma fonte de receita.
 
 ### 16.2 Comissão sobre reservas
+
+> **Escopo.** Esta seção descreve a comissão da **reserva avulsa**. No fluxo de ingresso, a receita é a margem entre o preço do ingresso e a cota da quadra (ADR 0042 §5), e a variável `c` não existe.
 
 O JOGA poderá cobrar uma taxa de serviço sobre reservas originadas pela plataforma.
 
