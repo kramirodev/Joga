@@ -440,7 +440,7 @@ Implementado na migração `a3f7c9e2d641_add_ratings_and_trust_events.py`.
 | Tabela | Papel |
 |---|---|
 | `rating_accounts` | MMR atual por usuário e formato: rating, RD, volatilidade, partidas, última aplicação e versão do algoritmo |
-| `rating_events` | histórico append-only por partida/usuário/versão, com rating anterior/posterior, RD, volatilidade, expectativa, delta e resultado |
+| `rating_events` | histórico append-only por partida/usuário/versão, com rating anterior/posterior, RD, volatilidade, expectativa, delta e resultado. Base do histórico competitivo e da evolução da divisão (ADR 0045) |
 | `trust_accounts` | score interno oculto, neutro em 100; não é exposto no app |
 | `trust_events` | sinais auditáveis de confiança, com tipo, severidade, metadados mínimos e timestamp |
 

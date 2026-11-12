@@ -72,6 +72,19 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
 | Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak de vitórias persiste |
 
+## Estatísticas e inteligência de rede (ADR 0045)
+
+A ADR 0045 esclarece a ADR 0043 §7 e §10 e detalha as estatísticas do passe e o painel de rede. O MMR bruto continua oculto (ADR 0025): "MMR" nas estatísticas é a leitura visível — divisão, progresso e posição. Nada implementado.
+
+| Pendência | Bloqueia | Próximo passo |
+|---|---|---|
+| Evolução da divisão/progresso no mobile | 14D | Gráfico por formato a partir de `rating_events`, sem expor o rating bruto |
+| Estatísticas do passe | 14D | Evolução, histórico por quadra, passaporte, horários e retrospectiva |
+| Inteligência de rede | 14D | Quadras mais usadas, mapa de calor, densidade competitiva, ocupação e tendência |
+| Amostra mínima de 20 partidas em 30 dias | 14D | Calibrar no piloto; ocultar ou agrupar células abaixo do mínimo |
+| Estatísticas após o fim do passe | 14D | Definir o que permanece visível e o que é bloqueado |
+| Painel B2B de ocupação | 15/14D | Definir acesso, preço e escopo |
+
 ## Clãs no MVP (ADR 0044)
 
 Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pré-requisito do primeiro evento de marketing.

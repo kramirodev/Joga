@@ -639,8 +639,10 @@ Compras, anúncios patrocinados, assinatura, gasto em quadras ou pagamento a est
 
 ### 11.4 Leitura competitiva e ranking
 
+> **Esclarecimento (ADR 0045):** nas estatísticas, "MMR" significa a leitura visível — divisão, progresso e posição. O contrato de `GET /api/v1/ratings/me` não muda: o rating bruto, o `RD` e a volatilidade permanecem ocultos.
+
 - `GET /api/v1/ratings/me?format_id=...`: divisão, progresso, colocação, posição e última atualização; nunca retorna MMR bruto, RD, volatilidade ou Trust Factor.
-- `GET /api/v1/rankings?format_id=...&limit=...&offset=...`: top 100 de jogadores já colocados, com nome de exibição, divisão e partidas. Jogadores em colocação não entram no ranking público.
+- `GET /api/v1/rankings?format_id=...&limit=...&offset=...`: top 100 de jogadores já colocados, com nome de exibição, divisão e partidas. Nunca retorna MMR bruto. Jogadores em colocação não entram no ranking público.
 - A fila ranqueada usa a política `mmr_v1`, com média de MMR e limite de dispersão interna de 800 pontos por equipe na v1.
 - O worker `apply_ratings.py` é separado do worker de partidas e pode ser reexecutado com segurança.
 
@@ -649,6 +651,20 @@ Compras, anúncios patrocinados, assinatura, gasto em quadras ou pagamento a est
 - O app mostra divisão, progresso, posição e histórico competitivo, mas não o número bruto do MMR.
 - Trust Factor permanece oculto e não influencia MMR, divisão ou ranking na Fase 8.
 - A fórmula, os parâmetros e a versão `glicko2_team_v1` são documentados; mudanças futuras exigem nova versão.
+
+### 11.6 Estatísticas e inteligência de rede
+
+- **Fonte:** projeções de partidas, participantes, resultados, `rating_events`, presença, quadras e reservas. Não há coleta nova, rastreamento contínuo, histórico de GPS ou telemetria de evento de jogo.
+- **Essencial e livre:** MMR atual (divisão, progresso e posição), partidas, V/E/D, presença, streak e sequência de temporadas.
+- **Passe:** evolução da divisão/progresso, histórico por quadra, passaporte, horários e formatos, retrospectiva.
+- **Rede (free):** quadras mais usadas e os próprios horários. **Rede (passe):** mapa de calor semanal, densidade competitiva por quadra (onde o jogo é mais forte), ocupação, tendência e horários com mais vaga.
+- **Faixas, não números:** densidade competitiva e ocupação usam 3 a 5 rótulos; nunca MMR médio, MMR absoluto ou contagem de pessoas identificáveis.
+- **Amostra mínima:** 20 partidas concluídas por célula (quadra × janela móvel de 30 dias), valores iniciais calibráveis; abaixo disso, ocultar ou agrupar.
+- **Defasagem:** agregação diária; nunca tempo real.
+- **Não é filtro:** o painel não altera matchmaking, não permite selecionar partidas por nível e não expõe adversário antes da partida.
+- **Autorização:** o servidor valida titular e plano; nenhum endpoint retorna dados de outro jogador.
+- **Contratos propostos:** `GET /api/v1/me/stats/summary`, `GET /api/v1/me/stats/competitive` (evolução da divisão/progresso), `GET /api/v1/me/stats/venues`, `GET /api/v1/me/stats/season` e `GET /api/v1/network/insights`. A implementação pode consolidar rotas, desde que preserve as regras acima.
+- **Testes mínimos:** titularidade, gating de plano, amostra mínima, ausência de MMR bruto e de MMR de terceiros, exclusão de partidas em disputa e de resultados não confirmados.
 
 ## 12. Amigos, chat e clãs
 

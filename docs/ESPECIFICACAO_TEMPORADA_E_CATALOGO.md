@@ -3,7 +3,7 @@
 - **Versão:** 1.0
 - **Data:** 2026-11-11
 - **Status:** especificação para implementação futura. **Nada implementado.**
-- **Base:** ADR 0043 (temporada, passe e customização), ADR 0042 (ingresso e passe), ADR 0025 (MMR, rankings e cosméticos), ADR 0029 (sem fotos de pessoas), ADR 0044 (clãs no MVP).
+- **Base:** ADR 0043 (temporada, passe e customização), ADR 0042 (ingresso e passe), ADR 0025 (MMR, rankings e cosméticos), ADR 0029 (sem fotos de pessoas), ADR 0044 (clãs no MVP), ADR 0045 (estatísticas e inteligência de rede).
 
 > Este documento define modelos, regras e contratos. Não define arte, copy, preço final nem calendário de lançamento. Onde a decisão ainda depende de dados, está marcado como **calibração pendente**.
 
@@ -13,7 +13,7 @@
 
 No escopo: temporada trimestral, trilha de níveis, XP, missões, streak, passe trimestral com franquia mensal, catálogo cosmético em três estados, atribuição e equipamento de itens.
 
-Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), publicidade (Fase 18), moderação.
+Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), estatísticas pessoais e de rede (ADR 0045), publicidade (Fase 18), moderação.
 
 ---
 

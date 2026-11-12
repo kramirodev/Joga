@@ -176,15 +176,15 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.8** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, núcleo de temporada e trilha com 7 itens e insígnia de temporada (arte em placeholder). Faltam missões semanais e o gancho de XP nas partidas.
+**Status:** fatias **14D.1 a 14D.9** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, e XP de partida com missões semanais. Faltam XP de vitória, fechamento de temporada, o passe como assinatura e as estatísticas pessoais e de rede da ADR 0045.
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 
-**Escopo:** ingresso como unidade de acesso pré-paga; pacotes com escada de preço (3/10/30/50) e passe trimestral com franquia mensal; tabela 2D formato × faixa, versionada e congelada na reserva; consumo na confirmação e devolução em ingresso conforme a ADR 0039; carteira com três buckets (custeio, faturamento e margem) e provisão de 100% do passivo; XP em ledger append-only; trilha de 30 níveis, missões semanais, streak de vitórias e nível de temporada; catálogo cosmético em três estados, com atribuição e revogação de itens de passe; ingressos grátis por nível; inteligência de rede; crédito de estreia.
+**Escopo:** ingresso como unidade de acesso pré-paga; pacotes com escada de preço (3/10/30/50) e passe trimestral com franquia mensal; tabela 2D formato × faixa, versionada e congelada na reserva; consumo na confirmação e devolução em ingresso conforme a ADR 0039; carteira com três buckets (custeio, faturamento e margem) e provisão de 100% do passivo; XP em ledger append-only; trilha de 30 níveis, missões semanais, streak de vitórias e nível de temporada; catálogo cosmético em três estados, com atribuição e revogação de itens de passe; ingressos grátis por nível; estatísticas pessoais (divisão/progresso, evolução, histórico por quadra, passaporte, horários e retrospectiva); inteligência de rede; crédito de estreia.
 
-**Não fazer:** recorrência automática ou Pix Automático; transferência, revenda ou saque de ingresso; validade para ingresso comprado; lançar rendimento de float ou breakage como receita; mapa de calor de evento de jogo; qualquer item que altere MMR, Trust Factor, matchmaking ou troféu de clã.
+**Não fazer:** recorrência automática ou Pix Automático; transferência, revenda ou saque de ingresso; validade para ingresso comprado; lançar rendimento de float ou breakage como receita; mapa de calor de evento de jogo; qualquer item que altere MMR, Trust Factor, matchmaking ou troféu de clã; expor MMR bruto de qualquer pessoa; transformar a inteligência de rede em filtro de matchmaking; exibir célula de rede abaixo da amostra mínima.
 
-**Aceite:** compra idempotente por chave; consumo idempotente por reserva; devolução em ingresso conforme a matriz da ADR 0039; tabela versionada e gravada na reserva; XP sem duplicidade por `ref_id`; nível e atribuição reconstruíveis a partir do ledger; item de passe revogado ao fim do ciclo; nenhum item altera competitividade; ledger conciliável com o PSP; painel de passivo e cobertura de caixa.
+**Aceite:** compra idempotente por chave; consumo idempotente por reserva; devolução em ingresso conforme a matriz da ADR 0039; tabela versionada e gravada na reserva; XP sem duplicidade por `ref_id`; nível e atribuição reconstruíveis a partir do ledger; item de passe revogado ao fim do ciclo; nenhum item altera competitividade; ledger conciliável com o PSP; painel de passivo e cobertura de caixa; estatísticas essenciais e do passe conforme a ADR 0045; MMR bruto nunca exposto; nenhuma célula de rede abaixo da amostra mínima.
 
 ## Fase 15 — Interface financeira e conciliação
 

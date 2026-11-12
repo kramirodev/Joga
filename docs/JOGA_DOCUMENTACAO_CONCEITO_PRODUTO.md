@@ -1,7 +1,7 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.15<br>
-**Status:** visão de produto atualizada — escada de preços, passe com franquia mensal e ingressos grátis por nível<br>
+**Versão:** 3.16<br>
+**Status:** visão de produto atualizada — escada de preços, passe com franquia mensal, ingressos grátis por nível e estatísticas do passe<br>
 **Data:** 12 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
@@ -28,6 +28,7 @@
 | 3.13 | 11 de novembro de 2026 | ADR 0042: Ingresso JOGA de R$ 3,00 como unidade de acesso; tabela 2D formato × faixa ancorada em atributo visível; passe com quantidade fixa e reset mensal; natureza jurídica de intermediação com base de cálculo na comissão; margem como saída e piso de 10% líquido; matchmaking por intenção com saldo como restrição; ADR 0021 superada no fluxo de ingresso |
 | 3.14 | 11 de novembro de 2026 | ADR 0043: temporada trimestral e passe trimestral com franquia mensal; XP igual para todos; trilha de 30 níveis; customização em três estados e customização geral do app; estatísticas sem dado de evento. ADR 0044: clãs e troféus passam a integrar o MVP |
 | 3.15 | 12 de novembro de 2026 | Escada de preços decrescente (3/10/30/50 a R$ 3,70/3,40/3,20/3,10); passe a R$ 3,25 com franquia mensal; ingressos grátis por nível (1 no free, 2 no passe); C_c recalibrado para R$ 0,60 por jogador; tabela 2D recomputada; produção no Inter PJ |
+| 3.16 | 12 de novembro de 2026 | ADR 0045: estatísticas do passe com evolução da divisão/progresso, histórico por quadra, passaporte, horários e retrospectiva; inteligência de rede com quadras mais usadas, horários de maior movimento e densidade competitiva por quadra, em faixas, com amostra mínima e atualização diária. O MMR bruto permanece oculto (ADR 0025) |
 
 ## Como interpretar as decisões neste documento
 
@@ -1148,12 +1149,14 @@ A temporada, o passe trimestral e as regras de customização estão na ADR 0043
 - **Jogador que entra no meio da temporada começa no nível 1**, sem crédito proporcional.
 - **Customização em três estados:** livre, ganho por XP e perk do passe. Traço de identidade e acessibilidade nunca são pagos.
 - **Customização geral do app** no passe: temas, cor de destaque, densidade dos cartões, blocos da home, sons e háptica. Acessibilidade continua livre.
-- **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual, partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução do MMR, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor nem dado de evento de jogo.
+- **Estatísticas** apenas sobre o que a plataforma observa. **Essencial e livre:** MMR atual (divisão, progresso e posição), partidas, V/E/D, presença, streak e sequência de temporadas. **Do passe:** evolução da divisão/progresso em gráfico, histórico por quadra, passaporte, horários e formatos, retrospectiva da temporada. Sem mapa de calor de evento de jogo, posicionamento, posse ou finalização. O MMR bruto de qualquer pessoa continua oculto; a exibição pública é a divisão.
 - **Não são benefícios do passe:** convite de estreia, remoção de anúncios, bônus de XP, badges, escudo de clã e as estatísticas essenciais.
-- **Inteligência de rede** no passe: mapa de calor de horários, densidade competitiva por quadra e ocupação, sempre em faixas e com apresentação simples. Free vê a lista de quadras mais usadas. Não é filtro de busca.
+- **Inteligência de rede** no passe: mapa de calor de horários, densidade competitiva por quadra (onde o jogo é mais forte), ocupação e tendência, sempre em faixas e com apresentação simples. Free vê a lista de quadras mais usadas e os próprios horários. Atualização diária, amostra mínima por célula, nunca tempo real e nunca filtro de busca. Mostrar também os horários com mais vaga.
 - **Busca por CEP é benefício do passe.** O plano gratuito usa apenas a localização do aparelho. A busca por CEP permite declarar intenção em qualquer lugar e sobrecarrega o motor com partidas que não vão acontecer; a barreira de custo reduz o volume e dá uma vantagem real ao assinante.
 - **Lobby privado é benefício do passe.**
 - **Escudo de clã é livre** — o clã aparece no perfil de todo jogador. Do passe, só o **destaque no perfil do clã**.
+
+A inteligência de rede é **descoberta, não controle**. Ela ajuda o jogador a escolher onde e quando competir mais, mas não filtra partidas por nível, não expõe o MMR de ninguém e não transforma o painel em rastreador. Células com amostra pequena não aparecem; a atualização é diária; o painel mostra tanto os horários de pico quanto os de maior disponibilidade.
 
 ---
 

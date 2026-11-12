@@ -102,11 +102,13 @@ Os ajustes de **acessibilidade** listados na seção 5 permanecem livres para to
 ### 7. Estatísticas
 
 1. Estatística só pode falar do que a plataforma observa: partida, presença, resultado, quadra, formato, horário e cancelamento.
-2. **Não há mapa de calor, posicionamento, posse, finalização ou qualquer dado de evento de jogo.** O JOGA não controla esses dados e não deve simulá-los.
-3. **Essencial e livre:** MMR atual, partidas jogadas, vitórias/empates/derrotas, taxa de presença, streak e sequência de temporadas. Sem isso o jogador não confia no sistema nem entende as consequências das próprias ações.
-4. **Passe:** evolução do MMR em gráfico, histórico por quadra, passaporte de quadras, horários e formatos mais jogados e retrospectiva da temporada.
+2. **Não há mapa de calor de evento de jogo, posicionamento, posse, finalização ou qualquer dado de evento de jogo.** O JOGA não controla esses dados e não deve simulá-los. O mapa de calor da seção 10 é de horários da rede, não de jogadores em quadra.
+3. **Essencial e livre:** MMR atual (divisão, progresso e posição), partidas jogadas, vitórias/empates/derrotas, taxa de presença, streak e sequência de temporadas. Sem isso o jogador não confia no sistema nem entende as consequências das próprias ações.
+4. **Passe:** evolução da divisão/progresso em gráfico, histórico por quadra, passaporte de quadras, horários e formatos mais jogados e retrospectiva da temporada.
 5. **Exportação de dados é livre** (LGPD), independente do plano.
 6. **O nível da temporada (bronze/prata/ouro) é sempre visível para todos**, inclusive free. Não é item de catálogo: deriva do nível e aparece no perfil e na escalação. Um elo que ninguém vê não é elo.
+
+> **Esclarecimento (ADR 0045):** "MMR" aqui é a leitura visível — divisão, progresso e posição. O rating bruto, o `RD` e a volatilidade permanecem ocultos (ADR 0025). O detalhamento das estatísticas e da inteligência de rede está na ADR 0045.
 
 ### 8. O que sai
 
@@ -126,14 +128,27 @@ Os ajustes de **acessibilidade** listados na seção 5 permanecem livres para to
 ### 10. Inteligência de rede
 
 1. É dado sobre a **rede**, não sobre pessoas: horário e dia de maior movimento, quadras mais usadas, densidade competitiva por quadra e ocupação.
-2. **Faixas e rótulos, nunca números.** "Alta competitividade", não MMR médio. O MMR segue oculto (ADR 0025).
+2. **Faixas e rótulos, nunca números.** "Alta competitividade", não MMR médio. O MMR segue oculto (ADR 0025); a leitura é por divisão/progresso e faixas.
 3. **Apresentação simples, sem exigir interpretação.** Cada bloco é um cartão com um título, uma frase e uma escala visual de 3 a 5 níveis. Exemplo: *"Arena X — movimento alto, terça e quinta à noite"*. Sem eixo, sem legenda, sem tabela.
 4. **Atualização diária.** Nunca tempo real.
 5. **Não é filtro de matchmaking.** O painel informa onde e quando jogar; não restringe a busca nem permite selecionar partidas por nível. A linha é de informação, não de controle.
-6. **Free:** quadras mais usadas e os próprios horários. **Passe:** mapa de calor da rede, densidade competitiva por quadra, ocupação e tendência.
+6. **Free:** quadras mais usadas e os próprios horários. **Passe:** mapa de calor da rede, densidade competitiva por quadra (onde o jogo é mais forte), ocupação e tendência.
 7. Mostrar também os **horários com mais vaga**, para equilibrar o efeito de atração do mapa de pico.
 8. Não exibir taxa de cancelamento por quadra, MMR absoluto de ninguém nem dado de adversário antes da partida.
 9. O mesmo painel, visto pelo estabelecimento, é insumo do painel de gestão: ocupação, horário morto e perfil do público.
+
+> **Detalhamento (ADR 0045):** amostra mínima, defasagem, faixas, limites de exposição e painel B2B.
+
+### 11. Itens de temporada e insígnias
+
+1. Cada temporada publica **7 itens**, distribuídos pela trilha, incluindo emotes de chat.
+2. Categorias: **acessório de personagem**, **animação de lobby**, **emote/reação de chat**, **ícone de entrada** e **insígnia**.
+3. Distribuição por nível: 4, 8, 12, 17, 21, 26 e 30. O nível 30 entrega a **insígnia da temporada**.
+4. **Insígnia não é medalha.** Insígnia marca temporada ou fundador; medalha é conquista competitiva. São tipos distintos no mesmo perfil.
+5. O perfil exibe até **3 insígnias equipadas**. Hoje existe uma: a da temporada 2026-Q4.
+6. A trilha tem 30 níveis. Ingressos grátis caem nos níveis 5, 10, 15, 20, 25 e 30.
+7. Parte dos itens fica na **trilha do passe**; sem passe ativo, o resgate é recusado.
+8. A arte é placeholder no piloto: cada item tem `artwork_ref` apontando para um rótulo, não para um arquivo final.
 
 ## Consequências
 
