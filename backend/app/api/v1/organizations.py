@@ -30,6 +30,8 @@ from app.modules.organizations.service import (
     UserNotActive,
     UserNotFound,
     VenueNotFound,
+    mask_pix_key,
+    payout_ready,
 )
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
@@ -48,8 +50,18 @@ class OrganizationView(BaseModel):
     name: str
     status: str
     role: str
+    payout_ready: bool
+    payout_status: str
+    pix_key_type: str | None
+    pix_key_masked: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class PayoutUpdate(BaseModel):
+    legal_document: str = Field(min_length=14, max_length=20)
+    pix_key_type: str = Field(pattern="^(cnpj|email|phone|random)$")
+    pix_key: str = Field(min_length=1, max_length=77)
 
 
 class OrganizationListResponse(BaseModel):
@@ -176,6 +188,14 @@ def _organization_view(access: OrganizationAccess) -> OrganizationView:
         name=organization.name,
         status=organization.status,
         role=access.role.value,
+        payout_ready=payout_ready(organization),
+        payout_status=organization.payout_status,
+        pix_key_type=organization.pix_key_type,
+        pix_key_masked=(
+            mask_pix_key(organization.pix_key_type, organization.pix_key)
+            if organization.pix_key and organization.pix_key_type
+            else None
+        ),
         created_at=organization.created_at,
         updated_at=organization.updated_at,
     )
@@ -260,6 +280,31 @@ def update_organization(
     service = OrganizationService(session)
     try:
         organization = service.update(current.user_id, organization_id, payload.name)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _organization_view(
+        service.get(current.user_id, organization.id),
+    )
+
+
+@router.put("/{organization_id}/payout", response_model=OrganizationView)
+def update_payout(
+    organization_id: UUID,
+    payload: PayoutUpdate,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> OrganizationView:
+    service = OrganizationService(session)
+    try:
+        organization = service.set_payout(
+            current.user_id,
+            organization_id,
+            legal_document=payload.legal_document,
+            pix_key_type=payload.pix_key_type,
+            pix_key=payload.pix_key,
+        )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()

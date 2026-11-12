@@ -91,7 +91,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingr
 | Fase | Divergência | O que fazer | Estado |
 |---|---|---|---|
 | **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e reajuste que vale só para reservas novas |
-| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | Pendente |
+| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | **Implementado (14D.2)**: CNPJ com dígito verificador, chave Pix tipada, chave mascarada e `payout_ready`. Falta KYC contratual e portão na reserva |
 | **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | Pendente |
 | **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | Pendente |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | Pendente |

@@ -32,12 +32,30 @@ class Organization(Base):
             "status IN ('active', 'suspended', 'closed')",
             name="status_valid",
         ),
+        CheckConstraint(
+            "payout_status IN ('pending', 'active', 'blocked')",
+            name="payout_status_valid",
+        ),
+        CheckConstraint(
+            "(pix_key IS NULL AND pix_key_type IS NULL) "
+            "OR (pix_key IS NOT NULL AND pix_key_type IS NOT NULL)",
+            name="pix_key_pair_valid",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
+    )
+    legal_document: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    pix_key_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    pix_key: Mapped[str | None] = mapped_column(String(77), nullable=True)
+    payout_status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    payout_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()

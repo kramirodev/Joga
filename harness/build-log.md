@@ -778,3 +778,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `a1c2e3f40517`; upgrade aplicado no banco local e faixas conferidas. Backfill das janelas existentes pela menor faixa que cobre o preço.
 - **Testes:** suíte completa verde, incluindo `tests/test_pricing_bands.py`; ruff e mypy --strict sem achados.
 - **Pendente na fatia:** vigência de preço (`price_effective_from`) para reajuste com reserva recorrente e reclassificação contratual com aviso de 30 dias.
+
+### 2026-11-12 — 14D.2 Fornecedor e chave de repasse
+
+- **Modelo:** `organizations` ganha `legal_document`, `pix_key_type`, `pix_key`, `payout_status` e `payout_verified_at`, com constraints de coerência do par chave/tipo e de estado.
+- **Validação:** CNPJ com dígitos verificadores; chave Pix por tipo (`cnpj`, `email`, `phone`, `random`).
+- **Autorização:** `PUT /organizations/{id}/payout` exige `financial:manage`; operador recebe 403.
+- **Exibição:** `pix_key_masked` na resposta; a chave completa nunca volta pela API.
+- **Portão:** `payout_ready` exposto no `OrganizationView`; a reserva paga ainda não o consulta.
+- **Migração:** `c2d3e4f50618`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_payout.py` com seis casos; suíte completa verde, ruff e mypy sem achados.
+- **Pendente na fatia:** KYC contratual, histórico de chaves e chamada do portão na abertura de reserva.

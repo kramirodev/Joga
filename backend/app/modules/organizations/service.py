@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.identity.audit import record_audit
+from app.modules.identity.clock import utcnow
 from app.modules.identity.models import AuditLog, User
 from app.modules.organizations.models import (
     Organization,
@@ -176,6 +178,47 @@ class OrganizationService:
             resource_type="organization",
             resource_id=organization_id,
             details={"name": {"from": previous, "to": normalized}},
+        )
+        self.session.flush()
+        return organization
+
+    def set_payout(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        *,
+        legal_document: str,
+        pix_key_type: str,
+        pix_key: str,
+    ) -> Organization:
+        """Define o destino de repasse do estabelecimento (Fase 14D.2).
+
+        O estabelecimento é fornecedor, não recebedor de marketplace: o JOGA paga
+        por Pix a uma chave de titularidade do próprio CNPJ.
+        """
+
+        organization = self._lock_organization(organization_id)
+        self._require_capability(actor_user_id, organization_id, Capability.FINANCIAL_MANAGE)
+        document = normalize_cnpj(legal_document)
+        key_type, key = normalize_pix_key(pix_key_type, pix_key)
+
+        previous_type = organization.pix_key_type
+        organization.legal_document = document
+        organization.pix_key_type = key_type
+        organization.pix_key = key
+        organization.payout_status = "active"
+        organization.payout_verified_at = utcnow()
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            organization_id=organization_id,
+            action="organization.payout_updated",
+            resource_type="organization",
+            resource_id=organization_id,
+            details={
+                "pix_key_type": {"from": previous_type, "to": key_type},
+                "pix_key": {"from": None, "to": mask_pix_key(key_type, key)},
+            },
         )
         self.session.flush()
         return organization
@@ -677,3 +720,73 @@ def _clean_timezone(value: str | None) -> str:
 
 def _audit_value(value: Any) -> Any:
     return str(value) if isinstance(value, uuid.UUID) else value
+
+
+PIX_KEY_TYPES = ("cnpj", "email", "phone", "random")
+
+
+def normalize_cnpj(value: str) -> str:
+    """Valida o CNPJ (14 dígitos, com dígitos verificadores) e devolve só números."""
+
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) != 14 or len(set(digits)) == 1:
+        raise InvalidInput
+    weights_first = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+    weights_second = (6, *weights_first)
+    for weights, position in ((weights_first, 12), (weights_second, 13)):
+        total = sum(
+            int(digit) * weight
+            for digit, weight in zip(digits[:position], weights, strict=True)
+        )
+        remainder = total % 11
+        expected = 0 if remainder < 2 else 11 - remainder
+        if int(digits[position]) != expected:
+            raise InvalidInput
+    return digits
+
+
+def normalize_pix_key(key_type: str, value: str) -> tuple[str, str]:
+    """Valida a chave Pix conforme o tipo e devolve o par normalizado."""
+
+    if key_type not in PIX_KEY_TYPES:
+        raise InvalidInput
+    raw = (value or "").strip()
+    if not raw:
+        raise InvalidInput
+    if key_type == "cnpj":
+        return key_type, normalize_cnpj(raw)
+    if key_type == "email":
+        normalized = raw.lower()
+        if len(normalized) > 77 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", normalized):
+            raise InvalidInput
+        return key_type, normalized
+    if key_type == "phone":
+        digits = re.sub(r"\D", "", raw)
+        if not digits.startswith("55") or not 12 <= len(digits) <= 13:
+            raise InvalidInput
+        return key_type, f"+{digits}"
+    try:
+        return key_type, str(uuid.UUID(raw))
+    except ValueError as exc:
+        raise InvalidInput from exc
+
+
+def mask_pix_key(key_type: str, value: str) -> str:
+    """Versão segura para exibição: mostra apenas o final da chave."""
+
+    if key_type == "email":
+        local, _, domain = value.partition("@")
+        return f"{local[:1]}***@{domain}"
+    if key_type == "phone":
+        return f"+{value[1:3]} ** *****-{value[-4:]}"
+    return f"****{value[-4:]}"
+
+
+def payout_ready(organization: Organization) -> bool:
+    """O estabelecimento pode receber repasse?"""
+
+    return bool(
+        organization.payout_status == "active"
+        and organization.pix_key
+        and organization.legal_document
+    )
