@@ -121,21 +121,20 @@ aprovada e não devem ser tratados como decisão tomada:
 | Relógio | Mede | Estado |
 |---|---|---|
 | Pagamento (T3) | Janela para pagar dentro do bloqueio da quadra | Requisito definido (estimativa inicial de 60 min) |
-| Cancelamento (T5/cutoff) | Até quando é possível cancelar com reembolso/substituição | Proposta na ADR 0039 (6 h antes); **não implementado** |
-| Substituição (T4) | Quanto tempo o matchmaking tem para achar substituto | Proposta na ADR 0039 (25% do tempo restante, piso 30 min, teto 12 h) |
+| Cancelamento (T5/cutoff) | Até quando é possível cancelar com reembolso/substituição | **Implementado** — configurável, padrão 6 h antes (`JOGA_CANCELLATION_CUTOFF_HOURS`) |
+| Substituição (T4) | Quanto tempo o matchmaking tem para achar substituto | **Implementado** — 25% do tempo restante, piso 30 min, teto 12 h |
 | Presença (T7/T8) | Pré-check-in e confirmação no local | **Implementada** na ADR 0039 (GPS/estabelecimento); UI mobile pendente |
 | Contestação | Janela para o estabelecimento contestar valores/repasse | **Não definido** |
-| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Não definido** |
+| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Definido na ADR 0040** (`starts_at + 2h`) e implementado como elegibilidade no ledger; transferência real pendente |
 
-A implementação atual usa `eligible_at = completed_at + N` e permite contestação enquanto a
-liberação está `PENDING`. Isso não substitui a definição dos relógios acima.
+A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2 h, ADR 0040) e permite contestação enquanto a liberação está `PENDING`. O relógio de contestação ainda não tem prazo definido.
 
 ## Dívidas técnicas conhecidas
 
 - `MercadoPagoAdapter` usa sandbox e não deve operar dinheiro real.
 - O webhook real depende de URL pública/túnel e segredo configurado no painel.
-- O e-mail do pagador é obrigatório na Orders API; o cadastro atual é por telefone.
-- O adaptador de produção (Pagar.me) ainda não existe.
+- O adaptador de produção (**Inter**) ainda não existe; o código só tem `simulator` e `mercadopago` em sandbox.
+- O e-mail do pagador é obrigatório na Orders API do Mercado Pago; o cadastro atual é por telefone. Falta decidir de onde o e-mail vem.
 - O repasse ao estabelecimento é um lançamento simulado no ledger; não há transferência real.
 - O worker de reservas reembolsa com o adaptador configurado; se o PSP real falhar, a operação precisa de retry e conciliação.
 - A interface financeira ainda não tem comprovantes, exportação nem contestação de MED/chargeback.
