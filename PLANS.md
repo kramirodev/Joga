@@ -206,7 +206,9 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 **Aceite:** mudança de clã não transfere troféus retroativos; participação tem limites contra volume artificial; elegibilidade exige permanência mínima; temporada encerra com snapshot auditável; chat de clã acessível só a membros autorizados.
 
-## Fase 17 — Moderação e Trust & Safety
+## Fase 17 - Moderação e Trust & Safety
+
+**Status:** 17A (denúncia de perfil no lobby, contexto limitado, triagem determinística, revisão humana por CLI, medidas reversíveis, recurso e auditoria) implementada no backend em 2026-11-14. Sem IA paga, sem painel de moderação e sem retenção definitiva. 17B (classificador local/open-source, painel interno e consequência para denúncia falsa) pendente.
 
 **Escopo:** denúncia de perfil no lobby com categorias definidas e seleção de até cinco mensagens + janela limitada de contexto; moderação assistida por IA (classificação, agrupamento, priorização, medidas preventivas proporcionais e reversíveis, níveis de confiança); revisão humana em ferramenta interna separada do painel de gestão; recursos contra penalizações; histórico auditável de decisões; retenção e acesso limitados.
 
