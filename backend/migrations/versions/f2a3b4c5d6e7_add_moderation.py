@@ -99,9 +99,7 @@ def upgrade() -> None:
         sa.CheckConstraint("action_type IN ('WARNING','RESTRICT_RANKED')", name="type_valid"),
         sa.CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED')", name="status_valid"),
         sa.CheckConstraint("ends_at IS NULL OR ends_at > starts_at", name="time_order_valid"),
-        sa.ForeignKeyConstraint(
-            ["report_id"], ["moderation_reports.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["report_id"], ["moderation_reports.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["target_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -129,14 +127,10 @@ def upgrade() -> None:
         sa.Column("decided_by", sa.String(length=120), nullable=True),
         sa.Column("decision_reason", sa.Text(), nullable=True),
         sa.CheckConstraint("status IN ('OPEN','ACCEPTED','REJECTED')", name="status_valid"),
-        sa.ForeignKeyConstraint(
-            ["action_id"], ["moderation_actions.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["action_id"], ["moderation_actions.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "action_id", "user_id", name="uq_moderation_appeals_action_user"
-        ),
+        sa.UniqueConstraint("action_id", "user_id", name="uq_moderation_appeals_action_user"),
     )
 
 
@@ -145,13 +139,7 @@ def downgrade() -> None:
     op.drop_index("ix_moderation_actions_report", table_name="moderation_actions")
     op.drop_index("ix_moderation_actions_target_status", table_name="moderation_actions")
     op.drop_table("moderation_actions")
-    op.drop_index(
-        "ix_moderation_reports_reporter_created", table_name="moderation_reports"
-    )
-    op.drop_index(
-        "ix_moderation_reports_status_priority", table_name="moderation_reports"
-    )
-    op.drop_index(
-        "ix_moderation_reports_target_created", table_name="moderation_reports"
-    )
+    op.drop_index("ix_moderation_reports_reporter_created", table_name="moderation_reports")
+    op.drop_index("ix_moderation_reports_status_priority", table_name="moderation_reports")
+    op.drop_index("ix_moderation_reports_target_created", table_name="moderation_reports")
     op.drop_table("moderation_reports")

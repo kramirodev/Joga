@@ -295,7 +295,9 @@ class ModerationService:
                 action_type=action_type,
                 status="ACTIVE",
                 starts_at=moment,
-                ends_at=(moment + timedelta(days=days) if action_type == "RESTRICT_RANKED" else None),
+                ends_at=(
+                    moment + timedelta(days=days) if action_type == "RESTRICT_RANKED" else None
+                ),
                 reason=cleaned,
                 operator=operator,
             )
