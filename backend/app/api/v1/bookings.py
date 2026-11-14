@@ -66,6 +66,8 @@ class ParticipantView(BaseModel):
     confirmed_at: datetime | None
     declined_at: datetime | None
     replaced_by_user_id: UUID | None
+    settled_with: str | None
+    tickets_consumed: int
     presence_status: str
     presence_method: str | None
     presence_confirmed_at: datetime | None
@@ -112,6 +114,13 @@ class BookingView(BaseModel):
     organization_id: UUID
     organization_venue_id: UUID
     venue_space_id: UUID
+    organization_venue_name: str | None
+    venue_space_name: str | None
+    format_id: UUID | None
+    format_name: str | None
+    band_code: str | None
+    band_label: str | None
+    tickets_per_seat: int | None
     status: str
     starts_at: datetime
     ends_at: datetime
@@ -180,6 +189,13 @@ def _view(
         organization_id=booking.organization_id,
         organization_venue_id=booking.organization_venue_id,
         venue_space_id=booking.venue_space_id,
+        organization_venue_name=bundle.organization_venue_name,
+        venue_space_name=bundle.venue_space_name,
+        format_id=bundle.format_id,
+        format_name=bundle.format_name,
+        band_code=bundle.band_code,
+        band_label=bundle.band_label,
+        tickets_per_seat=bundle.tickets_per_seat,
         status=booking.status,
         starts_at=booking.starts_at,
         ends_at=booking.ends_at,
@@ -217,6 +233,8 @@ def _view(
                 confirmed_at=item.confirmed_at,
                 declined_at=item.declined_at,
                 replaced_by_user_id=item.replaced_by_user_id,
+                settled_with=item.settled_with,
+                tickets_consumed=item.tickets_consumed,
                 presence_status=item.presence_status,
                 presence_method=item.presence_method,
                 presence_confirmed_at=item.presence_confirmed_at,

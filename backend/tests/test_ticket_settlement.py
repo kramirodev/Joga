@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import BookingParticipant, BookingPayment
 from app.modules.bookings.service import BookingService
+from app.modules.identity.clock import ensure_utc
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
 from app.modules.organizations.models import (
     Organization,
@@ -20,6 +21,8 @@ from app.modules.organizations.models import (
     OrganizationVenue,
 )
 from app.modules.organizations.permissions import Role
+from app.modules.payments.financial import FinancialService
+from app.modules.payments.models import VenueRelease
 from app.modules.pricing.service import resolve_band
 from app.modules.tickets.service import get_balance, grant
 from app.modules.venues.models import VenueAvailability, VenueSpace
@@ -49,7 +52,13 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
     users = [make_user(db_session) for _ in range(SEATS)]
     owner_id = make_user(db_session)
     _, format_ = make_format(db_session, team_size=TEAM_SIZE)
-    organization = Organization(name="Arena Ingresso")
+    organization = Organization(
+        name="Arena Ingresso",
+        legal_document="12345678000199",
+        pix_key_type="cnpj",
+        pix_key="12345678000199",
+        payout_status="active",
+    )
     db_session.add(organization)
     db_session.flush()
     db_session.add(
@@ -188,6 +197,19 @@ def test_each_participant_settles_own_seat(client: TestClient, db_session: Sessi
     ).all()
     assert payments
     assert {item.status for item in payments} == {"CANCELLED"}
+
+    release = db_session.scalar(
+        select(VenueRelease).where(VenueRelease.booking_id == uuid.UUID(booking["id"]))
+    )
+    assert release is not None
+    assert release.amount_cents == PRICE_CENTS
+    assert release.status == "PENDING"
+
+    service = FinancialService(db_session)
+    assert service.release_due(now=ensure_utc(release.eligible_at) + timedelta(minutes=1)) == 1
+    db_session.commit()
+    db_session.refresh(release)
+    assert release.status == "RELEASED"
 
 
 def test_settlement_is_idempotent(client: TestClient, db_session: Session) -> None:

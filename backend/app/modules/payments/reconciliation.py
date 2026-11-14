@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.modules.bookings.models import Booking, BookingPayment
@@ -133,44 +133,33 @@ def reconcile(
             }
         )
 
-    paid_totals = (
-        select(
-            BookingPayment.booking_id,
-            func.coalesce(func.sum(BookingPayment.amount_cents), 0),
-        )
-        .where(BookingPayment.status == "PAID")
-        .group_by(BookingPayment.booking_id)
-        .subquery()
-    )
     mismatched = (
-        select(VenueRelease, paid_totals.c[1])
+        select(VenueRelease, Booking.price_cents)
         .join(Booking, Booking.id == VenueRelease.booking_id)
-        .join(paid_totals, paid_totals.c[0] == VenueRelease.booking_id)
         .where(
             VenueRelease.status.in_({"PENDING", "RELEASED"}),
-            VenueRelease.amount_cents != paid_totals.c[1],
+            VenueRelease.amount_cents != Booking.price_cents,
         )
     )
     if organization_id is not None:
         mismatched = mismatched.where(Booking.organization_id == organization_id)
-    for release, paid_total in session.execute(mismatched).all():
+    for release, price_cents in session.execute(mismatched).all():
         issues.append(
             {
                 "code": "release_amount_mismatch",
                 "booking_id": str(release.booking_id),
                 "release_id": str(release.id),
                 "amount_cents": release.amount_cents,
-                "paid_cents": int(paid_total),
+                "booking_price_cents": int(price_cents),
             }
         )
 
     completed_without_release = (
-        select(Booking, paid_totals.c[1])
-        .join(paid_totals, paid_totals.c[0] == Booking.id)
+        select(Booking)
         .outerjoin(VenueRelease, VenueRelease.booking_id == Booking.id)
         .where(
             Booking.status == "COMPLETED",
-            paid_totals.c[1] > 0,
+            Booking.price_cents > 0,
             VenueRelease.id.is_(None),
         )
     )
@@ -178,12 +167,12 @@ def reconcile(
         completed_without_release = completed_without_release.where(
             Booking.organization_id == organization_id
         )
-    for booking, paid_total in session.execute(completed_without_release).all():
+    for booking in session.scalars(completed_without_release).all():
         issues.append(
             {
                 "code": "completed_booking_without_release",
                 "booking_id": str(booking.id),
-                "amount_cents": int(paid_total),
+                "amount_cents": booking.price_cents,
             }
         )
 

@@ -9,7 +9,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Pendência | Fase | Impacto | Próximo passo |
 |---|---|---|---|
 | PSP de produção (Inter PJ) | 14B | Sem Pix real, estorno, repasse e conciliação | Contratar conta PJ, validar taxa de 0,90% e perfil transacional |
-| KYC do recebedor | 12B | Reserva paga não pode abrir sem recebedor `ACTIVE` | Decidir PSP/KYC e onboarding |
+| KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
 | Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
 | Mapas | 10/19 | Camada visual de descoberta | Pode esperar; usar lista/distância no início |
@@ -40,7 +40,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Janela de disputa antes da liberação | 15 | Contestação `OPEN` suspende a liberação na proposta técnica; prazos **não definidos** |
 | Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; recibos e comprovantes fiscais pendentes |
 | Interface financeira completa do estabelecimento | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
-| Jornada mobile completa de reserva/quadra | 13B | Painel de acompanhamento existe; falta seletor de quadra e criação |
+| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine e criação de reserva prontas no backend; app ainda precisa ligar as telas a `discovery` e `POST /bookings` | Implementar consumo no mobile |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
 | Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |
@@ -111,7 +111,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingr
 | Fase | Divergência | O que fazer | Estado |
 |---|---|---|---|
 | **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e reajuste que vale só para reservas novas |
-| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | **Implementado (14D.2)**: CNPJ com dígito verificador, chave Pix tipada, chave mascarada e `payout_ready`. Falta KYC contratual e portão na reserva |
+| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | **Implementado (14D.2)**: CNPJ com dígito verificador, chave Pix tipada, chave mascarada e `payout_ready`. **Portão aplicado na criação da reserva (13C)**; falta KYC contratual |
 | **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por ingresso |
 | **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | **Implementado (14D.13)**: `purchase_payments` com `kind` + `reference_id` e webhook idempotente |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | **Implementado (14D.6)**: devolução em ingresso; reembolso de passe/pacote ainda pendente |

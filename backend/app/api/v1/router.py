@@ -6,6 +6,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.bookings import router as bookings_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.clans import router as clans_router
+from app.api.v1.discovery import router as discovery_router
 from app.api.v1.health import router as health_router
 from app.api.v1.matches import router as matches_router
 from app.api.v1.matchmaking import router as matchmaking_router
@@ -37,6 +38,7 @@ api_router.include_router(ratings_router)
 api_router.include_router(organizations_router)
 api_router.include_router(venues_router)
 api_router.include_router(pricing_router)
+api_router.include_router(discovery_router)
 api_router.include_router(progress_router)
 api_router.include_router(bookings_router)
 api_router.include_router(substitutions_router)

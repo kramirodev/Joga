@@ -33,7 +33,9 @@ from app.modules.organizations.service import (
     Forbidden,
     OrganizationNotFound,
     OrganizationService,
+    payout_ready,
 )
+from app.modules.pricing.models import PricingBand
 from app.modules.pricing.service import PricingBandError as PricingError
 from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
@@ -53,8 +55,6 @@ LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 SPACE_BLOCKING_STATUSES = frozenset(
     {"HOLD_CONFIRMED", "PAYMENT_PENDING", "SUBSTITUTING", "CONFIRMED"}
 )
-
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
 
 class BookingError(Exception):
@@ -87,13 +87,20 @@ class BookingTransitionError(BookingError):
 
 @dataclass(frozen=True)
 class BookingBundle:
-    """Reserva com participantes, timers, hold e pagamentos."""
+    """Reserva com participantes, timers, hold, pagamentos e contexto de vitrine."""
 
     booking: Booking
     participants: list[BookingParticipant]
     timers: list[BookingTimer]
     hold: BookingHold | None
     payments: list[BookingPayment]
+    organization_venue_name: str | None = None
+    venue_space_name: str | None = None
+    format_id: uuid.UUID | None = None
+    format_name: str | None = None
+    band_code: str | None = None
+    band_label: str | None = None
+    tickets_per_seat: int | None = None
 
 
 class BookingService:
@@ -143,6 +150,8 @@ class BookingService:
         organization = self.session.get(Organization, venue.organization_id)
         if organization is None or organization.status != "active":
             raise BookingInvalid
+        if not payout_ready(organization):
+            raise BookingConflict("payout_not_ready")
         space = self.session.scalar(
             select(VenueSpace).where(
                 VenueSpace.id == venue_space_id,
@@ -186,6 +195,15 @@ class BookingService:
             policy_version="v1",
             cancellation_policy="full_refund_until_confirmed",
         )
+        availability = self._availability_for(booking, venue, space)
+        booking.band_id = availability.band_id
+        if availability.band_id is not None:
+            try:
+                booking.tickets_per_seat = tickets_for(
+                    self.session, availability.band_id, format_.team_size
+                )
+            except PricingError:
+                booking.tickets_per_seat = None
         try:
             with self.session.begin_nested():
                 self.session.add(booking)
@@ -748,8 +766,10 @@ class BookingService:
             participant.payment_status = "REFUNDED"
 
     def _tickets_per_seat(self, booking: Booking) -> int:
-        """Resolve a tabela 2D para a reserva: faixa da janela × formato do lobby."""
+        """Resolve a tabela 2D: snapshot da criação ou fallback pela agenda."""
 
+        if booking.tickets_per_seat:
+            return booking.tickets_per_seat
         venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
         space = self.session.get(VenueSpace, booking.venue_space_id)
         lobby = self.session.get(Lobby, booking.lobby_id)
@@ -758,6 +778,11 @@ class BookingService:
         fmt = self.session.get(SportFormat, lobby.format_id)
         if fmt is None:
             raise BookingInvalid
+        if booking.band_id is not None:
+            try:
+                return tickets_for(self.session, booking.band_id, fmt.team_size)
+            except PricingError as exc:
+                raise BookingConflict("tickets_not_configured") from exc
         availability = self._availability_for(booking, venue, space)
         if availability.band_id is None:
             raise BookingConflict("band_missing")
@@ -811,6 +836,11 @@ class BookingService:
         self._release_hold(booking.id, "CONFIRMED", now)
         self._event(booking, actor_user_id, "booking.confirmed", previous, "CONFIRMED")
         self._audit(actor_user_id, booking, "booking.confirmed", {})
+        # A obrigação com o fornecedor nasce na confirmação, não no pagamento
+        # individual. Isso cobre Pix, ingressos e composição mista.
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).ensure_release(booking.id)
 
     # -- cancelamento/conclusão --------------------------------------------
 
@@ -1059,12 +1089,42 @@ class BookingService:
                 .order_by(BookingPayment.created_at)
             ).all()
         )
+        venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
+        space = self.session.get(VenueSpace, booking.venue_space_id)
+        lobby = self.session.get(Lobby, booking.lobby_id)
+        format_ = self.session.get(SportFormat, lobby.format_id) if lobby is not None else None
+        band: PricingBand | None = None
+        tickets_per_seat: int | None = None
+        if booking.band_id is not None:
+            band = self.session.get(PricingBand, booking.band_id)
+        elif venue is not None and space is not None:
+            try:
+                availability = self._availability_for(booking, venue, space)
+            except (BookingError, PricingError):
+                availability = None
+            if availability is not None and availability.band_id is not None:
+                band = self.session.get(PricingBand, availability.band_id)
+        if band is not None and format_ is not None:
+            if booking.tickets_per_seat:
+                tickets_per_seat = booking.tickets_per_seat
+            else:
+                try:
+                    tickets_per_seat = tickets_for(self.session, band.id, format_.team_size)
+                except PricingError:
+                    tickets_per_seat = None
         return BookingBundle(
             booking=booking,
             participants=participants,
             timers=timers,
             hold=hold,
             payments=payments,
+            organization_venue_name=venue.name if venue is not None else None,
+            venue_space_name=space.name if space is not None else None,
+            format_id=format_.id if format_ is not None else None,
+            format_name=format_.name if format_ is not None else None,
+            band_code=band.code if band is not None else None,
+            band_label=band.label if band is not None else None,
+            tickets_per_seat=tickets_per_seat,
         )
 
     def _lock_booking(self, booking_id: uuid.UUID) -> Booking:

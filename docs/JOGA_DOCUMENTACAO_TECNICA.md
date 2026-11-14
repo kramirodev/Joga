@@ -824,6 +824,8 @@ Toda consulta ou mutação deve validar organização, associação do usuário,
 
 A 13A implementa `bookings`, `booking_participants`, `booking_holds`, `booking_timers`, `booking_events` e `booking_payments`. A reserva nasce em `PARTICIPANT_CONFIRMATION` (T1), passa a `REQUESTED` (T2) quando todas as vagas confirmam, e a `PAYMENT_PENDING` (T3) após o aceite e o hold. T2 usa tempo corrido nesta fase; horário comercial fica pendente. O pagamento é simulado apenas em ambiente local/teste e a conclusão é operacional pelo estabelecimento; a Fase 14 substitui a simulação pelo PSP real.
 
+A **13C** acrescenta a vitrine autenticada em `/api/v1/discovery/bookable-venues`, com quadras ativas, modalidades, faixas, agenda, fotos aprovadas e próximos horários. A criação de reserva exige `payout_ready`, congela `band_id`/`tickets_per_seat` e registra a obrigação de repasse na confirmação, inclusive quando a quitação é por ingressos. O contrato para o app está em `docs/CONTRATO_RESERVAS_APP.md`.
+
 ### 14.1 Solicitação e aceite
 
 O fluxo começa com uma solicitação de reserva vinculada a:

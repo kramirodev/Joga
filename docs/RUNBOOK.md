@@ -335,7 +335,7 @@ O painel **Competitivo** (Fase 8C) usa `GET /api/v1/ratings/me` e `GET /api/v1/r
 
 O painel **Comunicação** (Fase 9B/9C) usa `GET /api/v1/matches`, chat por lobby, amigos e convites. Ele abre um WebSocket autenticado para o lobby selecionado e reconcilia o histórico pela API após reconexão.
 
-O painel **Reservas** (Fase 13B) usa `GET /api/v1/bookings`, confirmação de participante e pagamento simulado local. A criação da reserva ainda depende do lobby/quadra; não há seletor de quadra no mobile nesta rodada.
+O painel **Reservas** (Fase 13B) usa `GET /api/v1/bookings`, confirmação de participante e pagamento simulado local. A vitrine e a criação de reserva estão prontas no backend (Fase 13C); o app ainda precisa ligar as telas a `/api/v1/discovery/bookable-venues` e `POST /api/v1/bookings`.
 
 ### Abrir no aparelho
 
@@ -414,7 +414,7 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel. A Fase 15 acrescentou a aba Financeiro com extrato, recebíveis, liberação simulada e contestação. Reservas no mobile, pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel; a 13C acrescentou a vitrine reservável e a criação ponta a ponta. A Fase 15 acrescentou a aba Financeiro com extrato, recebíveis, liberação simulada e contestação. Pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
 
 ### Reservas e temporizadores (Fase 13A)
 

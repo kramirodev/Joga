@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.config import get_settings
-from app.modules.bookings.models import Booking, BookingPayment
+from app.modules.bookings.models import Booking
 from app.modules.bookings.service import BookingNotFound
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
@@ -59,7 +59,7 @@ class FinancialService:
         self.session = session
 
     def ensure_release(self, booking_id: uuid.UUID) -> VenueRelease | None:
-        """Cria o registro de liberação pendente de uma reserva concluída."""
+        """Cria a obrigação de repasse de uma reserva confirmada/concluída."""
 
         booking = self.session.scalar(
             select(Booking).where(Booking.id == booking_id).with_for_update()
@@ -74,7 +74,10 @@ class FinancialService:
         if booking.status not in {"CONFIRMED", "COMPLETED"}:
             return None
 
-        total = self._paid_total(booking.id)
+        # O valor devido é o preço da quadra congelado na reserva. Não usar a
+        # soma de ``booking_payments``: no fluxo de ingresso as cobranças Pix
+        # são canceladas e a quitação acontece na carteira.
+        total = booking.price_cents
         if total <= 0:
             return None
 
@@ -91,7 +94,7 @@ class FinancialService:
         return release
 
     def ensure_missing_releases(self) -> int:
-        """Cria liberações para reservas concluídas que ainda não têm registro."""
+        """Cria obrigações para reservas confirmadas/concluídas sem registro."""
 
         existing = select(VenueRelease.booking_id)
         booking_ids = list(
@@ -131,7 +134,7 @@ class FinancialService:
             if booking is None or booking.status not in {"CONFIRMED", "COMPLETED"}:
                 self._fail(release, "booking_not_fulfilled", current)
                 continue
-            if self._paid_total(booking.id) != release.amount_cents:
+            if booking.price_cents != release.amount_cents:
                 self._fail(release, "amount_mismatch", current)
                 continue
             if self._release(release, current, reason="auto_release"):
@@ -406,15 +409,6 @@ class FinancialService:
             details={"booking_id": str(release.booking_id)},
         )
         self.session.flush()
-
-    def _paid_total(self, booking_id: uuid.UUID) -> int:
-        total = self.session.scalar(
-            select(func.coalesce(func.sum(BookingPayment.amount_cents), 0)).where(
-                BookingPayment.booking_id == booking_id,
-                BookingPayment.status == "PAID",
-            )
-        )
-        return int(total or 0)
 
 
 __all__ = [
