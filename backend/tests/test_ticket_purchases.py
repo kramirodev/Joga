@@ -38,9 +38,7 @@ def test_packs_follow_the_price_ladder(client: TestClient, db_session: Session) 
     assert packs[-1]["unit_price_cents"] == 310
 
 
-def test_purchase_then_confirm_credits_the_wallet(
-    client: TestClient, db_session: Session
-) -> None:
+def test_purchase_then_confirm_credits_the_wallet(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)
@@ -66,9 +64,7 @@ def test_purchase_then_confirm_credits_the_wallet(
     assert wallet.json()["balance"] == 10
 
 
-def test_confirming_twice_does_not_double_credit(
-    client: TestClient, db_session: Session
-) -> None:
+def test_confirming_twice_does_not_double_credit(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)
@@ -104,9 +100,7 @@ def test_unknown_pack_is_rejected(client: TestClient, db_session: Session) -> No
     assert response.status_code == 404, response.text
 
 
-def test_purchase_is_not_readable_by_another_user(
-    client: TestClient, db_session: Session
-) -> None:
+def test_purchase_is_not_readable_by_another_user(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     owner_id = make_user(db_session)
     owner_token = make_token(db_session, owner_id)

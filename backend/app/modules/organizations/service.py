@@ -735,8 +735,7 @@ def normalize_cnpj(value: str) -> str:
     weights_second = (6, *weights_first)
     for weights, position in ((weights_first, 12), (weights_second, 13)):
         total = sum(
-            int(digit) * weight
-            for digit, weight in zip(digits[:position], weights, strict=True)
+            int(digit) * weight for digit, weight in zip(digits[:position], weights, strict=True)
         )
         remainder = total % 11
         expected = 0 if remainder < 2 else 11 - remainder

@@ -72,9 +72,7 @@ def seed_default_packs(session: Session) -> None:
 
 def list_packs(session: Session) -> Sequence[TicketPack]:
     return session.scalars(
-        select(TicketPack)
-        .where(TicketPack.active.is_(True))
-        .order_by(TicketPack.tickets.asc())
+        select(TicketPack).where(TicketPack.active.is_(True)).order_by(TicketPack.tickets.asc())
     ).all()
 
 

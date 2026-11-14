@@ -214,9 +214,7 @@ class Badge(Base):
     """
 
     __tablename__ = "badges"
-    __table_args__ = (
-        CheckConstraint("kind IN ('season', 'founder', 'medal')", name="kind_valid"),
-    )
+    __table_args__ = (CheckConstraint("kind IN ('season', 'founder', 'medal')", name="kind_valid"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
@@ -303,6 +301,4 @@ class MissionProgress(Base):
     progress: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

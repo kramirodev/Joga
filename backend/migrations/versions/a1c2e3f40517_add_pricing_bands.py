@@ -120,9 +120,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_index("ix_venue_availability_band_id", table_name="venue_availability")
-    op.drop_constraint(
-        "fk_venue_availability_band_id", "venue_availability", type_="foreignkey"
-    )
+    op.drop_constraint("fk_venue_availability_band_id", "venue_availability", type_="foreignkey")
     op.drop_column("venue_availability", "band_id")
     op.drop_column("venue_spaces", "is_covered")
     op.drop_index("ix_pricing_bands_active_ceiling", table_name="pricing_bands")

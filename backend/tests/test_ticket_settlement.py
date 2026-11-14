@@ -178,9 +178,7 @@ def test_each_participant_settles_own_seat(client: TestClient, db_session: Sessi
         assert get_balance(db_session, user_id) == 0
 
     participants = db_session.scalars(
-        select(BookingParticipant).where(
-            BookingParticipant.booking_id == uuid.UUID(booking["id"])
-        )
+        select(BookingParticipant).where(BookingParticipant.booking_id == uuid.UUID(booking["id"]))
     ).all()
     assert {item.tickets_consumed for item in participants} == {TICKETS_PER_SEAT}
     assert {item.settled_with for item in participants} == {"tickets"}
@@ -198,9 +196,7 @@ def test_settlement_is_idempotent(client: TestClient, db_session: Session) -> No
     booking = open_booking(api, context)
     token = context["tokens"][0]
 
-    first = api.post(
-        f"/api/v1/bookings/{booking['id']}/settle-with-tickets", headers=bearer(token)
-    )
+    first = api.post(f"/api/v1/bookings/{booking['id']}/settle-with-tickets", headers=bearer(token))
     second = api.post(
         f"/api/v1/bookings/{booking['id']}/settle-with-tickets", headers=bearer(token)
     )
@@ -209,9 +205,7 @@ def test_settlement_is_idempotent(client: TestClient, db_session: Session) -> No
     assert get_balance(db_session, context["users"][0]) == TICKETS_PER_SEAT - TICKETS_PER_SEAT
 
 
-def test_insufficient_tickets_blocks_settlement(
-    client: TestClient, db_session: Session
-) -> None:
+def test_insufficient_tickets_blocks_settlement(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     context = setup_context(db_session, tickets=TICKETS_PER_SEAT - 1)
     booking = open_booking(api, context)
@@ -235,9 +229,7 @@ def _settle_all(api: TestClient, context: dict, booking: dict) -> None:
         assert response.status_code == 200, response.text
 
 
-def test_venue_cancellation_refunds_everyone(
-    client: TestClient, db_session: Session
-) -> None:
+def test_venue_cancellation_refunds_everyone(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     context = setup_context(db_session)
     booking = open_booking(api, context)
@@ -274,17 +266,13 @@ def test_player_cancellation_refunds_only_the_others(
         assert get_balance(db_session, user_id) == TICKETS_PER_SEAT
 
 
-def test_system_cancellation_refunds_everyone(
-    client: TestClient, db_session: Session
-) -> None:
+def test_system_cancellation_refunds_everyone(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     context = setup_context(db_session)
     booking = open_booking(api, context)
     _settle_all(api, context, booking)
 
-    BookingService(db_session).cancel_by_system(
-        uuid.UUID(booking["id"]), reason="sem substituto"
-    )
+    BookingService(db_session).cancel_by_system(uuid.UUID(booking["id"]), reason="sem substituto")
     db_session.flush()
 
     for user_id in context["users"]:

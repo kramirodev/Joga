@@ -29,10 +29,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.execute(
-        sa.text(
-            "UPDATE booking_payments SET status = 'EXPIRED' WHERE status = 'CANCELLED'"
-        )
-    )
+    op.execute(sa.text("UPDATE booking_payments SET status = 'EXPIRED' WHERE status = 'CANCELLED'"))
     op.drop_constraint("status_valid", "booking_payments", type_="check")
     op.create_check_constraint("status_valid", "booking_payments", f"status IN ({PREVIOUS})")

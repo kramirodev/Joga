@@ -90,9 +90,7 @@ def test_pass_level_is_blocked_without_pass(client: TestClient, db_session: Sess
     assert response.json()["detail"]["code"] == "pass_required"
 
 
-def test_level_thirty_awards_badge_and_equips(
-    client: TestClient, db_session: Session
-) -> None:
+def test_level_thirty_awards_badge_and_equips(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)

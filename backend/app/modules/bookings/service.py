@@ -709,9 +709,7 @@ class BookingService:
         )
         return other is None
 
-    def _cancel_pending_payments(
-        self, booking: Booking, participant: BookingParticipant
-    ) -> None:
+    def _cancel_pending_payments(self, booking: Booking, participant: BookingParticipant) -> None:
         """Quem quitou por ingresso não deixa cobrança Pix aberta."""
 
         pending = self.session.scalars(

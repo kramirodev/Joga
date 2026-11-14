@@ -77,9 +77,7 @@ def seed_default_band_tickets(session: Session, *, version: int = 1) -> None:
 
     bands = {
         band.code: band
-        for band in session.scalars(
-            select(PricingBand).where(PricingBand.version == version)
-        ).all()
+        for band in session.scalars(select(PricingBand).where(PricingBand.version == version)).all()
     }
     existing = set(
         session.execute(select(PricingBandTicket.band_id, PricingBandTicket.team_size)).all()

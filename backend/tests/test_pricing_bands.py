@@ -88,9 +88,7 @@ def band_labels(api: TestClient, token: str) -> dict[str, str]:
     return {item["code"]: item["label"] for item in response.json()["bands"]}
 
 
-def test_band_is_resolved_by_price_ceiling(
-    client: TestClient, db_session: Session
-) -> None:
+def test_band_is_resolved_by_price_ceiling(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     token, base, space_id, _ = setup_space(api, db_session)
     labels = band_labels(api, token)
@@ -101,22 +99,32 @@ def test_band_is_resolved_by_price_ceiling(
     assert cheap["body"]["band_id"] is not None
 
     other = create_availability(
-        api, token, base, space_id, weekday=3, start_time="08:00:00",
-        end_time="09:00:00", price_cents=12_100,
+        api,
+        token,
+        base,
+        space_id,
+        weekday=3,
+        start_time="08:00:00",
+        end_time="09:00:00",
+        price_cents=12_100,
     )
     assert other["status"] == 201, other["body"]
     assert other["body"]["band_id"] != cheap["body"]["band_id"]
 
     top = create_availability(
-        api, token, base, space_id, weekday=4, start_time="08:00:00",
-        end_time="09:00:00", price_cents=30_000,
+        api,
+        token,
+        base,
+        space_id,
+        weekday=4,
+        start_time="08:00:00",
+        end_time="09:00:00",
+        price_cents=30_000,
     )
     assert top["status"] == 201, top["body"]
 
 
-def test_price_above_last_ceiling_is_rejected(
-    client: TestClient, db_session: Session
-) -> None:
+def test_price_above_last_ceiling_is_rejected(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     token, base, space_id, _ = setup_space(api, db_session)
 
@@ -125,9 +133,7 @@ def test_price_above_last_ceiling_is_rejected(
     assert response["body"]["detail"]["code"] == "price_above_band"
 
 
-def test_price_change_applies_only_to_new_bookings(
-    client: TestClient, db_session: Session
-) -> None:
+def test_price_change_applies_only_to_new_bookings(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     token, base, space_id, organization_id = setup_space(api, db_session)
     created = create_availability(api, token, base, space_id)

@@ -558,7 +558,6 @@ class VenueService:
         if space_id is not None:
             self._space(venue.id, space_id)
 
-
         settings = get_settings()
         processed = process_photo(
             raw,
