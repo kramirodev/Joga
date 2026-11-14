@@ -1,6 +1,6 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
-**Status:** contrato backend implementado em 2026-11-14; app e painel ainda precisam consumir.
+**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e lotes; painel ainda pendente.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
 
 ## 1. Descobrir quadras reserváveis
