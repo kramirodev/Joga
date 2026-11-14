@@ -6,6 +6,8 @@ Uso:
         --reason "..." --operator op1
     python -m scripts.review_moderation --decide <id> --decision RESTRICT_RANKED \
         --days 7 --reason "..." --operator op1
+    python -m scripts.review_moderation --decide <id> --decision SUSPEND_TEMP \
+        --days 3 --reason "..." --operator op1
     python -m scripts.review_moderation --appeals
     python -m scripts.review_moderation --appeal <id> --decision ACCEPTED \
         --reason "..." --operator op1
@@ -51,7 +53,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--decide", type=uuid.UUID)
-    parser.add_argument("--decision", choices=("DISMISS", "WARN", "RESTRICT_RANKED"))
+    parser.add_argument(
+        "--decision", choices=("DISMISS", "WARN", "RESTRICT_RANKED", "SUSPEND_TEMP")
+    )
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--reason")
     parser.add_argument("--operator")

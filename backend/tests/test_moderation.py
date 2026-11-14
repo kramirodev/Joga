@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.modules.chat.models import LobbyMessage
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbyParticipant
 from app.modules.moderation.service import (
     ModerationService,
@@ -214,3 +215,71 @@ def test_report_rate_limit(db_session: Session) -> None:
         pass
     else:  # pragma: no cover
         raise AssertionError("limite diário deveria ser aplicado")
+
+
+def test_temporary_suspension_blocks_and_can_be_revoked(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = context_with_messages(db_session)
+    service = ModerationService(db_session)
+    report = service.create_report(
+        context["users"][0],
+        target_user_id=context["users"][1],
+        lobby_id=context["lobbies"][0].id,
+        category="THREAT",
+        description="Ameaça grave",
+    )
+    _reviewed, action = service.review(
+        report.id,
+        operator="op1",
+        decision="SUSPEND_TEMP",
+        reason="Suspensão temporária",
+        days=3,
+        authorized_operators=frozenset({"op1"}),
+    )
+    assert action is not None
+    db_session.commit()
+    user = db_session.get(User, context["users"][1])
+    assert user is not None and user.status == "suspended"
+
+    blocked = api.get("/api/v1/auth/me", headers=bearer(context["tokens"][1]))
+    assert blocked.status_code == 401
+
+    service.revoke_action(action.id, operator="op1", reason="Recurso procedente")
+    db_session.commit()
+    allowed = api.get("/api/v1/auth/me", headers=bearer(context["tokens"][1]))
+    assert allowed.status_code == 200
+
+
+def test_false_report_cooldown(db_session: Session) -> None:
+    context = context_with_messages(db_session)
+    service = ModerationService(db_session)
+    for index in range(3):
+        report = service.create_report(
+            context["users"][0],
+            target_user_id=context["users"][1],
+            lobby_id=context["lobbies"][0].id,
+            category="OTHER",
+            description=f"Denúncia improcedente {index}",
+        )
+        service.review(
+            report.id,
+            operator="op1",
+            decision="DISMISS",
+            reason="Improcedente",
+            authorized_operators=frozenset({"op1"}),
+        )
+    try:
+        service.create_report(
+            context["users"][0],
+            target_user_id=context["users"][2],
+            lobby_id=context["lobbies"][0].id,
+            category="OTHER",
+            description="Nova denúncia",
+        )
+    except ReportConflict:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("cooldown de denunciante deveria ser aplicado")

@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
     moderation_operators: str = ""
     moderation_max_reports_per_day: int = Field(default=5, ge=1, le=50)
+    moderation_false_report_threshold: int = Field(default=3, ge=1, le=20)
+    moderation_false_report_cooldown_days: int = Field(default=7, ge=1, le=90)
+    moderation_retention_days: int = Field(default=180, ge=30, le=3650)
 
     @property
     def moderation_operator_ids(self) -> frozenset[str]:

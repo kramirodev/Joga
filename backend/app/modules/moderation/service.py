@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.modules.chat.models import LobbyMessage
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import ensure_utc, utcnow
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
 from app.modules.moderation.classifier import DEFAULT_CLASSIFIER, ModerationClassifier
 from app.modules.moderation.models import (
@@ -27,7 +28,7 @@ MAX_CONTEXT_MESSAGES = 5
 REPORT_WINDOW = timedelta(days=1)
 PRIORITY_WINDOW = timedelta(days=30)
 MAX_REASON = 1000
-DECISIONS = frozenset({"DISMISS", "WARN", "RESTRICT_RANKED"})
+DECISIONS = frozenset({"DISMISS", "WARN", "RESTRICT_RANKED", "SUSPEND_TEMP"})
 APPEAL_DECISIONS = frozenset({"ACCEPTED", "REJECTED"})
 
 
@@ -144,6 +145,30 @@ class ModerationService:
         )
         if recent >= get_settings().moderation_max_reports_per_day:
             raise ReportConflict("report_rate_limited")
+
+        dismissed = list(
+            self.session.scalars(
+                select(ModerationReport.reviewed_at)
+                .where(
+                    ModerationReport.reporter_id == reporter_id,
+                    ModerationReport.status == "DISMISSED",
+                    ModerationReport.reviewed_at.is_not(None),
+                    ModerationReport.reviewed_at >= moment - PRIORITY_WINDOW,
+                )
+                .order_by(ModerationReport.reviewed_at.desc())
+            ).all()
+        )
+        if dismissed:
+            settings = get_settings()
+            raw_last = dismissed[0]
+            assert raw_last is not None
+            last = ensure_utc(raw_last)
+            cooldown = timedelta(days=settings.moderation_false_report_cooldown_days)
+            if (
+                len(dismissed) >= settings.moderation_false_report_threshold
+                and last + cooldown > moment
+            ):
+                raise ReportConflict("reporter_cooldown")
 
         duplicate = self.session.scalar(
             select(ModerationReport).where(
@@ -275,6 +300,8 @@ class ModerationService:
         cleaned = _clean_text(reason, label="reason", max_length=MAX_REASON)
         if decision == "RESTRICT_RANKED" and not 1 <= days <= 90:
             raise ReportInvalid("days_invalid")
+        if decision == "SUSPEND_TEMP" and not 1 <= days <= 30:
+            raise ReportInvalid("days_invalid")
         moment = ensure_utc(now or utcnow())
         report = self.session.scalar(
             select(ModerationReport).where(ModerationReport.id == report_id).with_for_update()
@@ -288,16 +315,18 @@ class ModerationService:
         if decision == "DISMISS":
             report.status = "DISMISSED"
         else:
-            action_type = "WARNING" if decision == "WARN" else "RESTRICT_RANKED"
+            action_type = {
+                "WARN": "WARNING",
+                "RESTRICT_RANKED": "RESTRICT_RANKED",
+                "SUSPEND_TEMP": "SUSPEND_TEMP",
+            }[decision]
             action = ModerationAction(
                 report_id=report.id,
                 target_user_id=report.target_user_id,
                 action_type=action_type,
                 status="ACTIVE",
                 starts_at=moment,
-                ends_at=(
-                    moment + timedelta(days=days) if action_type == "RESTRICT_RANKED" else None
-                ),
+                ends_at=(moment + timedelta(days=days) if action_type != "WARNING" else None),
                 reason=cleaned,
                 operator=operator,
             )
@@ -305,6 +334,8 @@ class ModerationService:
             self.session.flush()
             if action_type == "RESTRICT_RANKED":
                 self._restrict_ranked(report.target_user_id, action.ends_at, moment)
+            if action_type == "SUSPEND_TEMP":
+                self._suspend_user(report.target_user_id, action.ends_at, moment)
             report.status = "RESOLVED"
             NotificationService(self.session).create(
                 user_id=report.target_user_id,
@@ -464,6 +495,12 @@ class ModerationService:
             if account is not None and account.ranked_restricted_until is not None:
                 if ensure_utc(account.ranked_restricted_until) > moment:
                     account.ranked_restricted_until = moment
+        if action.action_type == "SUSPEND_TEMP":
+            user = self.session.get(User, action.target_user_id, with_for_update=True)
+            if user is not None and user.status == "suspended":
+                user.status = "active"
+                user.suspended_until = None
+                user.updated_at = moment
         record_audit(
             self.session,
             actor_user_id=None,
@@ -496,6 +533,24 @@ class ModerationService:
         )
         account.ranked_restricted_until = max(current, ends_at)
         account.updated_at = moment
+
+    def _suspend_user(
+        self,
+        user_id: uuid.UUID,
+        ends_at: datetime | None,
+        moment: datetime,
+    ) -> None:
+        if ends_at is None:
+            raise ReportInvalid("ends_at_required")
+        user = self.session.get(User, user_id, with_for_update=True)
+        if user is None:
+            raise ReportInvalid("user_not_found")
+        user.status = "suspended"
+        user.suspended_until = max(
+            ensure_utc(user.suspended_until) if user.suspended_until is not None else moment,
+            ends_at,
+        )
+        user.updated_at = moment
 
 
 __all__ = [

@@ -28,7 +28,7 @@ from app.modules.identity.clock import utcnow
 REPORT_CATEGORIES = ("HARASSMENT", "HATE", "THREAT", "SEXUAL", "SPAM", "OTHER")
 REPORT_STATUSES = ("OPEN", "IN_REVIEW", "RESOLVED", "DISMISSED", "APPEALED")
 REPORT_SEVERITIES = ("LOW", "MEDIUM", "HIGH")
-ACTION_TYPES = ("WARNING", "RESTRICT_RANKED")
+ACTION_TYPES = ("WARNING", "RESTRICT_RANKED", "SUSPEND_TEMP")
 ACTION_STATUSES = ("ACTIVE", "REVOKED", "EXPIRED")
 
 
@@ -93,7 +93,10 @@ class ModerationAction(Base):
 
     __tablename__ = "moderation_actions"
     __table_args__ = (
-        CheckConstraint("action_type IN ('WARNING','RESTRICT_RANKED')", name="type_valid"),
+        CheckConstraint(
+            "action_type IN ('WARNING','RESTRICT_RANKED','SUSPEND_TEMP')",
+            name="type_valid",
+        ),
         CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED')", name="status_valid"),
         CheckConstraint("ends_at IS NULL OR ends_at > starts_at", name="time_order_valid"),
         Index("ix_moderation_actions_target_status", "target_user_id", "status"),
