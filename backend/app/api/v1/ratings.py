@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.engine import (
@@ -77,7 +78,9 @@ def get_my_rating(
     """Divisão e progresso do usuário, sem expor MMR bruto ou Trust Factor."""
     _format_or_404(session, format_id)
     service = RatingService(session)
+    season = service.current_season(utcnow())
     account = service.account_for(current.user_id, format_id)
+    placed = service.placement_matches(current.user_id, season.id) if season is not None else 0
     if account is None:
         progress_data = division_progress(DEFAULT_RATING, 0)
         return MyRatingResponse(
@@ -93,7 +96,8 @@ def get_my_rating(
             last_rated_at=None,
         )
 
-    progress_data = division_progress(account.rating, account.matches_played)
+    effective_matches = placed if season is not None else account.matches_played
+    progress_data = division_progress(account.rating, effective_matches)
     return MyRatingResponse(
         format_id=format_id,
         algorithm_version=account.algorithm_version,
@@ -108,8 +112,8 @@ def get_my_rating(
             if progress_data["next_division"] is not None
             else None
         ),
-        position=service.position_for(account),
-        matches_played=account.matches_played,
+        position=service.position_for(account, season_id=season.id if season is not None else None),
+        matches_played=effective_matches,
         last_rated_at=account.last_rated_at,
     )
 
@@ -134,10 +138,10 @@ def get_ranking(
             position=offset + index + 1,
             user_id=account.user_id,
             display_name=display_name,
-            division=division_for(account.rating, account.matches_played),
-            matches_played=account.matches_played,
+            division=division_for(account.rating, matches),
+            matches_played=matches,
         )
-        for index, (account, display_name) in enumerate(rows)
+        for index, (account, display_name, matches) in enumerate(rows)
     ]
     return RankingResponse(
         format_id=format_id,

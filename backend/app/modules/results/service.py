@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.clans.service import record_match_trophies
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.matches.models import Match, MatchParticipant
 from app.modules.matches.service import MatchNotFound, MatchService, transition
@@ -40,6 +41,13 @@ from app.modules.results.policy import (
     evaluate_round,
     format_allows_draw,
     quorum_for,
+)
+from app.modules.season.models import XpEvent
+from app.modules.season.service import (
+    SeasonNotFound,
+    active_season,
+    award_xp,
+    record_match_result,
 )
 
 RESULT_REPORT_WINDOW = timedelta(minutes=10)
@@ -315,6 +323,67 @@ class ResultsService:
         match.finalized_at = now
         match.result_version = (match.result_version or 0) + 1
         transition(self._session, match, "FINALIZED", reason=reason)
+        self._award_season_result(match, now)
+
+    def _award_season_result(self, match: Match, moment: datetime) -> None:
+        """XP de vitória e streak no resultado confirmado (ADR 0043 §3 e §4).
+
+        Só participantes presentes contam. Empate não dá XP de vitória e zera a
+        streak. Sem temporada ativa, o gancho é silencioso.
+        """
+
+        if match.final_result not in ("TEAM_1", "TEAM_2", "DRAW"):
+            return
+        try:
+            season = active_season(self._session, moment)
+        except SeasonNotFound:
+            return
+        participants = self._session.scalars(
+            select(MatchParticipant).where(
+                MatchParticipant.match_id == match.id,
+                MatchParticipant.status == "checked_in",
+            )
+        ).all()
+        trophy_results: dict[uuid.UUID, str] = {}
+        for participant in participants:
+            won = match.final_result == f"TEAM_{participant.team}"
+            if match.final_result == "DRAW":
+                trophy_results[participant.user_id] = "DRAW"
+            else:
+                trophy_results[participant.user_id] = "WIN" if won else "LOSS"
+            if won:
+                key = f"win:{match.id}:{participant.user_id}"
+                already = self._session.scalar(
+                    select(XpEvent.id).where(XpEvent.idempotency_key == key)
+                )
+                if already is None:
+                    award_xp(
+                        self._session,
+                        user_id=participant.user_id,
+                        season=season,
+                        amount=40,
+                        source="win",
+                        idempotency_key=key,
+                        ref_type="match",
+                        ref_id=match.id,
+                    )
+            record_match_result(
+                self._session,
+                participant.user_id,
+                match_id=match.id,
+                won=won,
+                played_at=moment,
+            )
+        lobby = self._session.get(Lobby, match.lobby_id)
+        if lobby is not None:
+            record_match_trophies(
+                self._session,
+                match_id=match.id,
+                format_id=lobby.format_id,
+                season_id=season.id,
+                results=trophy_results,
+                now=moment,
+            )
 
     def _open_review(
         self,
@@ -760,6 +829,7 @@ class ResultsService:
             match.finalized_at = current
             match.result_version = (match.result_version or 0) + 1
             transition(self._session, match, "FINALIZED", reason="human_finalize")
+            self._award_season_result(match, current)
         elif decision == "VOID":
             review.status = "RESOLVED"
             review.resolved_at = current

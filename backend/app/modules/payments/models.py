@@ -112,6 +112,63 @@ class PspWebhookEvent(Base):
     )
 
 
+class PurchasePayment(Base):
+    """Cobrança Pix de uma compra de pacote ou de passe (Fase 14D.13).
+
+    Não usa ``booking_payments``: o fluxo de ingresso não tem reserva,
+    participante nem repasse. A referência é polimórfica por ``kind``.
+    """
+
+    __tablename__ = "purchase_payments"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('ticket_pack', 'pass')",
+            name="kind_valid",
+        ),
+        CheckConstraint("amount_cents > 0", name="amount_positive"),
+        UniqueConstraint("kind", "reference_id", name="uq_purchase_payments_reference"),
+        UniqueConstraint(
+            "provider",
+            "provider_order_id",
+            name="uq_purchase_payments_provider_order",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_payment_id",
+            name="uq_purchase_payments_provider_payment",
+        ),
+        Index("ix_purchase_payments_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    reference_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qr_code: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    qr_code_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ticket_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+    )
+
+
 class LedgerEntry(Base):
     """Registro append-only de direitos e obrigações financeiras internas."""
 

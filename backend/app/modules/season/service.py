@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.modules.identity.clock import utcnow
+from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.season.models import (
     Badge,
     MissionProgress,
@@ -110,6 +110,26 @@ def active_season(session: Session, now: datetime) -> Season:
     return season
 
 
+def close_expired_season(session: Session, now: datetime | None = None) -> Season | None:
+    """Fecha a temporada vencida e abre a do trimestre seguinte.
+
+    O reset da divisão é suave: o rating interno persiste e a nova temporada
+    começa com contagem de colocação zerada (ADR 0045 §1.6).
+    """
+
+    moment = now or utcnow()
+    active = session.scalars(select(Season).where(Season.status == "active")).all()
+    expired = [item for item in active if ensure_utc(item.ends_at) <= moment]
+    if not expired:
+        return None
+    closed = expired[0]
+    closed.status = "closed"
+    following = seed_current_season(session, moment)
+    seed_season_track(session, following)
+    session.flush()
+    return following
+
+
 def progress_for(session: Session, user_id: uuid.UUID, season: Season) -> SeasonProgress:
     record = session.get(SeasonProgress, (user_id, season.id))
     if record is None:
@@ -119,9 +139,7 @@ def progress_for(session: Session, user_id: uuid.UUID, season: Season) -> Season
     return record
 
 
-def get_progress(
-    session: Session, user_id: uuid.UUID, season: Season
-) -> SeasonProgress | None:
+def get_progress(session: Session, user_id: uuid.UUID, season: Season) -> SeasonProgress | None:
     """Leitura sem criar linha: a projeção nasce no primeiro XP."""
 
     return session.get(SeasonProgress, (user_id, season.id))
@@ -202,6 +220,8 @@ def record_match_result(
     """Atualiza a streak: vitória soma, empate/derrota zeram, semana vazia zera."""
 
     record = streak_for(session, user_id)
+    if record.last_match_id == match_id:
+        return record
     week = week_start(played_at)
     if record.last_match_week is not None and record.last_match_week < week - timedelta(days=7):
         record.current_wins = 0
@@ -214,6 +234,7 @@ def record_match_result(
     record.last_match_id = match_id
     session.flush()
     return record
+
 
 # -- trilha, itens e insígnias (14D.8) -----------------------------------
 
@@ -320,6 +341,7 @@ def claim_level(
     user_id: uuid.UUID,
     season: Season,
     level: int,
+    has_pass: bool = False,
 ) -> tuple[SeasonClaim, str | None, int]:
     """Reivindica a recompensa do nível. Idempotente por (usuário, temporada, nível)."""
 
@@ -335,17 +357,14 @@ def claim_level(
     xp_total = progress.xp_total if progress else 0
     if xp_total < row.xp_required:
         raise ClaimError("level_locked")
-    if row.track == "pass":
-        # Sem modelo de passe ainda: a trilha paga fica bloqueada no piloto.
+    if row.track == "pass" and not has_pass:
         raise ClaimError("pass_required")
 
     claim = SeasonClaim(user_id=user_id, season_id=season.id, level=level)
     session.add(claim)
 
     if row.item_code:
-        item = session.scalars(
-            select(SeasonItem).where(SeasonItem.code == row.item_code)
-        ).first()
+        item = session.scalars(select(SeasonItem).where(SeasonItem.code == row.item_code)).first()
         if item is not None and item.category == "badge":
             badge = session.scalars(
                 select(Badge).where(Badge.code == f"season_{season.code.lower().replace('-', '_')}")
@@ -360,9 +379,7 @@ def claim_level(
                 )
             ).first()
             if already is None:
-                session.add(
-                    PlayerItem(user_id=user_id, item_code=item.code, season_id=season.id)
-                )
+                session.add(PlayerItem(user_id=user_id, item_code=item.code, season_id=season.id))
 
     if row.free_tickets:
         grant(

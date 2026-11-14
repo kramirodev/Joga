@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.9** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, e XP de partida com missões semanais. Faltam XP de vitória, fechamento de temporada, o passe como assinatura e as estatísticas pessoais e de rede da ADR 0045.
+**Status:** fatias **14D.1 a 14D.15** implementadas entre 2026-11-12 e 2026-11-13. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, XP de partida e de vitória com streak e missões semanais, passe como assinatura trimestral com entrega mensal, cobrança Pix de pacote e passe via Mercado Pago, fechamento de temporada com reset suave da divisão e estatísticas pessoais e de rede da ADR 0045. Falta a UI mobile dessas telas e a calibração de produto (janela de venda do passe, amostra de rede e retrospectiva).
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 
@@ -198,7 +198,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 16 — Clãs e troféus
 
-**Status:** antecipada para o **escopo do MVP** pela ADR 0044. Pode rodar em paralelo às Fases 11 a 15, mantendo a dependência da Fase 8, e deve estar concluída antes do primeiro evento de marketing e antes da Fase 19. Uma fatia mínima de moderação de chat de clã entra junto com esta fase.
+**Status:** antecipada para o **escopo do MVP** pela ADR 0044 e **implementada no backend em 2026-11-13** (ADR 0046). Clãs de até 30 membros com entrada por aprovação, papéis, carência de 7 dias, chat com denúncia e ocultação imediata, troféus por temporada/formato com os 10 melhores membros e snapshot no fechamento. Falta a UI mobile e a moderação completa da Fase 17.
 
 **Escopo:** clãs abertos/fechados com membros, administradores, convites e limites; chat de clã em texto e referências internas; vínculo clã–jogador na data de cada partida; troféus por modalidade com fórmula-base 50/30/20 versionada, considerando os 10 melhores membros elegíveis, temporadas configuráveis e snapshots; ciclo de moderação do chat segue a Fase 17.
 

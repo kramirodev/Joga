@@ -31,11 +31,22 @@ from app.modules.payments.models import (
     PaymentRefund,
     PspWebhookEvent,
 )
+from app.modules.payments.purchase import (
+    apply_status as apply_purchase_status,
+)
+from app.modules.payments.purchase import (
+    find_by_provider as find_purchase_payment,
+)
+from app.modules.payments.status import map_provider_status
 
-INTERNAL_PAID = {"processed", "approved", "paid"}
-INTERNAL_REFUNDED = {"refunded", "charged_back"}
-INTERNAL_FAILED = {"failed", "canceled", "cancelled"}
-INTERNAL_EXPIRED = {"expired"}
+__all__ = [
+    "PaymentError",
+    "PaymentMismatch",
+    "PaymentNotFound",
+    "PaymentService",
+    "WebhookRejected",
+    "map_provider_status",
+]
 
 
 class PaymentError(Exception):
@@ -52,19 +63,6 @@ class PaymentMismatch(PaymentError):
 
 class WebhookRejected(PaymentError):
     """Webhook inválido ou não autenticado."""
-
-
-def map_provider_status(status: str) -> str:
-    normalized = status.lower()
-    if normalized in INTERNAL_PAID:
-        return "PAID"
-    if normalized in INTERNAL_REFUNDED:
-        return "REFUNDED"
-    if normalized in INTERNAL_FAILED:
-        return "FAILED"
-    if normalized in INTERNAL_EXPIRED:
-        return "EXPIRED"
-    return "PENDING"
 
 
 class PaymentService:
@@ -228,6 +226,13 @@ class PaymentService:
                 )
             )
         if payment is None:
+            purchase_payment = find_purchase_payment(
+                self.session,
+                provider_order_id=status.provider_order_id,
+                provider_payment_id=status.provider_payment_id,
+            )
+            if purchase_payment is not None:
+                apply_purchase_status(self.session, purchase_payment, status)
             webhook.processed_at = utcnow()
             self.session.flush()
             return
@@ -644,13 +649,3 @@ class PaymentService:
                 details=details,
             )
         )
-
-
-__all__ = [
-    "PaymentError",
-    "PaymentMismatch",
-    "PaymentNotFound",
-    "PaymentService",
-    "WebhookRejected",
-    "map_provider_status",
-]

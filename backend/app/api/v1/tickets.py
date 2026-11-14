@@ -11,9 +11,21 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.core.config import get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.payments.adapter import PspAdapter, PspError
+from app.modules.payments.dependency import get_psp_adapter
+from app.modules.payments.models import PurchasePayment
+from app.modules.payments.purchase import (
+    PurchasePaymentError,
+    PurchasePaymentMismatch,
+    PurchasePaymentNotFound,
+    open_charge,
+    payment_for,
+    sync_charge,
+)
 from app.modules.tickets.models import TicketPack, TicketPurchase
 from app.modules.tickets.service import (
     PackNotFound,
@@ -94,9 +106,10 @@ class PurchaseView(BaseModel):
     status: str
     created_at: datetime
     paid_at: datetime | None
+    payment: PurchasePaymentView | None = None
 
 
-def _purchase_view(purchase: TicketPurchase) -> PurchaseView:
+def _purchase_view(purchase: TicketPurchase, payment: PurchasePayment | None) -> PurchaseView:
     return PurchaseView(
         id=purchase.id,
         pack_id=purchase.pack_id,
@@ -105,6 +118,7 @@ def _purchase_view(purchase: TicketPurchase) -> PurchaseView:
         status=purchase.status,
         created_at=purchase.created_at,
         paid_at=purchase.paid_at,
+        payment=purchase_payment_view(payment),
     )
 
 
@@ -119,14 +133,19 @@ def _pack_view(pack: TicketPack) -> PackView:
 
 
 def _handle(exc: Exception) -> HTTPException:
-    if isinstance(exc, (PackNotFound, PurchaseNotFound)):
+    if isinstance(exc, (PackNotFound, PurchaseNotFound, PurchasePaymentNotFound)):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "not_found"})
+    if isinstance(exc, PurchasePaymentMismatch):
         return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail={"code": "not_found"}
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "payment_mismatch"}
         )
-    if isinstance(exc, TicketError):
+    if isinstance(exc, PspError):
         return HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"code": "ticket_error"}
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "psp_unavailable"},
         )
+    if isinstance(exc, (TicketError, PurchasePaymentError)):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "ticket_error"})
     raise exc
 
 
@@ -146,16 +165,27 @@ def create_ticket_purchase(
     payload: PurchaseCreate,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
 ) -> PurchaseView:
-    """Cria a intenção de compra. A cobrança Pix entra na Fase 14B."""
+    """Cria a compra e abre a cobrança Pix. Os ingressos só entram quando pagos."""
 
     try:
         purchase = create_purchase(session, current.user_id, payload.pack_code)
+        pack = session.get(TicketPack, purchase.pack_id)
+        payment = open_charge(
+            session,
+            adapter,
+            kind="ticket_pack",
+            reference_id=purchase.id,
+            user_id=current.user_id,
+            amount_cents=purchase.amount_cents,
+            description=f"JOGA · Pacote {pack.label if pack else purchase.tickets}",
+        )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _purchase_view(purchase)
+    return _purchase_view(purchase, payment)
 
 
 @router.get("/purchases/{purchase_id}", response_model=PurchaseView)
@@ -167,7 +197,32 @@ def read_purchase(
     purchase = session.get(TicketPurchase, purchase_id)
     if purchase is None or purchase.user_id != current.user_id:
         raise _handle(PurchaseNotFound())
-    return _purchase_view(purchase)
+    return _purchase_view(purchase, payment_for(session, "ticket_pack", purchase.id))
+
+
+@router.post("/purchases/{purchase_id}/sync", response_model=PurchaseView)
+def sync_ticket_purchase(
+    purchase_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
+) -> PurchaseView:
+    """Consulta o PSP e credita a compra se o Pix já foi pago."""
+
+    try:
+        purchase = session.get(TicketPurchase, purchase_id)
+        if purchase is None or purchase.user_id != current.user_id:
+            raise PurchaseNotFound
+        payment = payment_for(session, "ticket_pack", purchase.id)
+        if payment is None:
+            raise PurchasePaymentNotFound
+        sync_charge(session, adapter, payment)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    session.refresh(purchase)
+    return _purchase_view(purchase, payment_for(session, "ticket_pack", purchase.id))
 
 
 @router.post("/purchases/{purchase_id}/confirm", response_model=PurchaseView)
@@ -176,7 +231,7 @@ def confirm_ticket_purchase(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
 ) -> PurchaseView:
-    """Confirma o pagamento em ambiente local. Dinheiro real depende da Fase 14B."""
+    """Confirma o pagamento em ambiente local, sem PSP. Só para desenvolvimento."""
 
     if get_settings().environment.lower() not in LOCAL_ENVIRONMENTS:
         raise HTTPException(
@@ -189,4 +244,4 @@ def confirm_ticket_purchase(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _purchase_view(purchase)
+    return _purchase_view(purchase, payment_for(session, "ticket_pack", purchase.id))

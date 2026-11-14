@@ -28,9 +28,12 @@ from app.modules.ratings.models import (
     ALGORITHM_VERSION,
     RatingAccount,
     RatingEvent,
+    SeasonPlacement,
     TrustAccount,
     TrustEvent,
 )
+from app.modules.season.models import Season
+from app.modules.season.service import SeasonNotFound, active_season
 
 
 class RatingNotApplicable(Exception):
@@ -194,6 +197,11 @@ class RatingService:
             )
             applied += 1
 
+        season = self.current_season(moment)
+        if season is not None:
+            for participant in participants:
+                self._register_placement(participant.user_id, season.id, moment)
+
         self._session.flush()
         return RatingApplicationResult(match_id=match.id, applied=applied)
 
@@ -252,16 +260,71 @@ class RatingService:
             )
         )
 
-    def position_for(self, account: RatingAccount) -> int | None:
-        """Posição no ranking, considerando apenas contas já colocadas."""
-        if account.matches_played < PLACEMENT_MATCHES:
+    def current_season(self, moment: datetime) -> Season | None:
+        """Temporada ativa na data; ``None`` fora de temporada."""
+        try:
+            return active_season(self._session, moment)
+        except SeasonNotFound:
+            return None
+
+    def placement_matches(self, user_id: uuid.UUID, season_id: uuid.UUID) -> int:
+        row = self._session.get(SeasonPlacement, (user_id, season_id))
+        return row.matches_played if row is not None else 0
+
+    def _register_placement(
+        self, user_id: uuid.UUID, season_id: uuid.UUID, moment: datetime
+    ) -> None:
+        row = self._session.get(SeasonPlacement, (user_id, season_id), with_for_update=True)
+        if row is None:
+            row = SeasonPlacement(user_id=user_id, season_id=season_id, matches_played=0)
+            self._session.add(row)
+            self._session.flush()
+        row.matches_played += 1
+        row.updated_at = moment
+
+    def position_for(
+        self,
+        account: RatingAccount,
+        *,
+        season_id: uuid.UUID | None = None,
+    ) -> int | None:
+        """Posição no ranking, considerando apenas contas colocadas na temporada."""
+        if season_id is None:
+            if account.matches_played < PLACEMENT_MATCHES:
+                return None
+            higher = self._session.scalar(
+                select(func.count())
+                .select_from(RatingAccount)
+                .where(
+                    RatingAccount.format_id == account.format_id,
+                    RatingAccount.matches_played >= PLACEMENT_MATCHES,
+                    or_(
+                        RatingAccount.rating > account.rating,
+                        and_(
+                            RatingAccount.rating == account.rating,
+                            RatingAccount.user_id < account.user_id,
+                        ),
+                    ),
+                )
+            )
+            return int(higher or 0) + 1
+
+        placed = self.placement_matches(account.user_id, season_id)
+        if placed < PLACEMENT_MATCHES:
             return None
         higher = self._session.scalar(
             select(func.count())
             .select_from(RatingAccount)
+            .join(
+                SeasonPlacement,
+                and_(
+                    SeasonPlacement.user_id == RatingAccount.user_id,
+                    SeasonPlacement.season_id == season_id,
+                ),
+            )
             .where(
                 RatingAccount.format_id == account.format_id,
-                RatingAccount.matches_played >= PLACEMENT_MATCHES,
+                SeasonPlacement.matches_played >= PLACEMENT_MATCHES,
                 or_(
                     RatingAccount.rating > account.rating,
                     and_(
@@ -279,31 +342,77 @@ class RatingService:
         *,
         limit: int,
         offset: int,
-    ) -> tuple[list[tuple[RatingAccount, str | None]], int]:
-        """Top de contas colocadas, com nome de exibição."""
+    ) -> tuple[list[tuple[RatingAccount, str | None, int]], int]:
+        """Top de contas colocadas na temporada ativa, com nome e jogos da temporada."""
         if limit <= 0 or offset < 0:
             raise ValueError("paginação inválida")
-        filters = (
-            RatingAccount.format_id == format_id,
-            RatingAccount.matches_played >= PLACEMENT_MATCHES,
-        )
-        total = int(
-            self._session.scalar(select(func.count()).select_from(RatingAccount).where(*filters))
-            or 0
-        )
-        rows = self._session.execute(
-            select(RatingAccount, UserProfile.display_name)
-            .outerjoin(UserProfile, UserProfile.user_id == RatingAccount.user_id)
-            .where(*filters)
-            .order_by(
-                RatingAccount.rating.desc(),
-                RatingAccount.matches_played.desc(),
-                RatingAccount.user_id,
+        season = self.current_season(utcnow())
+        if season is not None:
+            placement_filters = (
+                SeasonPlacement.season_id == season.id,
+                SeasonPlacement.matches_played >= PLACEMENT_MATCHES,
             )
-            .limit(limit)
-            .offset(offset)
-        )
-        return [(account, display_name) for account, display_name in rows], total
+            rows_statement = (
+                select(
+                    RatingAccount,
+                    UserProfile.display_name,
+                    SeasonPlacement.matches_played,
+                )
+                .join(
+                    SeasonPlacement,
+                    SeasonPlacement.user_id == RatingAccount.user_id,
+                )
+                .outerjoin(UserProfile, UserProfile.user_id == RatingAccount.user_id)
+                .where(RatingAccount.format_id == format_id, *placement_filters)
+                .order_by(
+                    RatingAccount.rating.desc(),
+                    SeasonPlacement.matches_played.desc(),
+                    RatingAccount.user_id,
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            total = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(RatingAccount)
+                    .join(
+                        SeasonPlacement,
+                        SeasonPlacement.user_id == RatingAccount.user_id,
+                    )
+                    .where(RatingAccount.format_id == format_id, *placement_filters)
+                )
+                or 0
+            )
+        else:
+            filters = (
+                RatingAccount.format_id == format_id,
+                RatingAccount.matches_played >= PLACEMENT_MATCHES,
+            )
+            total = int(
+                self._session.scalar(
+                    select(func.count()).select_from(RatingAccount).where(*filters)
+                )
+                or 0
+            )
+            rows_statement = (
+                select(
+                    RatingAccount,
+                    UserProfile.display_name,
+                    RatingAccount.matches_played,
+                )
+                .outerjoin(UserProfile, UserProfile.user_id == RatingAccount.user_id)
+                .where(*filters)
+                .order_by(
+                    RatingAccount.rating.desc(),
+                    RatingAccount.matches_played.desc(),
+                    RatingAccount.user_id,
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+        rows = self._session.execute(rows_statement)
+        return [(account, display_name, matches) for account, display_name, matches in rows], total
 
     def _account_for(
         self,

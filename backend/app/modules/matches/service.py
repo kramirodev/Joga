@@ -20,6 +20,12 @@ from app.modules.matchmaking.policy import (
     windows_cover,
 )
 from app.modules.profile.models import Availability, SportFormat
+from app.modules.season.service import (
+    SeasonNotFound,
+    active_season,
+    record_mission,
+    week_start,
+)
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "PENDING_CONFIRMATION": {"READY", "CANCELLED", "EXPIRED"},
@@ -318,7 +324,25 @@ class MatchService:
         participant.checked_in_at = current
         participant.updated_at = utcnow()
         self._session.flush()
+        if current <= ensure_utc(match.scheduled_start_at):
+            self._record_on_time_checkin(user_id, current)
         return match
+
+    def _record_on_time_checkin(self, user_id: uuid.UUID, moment: datetime) -> None:
+        """Missão semanal de pontualidade (ADR 0043 §4). Silenciosa sem temporada."""
+
+        try:
+            season = active_season(self._session, moment)
+        except SeasonNotFound:
+            return
+        record_mission(
+            self._session,
+            user_id=user_id,
+            season=season,
+            week=week_start(moment),
+            code="on_time_checkin",
+            now=moment,
+        )
 
     def advance(self, now: datetime | None = None) -> AdvanceResult:
         current = ensure_utc(now or utcnow())

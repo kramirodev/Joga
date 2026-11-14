@@ -1,6 +1,6 @@
 # Pendências abertas do JOGA
 
-**Atualizado em:** 12 de novembro de 2026
+**Atualizado em:** 14 de novembro de 2026
 
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
@@ -55,7 +55,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 
 ## Ingresso JOGA (ADR 0042)
 
-Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase comercial foi aberta.
+Modelo aprovado como direção de produto e implementado no backend pelas fatias 14D.1 a 14D.6 e 14D.12/14D.13. O PSP do beta é o **Mercado Pago**; o Inter PJ fica para a 1.0.
 
 | Pendência | Bloqueia | Próximo passo |
 |---|---|---|
@@ -71,31 +71,38 @@ Modelo aprovado como direção de produto, **não implementado**. Nenhuma fase c
 | Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
 | Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
 | Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak de vitórias persiste |
+| Venda do passe no meio da temporada e pro-rata | 14D.12 | **Implementado como três meses a partir do pagamento**; decidir se haverá restrição de janela |
+| Reembolso de passe e de pacote | 14D.12/14D.13 | Política não definida; hoje só existe reembolso de reserva |
+| Conciliação de `purchase_payments` com o extrato do PSP | 14D.13 | Comparar ordem, valor e status em rotina periódica |
+| Recibo e comprovante do passe | 14D.12 | Depende de revisão fiscal |
 
 ## Estatísticas e inteligência de rede (ADR 0045)
 
-A ADR 0045 esclarece a ADR 0043 §7 e §10 e detalha as estatísticas do passe e o painel de rede. O MMR bruto continua oculto (ADR 0025): "MMR" nas estatísticas é a leitura visível — divisão, progresso e posição. Nada implementado.
+A ADR 0045 esclarece a ADR 0043 §7 e §10 e detalha as estatísticas do passe e o painel de rede. O MMR bruto continua oculto (ADR 0025): "MMR" nas estatísticas é a leitura visível — divisão, progresso e posição. **Estatística essencial, histórico por quadra, passaporte e painel de rede implementados (14D.15).** Falta a camada visual e a calibração.
 
 | Pendência | Bloqueia | Próximo passo |
 |---|---|---|
-| Evolução da divisão/progresso no mobile | 14D | Gráfico por formato a partir de `rating_events`, sem expor o rating bruto |
-| Estatísticas do passe | 14D | Evolução, histórico por quadra, passaporte, horários e retrospectiva |
-| Inteligência de rede | 14D | Quadras mais usadas, mapa de calor, densidade competitiva, ocupação e tendência |
-| Amostra mínima de 20 partidas em 30 dias | 14D | Calibrar no piloto; ocultar ou agrupar células abaixo do mínimo |
+| Evolução da divisão/progresso no mobile | 14D | Série existe em `rating_events`; falta o gráfico |
+| Estatísticas do passe | 14D | **Histórico por quadra e passaporte implementados**; faltam evolução e retrospectiva |
+| Inteligência de rede | 14D | **Implementada em faixas (14D.15)**; faltam densidade competitiva e tendência |
+| Amostra mínima de 20 partidas em 30 dias | 14D | **Implementada**; calibrar no piloto |
+| Horários com mais vaga por quadra | 14D | Depende da agenda de reservas |
 | Estatísticas após o fim do passe | 14D | Definir o que permanece visível e o que é bloqueado |
 | Painel B2B de ocupação | 15/14D | Definir acesso, preço e escopo |
 
 ## Clãs no MVP (ADR 0044)
 
-Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pré-requisito do primeiro evento de marketing.
+Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pré-requisito do primeiro evento de marketing. **Backend implementado em 2026-11-13 (ADR 0046).**
 
 | Pendência | Bloqueia | Próximo passo |
 |---|---|---|
-| Corte mínimo de moderação de chat de clã | Lançamento da Fase 16 | Definir canal de denúncia e medidas mínimas |
-| Tamanho de clã, limites de entrada e regra de troca | Modelo de dados | Produto |
-| Temporada de troféus e sua relação com a temporada trimestral | Troféus | Produto |
+| Corte mínimo de moderação de chat de clã | Lançamento da Fase 16 | **Implementado**: denúncia, ocultação imediata, revisão de admin e registro; falta consequência para denúncia falsa (Fase 17) |
+| Tamanho de clã, limites de entrada e regra de troca | Modelo de dados | **Definido**: 30 membros, aprovação, carência de 7 dias |
+| Temporada de troféus e sua relação com a temporada trimestral | Troféus | **Definido**: mesma temporada trimestral, por formato, com snapshot |
+| Fórmula de troféus | Troféus | **Definida como 50/30/20** (vitória/empate/derrota), 10 melhores membros e 7 dias de permanência; calibrar no piloto |
 | Data-alvo do primeiro evento de marketing | Critério de saída da Fase 16 | Produto |
 | Catálogo cosmético por temporada (livre, XP, passe) e balanceamento de XP | Customização | Modelo técnico em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`; falta arte e calibração |
+| UI mobile de clã, chat e troféus | Fase 16 | Implementar telas e testes de UI |
 
 ## Reescopo das Fases 11–15 (ADR 0042/0043)
 
@@ -105,10 +112,10 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingr
 |---|---|---|---|
 | **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e reajuste que vale só para reservas novas |
 | **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | **Implementado (14D.2)**: CNPJ com dígito verificador, chave Pix tipada, chave mascarada e `payout_ready`. Falta KYC contratual e portão na reserva |
-| **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | Pendente |
-| **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | Pendente |
-| **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | Pendente |
-| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor**; "recebíveis" viram "repasse a receber" | Pendente (código não commitado) |
+| **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por ingresso |
+| **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | **Implementado (14D.13)**: `purchase_payments` com `kind` + `reference_id` e webhook idempotente |
+| **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | **Implementado (14D.6)**: devolução em ingresso; reembolso de passe/pacote ainda pendente |
+| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor**; "recebíveis" viram "repasse a receber" | Parcialmente implementado como proposta local (15A/15B); modelo de repasse ao fornecedor ainda pendente |
 | **10** | Threat model cita adaptadores de PSP antigos | Atualizar para Inter e para o fluxo de ingresso | Pendente |
 
 **Fases 0–10 não mudam.** Identidade, perfil, matchmaking, partidas, resultados, MMR e tempo real são indiferentes ao meio de pagamento.

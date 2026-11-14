@@ -7,13 +7,15 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import DEFAULT_TOKEN_HASH_SECRET
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import SessionService
 from app.modules.profile.models import UserProfile
-from app.modules.ratings.models import ALGORITHM_VERSION, RatingAccount
+from app.modules.ratings.models import ALGORITHM_VERSION, RatingAccount, SeasonPlacement
+from app.modules.season.models import Season
 from tests.helpers_results import make_format, make_user
 
 
@@ -65,6 +67,16 @@ def add_account(
     )
     session.add(account)
     session.flush()
+    season = session.scalars(select(Season).where(Season.status == "active").limit(1)).first()
+    if season is not None:
+        session.add(
+            SeasonPlacement(
+                user_id=user_id,
+                season_id=season.id,
+                matches_played=matches_played,
+            )
+        )
+        session.flush()
     return account
 
 

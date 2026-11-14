@@ -7,12 +7,14 @@ from app.core.config import get_settings
 from app.infrastructure.database.base import Base
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
+from app.modules.clans import models as clans_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.matches import models as matches_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
 from app.modules.outbox import models as outbox_models  # noqa: F401
+from app.modules.passes import models as passes_models  # noqa: F401
 from app.modules.payments import models as payments_models  # noqa: F401
 from app.modules.pricing import models as pricing_models  # noqa: F401
 from app.modules.profile import models as profile_models  # noqa: F401
