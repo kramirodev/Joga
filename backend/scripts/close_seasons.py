@@ -19,6 +19,7 @@ from app.infrastructure.database.engine import build_engine
 from app.modules.clans.service import snapshot_season
 from app.modules.season.models import Season
 from app.modules.season.service import close_expired_season
+from app.modules.tickets.service import expire_due
 
 logger = logging.getLogger("joga.season")
 
@@ -30,12 +31,13 @@ def run_once(session: Session) -> int:
             closed += 1
         for season_id in session.scalars(select(Season.id).where(Season.status == "closed")):
             snapshot_season(session, season_id)
+        expired = expire_due(session)
         session.commit()
     except Exception:
         session.rollback()
         logger.exception("fechamento de temporada falhou")
         return 1
-    logger.info("temporada: fechadas=%s", closed)
+    logger.info("temporada: fechadas=%s lotes_expirados=%s", closed, expired)
     return 0
 
 

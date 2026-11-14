@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
 from app.modules.passes.service import deliver_all_due
+from app.modules.tickets.service import expire_due
 
 logger = logging.getLogger("joga.passes")
 
@@ -23,12 +24,13 @@ logger = logging.getLogger("joga.passes")
 def run_once(session: Session) -> int:
     try:
         delivered = deliver_all_due(session)
+        expired = expire_due(session)
         session.commit()
     except Exception:
         session.rollback()
         logger.exception("entrega do passe falhou")
         return 1
-    logger.info("passe: franquias_entregues=%s", delivered)
+    logger.info("passe: franquias_entregues=%s lotes_expirados=%s", delivered, expired)
     return 0
 
 

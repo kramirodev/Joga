@@ -35,6 +35,7 @@ from app.modules.tickets.service import (
     create_purchase,
     get_balance,
     list_entries,
+    list_lots,
     list_packs,
 )
 
@@ -52,9 +53,20 @@ class TicketEntryView(BaseModel):
     created_at: datetime
 
 
+class TicketLotView(BaseModel):
+    id: UUID
+    source: str
+    original_amount: int
+    remaining: int
+    expires_at: datetime | None
+    ref_type: str | None
+    ref_id: UUID | None
+
+
 class TicketWalletView(BaseModel):
     balance: int
     entries: list[TicketEntryView]
+    lots: list[TicketLotView]
 
 
 @router.get("", response_model=TicketWalletView)
@@ -66,6 +78,7 @@ def read_wallet(
     """Saldo e últimos movimentos. O saldo nunca é editável pelo cliente."""
 
     entries = list_entries(session, current.user_id, limit=limit)
+    lots = list_lots(session, current.user_id)
     return TicketWalletView(
         balance=get_balance(session, current.user_id),
         entries=[
@@ -78,6 +91,18 @@ def read_wallet(
                 created_at=item.created_at,
             )
             for item in entries
+        ],
+        lots=[
+            TicketLotView(
+                id=item.id,
+                source=item.source,
+                original_amount=item.original_amount,
+                remaining=item.remaining,
+                expires_at=item.expires_at,
+                ref_type=item.ref_type,
+                ref_id=item.ref_id,
+            )
+            for item in lots
         ],
     )
 

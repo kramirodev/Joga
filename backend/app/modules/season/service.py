@@ -390,6 +390,7 @@ def claim_level(
             idempotency_key=f"free_level:{season.id}:{level}:{user_id}",
             ref_type="season_level",
             ref_id=season.id,
+            expires_at=ensure_utc(season.ends_at),
         )
 
     session.flush()

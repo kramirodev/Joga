@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.15** implementadas entre 2026-11-12 e 2026-11-13. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, XP de partida e de vitória com streak e missões semanais, passe como assinatura trimestral com entrega mensal, cobrança Pix de pacote e passe via Mercado Pago, fechamento de temporada com reset suave da divisão e estatísticas pessoais e de rede da ADR 0045. Falta a UI mobile dessas telas e a calibração de produto (janela de venda do passe, amostra de rede e retrospectiva).
+**Status:** fatias **14D.1 a 14D.16** implementadas entre 2026-11-12 e 2026-11-14. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, XP de partida e de vitória com streak e missões semanais, passe como assinatura trimestral com entrega mensal, cobrança Pix de pacote e passe via Mercado Pago, fechamento de temporada com reset suave da divisão, estatísticas pessoais e de rede da ADR 0045 e lotes de ingresso com validade e conciliação de compras. Falta a UI mobile dessas telas, a política de reembolso de pacote/passe e a calibração de produto (janela de venda do passe, amostra de rede e retrospectiva).
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 

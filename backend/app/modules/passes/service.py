@@ -204,8 +204,9 @@ def deliver_due(
         return []
     moment = now or utcnow()
     target = _month_index(subscription, moment)
-    if target <= 0:
+    if target <= 0 or subscription.starts_at is None:
         return []
+    starts_at = ensure_utc(subscription.starts_at)
 
     existing = {item.month_index for item in deliveries_for(session, subscription.id)}
     created: list[PassDelivery] = []
@@ -227,6 +228,7 @@ def deliver_due(
             idempotency_key=f"pass:{subscription.id}:{month_index}",
             ref_type="pass_delivery",
             ref_id=delivery.id,
+            expires_at=add_months(starts_at, month_index),
         )
         created.append(delivery)
     return created

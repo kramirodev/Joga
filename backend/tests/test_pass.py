@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
@@ -22,6 +23,8 @@ from app.modules.passes.service import (
     get_subscription,
 )
 from app.modules.season.service import active_season, award_xp
+from app.modules.tickets.models import TicketLot
+from app.modules.tickets.service import expire_due as expire_tickets
 from app.modules.tickets.service import get_balance
 from tests.helpers_results import make_token, make_user
 
@@ -128,19 +131,27 @@ def test_delivery_is_monthly_idempotent_and_expires(db_session: Session) -> None
 
     activate_subscription(db_session, subscription.id, now=START)
     assert get_balance(db_session, user_id) == 30
+    first_lot = db_session.scalar(
+        select(TicketLot).where(TicketLot.user_id == user_id, TicketLot.source == "pass")
+    )
+    assert first_lot is not None
+    assert first_lot.expires_at is not None
 
     deliver_due(db_session, subscription, now=START + timedelta(days=3))
     assert get_balance(db_session, user_id) == 30
 
     deliver_due(db_session, subscription, now=add_months(START, 1))
-    assert get_balance(db_session, user_id) == 60
+    expire_tickets(db_session, now=add_months(START, 1))
+    assert get_balance(db_session, user_id) == 30
 
     deliver_due(db_session, subscription, now=add_months(START, 2))
-    assert get_balance(db_session, user_id) == 90
+    expire_tickets(db_session, now=add_months(START, 2))
+    assert get_balance(db_session, user_id) == 30
     assert len(deliveries_for(db_session, subscription.id)) == 3
 
     deliver_due(db_session, subscription, now=add_months(START, 4))
-    assert get_balance(db_session, user_id) == 90
+    expire_tickets(db_session, now=add_months(START, 4))
+    assert get_balance(db_session, user_id) == 0
 
     assert expire_due(db_session, now=add_months(START, 3)) == 1
     assert active_subscription(db_session, user_id, add_months(START, 3)) is None

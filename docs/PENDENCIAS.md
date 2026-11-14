@@ -73,7 +73,8 @@ Modelo aprovado como direção de produto e implementado no backend pelas fatias
 | Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak de vitórias persiste |
 | Venda do passe no meio da temporada e pro-rata | 14D.12 | **Implementado como três meses a partir do pagamento**; decidir se haverá restrição de janela |
 | Reembolso de passe e de pacote | 14D.12/14D.13 | Política não definida; hoje só existe reembolso de reserva |
-| Conciliação de `purchase_payments` com o extrato do PSP | 14D.13 | Comparar ordem, valor e status em rotina periódica |
+| Conciliação de `purchase_payments` com o extrato do PSP | 14D.13/14D.16 | **Rotina `scripts/reconcile_purchases.py` implementada**; falta comparação com PSP real |
+| Lotes e validade de ingresso | 14D.16 | **Implementados**: passe mensal, ingresso grátis por temporada, comprados sem validade; falta backfill em ambiente com dados |
 | Recibo e comprovante do passe | 14D.12 | Depende de revisão fiscal |
 
 ## Estatísticas e inteligência de rede (ADR 0045)
