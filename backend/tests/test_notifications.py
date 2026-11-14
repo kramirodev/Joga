@@ -6,8 +6,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.notifications.dispatch import dispatch_notifications
 from app.modules.notifications.service import NotificationService
 from app.modules.outbox.models import OutboxEvent
+from app.modules.push.service import RecordingPushSender
+from app.modules.social.models import DevicePushToken
 from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import api_client as booking_api_client
 from tests.test_bookings_api import bearer, setup_booking
@@ -90,3 +93,32 @@ def test_booking_creates_notifications_for_venue_and_participants(
     assert any(
         item["kind"] == "booking_accepted" for item in participant_view.json()["notifications"]
     )
+
+
+def test_dispatcher_sends_push_and_marks_outbox(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    db_session.add(
+        DevicePushToken(
+            user_id=user_id,
+            token="device-token",
+            platform="android",
+        )
+    )
+    NotificationService(db_session).create(
+        user_id=user_id,
+        kind="test",
+        title="Título",
+        body="Corpo",
+        idempotency_key="dispatch:1",
+        data={"ref": "x"},
+    )
+    db_session.flush()
+    sender = RecordingPushSender()
+
+    assert dispatch_notifications(db_session, sender) == 1
+    assert len(sender.sent) == 1
+    assert sender.sent[0]["token"] == "device-token"
+    event = db_session.scalar(
+        select(OutboxEvent).where(OutboxEvent.event_type == "notification.created")
+    )
+    assert event is not None and event.status == "DISPATCHED"

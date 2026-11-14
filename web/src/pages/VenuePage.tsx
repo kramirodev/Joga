@@ -94,6 +94,12 @@ export function VenuePage() {
   const [blackoutEnd, setBlackoutEnd] = useState("");
   const [blackoutReason, setBlackoutReason] = useState("");
   const [blackoutReference, setBlackoutReference] = useState("");
+  const [businessWeekday, setBusinessWeekday] = useState(1);
+  const [opensAt, setOpensAt] = useState("09:00");
+  const [closesAt, setClosesAt] = useState("18:00");
+  const [closureStart, setClosureStart] = useState("");
+  const [closureEnd, setClosureEnd] = useState("");
+  const [closureReason, setClosureReason] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoCaption, setPhotoCaption] = useState("");
   const [photoSpaceId, setPhotoSpaceId] = useState("");
@@ -124,6 +130,16 @@ export function VenuePage() {
   const photosQuery = useQuery({
     queryKey: queryKeys.photos(organizationId, venueId),
     queryFn: () => api.listPhotos(organizationId, venueId),
+    enabled: organizationId.length > 0 && venueId.length > 0,
+  });
+  const businessHoursQuery = useQuery({
+    queryKey: queryKeys.businessHours(organizationId, venueId),
+    queryFn: async () => (await api.listBusinessHours(organizationId, venueId)).business_hours,
+    enabled: organizationId.length > 0 && venueId.length > 0,
+  });
+  const closuresQuery = useQuery({
+    queryKey: queryKeys.closures(organizationId, venueId),
+    queryFn: async () => (await api.listClosures(organizationId, venueId)).closures,
     enabled: organizationId.length > 0 && venueId.length > 0,
   });
 
@@ -180,6 +196,16 @@ export function VenuePage() {
     });
     void queryClient.invalidateQueries({
       queryKey: queryKeys.blackouts(organizationId, venueId, selectedSpaceId),
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
+  }
+
+  function invalidateBusinessHours() {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.businessHours(organizationId, venueId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.closures(organizationId, venueId),
     });
     void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
   }
@@ -274,6 +300,67 @@ export function VenuePage() {
     onSuccess: () => {
       setNotice("Atributo de cobertura atualizado.");
       invalidateSpaces();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const businessHourMutation = useMutation({
+    mutationFn: () =>
+      api.createBusinessHour(organizationId, venueId, {
+        weekday: businessWeekday,
+        opens_at: `${opensAt}:00`,
+        closes_at: `${closesAt}:00`,
+      }),
+    onSuccess: () => {
+      setNotice("Expediente adicionado. O prazo T2 passa a contar nesse horário.");
+      invalidateBusinessHours();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const deleteBusinessHourMutation = useMutation({
+    mutationFn: (id: string) => api.deleteBusinessHour(organizationId, venueId, id),
+    onSuccess: () => {
+      setNotice("Expediente removido.");
+      invalidateBusinessHours();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const closureMutation = useMutation({
+    mutationFn: () =>
+      api.createClosure(organizationId, venueId, {
+        starts_at: new Date(closureStart).toISOString(),
+        ends_at: new Date(closureEnd).toISOString(),
+        reason: closureReason,
+      }),
+    onSuccess: () => {
+      setClosureStart("");
+      setClosureEnd("");
+      setClosureReason("");
+      setNotice("Fechamento adicionado.");
+      invalidateBusinessHours();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const deleteClosureMutation = useMutation({
+    mutationFn: (id: string) => api.deleteClosure(organizationId, venueId, id),
+    onSuccess: () => {
+      setNotice("Fechamento removido.");
+      invalidateBusinessHours();
     },
     onError: (caught) => {
       setNotice(null);
@@ -421,6 +508,10 @@ export function VenuePage() {
     availabilityMutation.isPending ||
     updateAvailabilityMutation.isPending ||
     updateSpaceMutation.isPending ||
+    businessHourMutation.isPending ||
+    deleteBusinessHourMutation.isPending ||
+    closureMutation.isPending ||
+    deleteClosureMutation.isPending ||
     blackoutMutation.isPending ||
     uploadMutation.isPending ||
     reviewMutation.isPending ||
@@ -777,6 +868,156 @@ export function VenuePage() {
                       </div>
                       <button type="submit" className="button button--primary" disabled={busy}>
                         Adicionar janela
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="card">
+                    <h2>Expediente e fechamentos</h2>
+                    <p className="muted">
+                      O prazo de resposta da quadra (T2) conta somente dentro deste expediente.
+                      Sem expediente cadastrado, o backend continua usando tempo corrido.
+                    </p>
+                    {businessHoursQuery.isPending ? (
+                      <LoadingBlock label="Carregando expediente..." />
+                    ) : (businessHoursQuery.data ?? []).length === 0 ? (
+                      <EmptyState title="Nenhum expediente">
+                        Cadastre os dias e horários em que a quadra responde solicitações.
+                      </EmptyState>
+                    ) : (
+                      <ul className="schedule-list">
+                        {(businessHoursQuery.data ?? []).map((item) => (
+                          <li key={item.id} className="schedule-row">
+                            <span>
+                              <strong>{weekdayLabel(item.weekday)}</strong>
+                              <small>
+                                {item.opens_at.slice(0, 5)}–{item.closes_at.slice(0, 5)}
+                              </small>
+                            </span>
+                            <button
+                              type="button"
+                              className="button button--small button--danger"
+                              disabled={busy}
+                              onClick={() => deleteBusinessHourMutation.mutate(item.id)}
+                            >
+                              Remover
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <form
+                      className="form form--inline"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        businessHourMutation.mutate();
+                      }}
+                    >
+                      <h3>Novo expediente</h3>
+                      <div className="form-row">
+                        <label className="field">
+                          <span>Dia</span>
+                          <select
+                            value={businessWeekday}
+                            onChange={(event) => setBusinessWeekday(Number(event.target.value))}
+                          >
+                            {WEEKDAYS.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Abre</span>
+                          <input
+                            type="time"
+                            value={opensAt}
+                            onChange={(event) => setOpensAt(event.target.value)}
+                            required
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Fecha</span>
+                          <input
+                            type="time"
+                            value={closesAt}
+                            onChange={(event) => setClosesAt(event.target.value)}
+                            required
+                          />
+                        </label>
+                      </div>
+                      <button type="submit" className="button button--primary" disabled={busy}>
+                        Adicionar expediente
+                      </button>
+                    </form>
+
+                    <h3>Fechamentos e feriados</h3>
+                    {(closuresQuery.data ?? []).length === 0 ? (
+                      <EmptyState title="Nenhum fechamento">
+                        Feriados e recessos aparecem aqui.
+                      </EmptyState>
+                    ) : (
+                      <ul className="schedule-list">
+                        {(closuresQuery.data ?? []).map((item) => (
+                          <li key={item.id} className="schedule-row">
+                            <span>
+                              <strong>{item.reason}</strong>
+                              <small>
+                                {formatDate(item.starts_at)} — {formatDate(item.ends_at)}
+                              </small>
+                            </span>
+                            <button
+                              type="button"
+                              className="button button--small button--danger"
+                              disabled={busy}
+                              onClick={() => deleteClosureMutation.mutate(item.id)}
+                            >
+                              Remover
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <form
+                      className="form form--inline"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        closureMutation.mutate();
+                      }}
+                    >
+                      <div className="form-row">
+                        <label className="field">
+                          <span>Início</span>
+                          <input
+                            type="datetime-local"
+                            value={closureStart}
+                            onChange={(event) => setClosureStart(event.target.value)}
+                            required
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Fim</span>
+                          <input
+                            type="datetime-local"
+                            value={closureEnd}
+                            onChange={(event) => setClosureEnd(event.target.value)}
+                            required
+                          />
+                        </label>
+                      </div>
+                      <label className="field">
+                        <span>Motivo</span>
+                        <input
+                          type="text"
+                          value={closureReason}
+                          onChange={(event) => setClosureReason(event.target.value)}
+                          maxLength={200}
+                          required
+                        />
+                      </label>
+                      <button type="submit" className="button button--primary" disabled={busy}>
+                        Adicionar fechamento
                       </button>
                     </form>
                   </div>

@@ -11,7 +11,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | PSP de produção (Inter PJ) | 14B | Sem Pix real, estorno, repasse e conciliação | Contratar conta PJ, validar taxa de 0,90% e perfil transacional |
 | KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
-| Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
+| Push real | 10/19 | Notificações de prazo e resultado | **Dispatcher por webhook implementado (13E)**; configurar APNs/FCM e worker real |
 | Central de notificações | 9D | Backend implementado; falta consumir no app e no painel | Ligar telas e testar marcação de leitura |
 | Mapas | 10/19 | Camada visual de descoberta | Pode esperar; usar lista/distância no início |
 | CNPJ/MEI e revisão jurídica | 14B/19 | Dinheiro real e contratos | Definir entidade, contador e parecer jurídico |
@@ -21,7 +21,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 
 | Pendência | Fase | Estado |
 |---|---|---|
-| T2 em horário comercial | 14B | Hoje usa tempo corrido; falta calendário, feriados e dias fechados |
+| T2 em horário comercial | 13E/14B | **Implementado localmente**: expediente semanal, fechamentos e teto em tempo corrido; falta validar feriados reais com os primeiros estabelecimentos |
 | T2 máximo de 60 min | 13B/14B | **Implementado** em 2026-11-09 (ADR 0039) |
 | T3 configurável por estabelecimento | 13B/14B | Hoje usa configuração global |
 | Política consolidada de cancelamento, substituição e ausência | 14B/15 | **Definida na ADR 0039**, que supera a ADR 0038; fatia 1 implementada, demais fatias pendentes |
@@ -41,7 +41,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Janela de disputa antes da liberação | 15 | Contestação `OPEN` suspende a liberação na proposta técnica; prazos **não definidos** |
 | Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; recibos e comprovantes fiscais pendentes |
 | Interface financeira completa do estabelecimento | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
-| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine e criação de reserva prontas no backend; app ainda precisa ligar as telas a `discovery` e `POST /bookings` | Implementar consumo no mobile |
+| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine, criação explícita, `POST /bookings/from-lobby` e notificações prontos no backend; app ainda precisa ligar as telas | Implementar consumo no mobile |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
 | Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |

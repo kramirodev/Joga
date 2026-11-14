@@ -43,6 +43,10 @@ class BookingCreate(BaseModel):
     ends_at: datetime
 
 
+class BookingFromLobby(BaseModel):
+    lobby_id: UUID
+
+
 class ParticipantConfirmation(BaseModel):
     decision: Literal["CONFIRM", "DECLINE"]
 
@@ -318,6 +322,27 @@ def create_booking(
             starts_at=payload.starts_at,
             ends_at=payload.ends_at,
         )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _view(bundle, viewer_user_id=current.user_id)
+
+
+@router.post(
+    "/bookings/from-lobby",
+    response_model=BookingView,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_booking_from_lobby(
+    payload: BookingFromLobby,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> BookingView:
+    """Escolhe automaticamente a quadra comercial elegível para o lobby."""
+    service = BookingService(session)
+    try:
+        bundle = service.create_from_lobby(current.user_id, payload.lobby_id)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()

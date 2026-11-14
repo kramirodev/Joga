@@ -109,6 +109,9 @@ function stubApi(role: Role, canReview: boolean) {
     }
     if (url.includes("/availability")) return jsonResponse({ availability: [] });
     if (url.includes("/blackouts")) return jsonResponse({ blackouts: [] });
+    if (url.endsWith("/business-hours")) return jsonResponse({ business_hours: [] });
+    if (url.endsWith("/closures")) return jsonResponse({ closures: [] });
+    if (url.endsWith("/api/v1/pricing/bands")) return jsonResponse({ bands: [] });
     return jsonResponse({ detail: { code: "not_found" } });
   });
   vi.stubGlobal("fetch", fetchMock);

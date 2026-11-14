@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     mercado_pago_notification_url: str | None = Field(default=None, max_length=500)
     psp_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
+    # Push: transporte externo. O webhook é um adaptador operacional; a
+    # central de notificações continua sendo a fonte de verdade.
+    push_webhook_url: str | None = Field(default=None, max_length=500)
+    push_timeout_seconds: int = Field(default=5, ge=1, le=30)
+
     # Liberação ao estabelecimento: no horário da partida (ADR 0039). O atraso
     # opcional existe apenas para operação; o padrão é zero.
     release_delay_hours: int = Field(default=2, ge=0, le=720)

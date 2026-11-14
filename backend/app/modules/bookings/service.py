@@ -24,9 +24,10 @@ from app.modules.bookings.models import (
     BookingTimer,
 )
 from app.modules.identity.audit import record_audit
-from app.modules.identity.clock import utcnow
+from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
+from app.modules.matchmaking.policy import haversine_km
 from app.modules.notifications.service import NotificationService
 from app.modules.organizations.models import (
     Organization,
@@ -54,7 +55,15 @@ from app.modules.season.service import (
     week_start,
 )
 from app.modules.tickets.service import InsufficientTickets, consume, refund
-from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
+from app.modules.venues.business_hours import business_deadline
+from app.modules.venues.models import (
+    VenueAvailability,
+    VenueBlackout,
+    VenueBusinessHour,
+    VenueClosure,
+    VenueSpace,
+    VenueSport,
+)
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 SPACE_BLOCKING_STATUSES = frozenset(
@@ -180,10 +189,10 @@ class BookingService:
         now = utcnow()
         settings = get_settings()
         t1 = timedelta(minutes=settings.booking_t1_minutes)
-        t2 = timedelta(minutes=settings.booking_t2_minutes)
+        t2_reserve = timedelta(minutes=settings.booking_t2_max_minutes)
         t3 = timedelta(minutes=settings.booking_t3_minutes)
         buffer = timedelta(minutes=settings.booking_payment_buffer_minutes)
-        if now + t1 + t2 + t3 + buffer >= starts_at:
+        if now + t1 + t2_reserve + t3 + buffer >= starts_at:
             raise BookingConflict("insufficient_lead_time")
 
         booking = Booking(
@@ -235,7 +244,7 @@ class BookingService:
                 timer_type="T1",
                 status="RUNNING",
                 started_at=now,
-                deadline_at=min(now + t1, starts_at - t2 - t3 - buffer),
+                deadline_at=min(now + t1, starts_at - t2_reserve - t3 - buffer),
             )
         )
         self._event(
@@ -1069,6 +1078,124 @@ class BookingService:
 
     # -- leitura ------------------------------------------------------------
 
+    def create_from_lobby(
+        self,
+        actor_user_id: uuid.UUID,
+        lobby_id: uuid.UUID,
+    ) -> BookingBundle:
+        """Escolhe a quadra comercial elegível e cria a reserva do lobby.
+
+        Ordena por distância ao centro do lobby e depois por preço. A escolha
+        explícita continua disponível em ``POST /bookings``.
+        """
+
+        existing = self.session.scalar(select(Booking).where(Booking.lobby_id == lobby_id))
+        if existing is not None:
+            self._require_access(actor_user_id, existing)
+            return self._bundle(existing)
+
+        lobby = self.session.get(Lobby, lobby_id)
+        if lobby is None:
+            raise BookingNotFound
+        if lobby.status != "scheduled":
+            raise BookingInvalid
+        if lobby.court_preference == "PUBLIC_ONLY":
+            raise BookingConflict("no_bookable_space")
+        participants = list(
+            self.session.scalars(
+                select(LobbyParticipant).where(LobbyParticipant.lobby_id == lobby.id)
+            ).all()
+        )
+        if not any(item.user_id == actor_user_id for item in participants):
+            raise BookingForbidden
+        format_ = self.session.get(SportFormat, lobby.format_id)
+        if format_ is None:
+            raise BookingInvalid
+
+        candidates = self._bookable_candidates(lobby, format_)
+        if not candidates:
+            raise BookingConflict("no_bookable_space")
+        last_conflict: BookingConflict | None = None
+        for venue, space, _distance in candidates:
+            try:
+                return self.create(
+                    actor_user_id,
+                    lobby_id=lobby.id,
+                    organization_venue_id=venue.id,
+                    venue_space_id=space.id,
+                    starts_at=ensure_utc(lobby.scheduled_start_at),
+                    ends_at=ensure_utc(lobby.scheduled_end_at),
+                )
+            except BookingConflict as exc:
+                last_conflict = exc
+                continue
+        raise last_conflict or BookingConflict("no_bookable_space")
+
+    def _bookable_candidates(
+        self,
+        lobby: Lobby,
+        format_: SportFormat,
+    ) -> list[tuple[OrganizationVenue, VenueSpace, float | None]]:
+        rows = self.session.execute(
+            select(OrganizationVenue, VenueSpace)
+            .join(Organization, Organization.id == OrganizationVenue.organization_id)
+            .join(VenueSpace, VenueSpace.organization_venue_id == OrganizationVenue.id)
+            .join(VenueSport, VenueSport.venue_space_id == VenueSpace.id)
+            .where(
+                Organization.status == "active",
+                OrganizationVenue.status == "active",
+                VenueSpace.status == "active",
+                VenueSport.sport_id == format_.sport_id,
+            )
+            .order_by(OrganizationVenue.name, VenueSpace.name)
+        ).all()
+
+        candidates: list[tuple[OrganizationVenue, VenueSpace, float | None]] = []
+        start = ensure_utc(lobby.scheduled_start_at)
+        end = ensure_utc(lobby.scheduled_end_at)
+        for venue, space in rows:
+            organization = self.session.get(Organization, venue.organization_id)
+            if organization is None or not payout_ready(organization):
+                continue
+            if venue.latitude is not None and venue.longitude is not None:
+                distance = haversine_km(
+                    lobby.center_lat,
+                    lobby.center_lng,
+                    venue.latitude,
+                    venue.longitude,
+                )
+                if distance > lobby.radius_km:
+                    continue
+            else:
+                distance = None
+            try:
+                self._validate_space_window(venue, space, start, end, check_hold=True)
+            except BookingError:
+                continue
+            candidates.append((venue, space, distance))
+
+        candidates.sort(
+            key=lambda item: (
+                item[2] is None,
+                item[2] if item[2] is not None else 0.0,
+                self._space_price(item[1], item[0], start, end),
+                str(item[1].id),
+            )
+        )
+        return candidates
+
+    def _space_price(
+        self,
+        space: VenueSpace,
+        venue: OrganizationVenue,
+        start: datetime,
+        end: datetime,
+    ) -> int:
+        try:
+            return self._validate_space_window(venue, space, start, end, check_hold=False)
+        except BookingError:
+            return 10_000_000
+
     def get(self, actor_user_id: uuid.UUID, booking_id: uuid.UUID) -> BookingBundle:
         booking = self.session.get(Booking, booking_id)
         if booking is None:
@@ -1234,8 +1361,32 @@ class BookingService:
         settings = get_settings()
         now = utcnow()
         previous = booking.status
+        venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
+        if venue is None:
+            raise BookingInvalid
+        hours = list(
+            self.session.scalars(
+                select(VenueBusinessHour).where(VenueBusinessHour.organization_venue_id == venue.id)
+            ).all()
+        )
+        closures = list(
+            self.session.scalars(
+                select(VenueClosure).where(
+                    VenueClosure.organization_venue_id == venue.id,
+                    VenueClosure.ends_at > now,
+                )
+            ).all()
+        )
+        deadline = business_deadline(
+            now,
+            settings.booking_t2_minutes,
+            settings.booking_t2_max_minutes,
+            hours,
+            closures,
+            timezone=venue.timezone,
+        )
         booking.status = "REQUESTED"
-        booking.response_due_at = now + timedelta(minutes=settings.booking_t2_minutes)
+        booking.response_due_at = deadline
         self._finish_timer(booking.id, "T1", "COMPLETED", now)
         self.session.add(
             BookingTimer(

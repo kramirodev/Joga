@@ -301,6 +301,12 @@ Notificações têm retenção provisória de 180 dias:
 .venv\Scripts\python.exe -m scripts.cleanup_notifications --dry-run
 ```
 
+Dispatcher de push (requer `JOGA_PUSH_WEBHOOK_URL`):
+
+```powershell
+.venv\Scripts\python.exe -m scripts.dispatch_notifications --loop --interval 30
+```
+
 ## 4.1 Observabilidade, carga e backup
 
 Todas as respostas HTTP incluem `X-Request-ID` (eco de um valor seguro do cliente ou um ID novo). Os logs `joga.http` registram método, rota, status, duração e request ID, sem query string, corpo, tokens ou telefone.
@@ -426,6 +432,8 @@ O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A 
 ### Reservas e temporizadores (Fase 13A)
 
 - Endpoints: `POST/GET /api/v1/bookings`, `GET /api/v1/bookings/{id}`, confirmação de participante, substituição, cancelamento e pagamento simulado; no painel, `GET /api/v1/organizations/{org}/bookings` e ações de aceite/recusa/conclusão.
+- Reserva automática: `POST /api/v1/bookings/from-lobby` escolhe quadra ativa, compatível, com payout e sem conflito.
+- Expediente e T2: `GET/POST /organizations/{org}/venues/{venue}/business-hours`, `GET/POST .../closures`; o painel usa esses endpoints e o T2 passa a contar minutos úteis, limitado por `JOGA_BOOKING_T2_MAX_MINUTES`.
 - T1 começa na criação; T2 começa quando todas as vagas confirmam; T3 começa no aceite com hold ativo. Os prazos são independentes e controlados pelo backend.
 - T2 usa tempo corrido nesta fase; horário comercial e feriados ficam pendentes.
 - O pagamento é simulado apenas em ambiente `local`/`test`/`development`/`ci`; nenhum PSP real é acionado.

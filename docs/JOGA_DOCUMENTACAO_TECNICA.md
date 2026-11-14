@@ -854,7 +854,7 @@ Em PostgreSQL, a proteção pode usar constraint de exclusão por intervalo (`ts
 
 **T1 — confirmação de participação.** Prazo inicial de 1 hora para os jogadores confirmarem que pretendem participar. Controlado pelo backend.
 
-**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio.
+**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio. A **13E** implementa expediente semanal, fechamentos excepcionais e o teto `JOGA_BOOKING_T2_MAX_MINUTES`; sem expediente cadastrado, o cálculo cai para tempo corrido.
 
 **T3 — bloqueio e pagamento.** 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos para conciliação. As cobranças são abertas depois do aceite e do bloqueio.
 

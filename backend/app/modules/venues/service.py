@@ -29,6 +29,8 @@ from app.modules.profile.models import Sport
 from app.modules.venues.models import (
     VenueAvailability,
     VenueBlackout,
+    VenueBusinessHour,
+    VenueClosure,
     VenuePhoto,
     VenueSpace,
     VenueSport,
@@ -537,6 +539,170 @@ class VenueService:
             "venue_blackout",
             blackout_id,
             {"space_id": str(space.id)},
+        )
+        self.session.flush()
+
+    # -- expediente e fechamentos ---------------------------------------
+
+    def list_business_hours(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+    ) -> Sequence[VenueBusinessHour]:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_READ
+        )
+        return self.session.scalars(
+            select(VenueBusinessHour)
+            .where(VenueBusinessHour.organization_venue_id == venue.id)
+            .order_by(VenueBusinessHour.weekday, VenueBusinessHour.opens_at)
+        ).all()
+
+    def create_business_hour(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+        *,
+        weekday: int,
+        opens_at: time,
+        closes_at: time,
+    ) -> VenueBusinessHour:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
+        )
+        if not 1 <= weekday <= 7 or opens_at >= closes_at:
+            raise VenueInvalid
+        row = VenueBusinessHour(
+            organization_venue_id=venue.id,
+            weekday=weekday,
+            opens_at=opens_at,
+            closes_at=closes_at,
+        )
+        self.session.add(row)
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            raise VenueConflict("business_hour_conflict") from exc
+        self._audit(
+            actor_user_id,
+            organization_id,
+            "venue_business_hour.created",
+            "venue_business_hour",
+            row.id,
+            {
+                "weekday": weekday,
+                "opens_at": opens_at.isoformat(),
+                "closes_at": closes_at.isoformat(),
+            },
+        )
+        return row
+
+    def delete_business_hour(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+        business_hour_id: uuid.UUID,
+    ) -> None:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
+        )
+        row = self.session.scalar(
+            select(VenueBusinessHour).where(
+                VenueBusinessHour.id == business_hour_id,
+                VenueBusinessHour.organization_venue_id == venue.id,
+            )
+        )
+        if row is None:
+            raise VenueInvalid
+        self.session.delete(row)
+        self._audit(
+            actor_user_id,
+            organization_id,
+            "venue_business_hour.deleted",
+            "venue_business_hour",
+            business_hour_id,
+            {"weekday": row.weekday},
+        )
+        self.session.flush()
+
+    def list_closures(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+    ) -> Sequence[VenueClosure]:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_READ
+        )
+        return self.session.scalars(
+            select(VenueClosure)
+            .where(VenueClosure.organization_venue_id == venue.id)
+            .order_by(VenueClosure.starts_at)
+        ).all()
+
+    def create_closure(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+        *,
+        starts_at: datetime,
+        ends_at: datetime,
+        reason: str,
+    ) -> VenueClosure:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
+        )
+        if ends_at <= starts_at:
+            raise VenueInvalid
+        row = VenueClosure(
+            organization_venue_id=venue.id,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            reason=_clean_name(reason, max_length=200),
+            created_by=actor_user_id,
+        )
+        self.session.add(row)
+        self.session.flush()
+        self._audit(
+            actor_user_id,
+            organization_id,
+            "venue_closure.created",
+            "venue_closure",
+            row.id,
+            {"starts_at": starts_at.isoformat(), "ends_at": ends_at.isoformat()},
+        )
+        return row
+
+    def delete_closure(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+        closure_id: uuid.UUID,
+    ) -> None:
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
+        )
+        row = self.session.scalar(
+            select(VenueClosure).where(
+                VenueClosure.id == closure_id,
+                VenueClosure.organization_venue_id == venue.id,
+            )
+        )
+        if row is None:
+            raise VenueInvalid
+        self.session.delete(row)
+        self._audit(
+            actor_user_id,
+            organization_id,
+            "venue_closure.deleted",
+            "venue_closure",
+            closure_id,
+            {},
         )
         self.session.flush()
 

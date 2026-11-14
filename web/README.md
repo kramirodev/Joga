@@ -10,7 +10,7 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
 - Cadastro de destino de repasse (CNPJ e chave Pix) e status de prontidão.
-- Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios e fotos de quadra com revisão.
+- Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios, expediente, fechamentos e fotos de quadra com revisão.
 - Reservas: lista por organização, aceite/recusa, cancelamento, reembolso, presença e conclusão; T1/T2/T3 controlados pelo backend.
 - Financeiro: resumo, repasses a receber, extrato e contestação.
 - Sem PSP de produção, KYC contratual, clãs, moderação ou publicidade.

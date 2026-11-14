@@ -156,7 +156,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 13 — Reservas e temporizadores
 
-**Status:** 13A (backend de reservas, holds e T1/T2/T3), 13B (painel mobile de reservas e ajustes de painel), 13C (vitrine reservável, criação ponta a ponta, portão de payout e snapshot de faixa/ingressos) e 13D (payout, cobertura, reajuste, cancelamento, reembolso e presença no painel) implementados e validados localmente. Criação automática a partir do lobby, T2 em horário comercial, telas do app ligadas à vitrine, notificações e pagamentos reais pendentes.
+**Status:** 13A (backend de reservas, holds e T1/T2/T3), 13B (painel mobile de reservas e ajustes de painel), 13C (vitrine reservável, criação ponta a ponta, portão de payout e snapshot de faixa/ingressos), 13D (payout, cobertura, reajuste, cancelamento, reembolso e presença no painel) e 13E (T2 em horário comercial, reserva automática do lobby e dispatcher de notificações) implementados e validados localmente. Criação automática a partir do lobby, telas do app ligadas à vitrine, push real e pagamentos reais ainda pendentes.
 
 **Escopo:** solicitação de reserva ao estabelecimento, aceite/recusa, bloqueio temporário do espaço específico, T1 (confirmação de participação), T2 (resposta do estabelecimento), T3 (bloqueio e confirmação do acesso), expiração, substituição de participantes, cancelamento antes da confirmação, origem `JOGA` e máquina de estados auditável. **No fluxo de ingresso não há cobrança na reserva:** o ingresso é consumido na confirmação (ADR 0042). O fluxo de reserva avulsa mantém a cobrança por participante.
 

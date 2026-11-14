@@ -141,6 +141,31 @@ Regras:
 - erro `409 payout_not_ready` quando falta CNPJ/chave Pix ou o status não é `active`;
 - a criação é idempotente por `lobby_id`.
 
+### 3.1 Criação automática a partir do lobby
+
+```http
+POST /api/v1/bookings/from-lobby
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"lobby_id": "uuid"}
+```
+
+O backend escolhe uma quadra ativa, compatível com o formato, dentro do raio do
+lobby, com `payout_ready` e sem conflito de agenda. A ordenação é por distância
+e depois por preço. Retorna `409 no_bookable_space` se não houver candidata.
+
+### 3.2 Expediente do estabelecimento
+
+O painel usa:
+
+- `GET/POST /api/v1/organizations/{org}/venues/{venue}/business-hours`
+- `DELETE /api/v1/organizations/{org}/venues/{venue}/business-hours/{id}`
+- `GET/POST /api/v1/organizations/{org}/venues/{venue}/closures`
+- `DELETE /api/v1/organizations/{org}/venues/{venue}/closures/{id}`
+
+O T2 conta minutos úteis no expediente e respeita o teto em tempo corrido.
+
 ## 4. Campos aditivos em `BookingView`
 
 ```json
@@ -169,6 +194,7 @@ Regras:
 | Código | HTTP | Significado |
 |---|---:|---|
 | `payout_not_ready` | 409 | Estabelecimento sem chave/CNPJ ativo para repasse |
+| `no_bookable_space` | 409 | Lobby sem quadra comercial elegível |
 | `space_unavailable` | 409 | Agenda, blackout, hold ou reserva conflita |
 | `insufficient_lead_time` | 409 | Não há tempo para T1/T2/T3 antes do início |
 | `tickets_not_configured` | 409 | Faixa não tem tabela para o formato |

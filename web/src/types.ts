@@ -111,6 +111,29 @@ export interface VenueBlackoutListResponse {
   blackouts: VenueBlackout[];
 }
 
+export interface BusinessHour {
+  id: string;
+  weekday: number;
+  opens_at: string;
+  closes_at: string;
+}
+
+export interface BusinessHourListResponse {
+  business_hours: BusinessHour[];
+}
+
+export interface VenueClosure {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface VenueClosureListResponse {
+  closures: VenueClosure[];
+}
+
 export interface VenuePhoto {
   id: string;
   venue_id: string;

@@ -6,9 +6,11 @@ import uuid
 from datetime import datetime
 from typing import Protocol
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.social.models import DevicePushToken
 
@@ -31,6 +33,41 @@ class RecordingPushSender:
 
     def send(self, *, token: str, title: str, body: str, data: dict[str, str]) -> None:
         self.sent.append({"token": token, "title": title, "body": body, "data": data})
+
+
+class WebhookPushSender:
+    """Envia o push para um worker/webhook externo.
+
+    Não é um provedor APNs/FCM: é uma ponte operacional substituível. O worker
+    externo decide como entregar e nunca é fonte de verdade do estado.
+    """
+
+    def __init__(self, url: str, *, timeout_seconds: int = 5) -> None:
+        self.url = url
+        self.client = httpx.Client(timeout=timeout_seconds)
+
+    def close(self) -> None:
+        self.client.close()
+
+    def send(self, *, token: str, title: str, body: str, data: dict[str, str]) -> None:
+        try:
+            response = self.client.post(
+                self.url,
+                json={"token": token, "title": title, "body": body, "data": data},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PushError("falha no webhook de push") from exc
+
+
+def build_webhook_push_sender() -> WebhookPushSender | None:
+    settings = get_settings()
+    if not settings.push_webhook_url:
+        return None
+    return WebhookPushSender(
+        settings.push_webhook_url,
+        timeout_seconds=settings.push_timeout_seconds,
+    )
 
 
 class PushService:
