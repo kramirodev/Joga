@@ -17,6 +17,10 @@ export interface Organization {
   name: string;
   status: string;
   role: Role;
+  payout_ready: boolean;
+  payout_status: string;
+  pix_key_type: string | null;
+  pix_key_masked: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -67,6 +71,7 @@ export interface VenueSpace {
   venue_id: string;
   name: string;
   description: string | null;
+  is_covered: boolean;
   status: "active" | "inactive";
   sports: VenueSport[];
   created_at: string;
@@ -85,6 +90,7 @@ export interface VenueAvailability {
   end_time: string;
   price_cents: number;
   slot_minutes: number;
+  band_id: string | null;
 }
 
 export interface VenueAvailabilityListResponse {
@@ -138,6 +144,11 @@ export interface BookingParticipant {
   confirmed_at: string | null;
   declined_at: string | null;
   replaced_by_user_id: string | null;
+  settled_with: string | null;
+  tickets_consumed: number;
+  presence_status: string;
+  presence_method: string | null;
+  presence_confirmed_at: string | null;
 }
 
 export interface BookingTimer {
@@ -172,6 +183,13 @@ export interface Booking {
   organization_id: string;
   organization_venue_id: string;
   venue_space_id: string;
+  organization_venue_name: string | null;
+  venue_space_name: string | null;
+  format_id: string | null;
+  format_name: string | null;
+  band_code: string | null;
+  band_label: string | null;
+  tickets_per_seat: number | null;
   status: string;
   starts_at: string;
   ends_at: string;
@@ -188,6 +206,9 @@ export interface Booking {
   cancelled_at: string | null;
   expired_at: string | null;
   completed_at: string | null;
+  presence_closed_at: string | null;
+  players_per_team: number | null;
+  formation_note: string | null;
   cancellation_reason: string | null;
   created_at: string;
   updated_at: string;
@@ -314,4 +335,24 @@ export interface VerifyResponse {
   purpose: string;
   verified_at: string;
   receipt_expires_at: string;
+}
+
+export interface PricingBand {
+  id: string;
+  code: string;
+  label: string;
+  max_price_cents: number;
+  version: number;
+}
+
+export interface Presence {
+  user_id: string;
+  seat: number;
+  active: boolean;
+  pre_checked_in_at: string | null;
+  status: string;
+  method: string | null;
+  confirmed_at: string | null;
+  distance_m: number | null;
+  accuracy_m: number | null;
 }

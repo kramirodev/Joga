@@ -863,6 +863,51 @@ select:hover {
   flex-wrap: wrap;
 }
 
+.booking-details {
+  margin-top: 0.35rem;
+}
+
+.booking-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.booking-participants {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-participants li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.payout-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.payout-status small {
+  color: var(--muted);
+}
+
+.payout-status p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
 .audit-row {
   align-items: flex-start;
 }

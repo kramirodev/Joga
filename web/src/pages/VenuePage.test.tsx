@@ -13,6 +13,10 @@ const organization: Organization = {
   name: "Arena Tijuca",
   status: "active",
   role: "OWNER",
+  payout_ready: true,
+  payout_status: "active",
+  pix_key_type: "cnpj",
+  pix_key_masked: "****0001",
   created_at: "2026-11-01T12:00:00Z",
   updated_at: "2026-11-01T12:00:00Z",
 };
@@ -38,6 +42,7 @@ const space: VenueSpace = {
   venue_id: "venue-1",
   name: "Quadra 1",
   description: "Coberta",
+  is_covered: true,
   status: "active",
   sports: [{ id: "sport-1", slug: "futebol", name: "Futebol" }],
   created_at: "2026-11-01T12:00:00Z",

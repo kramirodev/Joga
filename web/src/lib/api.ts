@@ -11,6 +11,8 @@ import type {
   Organization,
   OrganizationFinancialSummary,
   OrganizationListResponse,
+  Presence,
+  PricingBand,
   ReceivableListResponse,
   Role,
   SportCatalogResponse,
@@ -281,6 +283,16 @@ export const api = {
     });
   },
 
+  updatePayout(
+    organizationId: string,
+    payload: { legal_document: string; pix_key_type: string; pix_key: string },
+  ): Promise<Organization> {
+    return request<Organization>(`/organizations/${encodeURIComponent(organizationId)}/payout`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
   listMembers(organizationId: string): Promise<MemberListResponse> {
     return request<MemberListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/members`,
@@ -432,8 +444,57 @@ export const api = {
     );
   },
 
+  cancelBookingByVenue(
+    organizationId: string,
+    bookingId: string,
+    reason: string,
+  ): Promise<Booking> {
+    return request<Booking>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/cancel`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+
+  refundBooking(
+    organizationId: string,
+    bookingId: string,
+    reason: string,
+  ): Promise<{ refunded: number }> {
+    return request<{ refunded: number }>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/refund`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+
+  listPresence(bookingId: string): Promise<{ participants: Presence[] }> {
+    return request<{ participants: Presence[] }>(
+      `/bookings/${encodeURIComponent(bookingId)}/presence`,
+    );
+  },
+
+  confirmPresence(bookingId: string, userId: string, method: "VENUE" | "GPS"): Promise<Presence> {
+    return request<Presence>(`/bookings/${encodeURIComponent(bookingId)}/presence`, {
+      method: "POST",
+      body: JSON.stringify({ target_user_id: userId, method }),
+    });
+  },
+
   listSports(): Promise<SportCatalogResponse> {
     return request<SportCatalogResponse>("/sports");
+  },
+
+  listBands(): Promise<{ bands: PricingBand[] }> {
+    return request<{ bands: PricingBand[] }>("/pricing/bands");
   },
 
   listSpaces(organizationId: string, venueId: string): Promise<VenueSpaceListResponse> {
@@ -443,7 +504,7 @@ export const api = {
   createSpace(
     organizationId: string,
     venueId: string,
-    payload: { name: string; description: string | null },
+    payload: { name: string; description: string | null; is_covered?: boolean },
   ): Promise<VenueSpace> {
     return request<VenueSpace>(`${venueBase(organizationId, venueId)}/spaces`, {
       method: "POST",
@@ -455,7 +516,7 @@ export const api = {
     organizationId: string,
     venueId: string,
     spaceId: string,
-    payload: Partial<Pick<VenueSpace, "name" | "description" | "status">>,
+    payload: Partial<Pick<VenueSpace, "name" | "description" | "status" | "is_covered">>,
   ): Promise<VenueSpace> {
     return request<VenueSpace>(
       `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}`,
@@ -514,6 +575,30 @@ export const api = {
       `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}/availability`,
       {
         method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  updateAvailability(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    availabilityId: string,
+    payload: Partial<{
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      slot_minutes: number;
+    }>,
+  ): Promise<VenueAvailability> {
+    return request<VenueAvailability>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(
+        spaceId,
+      )}/availability/${encodeURIComponent(availabilityId)}`,
+      {
+        method: "PATCH",
         body: JSON.stringify(payload),
       },
     );

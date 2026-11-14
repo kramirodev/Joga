@@ -83,6 +83,7 @@ export function VenuePage() {
 
   const [spaceName, setSpaceName] = useState("");
   const [spaceDescription, setSpaceDescription] = useState("");
+  const [spaceCovered, setSpaceCovered] = useState(false);
   const [sportDraft, setSportDraft] = useState<{ spaceId: string; ids: string[] } | null>(null);
   const [weekday, setWeekday] = useState(1);
   const [startTime, setStartTime] = useState("18:00");
@@ -116,6 +117,10 @@ export function VenuePage() {
     queryKey: queryKeys.sports,
     queryFn: async () => (await api.listSports()).sports,
   });
+  const bandsQuery = useQuery({
+    queryKey: queryKeys.bands,
+    queryFn: async () => (await api.listBands()).bands,
+  });
   const photosQuery = useQuery({
     queryKey: queryKeys.photos(organizationId, venueId),
     queryFn: () => api.listPhotos(organizationId, venueId),
@@ -123,6 +128,9 @@ export function VenuePage() {
   });
 
   const spaces = useMemo(() => spacesQuery.data ?? [], [spacesQuery.data]);
+  const bands = bandsQuery.data ?? [];
+  const bandLabel = (bandId: string | null) =>
+    bands.find((band) => band.id === bandId)?.label ?? "Faixa não configurada";
   const selectedSpaceId = selectedSpaceIdState ?? spaces[0]?.id ?? null;
   const selectedSpace = spaces.find((space) => space.id === selectedSpaceId) ?? null;
   const sportIds =
@@ -181,10 +189,12 @@ export function VenuePage() {
       api.createSpace(organizationId, venueId, {
         name: spaceName,
         description: spaceDescription.trim() || null,
+        is_covered: spaceCovered,
       }),
     onSuccess: (space) => {
       setSpaceName("");
       setSpaceDescription("");
+      setSpaceCovered(false);
       setSelectedSpaceId(space.id);
       setNotice("Quadra criada. Agora defina modalidades e agenda.");
       invalidateSpaces();
@@ -234,6 +244,36 @@ export function VenuePage() {
     onSuccess: () => {
       setNotice("Janela de agenda criada.");
       invalidateSchedule();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const updateAvailabilityMutation = useMutation({
+    mutationFn: ({ item, priceCents }: { item: VenueAvailability; priceCents: number }) =>
+      api.updateAvailability(organizationId, venueId, item.space_id, item.id, {
+        price_cents: priceCents,
+      }),
+    onSuccess: () => {
+      setNotice("Preço da janela atualizado. Reservas existentes mantêm o valor congelado.");
+      invalidateSchedule();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const updateSpaceMutation = useMutation({
+    mutationFn: (space: VenueSpace) =>
+      api.updateSpace(organizationId, venueId, space.id, {
+        is_covered: !space.is_covered,
+      }),
+    onSuccess: () => {
+      setNotice("Atributo de cobertura atualizado.");
+      invalidateSpaces();
     },
     onError: (caught) => {
       setNotice(null);
@@ -379,6 +419,8 @@ export function VenuePage() {
     deleteSpaceMutation.isPending ||
     sportsMutation.isPending ||
     availabilityMutation.isPending ||
+    updateAvailabilityMutation.isPending ||
+    updateSpaceMutation.isPending ||
     blackoutMutation.isPending ||
     uploadMutation.isPending ||
     reviewMutation.isPending ||
@@ -503,6 +545,9 @@ export function VenuePage() {
                             </small>
                           </span>
                           <span className="badge badge--muted">{space.status}</span>
+                          {space.is_covered ? (
+                            <span className="badge badge--active">Coberta</span>
+                          ) : null}
                         </button>
                       </li>
                     ))}
@@ -533,6 +578,14 @@ export function VenuePage() {
                       placeholder="Coberta, piso sintético..."
                     />
                   </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={spaceCovered}
+                      onChange={(event) => setSpaceCovered(event.target.checked)}
+                    />
+                    <span>Quadra coberta</span>
+                  </label>
                   <button type="submit" className="button button--primary" disabled={busy}>
                     Cadastrar quadra
                   </button>
@@ -555,6 +608,14 @@ export function VenuePage() {
                         <h2>{selectedSpace.name}</h2>
                         <p className="muted">{selectedSpace.description || "Sem descrição."}</p>
                       </div>
+                      <button
+                        type="button"
+                        className="button button--small"
+                        disabled={busy}
+                        onClick={() => updateSpaceMutation.mutate(selectedSpace)}
+                      >
+                        {selectedSpace.is_covered ? "Marcar descoberta" : "Marcar coberta"}
+                      </button>
                       <button
                         type="button"
                         className="button button--small button--danger"
@@ -618,9 +679,30 @@ export function VenuePage() {
                               <strong>{weekdayLabel(item.weekday)}</strong>
                               <small>
                                 {item.start_time.slice(0, 5)}–{item.end_time.slice(0, 5)} ·{" "}
-                                {money(item.price_cents)} · {item.slot_minutes} min
+                                {money(item.price_cents)} · {item.slot_minutes} min ·{" "}
+                                {bandLabel(item.band_id)}
                               </small>
                             </span>
+                            <button
+                              type="button"
+                              className="button button--small"
+                              disabled={busy}
+                              onClick={() => {
+                                const next = window.prompt(
+                                  "Novo preço da janela (R$). Reservas existentes mantêm o valor.",
+                                  String(item.price_cents / 100),
+                                );
+                                if (!next) return;
+                                const cents = Math.round(Number(next.replace(",", ".")) * 100);
+                                if (!Number.isFinite(cents) || cents <= 0) return;
+                                updateAvailabilityMutation.mutate({
+                                  item,
+                                  priceCents: cents,
+                                });
+                              }}
+                            >
+                              Reajustar
+                            </button>
                             <button
                               type="button"
                               className="button button--small button--danger"
