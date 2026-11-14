@@ -151,6 +151,16 @@ class Settings(BaseSettings):
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
 
+    # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
+    moderation_operators: str = ""
+    moderation_max_reports_per_day: int = Field(default=5, ge=1, le=50)
+
+    @property
+    def moderation_operator_ids(self) -> frozenset[str]:
+        return frozenset(
+            item.strip() for item in self.moderation_operators.split(",") if item.strip()
+        )
+
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")

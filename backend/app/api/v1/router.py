@@ -10,6 +10,7 @@ from app.api.v1.discovery import router as discovery_router
 from app.api.v1.health import router as health_router
 from app.api.v1.matches import router as matches_router
 from app.api.v1.matchmaking import router as matchmaking_router
+from app.api.v1.moderation import router as moderation_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.passes import router as passes_router
@@ -52,5 +53,6 @@ api_router.include_router(social_router)
 api_router.include_router(clans_router)
 api_router.include_router(stats_router)
 api_router.include_router(notifications_router)
+api_router.include_router(moderation_router)
 api_router.include_router(web_auth_router)
 api_router.include_router(ws_router)
