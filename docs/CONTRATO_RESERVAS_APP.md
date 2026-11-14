@@ -230,6 +230,8 @@ Content-Type: application/json
 - Histórico do denunciante: `GET /api/v1/moderation/reports/me`.
 - Medidas recebidas: `GET /api/v1/moderation/actions/me`.
 - Recurso: `POST /api/v1/moderation/actions/{action_id}/appeal`.
+- Tipos de medida: `WARNING`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
+- A conta suspensa não autentica; a reativação ocorre ao fim do prazo.
 
 A triagem é determinística (`rules_v1`), sem IA paga. A revisão é interna por CLI.
 

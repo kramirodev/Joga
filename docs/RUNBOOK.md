@@ -624,6 +624,22 @@ export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 
 A triagem é determinística (`rules_v1`) por categoria, reincidência e contexto; não há IA paga nem envio de texto a terceiros.
 
+Suspensão temporária (1–30 dias) e recurso:
+
+```bash
+.venv/bin/python -m scripts.review_moderation \
+  --decide <report-id> --decision SUSPEND_TEMP --days 3 \
+  --reason "Ameaça grave" --operator operador-1
+```
+
+Reativação e retenção:
+
+```bash
+.venv/bin/python -m scripts.reactivate_suspensions
+.venv/bin/python -m scripts.cleanup_moderation --dry-run
+.venv/bin/python -m scripts.cleanup_moderation
+```
+
 Os POSTs de relato, confirmação e evidência aplicam rate limit por usuário em janela fixa de 60 segundos. O limite padrão é 30 requisições e pode ser ajustado em `JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`; o excesso retorna `429 {"detail":{"code":"rate_limited"}}` com `Retry-After`.
 
 ## 9. Retomada em outro computador

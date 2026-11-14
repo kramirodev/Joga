@@ -112,11 +112,14 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 |---|---|---|
 | Denúncia de perfil no lobby | 17A | **Implementada**: categorias, até 5 mensagens do alvo, limite diário e triagem determinística |
 | Revisão humana | 17A | **Implementada por CLI** com `JOGA_MODERATION_OPERATORS`; painel interno separado pendente |
-| Medidas reversíveis | 17A | **Implementado**: aviso e restrição ranqueada; suspensão de conta fora desta fatia |
+| Medidas reversíveis | 17A/17B | **Implementado**: aviso, restrição ranqueada e suspensão temporária de 1–30 dias; suspensão permanente fora da fatia |
 | Recurso | 17A | **Implementado**: alvo recorre e outro operador decide; recurso aceito revoga a medida |
-| IA de moderação | 17B | **Não usar IA paga na 17A**; avaliar modelo local/open-source após dataset rotulado |
-| Denúncia falsa e limite por jogador | 17B | Definir consequência e limite |
-| Retenção/LGPD de contexto e evidências | 19 | Revisão jurídica |
+| IA de moderação | 17C | **Não usar IA paga**; avaliar modelo local/open-source após dataset rotulado |
+| Denúncia falsa e limite por jogador | 17B | **Implementado**: 3 improcedentes em 30 dias geram cooldown de 7 dias |
+| Suspensão temporária | 17B | **Implementada**: bloqueia autenticação e reativa por script ao fim do prazo |
+| Suspensão permanente | 17C | Pendente de política, dupla revisão e revisão jurídica |
+| Retenção/LGPD de contexto e evidências | 17B/19 | **Redação provisória em 180 dias**; revisão jurídica final pendente |
+| Painel interno de moderação | 17C | CLI implementada; painel separado pendente |
 
 ## Reescopo das Fases 11–15 (ADR 0042/0043)
 
