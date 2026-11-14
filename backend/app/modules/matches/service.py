@@ -19,6 +19,7 @@ from app.modules.matchmaking.policy import (
     haversine_km,
     windows_cover,
 )
+from app.modules.notifications.service import NotificationService
 from app.modules.profile.models import Availability, SportFormat
 from app.modules.season.service import (
     SeasonNotFound,
@@ -113,6 +114,17 @@ def create_match_for_lobby(
     session.flush()
     select_captains(session, match, lobby, rows, now=current)
     _record(session, match, None, "PENDING_CONFIRMATION", None, "match_formed")
+    NotificationService(session).create_many(
+        [item.user_id for item in rows],
+        kind="match_created",
+        title="Partida formada",
+        body=(
+            f"Confirme sua participação até {ensure_utc(match.confirmation_deadline).isoformat()}."
+        ),
+        idempotency_key_prefix=f"match_created:{match.id}",
+        data={"match_id": str(match.id)},
+        now=current,
+    )
     return match
 
 

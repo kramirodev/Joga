@@ -176,7 +176,39 @@ Regras:
 | `booking_not_found` | 404 | Reserva inexistente ou fora do acesso |
 | `forbidden` | 403 | Ator não participa do lobby/organização |
 
-## 6. O que ainda falta no app e no painel
+## 6. Central de notificações
+
+```http
+GET /api/v1/me/notifications?unread_only=false&limit=30&offset=0
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "notifications": [
+    {
+      "id": "uuid",
+      "kind": "booking_confirmed",
+      "title": "Reserva confirmada",
+      "body": "Todos os participantes quitaram a vaga.",
+      "data": {"booking_id": "uuid"},
+      "created_at": "2026-11-14T18:00:00Z",
+      "read_at": null
+    }
+  ],
+  "unread_count": 1,
+  "limit": 30,
+  "offset": 0
+}
+```
+
+- `GET /api/v1/me/notifications/unread-count`
+- `POST /api/v1/me/notifications/{id}/read`
+- `POST /api/v1/me/notifications/read-all`
+
+A notificação é persistida antes do push. O app deve tratar a lista como fonte de histórico e o push apenas como aviso.
+
+## 7. O que ainda falta no app e no painel
 
 - App: usar a vitrine, escolher espaço/horário e chamar `POST /bookings`.
 - App: exibir quitação por ingressos e a faixa congelada.

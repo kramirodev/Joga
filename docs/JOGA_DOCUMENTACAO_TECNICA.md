@@ -1040,6 +1040,8 @@ Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnic
 
 A **14D.16** materializa a unidade em lotes (`ticket_lots`): compra sem validade, passe com validade mensal e ingresso de nível com validade até o fim da temporada. O consumo segue `pass` → `free_level` → `purchase`; lote expirado não conta no saldo e devolução só restaura o lote ainda válido.
 
+A **9D** adiciona a central de notificações persistida em `/api/v1/me/notifications`, com contador de não lidas, marcação de leitura e evento `notification.created` na Outbox. Push continua sendo transporte externo e não é fonte de verdade.
+
 **Dois momentos distintos.** A compra do pacote ou do passe é um evento de caixa e cria **passivo** (`ingressos_emitidos`). O consumo ocorre na confirmação da reserva e extingue o passivo do jogador ao mesmo tempo em que reconhece a obrigação com o estabelecimento. Nenhum dos dois é receita no momento da compra.
 
 **Conta do ingresso (três buckets).** `custeio` (quadra, PSP, imposto, operação da reserva), `faturamento` (preço do pacote/passe) e `margem` (resíduo). A margem é sempre saída: `margem = (faturamento_reconhecido − custeio) / V`. Não existe campo de comissão de entrada.

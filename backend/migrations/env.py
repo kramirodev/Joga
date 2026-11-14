@@ -12,6 +12,7 @@ from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.matches import models as matches_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
+from app.modules.notifications import models as notifications_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
 from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.passes import models as passes_models  # noqa: F401

@@ -279,6 +279,7 @@ Padrões: contadores de rate limit 24 h; evidências 365 dias após o encerramen
 - `GET /api/v1/ws` abre o WebSocket autenticado por `Authorization: Bearer <token>`. O cliente envia `{"type":"subscribe","lobby_id":"..."}`.
 - `GET/POST /api/v1/friends`, `/api/v1/blocks`, `/api/v1/lobbies/{id}/invites` e `/api/v1/lobby-invites` cobrem amigos, bloqueios e convites.
 - `PUT /api/v1/push-tokens` registra token; o envio real depende de provedor autorizado.
+- `GET /api/v1/me/notifications`, `/unread-count`, `/{id}/read` e `/read-all` formam a central persistida; push é apenas transporte.
 
 Nesta fase o WebSocket entrega apenas conexões do processo atual. Para reiniciar após queda, o cliente busca o histórico pela API; Redis e fan-out multi-processo ficam para hardening/escala.
 
@@ -293,6 +294,12 @@ Set-Location C:\prog\joga\backend
 ```
 
 Padrões: mensagens de lobby 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. Eventos `PENDING`, convites pendentes/aceitos e tokens ativos são preservados.
+
+Notificações têm retenção provisória de 180 dias:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.cleanup_notifications --dry-run
+```
 
 ## 4.1 Observabilidade, carga e backup
 

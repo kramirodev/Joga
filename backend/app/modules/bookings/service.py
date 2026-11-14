@@ -27,7 +27,12 @@ from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
-from app.modules.organizations.models import Organization, OrganizationVenue
+from app.modules.notifications.service import NotificationService
+from app.modules.organizations.models import (
+    Organization,
+    OrganizationMembership,
+    OrganizationVenue,
+)
 from app.modules.organizations.permissions import Capability
 from app.modules.organizations.service import (
     Forbidden,
@@ -489,6 +494,13 @@ class BookingService:
             "PAYMENT_PENDING",
         )
         self._audit(actor_user_id, booking, "booking.accepted", {})
+        self._notify_participants(
+            booking,
+            "booking_accepted",
+            "Reserva aceita",
+            "A quadra aceitou a reserva. O pagamento ou a quitação por ingressos está aberto.",
+            now,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -523,6 +535,13 @@ class BookingService:
         )
         self._audit(
             actor_user_id, booking, "booking.declined", {"reason": booking.cancellation_reason}
+        )
+        self._notify_participants(
+            booking,
+            "booking_declined",
+            "Reserva recusada",
+            "A quadra recusou a solicitação. O lobby pode buscar outra quadra.",
+            utcnow(),
         )
         self.session.flush()
         return self._bundle(booking)
@@ -841,6 +860,13 @@ class BookingService:
         from app.modules.payments.financial import FinancialService
 
         FinancialService(self.session).ensure_release(booking.id)
+        self._notify_participants(
+            booking,
+            "booking_confirmed",
+            "Reserva confirmada",
+            "Todos os participantes quitaram a vaga. A reserva está confirmada.",
+            now,
+        )
 
     # -- cancelamento/conclusão --------------------------------------------
 
@@ -893,6 +919,20 @@ class BookingService:
             "booking.cancelled",
             {"status": target, "reason": booking.cancellation_reason},
         )
+        self._notify_participants(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva foi cancelada: {booking.cancellation_reason}",
+            now,
+        )
+        self._notify_org_members(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva foi cancelada: {booking.cancellation_reason}",
+            now,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -932,6 +972,13 @@ class BookingService:
             "booking.cancelled",
             {"status": "CANCELLED", "reason": booking.cancellation_reason},
         )
+        self._notify_participants(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva não se confirmou: {booking.cancellation_reason}",
+            moment,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -962,6 +1009,13 @@ class BookingService:
         self._award_season_progress(booking, present, booking.completed_at)
         self._event(booking, actor_user_id, "booking.completed", "CONFIRMED", "COMPLETED")
         self._audit(actor_user_id, booking, "booking.completed", {})
+        self._notify_participants(
+            booking,
+            "booking_completed",
+            "Partida concluída",
+            "A partida foi marcada como concluída pelo estabelecimento.",
+            booking.completed_at,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -1194,6 +1248,13 @@ class BookingService:
         )
         self._event(booking, actor_user_id, "booking.requested", previous, "REQUESTED")
         self._audit(actor_user_id, booking, "booking.requested", {})
+        self._notify_org_members(
+            booking,
+            "booking_requested",
+            "Nova solicitação de reserva",
+            f"Uma reserva foi solicitada para {booking.starts_at.isoformat()}.",
+            now,
+        )
 
     def _finish_timer(
         self, booking_id: uuid.UUID, timer_type: str, status: str, now: datetime
@@ -1358,6 +1419,50 @@ class BookingService:
             resource_type="booking",
             resource_id=booking.id,
             details=details,
+        )
+
+    def _notify_org_members(
+        self,
+        booking: Booking,
+        kind: str,
+        title: str,
+        body: str,
+        now: datetime,
+    ) -> None:
+        user_ids = list(
+            self.session.scalars(
+                select(OrganizationMembership.user_id).where(
+                    OrganizationMembership.organization_id == booking.organization_id
+                )
+            ).all()
+        )
+        NotificationService(self.session).create_many(
+            user_ids,
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key_prefix=f"{kind}:{booking.id}",
+            data={"booking_id": str(booking.id)},
+            now=now,
+        )
+
+    def _notify_participants(
+        self,
+        booking: Booking,
+        kind: str,
+        title: str,
+        body: str,
+        now: datetime | None,
+    ) -> None:
+        user_ids = [item.user_id for item in self._active_participants(booking.id)]
+        NotificationService(self.session).create_many(
+            user_ids,
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key_prefix=f"{kind}:{booking.id}",
+            data={"booking_id": str(booking.id)},
+            now=now,
         )
 
 
