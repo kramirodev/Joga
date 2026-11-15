@@ -107,3 +107,6 @@ Apresente:
 4. Riscos, limitações e decisões pendentes.
 5. Como reproduzir a validação.
 6. Confirmação de que não iniciou a próxima fase e não executou ações externas não autorizadas.
+7. O que o agente do app mobile precisa implementar ou ajustar para consumir a entrega.
+8. O que o agente do site/painel precisa implementar ou ajustar para consumir a entrega.
+9. Qual é a próxima fase do `PLANS.md`, com dependência e decisões pendentes.

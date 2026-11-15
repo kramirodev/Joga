@@ -1064,3 +1064,11 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Auditoria:** `venue.created`/`venue.updated` registram CEP e mudancas de proveniencia.
 - **Testes:** novo teste em `tests/test_organizations.py` para normalizacao, persistencia, rebaixamento para manual, cadastro sem CEP e erros 422; suite completa com **485 passed, 29 skipped**, `ruff` e `mypy` limpos, Alembic no head `e7f8a9b0c1d2`.
 - **Limites:** mapa/pino ajustavel, provedor pago e backfill de endereco continuam pendentes.
+
+### 2026-11-15 - Fechamento da Fase 17C: central interna do painel
+
+- **Endpoints dedicados:** `GET /moderation/notifications`, `GET /moderation/notifications/unread-count`, `POST /moderation/notifications/{id}/read` e `POST /moderation/notifications/read-all`, todos com `get_moderator`.
+- **Isolamento:** operam sempre `channel = "moderation"`; conta comum recebe `403 moderator_required`; notificacao de outro operador ou do canal `player` responde `404 notification_not_found`.
+- **App do jogador:** `GET /me/notifications` continua listando apenas `player`, sem parametro novo e sem mudanca de contrato.
+- **Teste:** novo caso em `tests/test_moderation.py` cobre autorizacao, leitura, contagem, `read-all` e isolamento entre operadores e canal.
+- **Fase 17:** backend concluido; restam classificador local, suspensao permanente e retencao/LGPD, todos dependentes de politica/dataset.

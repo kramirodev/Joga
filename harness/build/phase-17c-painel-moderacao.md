@@ -1,6 +1,9 @@
 # Fase 17C — Painel interno de moderação
 
-**Status:** implementado no backend e no painel web em 2026-11-14.
+**Status:** concluída no backend em 2026-11-15. O painel web já tem fila, decisão,
+recursos e gestão de operadores; a central de notificações internas está pronta no
+backend e falta consumi-la no painel. Itens de política e classificador local
+seguem listados em “Pendente”.
 **Depende de:** 17A (denúncias), 17B (medidas e retenção), Fase 9 (notificações).
 **Não inclui:** IA paga, classificador local treinado, suspensão permanente, alterações no app mobile.
 
@@ -47,6 +50,10 @@ Backend:
 - `POST /api/v1/moderation/appeals/{id}/decision` — decisão do recurso.
 - `GET/POST /api/v1/moderation/operators` — gestão de operadores (somente admin).
 - `DELETE /api/v1/moderation/operators/{user_id}` — desativação (somente admin).
+- `GET /api/v1/moderation/notifications` — central interna (canal `moderation`).
+- `GET /api/v1/moderation/notifications/unread-count` — contagem interna.
+- `POST /api/v1/moderation/notifications/{id}/read` — marca uma notificação interna.
+- `POST /api/v1/moderation/notifications/read-all` — marca todas as internas.
 
 Modelo e migração:
 
@@ -90,9 +97,10 @@ JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 ## Testes
 
 - `backend/tests/test_moderation.py`: fila, notificação, decisão, recurso,
-  bloqueio de conta comum e inclusão de operador por admin.
-- Suíte backend: **477 passed, 29 skipped**; `ruff check`, `ruff format --check`
-  e `mypy app` limpos; Alembic no head `b4c5d6e7f8a9` com `alembic check` limpo.
+  bloqueio de conta comum, inclusão de operador por admin e isolamento da
+  central interna (canal `moderation`, outro operador e `404` no canal `player`).
+- Suíte backend: **486 passed, 29 skipped**; `ruff check`, `ruff format --check`
+  e `mypy app` limpos; Alembic no head `e7f8a9b0c1d2` com `alembic check` limpo.
 - Painel web: **22 testes**, incluindo acesso restrito e decisão na
   `ModerationPage`; `tsc --noEmit`, `eslint .`, Prettier dos arquivos alterados
   e `vite build` com CSP limpos.
@@ -101,8 +109,8 @@ JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 ## Pendente
 
 1. Classificador local/open-source com dataset, avaliação offline e versionamento.
-2. Central de notificações dentro do painel web; o backend já separa o canal
-   `moderation` e o app do jogador não recebe essas notificações.
+2. Consumir a central de notificações internas no painel web; o backend já expõe
+   `/moderation/notifications` e o app do jogador não recebe essas notificações.
 3. Suspensão permanente com política, dupla revisão e revisão jurídica.
 4. Retenção definitiva/LGPD e direito de exclusão.
 5. Tela mobile dedicada a acompanhar denúncias e medidas recebidas.

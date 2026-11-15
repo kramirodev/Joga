@@ -638,6 +638,10 @@ Notificações:
 
 - `moderation_report` e `moderation_appeal` usam o canal interno `moderation`;
   não aparecem em `GET /me/notifications` nem geram push no app do jogador.
+- O painel lê o canal interno em `GET /moderation/notifications`,
+  `GET /moderation/notifications/unread-count`,
+  `POST /moderation/notifications/{id}/read` e
+  `POST /moderation/notifications/read-all`. Todos exigem operador ativo.
 - `moderation_appeal_result` usa o canal `player`.
 
 CLI de contingência:

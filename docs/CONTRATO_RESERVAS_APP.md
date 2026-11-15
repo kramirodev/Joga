@@ -315,8 +315,23 @@ DELETE /api/v1/moderation/operators/{user_id}
   `player`.
 - A central do jogador (`GET /me/notifications`) lista apenas o canal `player`;
   notificações internas não aparecem no app e não geram push para o jogador.
-- O painel interno ainda não tem central de notificações; a fila e os recursos
-  continuam sendo a superfície operacional.
+- O painel tem central própria no canal interno, protegida por `get_moderator`
+  (conta comum recebe `403 moderator_required`):
+
+```text
+GET  /api/v1/moderation/notifications?unread_only=false&limit=30&offset=0
+GET  /api/v1/moderation/notifications/unread-count
+POST /api/v1/moderation/notifications/{notification_id}/read
+POST /api/v1/moderation/notifications/read-all
+```
+
+- Os quatro endpoints operam sempre `channel = "moderation"` e não aceitam
+  parâmetro de canal.
+- `GET` devolve o mesmo envelope da central do jogador (`notifications`,
+  `unread_count`, `limit`, `offset`), com contagem só do canal interno.
+- `read-all` marca apenas notificações internas do próprio operador.
+- ID de outro operador ou do canal `player` responde
+  `404 notification_not_found`.
 
 ### 7.2 Sessão web e capacidades
 

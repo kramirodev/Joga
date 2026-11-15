@@ -731,7 +731,7 @@ A IA é camada auxiliar, com níveis de confiança e possibilidade de contestaç
 
 > **Nota de contrato mobile da suspensão (17C).** Acesso autenticado comum de uma conta `suspended` responde `401 invalid_token`. O refresh rotaciona a sessão e responde `200` com `user.status = "suspended"`, permitindo que o app preserve a sessão e obtenha access tokens novos durante toda a suspensão. Excepcionalmente, `GET /moderation/actions/me`, `GET /moderation/appeals/me` e `POST /moderation/actions/{action_id}/appeal` aceitam a sessão de conta suspensa, porque o jogador precisa ver o motivo, as datas, o resultado do recurso e contestar a própria medida. A autorização continua restrita às ações/recursos em que o usuário é o alvo; severidade, prioridade e identidade do denunciante não são expostas ao app. O refresh web do painel continua respondendo `401 account_suspended`.
 
-> **Nota de canais de notificação (17C).** Notificações internas de moderação usam `channel = "moderation"` e não aparecem em `GET /me/notifications` nem geram push para o app do jogador. A central do jogador lista apenas `channel = "player"`. Resultados de recurso (`moderation_appeal_result`) são do jogador.
+> **Nota de canais de notificação (17C).** Notificações internas de moderação usam `channel = "moderation"` e não aparecem em `GET /me/notifications` nem geram push para o app do jogador. A central do jogador lista apenas `channel = "player"`. O painel consome o canal interno por endpoints dedicados em `/moderation/notifications` (lista, contador, marcar uma e marcar todas), protegidos por `get_moderator`. Resultados de recurso (`moderation_appeal_result`) são do jogador.
 
 ### 12.5 Troféus de clã
 

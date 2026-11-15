@@ -12,7 +12,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
 | Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
-| Central de notificações | 9D | Backend implementado; falta consumir no app e no painel | Ligar telas e testar marcação de leitura |
+| Central de notificações | 9D/17C | Backend pronto: canal player no app e canal moderation no painel | Consumir /moderation/notifications no painel e testar leitura |
 | Mapas | 10/19 | Camada visual de descoberta | Pode esperar; usar lista/distância no início |
 | CNPJ/MEI e revisão jurídica | 14B/19 | Dinheiro real e contratos | Definir entidade, contador e parecer jurídico |
 | Storage de fotos de produção | 12A/19 | Fotos privadas e retenção | Escolher storage, criptografia e backup |
