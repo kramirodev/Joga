@@ -248,6 +248,19 @@ def test_temporary_suspension_blocks_and_can_be_revoked(
     blocked = api.get("/api/v1/auth/me", headers=bearer(context["tokens"][1]))
     assert blocked.status_code == 401
 
+    other_user = api.post(
+        f"/api/v1/moderation/actions/{action.id}/appeal",
+        json={"reason": "Tentativa de terceiro"},
+        headers=bearer(context["tokens"][0]),
+    )
+    assert other_user.status_code == 404
+
+    my_reports = api.get(
+        "/api/v1/moderation/reports/me",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert my_reports.status_code == 401
+
     service.revoke_action(action.id, operator="op1", reason="Recurso procedente")
     db_session.commit()
     allowed = api.get("/api/v1/auth/me", headers=bearer(context["tokens"][1]))
