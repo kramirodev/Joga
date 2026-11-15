@@ -461,3 +461,121 @@ def test_admin_cannot_add_unknown_operator(client: TestClient, db_session: Sessi
     )
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "not_found"
+
+
+def test_moderation_notifications_are_scoped_to_internal_channel(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    moderator_id = make_user(db_session)
+    moderator_token = make_token(db_session, moderator_id)
+    other_moderator_id = make_user(db_session)
+    other_moderator_token = make_token(db_session, other_moderator_id)
+    common_id = make_user(db_session)
+    common_token = make_token(db_session, common_id)
+    for user_id in (moderator_id, other_moderator_id):
+        db_session.add(ModerationOperator(user_id=user_id, role="MODERATOR", active=True))
+    db_session.flush()
+
+    service = NotificationService(db_session)
+    internal, _ = service.create(
+        user_id=moderator_id,
+        kind="moderation_report",
+        title="Nova denúncia",
+        body="Uso interno",
+        idempotency_key="panel:internal",
+        channel="moderation",
+    )
+    other_internal, _ = service.create(
+        user_id=other_moderator_id,
+        kind="moderation_appeal",
+        title="Novo recurso",
+        body="Uso interno de outro operador",
+        idempotency_key="panel:other-internal",
+        channel="moderation",
+    )
+    player_notification, _ = service.create(
+        user_id=moderator_id,
+        kind="booking_confirmed",
+        title="Reserva confirmada",
+        body="Visível no app",
+        idempotency_key="panel:player",
+    )
+    db_session.commit()
+
+    denied = api.get(
+        "/api/v1/moderation/notifications",
+        headers=bearer(common_token),
+    )
+    assert denied.status_code == 403
+    assert denied.json() == {"detail": {"code": "moderator_required"}}
+
+    listing = api.get(
+        "/api/v1/moderation/notifications",
+        headers=bearer(moderator_token),
+    )
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert [item["id"] for item in body["notifications"]] == [str(internal.id)]
+    assert body["unread_count"] == 1
+    assert all(item["kind"] != "booking_confirmed" for item in body["notifications"])
+
+    unread = api.get(
+        "/api/v1/moderation/notifications/unread-count",
+        headers=bearer(moderator_token),
+    )
+    assert unread.status_code == 200
+    assert unread.json() == {"unread_count": 1}
+
+    # Nem notificação do jogador nem item de outro operador podem ser marcados.
+    for notification_id in (player_notification.id, other_internal.id):
+        hidden = api.post(
+            f"/api/v1/moderation/notifications/{notification_id}/read",
+            headers=bearer(moderator_token),
+        )
+        assert hidden.status_code == 404
+        assert hidden.json() == {"detail": {"code": "notification_not_found"}}
+
+    marked = api.post(
+        f"/api/v1/moderation/notifications/{internal.id}/read",
+        headers=bearer(moderator_token),
+    )
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["read_at"] is not None
+    assert api.get(
+        "/api/v1/moderation/notifications/unread-count",
+        headers=bearer(moderator_token),
+    ).json() == {"unread_count": 0}
+
+    second, _ = service.create(
+        user_id=moderator_id,
+        kind="moderation_appeal",
+        title="Recurso respondido",
+        body="Uso interno",
+        idempotency_key="panel:second-internal",
+        channel="moderation",
+    )
+    db_session.commit()
+    read_all = api.post(
+        "/api/v1/moderation/notifications/read-all",
+        headers=bearer(moderator_token),
+    )
+    assert read_all.status_code == 200, read_all.text
+    assert read_all.json() == {"marked": 1, "unread_count": 0}
+    db_session.refresh(second)
+    assert second.read_at is not None
+    # A central do jogador não é afetada pela marcação interna.
+    assert (
+        api.get("/api/v1/me/notifications", headers=bearer(moderator_token)).json()["unread_count"]
+        == 1
+    )
+
+    other_listing = api.get(
+        "/api/v1/moderation/notifications",
+        headers=bearer(other_moderator_token),
+    )
+    assert other_listing.status_code == 200
+    assert [item["id"] for item in other_listing.json()["notifications"]] == [
+        str(other_internal.id)
+    ]

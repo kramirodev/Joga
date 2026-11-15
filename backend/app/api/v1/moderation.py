@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session, get_current_session_allow_suspended
+from app.api.v1.notifications import (
+    MarkAllReadResponse,
+    NotificationListResponse,
+    NotificationView,
+    notification_view,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.moderation.models import (
@@ -30,6 +36,10 @@ from app.modules.moderation.service import (
     ReportForbidden,
     ReportInvalid,
     ReportNotFound,
+)
+from app.modules.notifications.service import (
+    NotificationNotFound,
+    NotificationService,
 )
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
@@ -462,6 +472,81 @@ def remove_moderation_operator(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
+
+
+@router.get("/notifications", response_model=NotificationListResponse)
+def moderation_notifications(
+    moderator: Annotated[ModeratorContext, Depends(get_moderator)],
+    session: Annotated[Session, Depends(get_session)],
+    unread_only: bool = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> NotificationListResponse:
+    """Central interna do painel; nunca mistura o canal do jogador."""
+
+    service = NotificationService(session)
+    rows = service.list_for_user(
+        moderator.user_id,
+        unread_only=unread_only,
+        limit=limit,
+        offset=offset,
+        channel="moderation",
+    )
+    return NotificationListResponse(
+        notifications=[notification_view(item) for item in rows],
+        unread_count=service.unread_count(moderator.user_id, channel="moderation"),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/notifications/unread-count")
+def moderation_unread_count(
+    moderator: Annotated[ModeratorContext, Depends(get_moderator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, int]:
+    return {
+        "unread_count": NotificationService(session).unread_count(
+            moderator.user_id,
+            channel="moderation",
+        )
+    }
+
+
+@router.post(
+    "/notifications/{notification_id}/read",
+    response_model=NotificationView,
+)
+def moderation_mark_notification_read(
+    notification_id: UUID,
+    moderator: Annotated[ModeratorContext, Depends(get_moderator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> NotificationView:
+    try:
+        notification = NotificationService(session).mark_read(
+            moderator.user_id,
+            notification_id,
+            channel="moderation",
+        )
+        session.commit()
+    except NotificationNotFound as exc:
+        session.rollback()
+        raise _error("notification_not_found", status.HTTP_404_NOT_FOUND) from exc
+    return notification_view(notification)
+
+
+@router.post("/notifications/read-all", response_model=MarkAllReadResponse)
+def moderation_mark_all_notifications_read(
+    moderator: Annotated[ModeratorContext, Depends(get_moderator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> MarkAllReadResponse:
+    service = NotificationService(session)
+    marked = service.mark_all_read(moderator.user_id, channel="moderation")
+    session.commit()
+    return MarkAllReadResponse(
+        marked=marked,
+        unread_count=service.unread_count(moderator.user_id, channel="moderation"),
+    )
 
 
 __all__ = ["router"]
