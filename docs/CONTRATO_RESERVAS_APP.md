@@ -448,3 +448,8 @@ Resposta: `{"email": "pagador@example.com"}` ou `{"email": null}`.
 - Sem e-mail com o Mercado Pago, a abertura responde `422 payer_email_required`.
 - O e-mail é copiado para `booking_payments.payer_email` e
   `purchase_payments.payer_email` como snapshot auditável.
+- A visão de pagamento (reserva e compra/passe) expõe `provider`,
+  `provider_status`, `status_detail`, `qr_code`, `qr_code_base64`,
+  `ticket_url`, `expires_at`, `amount_cents` e `external_reference`.
+- `external_reference` é o ID interno da cobrança na reserva e
+  `kind:reference_id` na compra/passe; é o mesmo valor enviado ao PSP.

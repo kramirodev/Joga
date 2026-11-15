@@ -455,32 +455,35 @@ cd backend
 - A organização consulta o resumo em `GET /api/v1/organizations/{org}/financial/summary` e o extrato em `GET /api/v1/organizations/{org}/bookings/{booking}/financial`.
 - Reembolso manual: `POST /api/v1/organizations/{org}/bookings/{booking}/refund` com motivo. No beta, o adaptador simulado processa o estorno.
 
-### Pagamentos no protótipo/beta (ADR 0034)
+### Pagamentos no protótipo (ADR 0048)
 
-- **Protótipo/beta fechado:** Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste. O valor fica na conta do JOGA; o ledger registra a obrigação e o repasse ao estabelecimento é simulado/manual no horário da partida (ADR 0040).
-- **Não é escrow** nem garantia de reembolso de produção. Dinheiro real no beta exige CNPJ/MEI, contrato e revisão jurídica; CPF fica restrito a sandbox.
-- **Produção:** Inter PJ, conta corrente com API Pix e de extratos (ADR 0042 §8). O Pagar.me fica como reserva técnica e como candidato do fluxo de reserva avulsa.
+- **Protótipo com jogadores reais:** Mercado Pago Orders API com Pix e custódia centralizada. O valor fica na conta do JOGA; o ledger registra a obrigação e o repasse ao estabelecimento é manual/registrado no ledger (ADR 0040).
+- **Não é escrow** nem garantia de reembolso de produção. Dinheiro real exige CNPJ/MEI, contrato e revisão jurídica.
+- **Inter/Pagar.me ficam para o futuro** e não são dependência do protótipo.
 - Nenhuma credencial real de PSP deve ser configurada sem autorização.
 
 #### Fase 14A — Mercado Pago Orders API
 
 - O adaptador padrão é `simulator` (`JOGA_PSP_PROVIDER=simulator`), sem rede e sem credenciais.
+- Fora de local/teste, o startup exige provider `mercadopago`, token, segredo e URL HTTPS:
 - Para sandbox, configure no `backend/.env` (não versionado):
 
 ```env
 JOGA_PSP_PROVIDER=mercadopago
 JOGA_MERCADO_PAGO_ACCESS_TOKEN=TEST-...
-JOGA_MERCADO_PAGO_PAYER_EMAIL=seu-email-de-teste@testuser.com
 JOGA_MERCADO_PAGO_WEBHOOK_SECRET=...
 JOGA_MERCADO_PAGO_NOTIFICATION_URL=https://seu-dominio/api/v1/payments/mercadopago/webhook
 ```
 
+> O e-mail do pagador vem de `users.email` (`GET/PUT /api/v1/me/email`); não existe e-mail global de cobrança. Sem e-mail, a abertura responde `422 payer_email_required`.
+
 > A Orders API atual **não aceita** `notification_url` no payload da ordem. Configure a URL de webhook no painel do Mercado Pago; a variável acima serve como referência operacional.
 
 - Rotas: webhook público em `POST /api/v1/payments/mercadopago/webhook`, sincronização em `POST /api/v1/bookings/{booking}/payments/{payment}/sync` e reabertura em `POST /api/v1/organizations/{org}/bookings/{booking}/payments/open`.
-- O webhook valida HMAC quando o segredo está configurado e consulta a ordem no PSP antes de mudar o estado.
+- O webhook valida HMAC, persiste o evento bruto antes de processar e consulta a ordem no PSP antes de mudar o estado. Falha transitória responde 5xx, guarda `last_error` e agenda `next_attempt_at` com backoff.
+- Reprocessamento manual: `python -m scripts.retry_webhooks --limit 50` (use `--dry-run` para listar sem processar).
 - O QR Code/copia-e-cola aparece no mobile para o próprio participante; a organização vê apenas o status.
-- Nenhum pagamento real deve ser feito no protótipo/beta.
+- Valide a Orders API com credenciais reais antes do go-live; os testes automatizados usam HTTP simulado.
 
 ### Interface financeira e conciliação (Fase 15)
 

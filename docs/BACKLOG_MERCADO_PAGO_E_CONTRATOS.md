@@ -15,9 +15,9 @@ recebedor automático; repasse continua ledger/manual conforme ADR 0040.
 |---|---|---|
 | MP-01 | ADR 0048 + atualização de PLANS/PENDENCIAS/THREAT_MODEL/adapter | **Concluído em 2026-11-15** |
 | MP-02 | Guardas de configuração de produção (provider, token, segredo, URL HTTPS; sem e-mail global) | **Concluído em 2026-11-15** |
-| MP-03 | Validar Orders API real (qr_code, base64, ticket_url, expires_at, status, idempotência) | Pendente — exige credenciais do Mercado Pago |
+| MP-03 | Validar Orders API real (qr_code, base64, ticket_url, expires_at, status, idempotência) | **Parcial em 2026-11-15** — parser/expiração/referência cobertos por fixture; validação live pendente de credenciais |
 | MP-04 | E-mail do pagador por usuário, snapshot e `payer_email_required` | **Concluído em 2026-11-15** |
-| MP-05 | Webhook real, retry (`attempts`, `last_error`, `next_attempt_at`) e worker | Pendente (P0) — persistência bruta e assinatura já existem |
+| MP-05 | Webhook real, retry (`attempts`, `last_error`, `next_attempt_at`) e worker | **Implementado em 2026-11-15** — persistência bruta, assinatura, retry/backoff e worker `scripts.retry_webhooks`; validação live pendente |
 | MP-06 | Confirmação local dev-only + teste | **Concluído em 2026-11-15** |
 | MP-07 | Reembolso real (processing/failed/parcial/idempotência) | Pendente (P1) |
 | MP-08 | Conciliação real com o Mercado Pago | Pendente (P1) — exige credenciais |
@@ -29,7 +29,7 @@ recebedor automático; repasse continua ledger/manual conforme ADR 0040.
 
 | ID | Contrato | Estado |
 |---|---|---|
-| C-01 | Visão de pagamento com provider, status, status_detail, QR, ticket_url, expires_at, amount_cents e external_reference | Pendente de verificação (P0) |
+| C-01 | Visão de pagamento com provider, status, status_detail, QR, ticket_url, expires_at, amount_cents e external_reference | **Concluído em 2026-11-15** |
 | C-02 | `total` em `NotificationListResponse` (jogador e moderação) | Pendente (P2) |
 | C-03 | Convite de membro por telefone (`organization_invitations`) | Pendente (P2) |
 | C-04 | T3 por estabelecimento (`booking_t3_minutes`) | Pendente (P2) |
