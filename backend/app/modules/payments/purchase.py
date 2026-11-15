@@ -101,7 +101,7 @@ def open_charge(
             external_reference=f"{kind}:{reference_id}",
             amount_cents=amount_cents,
             description=description,
-            payer_email=settings.mercado_pago_payer_email,
+            payer_email=settings.mercado_pago_payer_email or f"user-{user_id}@simulator.invalid",
             expiration_minutes=30,
             metadata={
                 "kind": kind,

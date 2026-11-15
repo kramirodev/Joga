@@ -204,6 +204,11 @@ def test_production_without_sms_provider_returns_503(
         environment="production",
         phone_hash_secret="real-secret-outside-the-repository",
         token_hash_secret="real-token-secret-outside-the-repository",
+        psp_provider="mercadopago",
+        mercado_pago_access_token="mp-access-token",
+        mercado_pago_webhook_secret="mp-webhook-secret",
+        mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        mercado_pago_payer_email="pagador@joga.example",
     )
 
     response = post_challenge(client)

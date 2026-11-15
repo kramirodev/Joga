@@ -165,10 +165,11 @@ class SimulatorPspAdapter:
 
 
 class MercadoPagoAdapter:
-    """Mercado Pago Checkout Transparente via Orders API (Pix).
+    """Mercado Pago Orders API (Pix) para o protótipo com jogadores reais.
 
-    Sem split nesta fase. O token deve ser de sandbox; nenhuma cobrança real
-    deve ser acionada no protótipo/beta sem autorização.
+    Sem split nesta fase. O token é o da conta do ambiente (produção ou teste);
+    cobrança real exige configuração completa, CNPJ/MEI e revisão jurídica
+    (ADR 0048). O ledger interno continua sendo a fonte de direitos.
     """
 
     provider_name = "mercadopago"

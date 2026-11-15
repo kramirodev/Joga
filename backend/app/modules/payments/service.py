@@ -114,8 +114,7 @@ class PaymentService:
                     amount_cents=payment.amount_cents,
                     description=f"JOGA reserva {booking.id} vaga {participant.seat}",
                     payer_email=settings.mercado_pago_payer_email
-                    if self.adapter.provider_name == "mercadopago"
-                    else f"user-{participant.user_id}@testuser.com",
+                    or f"user-{participant.user_id}@simulator.invalid",
                     expiration_minutes=minutes,
                     metadata={
                         "booking_id": str(booking.id),

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.payments.adapter import PspAdapter, PspError
@@ -255,10 +255,11 @@ def confirm_ticket_purchase(
     purchase_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> PurchaseView:
     """Confirma o pagamento em ambiente local, sem PSP. Só para desenvolvimento."""
 
-    if get_settings().environment.lower() not in LOCAL_ENVIRONMENTS:
+    if settings.environment.lower() not in LOCAL_ENVIRONMENTS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "confirmation_requires_psp"},

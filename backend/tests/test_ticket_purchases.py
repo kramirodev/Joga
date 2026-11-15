@@ -3,12 +3,42 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.sessions import SessionService
 from tests.helpers_results import make_token, make_user
+
+
+def production_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        environment="production",
+        phone_hash_secret="phone-secret",
+        token_hash_secret="token-secret",
+        psp_provider="mercadopago",
+        mercado_pago_access_token="mp-access-token",
+        mercado_pago_webhook_secret="mp-webhook-secret",
+        mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        mercado_pago_payer_email="pagador@joga.example",
+    )
+
+
+def production_token(session: Session, user_id: UUID) -> str:
+    settings = production_settings()
+    tokens = SessionService(
+        session,
+        settings.token_hash_secret.get_secret_value(),
+        access_ttl_seconds=600,
+        refresh_absolute_ttl_days=30,
+        refresh_idle_ttl_days=7,
+    ).issue(user_id)
+    session.commit()
+    return tokens.access_token
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
@@ -36,6 +66,27 @@ def test_packs_follow_the_price_ladder(client: TestClient, db_session: Session) 
     assert units == sorted(units, reverse=True)
     assert packs[0]["unit_price_cents"] == 370
     assert packs[-1]["unit_price_cents"] == 310
+
+
+def test_confirm_purchase_is_dev_only(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "avulso"},
+    )
+    assert created.status_code == 201, created.text
+
+    client.app.dependency_overrides[get_settings] = production_settings
+    confirm = api.post(
+        f"/api/v1/me/tickets/purchases/{created.json()['id']}/confirm",
+        headers=bearer(production_token(db_session, user_id)),
+    )
+    assert confirm.status_code == 403
+    assert confirm.json() == {"detail": {"code": "confirmation_requires_psp"}}
 
 
 def test_purchase_then_confirm_credits_the_wallet(client: TestClient, db_session: Session) -> None:

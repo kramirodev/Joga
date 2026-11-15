@@ -67,13 +67,17 @@ def test_webhook_accepts_valid_signature_and_is_idempotent(
     assert second.status_code == 200, second.text
 
 
-def test_webhook_requires_secret_outside_local(client: TestClient, db_session: Session) -> None:
+def test_webhook_requires_signature_outside_local(client: TestClient, db_session: Session) -> None:
     settings = Settings(
+        _env_file=None,
         environment="production",
         phone_hash_secret=SecretStr("phone-secret"),
         token_hash_secret=SecretStr("token-secret"),
-        psp_provider="simulator",
-        mercado_pago_webhook_secret=None,
+        psp_provider="mercadopago",
+        mercado_pago_access_token=SecretStr("mp-access-token"),
+        mercado_pago_webhook_secret=SecretStr("segredo"),
+        mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        mercado_pago_payer_email="pagador@joga.example",
     )
     api = api_client(client, db_session, settings)
     response = api.post(
@@ -81,4 +85,4 @@ def test_webhook_requires_secret_outside_local(client: TestClient, db_session: S
         json={"id": "evt-1", "type": "order", "data": {"id": "ORD01"}},
     )
     assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "webhook_secret_required"
+    assert response.json()["detail"]["code"] == "invalid_webhook_signature"

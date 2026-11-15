@@ -9,8 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.clock import utcnow
+from app.modules.identity.sessions import SessionService
 from app.modules.passes.service import (
     activate_subscription,
     active_subscription,
@@ -54,6 +56,45 @@ def test_plans_are_the_four_quarter_sizes(client: TestClient, db_session: Sessio
     assert [plan["tickets_per_month"] for plan in plans] == [10, 20, 30, 50]
     assert [plan["quarter_cents"] for plan in plans] == [9_750, 19_500, 29_250, 48_750]
     assert {plan["unit_price_cents"] for plan in plans} == {325}
+
+
+def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=bearer(token),
+        json={"plan_code": "craque"},
+    )
+    assert created.status_code == 201, created.text
+
+    client.app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        environment="production",
+        phone_hash_secret="phone-secret",
+        token_hash_secret="token-secret",
+        psp_provider="mercadopago",
+        mercado_pago_access_token="mp-access-token",
+        mercado_pago_webhook_secret="mp-webhook-secret",
+        mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        mercado_pago_payer_email="pagador@joga.example",
+    )
+    production_tokens = SessionService(
+        db_session,
+        "token-secret",
+        access_ttl_seconds=600,
+        refresh_absolute_ttl_days=30,
+        refresh_idle_ttl_days=7,
+    ).issue(user_id)
+    db_session.commit()
+    confirm = api.post(
+        f"/api/v1/me/pass/subscriptions/{created.json()['id']}/confirm",
+        headers=bearer(production_tokens.access_token),
+    )
+    assert confirm.status_code == 403
+    assert confirm.json() == {"detail": {"code": "confirmation_requires_psp"}}
 
 
 def test_subscribe_opens_pix_and_only_payment_activates(

@@ -117,8 +117,9 @@ class Settings(BaseSettings):
     presence_radius_m: int = Field(default=200, ge=50, le=1000)
     presence_max_accuracy_m: int = Field(default=100, ge=10, le=500)
 
-    # PSP (Fase 14A). O simulador é o padrão local/CI; o Mercado Pago exige
-    # credenciais sandbox e nunca deve ser usado com dinheiro real neste estágio.
+    # PSP. O simulador é o padrão local/CI. Fora do ambiente local, o Mercado
+    # Pago é obrigatório com credenciais de produção; não há fallback silencioso
+    # para simulador nem e-mail de pagador fixo.
     psp_provider: str = Field(default="simulator", pattern="^(simulator|mercadopago)$")
     mercado_pago_access_token: SecretStr | None = None
     mercado_pago_webhook_secret: SecretStr | None = None
@@ -127,8 +128,10 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=200,
     )
-    mercado_pago_payer_email: str = Field(
-        default="test_user_br@testuser.com",
+    # Provisório até a Fase MP-04: fora do local, exige um e-mail real
+    # configurado por ambiente. O e-mail por usuário substitui este campo.
+    mercado_pago_payer_email: str | None = Field(
+        default=None,
         min_length=3,
         max_length=120,
     )
@@ -185,10 +188,37 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_default_secret_outside_local(self) -> Self:
-        if self.psp_provider == "mercadopago" and self.mercado_pago_access_token is None:
+        token = (
+            self.mercado_pago_access_token.get_secret_value().strip()
+            if self.mercado_pago_access_token is not None
+            else ""
+        )
+        if self.psp_provider == "mercadopago" and not token:
             raise ValueError("JOGA_MERCADO_PAGO_ACCESS_TOKEN é obrigatório com psp=mercadopago")
         if self.environment.lower() in LOCAL_ENVIRONMENTS:
             return self
+        if self.psp_provider != "mercadopago":
+            raise ValueError("JOGA_PSP_PROVIDER=mercadopago é obrigatório fora do ambiente local")
+        webhook_secret = (
+            self.mercado_pago_webhook_secret.get_secret_value().strip()
+            if self.mercado_pago_webhook_secret is not None
+            else ""
+        )
+        if not webhook_secret:
+            raise ValueError(
+                "JOGA_MERCADO_PAGO_WEBHOOK_SECRET é obrigatório fora do ambiente local"
+            )
+        notification_url = (self.mercado_pago_notification_url or "").strip()
+        if not notification_url.startswith("https://"):
+            raise ValueError(
+                "JOGA_MERCADO_PAGO_NOTIFICATION_URL deve ser uma URL HTTPS pública "
+                "fora do ambiente local"
+            )
+        if not (self.mercado_pago_payer_email or "").strip():
+            raise ValueError(
+                "JOGA_MERCADO_PAGO_PAYER_EMAIL é obrigatório fora do ambiente local "
+                "até o e-mail por usuário ser implementado"
+            )
         secrets = {
             "JOGA_PHONE_HASH_SECRET": (
                 self.phone_hash_secret.get_secret_value(),
