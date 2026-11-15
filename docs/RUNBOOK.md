@@ -615,7 +615,9 @@ export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 3. Cadastre os demais moderadores pelo bloco “Moderadores”. `MODERATOR` opera a
    fila; `ADMIN` também altera papéis.
 4. A fila ordena por prioridade e atualiza a cada 30 segundos. Cada nova denúncia
-   gera uma notificação persistida `moderation_report`.
+   gera uma notificação persistida `moderation_report`; cada recurso gera
+   `moderation_appeal`; a decisão do recurso gera `moderation_appeal_result`
+   para o jogador.
 5. A decisão exige justificativa e registra auditoria. Medidas: `DISMISS`,
    `WARN`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
 

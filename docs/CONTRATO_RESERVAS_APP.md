@@ -307,6 +307,8 @@ DELETE /api/v1/moderation/operators/{user_id}
 - Recurso: `ACCEPTED` ou `REJECTED`, com justificativa.
 - Nova denúncia gera notificação persistida `moderation_report` para os
   operadores ativos.
+- Novo recurso gera `moderation_appeal` para os operadores ativos.
+- A decisão do recurso gera `moderation_appeal_result` para o jogador.
 
 ### 7.2 Sessão web e capacidades
 

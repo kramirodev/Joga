@@ -26,7 +26,9 @@ persistido ao administrador quando uma nova denúncia entrava na fila.
    protegido por cookie/CSRF já usados pelo painel de gestão.
 5. **Notificação persistida.** Ao criar uma denúncia, o backend grava uma
    notificação `moderation_report` para cada operador ativo e para os admins de
-   bootstrap. A fila do painel também atualiza a cada 30 segundos.
+   bootstrap. Novo recurso grava `moderation_appeal` para os operadores; a
+   decisão grava `moderation_appeal_result` para o jogador. A fila do painel
+   também atualiza a cada 30 segundos.
 6. **Decisão humana e auditável.** Medidas continuam sendo `DISMISS`, `WARN`,
    `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias), com justificativa
    obrigatória e registro de auditoria.
@@ -87,9 +89,9 @@ JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 
 ## Testes
 
-- `backend/tests/test_moderation.py`: fila, notificação, decisão, bloqueio de
-  conta comum e inclusão de operador por admin.
-- Suíte backend: **473 passed, 29 skipped**; `ruff check`, `ruff format --check`
+- `backend/tests/test_moderation.py`: fila, notificação, decisão, recurso,
+  bloqueio de conta comum e inclusão de operador por admin.
+- Suíte backend: **477 passed, 29 skipped**; `ruff check`, `ruff format --check`
   e `mypy app` limpos; Alembic no head `b4c5d6e7f8a9` com `alembic check` limpo.
 - Painel web: **22 testes**, incluindo acesso restrito e decisão na
   `ModerationPage`; `tsc --noEmit`, `eslint .`, Prettier dos arquivos alterados

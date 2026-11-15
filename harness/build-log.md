@@ -1009,6 +1009,7 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Reservas:** `GET /bookings` e `GET /organizations/{id}/bookings` aceitam `status`, `from`, `to`, `limit` e `offset`, devolvem `total` e `BookingView.timezone` (IANA). Datas sem fuso ou periodo invalido retornam `422 invalid_time_range`.
 - **Erros:** handler global de `RequestValidationError` padroniza `422` em `{detail:{code,message,fields}}`, sem ecoar o valor enviado.
 - **Painel:** sessao web passa a devolver `capabilities` (`moderation.read`/`moderation.manage`); recebiveis, extrato, disputas e auditoria devolvem `total` antes da paginacao.
+- **Notificacoes 17C:** recurso novo gera `moderation_appeal` para operadores ativos; decisao do recurso gera `moderation_appeal_result` para o jogador. A denuncia continua gerando `moderation_report`.
 - **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
 - **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
 
