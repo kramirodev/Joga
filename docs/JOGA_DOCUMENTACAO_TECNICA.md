@@ -727,6 +727,8 @@ A IA é camada auxiliar, com níveis de confiança e possibilidade de contestaç
 
 > **Nota de implementação das Fases 17A/17B/17C.** A primeira fatia usa triagem determinística (`rules_v1`) por categoria, reincidência e quantidade de contexto; não usa IA paga nem envia texto a terceiros. A decisão é humana por CLI e, desde a 17C, por painel web interno separado em `/moderation`. Operadores têm identidade em `moderation_operators` (`ADMIN|MODERATOR`), com bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS`; cada nova denúncia gera notificação persistida `moderation_report`. Medidas: aviso, restrição ranqueada reversível e suspensão temporária de 1–30 dias; recurso aceito revoga a medida. A 17B acrescenta cooldown de 7 dias após 3 denúncias improcedentes em 30 dias e redação provisória de contexto após 180 dias. O classificador local/open-source e a suspensão permanente continuam pendentes.
 
+> **Nota de contrato mobile da suspensão (17C).** Acesso autenticado comum de uma conta `suspended` responde `401 invalid_token`; o refresh responde `401 account_suspended` para o app distinguir suspensão de sessão expirada. Excepcionalmente, `GET /moderation/actions/me` e `POST /moderation/actions/{action_id}/appeal` aceitam a sessão de conta suspensa, porque o jogador precisa ver o motivo, as datas e contestar a própria medida. A autorização continua restrita às ações em que o usuário é o alvo; severidade, prioridade e identidade do denunciante não são expostas ao app.
+
 ### 12.5 Troféus de clã
 
 O ranking será separado por modalidade. Não somar futebol e vôlei em um único ranking inicial.

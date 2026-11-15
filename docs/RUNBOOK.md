@@ -567,7 +567,7 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
 - Fases 5, 6, 7 e 8 estão implementadas no backend e no mobile; a Fase 9 está em implementação (9A backend). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
-- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
+- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais, clãs, moderação e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
 - Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
 - O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
 
@@ -615,9 +615,16 @@ export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 3. Cadastre os demais moderadores pelo bloco “Moderadores”. `MODERATOR` opera a
    fila; `ADMIN` também altera papéis.
 4. A fila ordena por prioridade e atualiza a cada 30 segundos. Cada nova denúncia
-   gera uma notificação persistida `moderation_report` para os operadores ativos.
+   gera uma notificação persistida `moderation_report`.
 5. A decisão exige justificativa e registra auditoria. Medidas: `DISMISS`,
    `WARN`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
+
+Conta suspensa:
+
+- O refresh comum responde `401 account_suspended`; o app preserva a sessão.
+- `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam
+  a sessão suspensa para contestar a própria medida.
+- Todas as outras rotas continuam exigindo conta ativa.
 
 CLI de contingência:
 

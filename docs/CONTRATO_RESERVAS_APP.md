@@ -152,6 +152,7 @@ Regras:
   "band_code": "economica_dia",
   "band_label": "Econômica dia",
   "tickets_per_seat": 8,
+  "timezone": "America/Sao_Paulo",
   "participants": [
     {
       "user_id": "uuid",
@@ -164,6 +165,30 @@ Regras:
 
 `band_code`, `tickets_per_seat` e `settled_with` são `null` quando não se aplicam. A reserva congela faixa e ingressos no momento da criação; reajuste posterior não altera a reserva.
 
+`timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
+
+### 4.1 Listas de reservas
+
+```http
+GET /api/v1/bookings?status=CONFIRMED&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z&limit=50&offset=0
+GET /api/v1/organizations/{organization_id}/bookings?status=CONFIRMED&from=...&to=...&limit=50&offset=0
+```
+
+```json
+{
+  "bookings": [],
+  "total": 123,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+- `status` é opcional e usa os estados da reserva.
+- `from` é inclusivo e `to` é exclusivo, ambos em UTC com offset ou `Z`.
+- `limit` aceita 1–100; default 50. `offset` é >= 0.
+- `total` é o total que satisfaz os filtros antes da paginação.
+- Datas sem fuso retornam `422 invalid_time_range`.
+
 ## 5. Erros relevantes
 
 | Código | HTTP | Significado |
@@ -175,6 +200,24 @@ Regras:
 | `band_missing` | 409 | Janela sem faixa de preço |
 | `booking_not_found` | 404 | Reserva inexistente ou fora do acesso |
 | `forbidden` | 403 | Ator não participa do lobby/organização |
+| `invalid_time_range` | 422 | `from`/`to` sem fuso, invertidos ou iguais |
+| `validation_error` | 422 | Corpo/query inválido; ver `fields` abaixo |
+
+Erros de schema Pydantic usam um envelope estável:
+
+```json
+{
+  "detail": {
+    "code": "validation_error",
+    "message": "Dados inválidos",
+    "fields": [
+      { "field": "body.name", "code": "string_too_short", "message": "..." }
+    ]
+  }
+}
+```
+
+`field` usa prefixo `body.`, `query.` ou `path.`. O valor enviado não é ecoado.
 
 ## 6. Central de notificações
 
@@ -231,13 +274,20 @@ Content-Type: application/json
 - Medidas recebidas: `GET /api/v1/moderation/actions/me`.
 - Recurso: `POST /api/v1/moderation/actions/{action_id}/appeal`.
 - Tipos de medida: `WARNING`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
-- A conta suspensa não autentica; a reativação ocorre ao fim do prazo.
+- A conta suspensa não usa a API normalmente. A reativação ocorre ao fim do prazo.
+
+Contrato de suspensão para o app:
+
+- `POST /api/v1/auth/refresh` de conta suspensa responde `401 {"detail":{"code":"account_suspended"}}`; refresh inválido/expirado continua `invalid_refresh_token`.
+- `GET /api/v1/auth/me` e as demais rotas comuns respondem `401 invalid_token` para conta suspensa.
+- Exceções: `GET /api/v1/moderation/actions/me` e `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão suspensa para o jogador ver a própria medida e contestá-la. A autorização continua limitada ao alvo da medida; tentar contestar a medida de outro usuário retorna `404`.
+- Severidade, prioridade e identidade do denunciante não são expostas ao app.
 
 A triagem é determinística (`rules_v1`), sem IA paga. A revisão é humana e interna.
 
 ### 7.1 Painel interno de moderação (não é contrato mobile)
 
-Estas rotas exigem conta cadastrada em `moderation_operators`; conta comum recebe
+Estas rotas exigem conta em `moderation_operators`; conta comum recebe
 `403 moderator_required`. A gestão de operadores exige papel `ADMIN`.
 
 ```http
@@ -255,9 +305,36 @@ DELETE /api/v1/moderation/operators/{user_id}
 - Decisão: `DISMISS`, `WARN`, `RESTRICT_RANKED` ou `SUSPEND_TEMP`; justificativa
   obrigatória e `days` de 1–30 para suspensão.
 - Recurso: `ACCEPTED` ou `REJECTED`, com justificativa.
-- Nova denúncia gera notificação persistida de tipo `moderation_report` para os
-  operadores ativos. O app deve tratar a central de notificações como histórico.
-- O painel separado fica em `/moderation`; não há endpoint público de moderação.
+- Nova denúncia gera notificação persistida `moderation_report` para os
+  operadores ativos.
+
+### 7.2 Sessão web e capacidades
+
+`POST /api/v1/auth/web/registration`, `/login` e `/refresh` devolvem
+`capabilities` junto da sessão:
+
+```json
+{
+  "user": { "id": "uuid", "status": "active" },
+  "capabilities": ["moderation.read", "moderation.manage"]
+}
+```
+
+- Conta comum: `[]`.
+- `MODERATOR`: `["moderation.read"]`.
+- `ADMIN`: `["moderation.read", "moderation.manage"]`.
+- O painel usa isso para esconder o link; a autorização real continua no servidor.
+
+### 7.3 Totais em listas do painel
+
+Os envelopes abaixo incluem `total` (antes da paginação) além de `limit` e
+`offset`:
+
+- `GET /organizations/{id}/financial/receivables`
+- `GET /organizations/{id}/financial/statement`
+- `GET /organizations/{id}/financial/disputes`
+- `GET /organizations/{id}/audit`
+- `GET /bookings` e `GET /organizations/{id}/bookings`
 
 ## 8. O que ainda falta no app e no painel
 

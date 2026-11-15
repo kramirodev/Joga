@@ -22,7 +22,6 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | 14D — Ingresso, carteira e temporada | In progress | `main` | 14D.1–14D.15 implementadas no backend: faixas, fornecedor/Pix, carteira, pacotes, quitação, devolução, temporada, trilha, passe, Pix de checkout, fechamento, estatísticas e rede | UI mobile, buckets/validade do ingresso e conciliação de `purchase_payments` pendentes |
 | 15 — Interface financeira e conciliação | In progress | `main` | 15A/15B implementados como proposta técnica local: liberações, contestações, extrato, recebíveis, conciliação e aba Financeiro | Prazo de repasse real, contestação, PSP, MED, comprovantes e política financeira não aprovados |
 | 16 — Clãs e troféus | In progress | `main` | Backend implementado (ADR 0046): clãs, papéis, carência, chat, denúncia, troféus e snapshot; testes locais | UI mobile e moderação completa da Fase 17 pendentes |
-| 17 — Moderação e Trust & Safety | In progress | `feat/17c-painel-moderacao` | 17A/17B no backend; 17C adiciona operadores, fila interna, notificação ao admin e painel `/moderation` (ADR 0047) | Classificador local, central de notificações no painel e suspensão permanente pendentes |
 
 ## Histórico append-only
 
@@ -993,12 +992,22 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos; login OTP, home, perfil, configuracoes, cla, temporada/trilha, carteira, custo da partida e loja exercitados no aparelho Android com backend local.
 - **Pendencias:** telas de estados terminais (offline, erro generico, loading, recusa/expiracao de reserva, no-show, segunda rodada e disputa) continuam acessiveis apenas quando o estado de dominio ocorrer; passkey real, pagamentos reais e KYC seguem fora do escopo atual.
 
-### 2026-11-14 - Fase 17C: painel interno de moderacao
+### 2026-11-14 - Barra inferior, suspensao de conta e moderacao no app mobile
 
-- **Escopo:** identidade de operador, fila interna, notificacao ao administrador e painel web separado do JOGA y GESTAO. Sem IA paga e sem alteracoes no mobile.
-- **Backend:** `moderation_operators` (migracao `b4c5d6e7f8a9`), bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS`, dependencias `get_moderator`/`require_admin`, rotas de fila/detalhe/decisao/recursos/operadores e notificacao persistida `moderation_report`.
-- **Painel:** rota `/moderation`, cabecalho "JOGA y MODERACAO", estatisticas, fila com atualizacao a cada 30s, detalhe com contexto, decisao com justificativa, recursos e gestao de moderadores por admin.
-- **Seguranca:** autorizacao verificada no servidor em cada rota; conta comum recebe `403 moderator_required`; gestao de papeis exige `ADMIN`; decisoes e alteracoes de operador geram auditoria.
-- **Verificacao:** `ruff check`, `ruff format --check`, `mypy app` e Alembic (`upgrade`, `check`, head `b4c5d6e7f8a9`) limpos; backend **473 passed, 29 skipped**; painel com **22 testes**, `tsc --noEmit`, `eslint .`, Prettier dos arquivos alterados e `vite build`/CSP limpos.
-- **Documentacao:** ADR 0047, `harness/build/phase-17c-painel-moderacao.md`, PLANS, PENDENCIAS, RUNBOOK e contrato do app atualizados.
-- **Limites:** sem push, merge, deploy ou reinicio da API viva; classificador local, central de notificacoes no painel e suspensao permanente seguem pendentes.
+- **Barra inferior:** o calculo manual de `bottomInset` foi removido e o app passou a usar `react-native-safe-area-context` (`SafeAreaProvider`/`useSafeAreaInsets`). A barra de abas tem conteudo de 54 dp, icones de 19 e rotulos de 11; o inset inferior do sistema fica em uma area separada com a cor de fundo da pagina, sem encostar na barra de navegacao Android. O `toast` tambem respeita o inset.
+- **Dependencia:** `react-native-safe-area-context@~5.11.1` instalado via Expo; `node_modules` foi reinstalado do lockfile apos falha de importacao do pnpm no Windows.
+- **Suspensao:** o refresh agora responde `401 account_suspended` quando o usuario esta suspenso (o acesso comum continua `401 invalid_token`). O app preserva a sessao, remove a barra de abas e exibe `SuspendedScreen` com motivo, inicio, fim, recurso, "Tentar novamente" e "Sair da conta". Recuperacao apos revogacao exercitada no aparelho.
+- **Contrato de moderacao:** `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao de conta suspensa para o jogador contestar a propria medida; a autorizacao continua limitada as acoes em que ele e o alvo. Severidade, prioridade e identidade do denunciante nao sao expostas.
+- **Denuncia e historico:** categoria, status, data e decisao continuam sendo o unico conteudo exibido; recurso e mensagens do lobby como contexto seguem sem upload de midia.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos. Backend: `python -m pytest -o addopts="" -q` com 473 passed e 29 skipped; `ruff check` e `mypy` limpos nos arquivos alterados. Testes novos cobrem refresh de conta suspensa e leitura/recurso da propria medida.
+- **Aparelho:** Moto G24 via Expo Go/USB; login OTP, barra inferior, suspensao, motivo/datas, envio de recurso e retorno a home apos revogacao validados. `screen_off_timeout` restaurado para 60000 ms.
+- **Limites:** iOS nao foi exercitado; a barra foi ajustada para Android com 3 botoes e inset reportado pelo sistema. O limite de OTP do ambiente local (5/hora) exigiu limpeza de desafios durante os testes.
+
+### 2026-11-15 - Backend: contratos de suspensao, reservas e listas do painel
+
+- **App:** refresh de conta suspensa responde `401 account_suspended`; `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao suspensa para contestar a propria medida, com autoria limitada ao alvo. Demais rotas continuam `401 invalid_token`.
+- **Reservas:** `GET /bookings` e `GET /organizations/{id}/bookings` aceitam `status`, `from`, `to`, `limit` e `offset`, devolvem `total` e `BookingView.timezone` (IANA). Datas sem fuso ou periodo invalido retornam `422 invalid_time_range`.
+- **Erros:** handler global de `RequestValidationError` padroniza `422` em `{detail:{code,message,fields}}`, sem ecoar o valor enviado.
+- **Painel:** sessao web passa a devolver `capabilities` (`moderation.read`/`moderation.manage`); recebiveis, extrato, disputas e auditoria devolvem `total` antes da paginacao.
+- **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
+- **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
