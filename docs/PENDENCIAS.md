@@ -3,6 +3,7 @@
 **Atualizado em:** 15 de novembro de 2026
 
 Backlog detalhado do Mercado Pago e dos contratos: `docs/BACKLOG_MERCADO_PAGO_E_CONTRATOS.md`.
+Pendências jurídicas, fiscais e regulatórias: `docs/JURIDICO_PENDENCIAS.md`.
 
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
