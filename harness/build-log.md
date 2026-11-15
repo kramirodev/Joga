@@ -1072,3 +1072,21 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **App do jogador:** `GET /me/notifications` continua listando apenas `player`, sem parametro novo e sem mudanca de contrato.
 - **Teste:** novo caso em `tests/test_moderation.py` cobre autorizacao, leitura, contagem, `read-all` e isolamento entre operadores e canal.
 - **Fase 17:** backend concluido; restam classificador local, suspensao permanente e retencao/LGPD, todos dependentes de politica/dataset.
+
+### 2026-11-15 - App: appeals/me na suspensao e revalidacao automatica
+
+- **Escopo:** somente `mobile/`; API local reiniciada para carregar o endpoint novo. Nenhum arquivo de backend alterado.
+- **Endpoint:** `GET /api/v1/moderation/appeals/me` consumido por `mobile/src/api/client.ts` e carregado junto com `actions/me`.
+- **SuspendedScreen:** exibe o recurso do jogador com status `EM ANALISE`, `ACEITO` ou `REJEITADO`, datas e `decision_reason` como justificativa. Com recurso existente, o formulario de nova contestacao e ocultado para evitar duplicidade.
+- **Atualizacao:** apos enviar, a tela recarrega `actions/me` e `appeals/me` para refletir `OPEN`; a decisao aparece ao reabrir a tela ou tocar em "Tentar novamente".
+- **Revalidacao:** a tela agora chama `recheckSuspension` ao montar. Se a conta foi reativada enquanto o app estava fechado, ela volta ao app sem exigir novo login.
+- **Notificacoes:** o backend separou os canais; `GET /me/notifications` entrega somente o canal do jogador. O app mantem o tratamento de `moderation_appeal_result` e a navegacao para moderacao.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec export --platform android` limpos. A API registrou `actions/me` e `appeals/me` com `200` durante a suspensao.
+- **Limites:** o ADB ficou sem responder no fechamento; a tela de decisao (`REJECTED` com `decision_reason`) foi validada por tipos/compilacao, mas nao teve screenshot final. A conta de teste `Zero Dois` foi reativada e a medida de teste removida.
+
+### 2026-11-15 - Contrato de conta suspensa travado por teste
+
+- **App validou:** refresh `200` com `user.status = "suspended"`, `actions/me` e `appeals/me` `200` com o token novo, recurso aceito com o token novo e `/me/notifications` `401` durante a suspensao.
+- **Backend:** o teste de suspensao temporaria agora exige `status`, `reason`, `created_at`, `decided_at` e `decision_reason` em `appeals/me`; confirma que recurso `REJECTED` mantem a conta suspensa, que `moderation_appeal_result` chega no canal `player` com `data.decision` e `data.appeal_id` e que notificacoes internas nao aparecem na central do jogador.
+- **Testes:** `tests/test_moderation.py` e `tests/test_auth_flow_api.py` com 24 passed; `ruff` limpo.
+- **Sem mudanca de contrato:** os campos e canais esperados pelo app continuam os mesmos.

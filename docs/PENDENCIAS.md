@@ -1,6 +1,6 @@
 # Pendências abertas do JOGA
 
-**Atualizado em:** 14 de novembro de 2026
+**Atualizado em:** 15 de novembro de 2026
 
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
@@ -45,6 +45,8 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
 | CEP do estabelecimento | 13F | **Fases 1 e 2 implementadas**: endpoint autenticado, BrasilAPI, cache, rate limit, `postal_code`/proveniência no venue e rebaixamento para `manual`. Mapa e pino ajustável pendentes | Implementar mapa/pino no painel |
 | Provedor de geocoding de produção | 13F | BrasilAPI atende a Fase 1; Nominatim/Google e orçamento ainda não decididos |
+| Precisão da coordenada da BrasilAPI | 13F | Coordenadas de bairro são rotuladas como `street`; CEPs vizinhos podem receber o mesmo ponto | Avaliar `approximate` ou provedor por endereço |
+| Fallback de CEP/geocoding | 13F | BrasilAPI agrega Correios/ViaCEP/WideNet e devolve 404/504 quando todos falham; não há segundo provedor | Decidir ViaCEP (endereço) e Nominatim (coordenada) |
 | Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |
 | Catálogo definitivo de equipamento | 13/17 | Pendente; catálogo inicial (bola/rede) definido na ADR 0030 |
@@ -121,7 +123,7 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 | Suspensão temporária | 17B | **Implementada**: bloqueia autenticação e reativa por script ao fim do prazo |
 | Suspensão permanente | 17C | Pendente de política, dupla revisão e revisão jurídica |
 | Retenção/LGPD de contexto e evidências | 17B/19 | **Redação provisória em 180 dias**; revisão jurídica final pendente |
-| Painel interno de moderação | 17C | **Implementado** em `/moderation`, separado do JOGA y GESTÃO; falta central de notificações no painel |
+| Painel interno de moderação | 17C | **Implementado** em `/moderation`, separado do JOGA y GESTÃO; central interna pronta no backend (`/moderation/notifications`) | Consumir a central interna no painel |
 
 ## Reescopo das Fases 11–15 (ADR 0042/0043)
 
