@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         min_length=1,
     )
     cep_timeout_seconds: int = Field(default=5, ge=1, le=15)
+    geo_timeout_seconds: int = Field(default=3, ge=1, le=15)
+    geo_cache_ttl_days: int = Field(default=30, ge=1, le=365)
+    geo_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
+    geo_provider_version: str = Field(default="brasilapi_v1", min_length=1, max_length=40)
     discovery_max_radius_km: int = Field(default=100, ge=1, le=200)
     discovery_default_radius_km: int = Field(default=10, ge=1, le=100)
     discovery_page_size: int = Field(default=20, ge=1, le=50)

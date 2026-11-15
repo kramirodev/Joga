@@ -29,6 +29,10 @@ class CepProviderUnavailable(CepError):
     """Provedor de CEP indisponível ou sem coordenadas."""
 
 
+class CepTimeout(CepProviderUnavailable):
+    """Provedor de CEP excedeu o tempo limite."""
+
+
 @dataclass(frozen=True)
 class CepLocation:
     cep: str
@@ -36,6 +40,20 @@ class CepLocation:
     state: str
     lat: float
     lng: float
+
+
+@dataclass(frozen=True)
+class PostalCodeLocation:
+    cep: str
+    street: str | None
+    neighborhood: str | None
+    city: str
+    state: str
+    country: str
+    lat: float | None
+    lng: float | None
+    precision: str
+    source: str
 
 
 class CepResolver(Protocol):
@@ -66,10 +84,29 @@ class BrasilApiCepResolver:
         self._timeout = timeout_seconds
         self._fetch_json = fetch_json or _urlopen_json
         self._cache: dict[str, CepLocation] = {}
+        self._postal_cache: dict[str, PostalCodeLocation] = {}
 
     def resolve(self, cep: str) -> CepLocation:
         normalized = normalize_cep(cep)
         cached = self._cache.get(normalized)
+        if cached is not None:
+            return cached
+        postal = self.resolve_postal_code(normalized)
+        if postal.lat is None or postal.lng is None:
+            raise CepProviderUnavailable("CEP sem coordenadas disponíveis")
+        location = CepLocation(
+            cep=postal.cep,
+            city=postal.city,
+            state=postal.state,
+            lat=postal.lat,
+            lng=postal.lng,
+        )
+        self._cache[normalized] = location
+        return location
+
+    def resolve_postal_code(self, cep: str) -> PostalCodeLocation:
+        normalized = normalize_cep(cep)
+        cached = self._postal_cache.get(normalized)
         if cached is not None:
             return cached
         url = f"{self._base_url}/{normalized}"
@@ -79,38 +116,55 @@ class BrasilApiCepResolver:
             if error.code == 404:
                 raise CepNotFound("CEP não encontrado") from error
             raise CepProviderUnavailable("provedor de CEP indisponível") from error
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        except TimeoutError as error:
+            raise CepTimeout("provedor de CEP excedeu o tempo limite") from error
+        except (urllib.error.URLError, json.JSONDecodeError) as error:
+            if isinstance(getattr(error, "reason", None), TimeoutError):
+                raise CepTimeout("provedor de CEP excedeu o tempo limite") from error
             raise CepProviderUnavailable("provedor de CEP indisponível") from error
 
         city = payload.get("city")
         state = payload.get("state")
+        if not isinstance(city, str) or not isinstance(state, str):
+            raise CepProviderUnavailable("resposta de CEP inválida")
+
+        street = payload.get("street")
+        neighborhood = payload.get("neighborhood")
         location = payload.get("location")
         coordinates = location.get("coordinates") if isinstance(location, dict) else None
-        if (
-            not isinstance(city, str)
-            or not isinstance(state, str)
-            or not isinstance(coordinates, dict)
-        ):
-            raise CepProviderUnavailable("CEP sem coordenadas disponíveis")
+        lat: float | None = None
+        lng: float | None = None
+        if isinstance(coordinates, dict):
+            try:
+                lat = float(coordinates["latitude"])
+                lng = float(coordinates["longitude"])
+            except (KeyError, TypeError, ValueError):
+                lat = None
+                lng = None
+            if lat is not None and lng is not None:
+                if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                    lat = None
+                    lng = None
 
-        try:
-            lat = float(coordinates["latitude"])
-            lng = float(coordinates["longitude"])
-        except (KeyError, TypeError, ValueError) as error:
-            raise CepProviderUnavailable("CEP sem coordenadas disponíveis") from error
+        if lat is not None and lng is not None:
+            precision = "street" if isinstance(street, str) and street else "approximate"
+        else:
+            precision = "unresolved"
 
-        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-            raise CepProviderUnavailable("coordenadas de CEP inválidas")
-
-        location = CepLocation(
+        result = PostalCodeLocation(
             cep=normalized,
+            street=street if isinstance(street, str) and street else None,
+            neighborhood=(neighborhood if isinstance(neighborhood, str) and neighborhood else None),
             city=city,
             state=state.upper()[:2],
+            country="BR",
             lat=lat,
             lng=lng,
+            precision=precision,
+            source="brasilapi",
         )
-        self._cache[normalized] = location
-        return location
+        self._postal_cache[normalized] = result
+        return result
 
 
 REQUEST_HEADERS = {
