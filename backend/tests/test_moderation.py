@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.modules.chat.models import LobbyMessage
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbyParticipant
+from app.modules.moderation.models import ModerationOperator
 from app.modules.moderation.service import (
     ModerationService,
     ReportConflict,
@@ -18,7 +19,7 @@ from app.modules.moderation.service import (
 )
 from app.modules.notifications.service import NotificationService
 from app.modules.ratings.models import TrustAccount
-from tests.helpers_results import make_user
+from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import api_client, bearer, setup_booking
 
 
@@ -283,3 +284,82 @@ def test_false_report_cooldown(db_session: Session) -> None:
         pass
     else:  # pragma: no cover
         raise AssertionError("cooldown de denunciante deveria ser aplicado")
+
+
+def test_admin_queue_notification_and_decision(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = context_with_messages(db_session)
+    admin_id = make_user(db_session)
+    admin_token = make_token(db_session, admin_id)
+    db_session.add(ModerationOperator(user_id=admin_id, role="ADMIN", active=True))
+    db_session.flush()
+
+    report = api.post(
+        "/api/v1/moderation/reports",
+        headers=bearer(context["tokens"][0]),
+        json={
+            "target_user_id": str(context["users"][1]),
+            "lobby_id": str(context["lobbies"][0].id),
+            "category": "THREAT",
+            "description": "Ameaça no chat",
+        },
+    )
+    assert report.status_code == 201, report.text
+    notification = NotificationService(db_session).list_for_user(admin_id)
+    assert any(item.kind == "moderation_report" for item in notification)
+
+    queue = api.get("/api/v1/moderation/queue", headers=bearer(admin_token))
+    assert queue.status_code == 200, queue.text
+    body = queue.json()
+    assert body["stats"]["open"] >= 1
+    assert body["reports"][0]["description"] == "Ameaça no chat"
+
+    report_id = body["reports"][0]["id"]
+    detail = api.get(f"/api/v1/moderation/reports/{report_id}", headers=bearer(admin_token))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["category"] == "THREAT"
+
+    decision = api.post(
+        f"/api/v1/moderation/reports/{report_id}/decision",
+        headers=bearer(admin_token),
+        json={"decision": "WARN", "reason": "Aviso formal"},
+    )
+    assert decision.status_code == 200, decision.text
+    assert decision.json()["status"] == "RESOLVED"
+
+    after = api.get("/api/v1/moderation/queue", headers=bearer(admin_token))
+    assert after.json()["reports"] == []
+
+
+def test_non_moderator_cannot_read_queue(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = context_with_messages(db_session)
+    response = api.get("/api/v1/moderation/queue", headers=bearer(context["tokens"][0]))
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "moderator_required"
+
+
+def test_admin_can_add_operator(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context_with_messages(db_session)
+    admin_id = make_user(db_session)
+    admin_token = make_token(db_session, admin_id)
+    db_session.add(ModerationOperator(user_id=admin_id, role="ADMIN", active=True))
+    db_session.flush()
+    new_operator = make_user(db_session)
+
+    created = api.post(
+        "/api/v1/moderation/operators",
+        headers=bearer(admin_token),
+        json={"user_id": str(new_operator), "role": "MODERATOR"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "MODERATOR"
+
+    token = make_token(db_session, new_operator)
+    me = api.get("/api/v1/moderation/me", headers=bearer(token))
+    assert me.status_code == 200
+    assert me.json()["role"] == "MODERATOR"

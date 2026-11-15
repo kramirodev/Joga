@@ -19,6 +19,7 @@ from app.modules.moderation.models import (
     REPORT_CATEGORIES,
     ModerationAction,
     ModerationAppeal,
+    ModerationOperator,
     ModerationReport,
 )
 from app.modules.notifications.service import NotificationService
@@ -236,6 +237,7 @@ class ModerationService:
                 "severity": report.severity,
             },
         )
+        self._notify_operators(report, moment)
         self.session.flush()
         return report
 
@@ -275,6 +277,138 @@ class ModerationService:
                 .offset(offset)
                 .limit(limit)
             ).all()
+        )
+
+    def get_report(self, report_id: uuid.UUID) -> ModerationReport:
+        report = self.session.get(ModerationReport, report_id)
+        if report is None:
+            raise ReportNotFound
+        return report
+
+    def stats(self) -> dict[str, int]:
+        rows = self.session.execute(
+            select(ModerationReport.status, func.count()).group_by(ModerationReport.status)
+        ).all()
+        counts = {str(status): int(count) for status, count in rows}
+        high = int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(ModerationReport)
+                .where(
+                    ModerationReport.status == "OPEN",
+                    ModerationReport.severity == "HIGH",
+                )
+            )
+            or 0
+        )
+        return {
+            "open": counts.get("OPEN", 0),
+            "in_review": counts.get("IN_REVIEW", 0),
+            "appealed": counts.get("APPEALED", 0),
+            "high_priority": high,
+        }
+
+    def list_appeals(self, *, status_filter: str = "OPEN") -> list[ModerationAppeal]:
+        return list(
+            self.session.scalars(
+                select(ModerationAppeal)
+                .where(ModerationAppeal.status == status_filter)
+                .order_by(ModerationAppeal.created_at)
+            ).all()
+        )
+
+    def operator_role(self, user_id: uuid.UUID) -> str | None:
+        row = self.session.get(ModerationOperator, user_id)
+        if row is not None and row.active:
+            return row.role
+        if str(user_id) in get_settings().moderation_admin_ids:
+            return "ADMIN"
+        return None
+
+    def list_operators(self) -> list[ModerationOperator]:
+        return list(
+            self.session.scalars(
+                select(ModerationOperator).order_by(
+                    ModerationOperator.created_at,
+                    ModerationOperator.user_id,
+                )
+            ).all()
+        )
+
+    def add_operator(
+        self,
+        actor_user_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        role: str = "MODERATOR",
+    ) -> ModerationOperator:
+        if role not in {"ADMIN", "MODERATOR"}:
+            raise ReportInvalid("role_invalid")
+        row = self.session.get(ModerationOperator, user_id)
+        if row is None:
+            row = ModerationOperator(
+                user_id=user_id,
+                role=role,
+                active=True,
+                created_by=actor_user_id,
+            )
+            self.session.add(row)
+        else:
+            row.role = role
+            row.active = True
+            row.deactivated_at = None
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            action="moderation.operator_upserted",
+            resource_type="moderation_operator",
+            resource_id=user_id,
+            details={"role": role},
+        )
+        self.session.flush()
+        return row
+
+    def deactivate_operator(self, actor_user_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        row = self.session.get(ModerationOperator, user_id)
+        if row is None:
+            raise ActionNotFound
+        row.active = False
+        row.deactivated_at = ensure_utc(utcnow())
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            action="moderation.operator_deactivated",
+            resource_type="moderation_operator",
+            resource_id=user_id,
+            details={},
+        )
+        self.session.flush()
+
+    def _notify_operators(self, report: ModerationReport, moment: datetime) -> None:
+        operator_ids = set(
+            self.session.scalars(
+                select(ModerationOperator.user_id).where(ModerationOperator.active.is_(True))
+            ).all()
+        )
+        for raw in get_settings().moderation_admin_ids:
+            try:
+                operator_ids.add(uuid.UUID(raw))
+            except ValueError:
+                continue
+        if not operator_ids:
+            return
+        NotificationService(self.session).create_many(
+            list(operator_ids),
+            kind="moderation_report",
+            title="Nova denúncia",
+            body=(f"{report.category} · {report.severity} · prioridade {report.priority}"),
+            idempotency_key_prefix=f"moderation_report:{report.id}",
+            data={
+                "report_id": str(report.id),
+                "severity": report.severity,
+                "priority": report.priority,
+            },
+            now=moment,
         )
 
     def review(

@@ -153,6 +153,7 @@ class Settings(BaseSettings):
 
     # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
     moderation_operators: str = ""
+    moderation_admin_user_ids: str = ""
     moderation_max_reports_per_day: int = Field(default=5, ge=1, le=50)
     moderation_false_report_threshold: int = Field(default=3, ge=1, le=20)
     moderation_false_report_cooldown_days: int = Field(default=7, ge=1, le=90)
@@ -162,6 +163,12 @@ class Settings(BaseSettings):
     def moderation_operator_ids(self) -> frozenset[str]:
         return frozenset(
             item.strip() for item in self.moderation_operators.split(",") if item.strip()
+        )
+
+    @property
+    def moderation_admin_ids(self) -> frozenset[str]:
+        return frozenset(
+            item.strip() for item in self.moderation_admin_user_ids.split(",") if item.strip()
         )
 
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
