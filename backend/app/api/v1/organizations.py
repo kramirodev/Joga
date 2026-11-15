@@ -153,6 +153,7 @@ class AuditView(BaseModel):
 
 class AuditListResponse(BaseModel):
     audit: list[AuditView]
+    total: int
     limit: int
     offset: int
 
@@ -496,6 +497,7 @@ def list_audit(
             limit=limit,
             offset=offset,
         )
+        total = service.count_audit(current.user_id, organization_id)
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
     return AuditListResponse(
@@ -511,6 +513,7 @@ def list_audit(
             )
             for event in events
         ],
+        total=total,
         limit=limit,
         offset=offset,
     )

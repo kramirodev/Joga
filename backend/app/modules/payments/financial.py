@@ -176,6 +176,20 @@ class FinancialService:
             for release, booking, dispute_id in self.session.execute(statement).all()
         ]
 
+    def count_receivables(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        status: str | None = None,
+    ) -> int:
+        conditions = [VenueRelease.organization_id == organization_id]
+        if status is not None:
+            conditions.append(VenueRelease.status == status)
+        return int(
+            self.session.scalar(select(func.count()).select_from(VenueRelease).where(*conditions))
+            or 0
+        )
+
     def statement(
         self,
         organization_id: uuid.UUID,
@@ -192,6 +206,17 @@ class FinancialService:
                 .offset(offset)
                 .limit(limit)
             ).all()
+        )
+
+    def count_statement(self, organization_id: uuid.UUID) -> int:
+        return int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(LedgerEntry)
+                .join(Booking, Booking.id == LedgerEntry.booking_id)
+                .where(Booking.organization_id == organization_id)
+            )
+            or 0
         )
 
     def release_totals(self, organization_id: uuid.UUID) -> dict[str, int]:
@@ -290,6 +315,22 @@ class FinancialService:
         if status is not None:
             statement = statement.where(FinancialDispute.status == status)
         return list(self.session.scalars(statement).all())
+
+    def count_disputes(
+        self,
+        organization_id: uuid.UUID,
+        *,
+        status: str | None = None,
+    ) -> int:
+        conditions = [FinancialDispute.organization_id == organization_id]
+        if status is not None:
+            conditions.append(FinancialDispute.status == status)
+        return int(
+            self.session.scalar(
+                select(func.count()).select_from(FinancialDispute).where(*conditions)
+            )
+            or 0
+        )
 
     def get_dispute(self, organization_id: uuid.UUID, dispute_id: uuid.UUID) -> FinancialDispute:
         dispute = self.session.get(FinancialDispute, dispute_id)

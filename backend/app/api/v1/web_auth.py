@@ -43,6 +43,7 @@ from app.modules.identity.sessions import (
     RefreshReuseDetected,
     SessionService,
 )
+from app.modules.moderation.service import ModerationService
 
 router = APIRouter(prefix="/auth/web", tags=["web-auth"])
 
@@ -62,6 +63,7 @@ class WebSessionResponse(BaseModel):
     access_expires_at: datetime
     csrf_token: str
     user: UserSummary
+    capabilities: list[str]
 
 
 def _error(status_code: int, code: str) -> HTTPException:
@@ -131,11 +133,22 @@ def _clear_session_cookies(response: Response, settings: Settings) -> None:
     )
 
 
+def _capabilities(session: Session, user_id: UUID) -> list[str]:
+    role = ModerationService(session).operator_role(user_id)
+    if role is None:
+        return []
+    capabilities = ["moderation.read"]
+    if role == "ADMIN":
+        capabilities.append("moderation.manage")
+    return capabilities
+
+
 def _session_response(
     response: Response,
     tokens: IssuedTokens,
     user: User,
     settings: Settings,
+    capabilities: list[str],
 ) -> WebSessionResponse:
     csrf_token = secrets.token_urlsafe(32)
     _set_session_cookies(
@@ -149,6 +162,7 @@ def _session_response(
         access_expires_at=tokens.access_expires_at,
         csrf_token=csrf_token,
         user=UserSummary(id=user.id, status=user.status),
+        capabilities=capabilities,
     )
 
 
@@ -186,7 +200,13 @@ def web_register(
     record = session.get(User, user.id)
     if record is None:
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token")
-    return _session_response(response, tokens, record, settings)
+    return _session_response(
+        response,
+        tokens,
+        record,
+        settings,
+        _capabilities(session, record.id),
+    )
 
 
 @router.post("/login", response_model=WebSessionResponse)
@@ -219,7 +239,13 @@ def web_login(
     record = session.get(User, user.id)
     if record is None:
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token")
-    return _session_response(response, tokens, record, settings)
+    return _session_response(
+        response,
+        tokens,
+        record,
+        settings,
+        _capabilities(session, record.id),
+    )
 
 
 @router.post("/refresh", response_model=WebSessionResponse)
@@ -253,12 +279,23 @@ def web_refresh(
 
     user = session.get(User, tokens.user_id)
     if user is None or user.status != "active":
+        code = (
+            "account_suspended"
+            if user is not None and user.status == "suspended"
+            else "invalid_refresh_token"
+        )
         session.rollback()
-        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_refresh_token")
+        raise _error(status.HTTP_401_UNAUTHORIZED, code)
 
     record_security_event(session, AUTH_REFRESH_ROTATED, user_id=user.id)
     session.commit()
-    return _session_response(response, tokens, user, settings)
+    return _session_response(
+        response,
+        tokens,
+        user,
+        settings,
+        _capabilities(session, user.id),
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

@@ -567,6 +567,23 @@ class OrganizationService:
             .offset(offset)
         ).all()
 
+    def count_audit(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+    ) -> int:
+        """Conta a trilha da organização com a mesma autorização da listagem."""
+
+        self._require_capability(actor_user_id, organization_id, Capability.AUDIT_READ)
+        return int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(AuditLog.organization_id == organization_id)
+            )
+            or 0
+        )
+
     def _lock_organization(self, organization_id: uuid.UUID) -> Organization:
         """Serializa alterações de vínculo por organização no PostgreSQL."""
 

@@ -439,6 +439,7 @@ def test_audit_is_scoped_and_records_administrative_actions(
     )
     assert audit.status_code == 200
     events = audit.json()["audit"]
+    assert audit.json()["total"] == len(events)
     actions = {event["action"] for event in events}
     assert {
         "organization.created",
@@ -469,6 +470,7 @@ def test_audit_is_scoped_and_records_administrative_actions(
     )
     assert limited.status_code == 200
     assert len(limited.json()["audit"]) == 2
+    assert limited.json()["total"] == audit.json()["total"]
     assert limited.json()["limit"] == 2
     assert limited.json()["offset"] == 0
 

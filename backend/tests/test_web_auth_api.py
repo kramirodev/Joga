@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,7 @@ from app.modules.identity.events import AUTH_LOGOUT, AUTH_REFRESH_ROTATED
 from app.modules.identity.models import SecurityEvent
 from app.modules.identity.otp import OtpPolicy, PhoneChallengeService
 from app.modules.identity.sms import RecordingSmsSender
+from app.modules.moderation.models import ModerationOperator
 
 PHONE = "+5511987654321"
 
@@ -126,6 +128,35 @@ def test_web_registration_sets_http_only_cookies_and_access_works(
     assert db_session.scalar(
         select(SecurityEvent).where(SecurityEvent.event_type == "auth.registration_completed")
     )
+
+
+def test_web_session_exposes_moderation_capabilities(
+    api: TestClient,
+    sms_sender: RecordingSmsSender,
+    db_session: Session,
+) -> None:
+    receipt = receipt_for(api, sms_sender, PHONE, "registration")
+    registered = web_register(api, receipt)
+    assert registered.status_code == 201, registered.text
+    body = registered.json()
+    assert body["capabilities"] == []
+    user_id = UUID(body["user"]["id"])
+
+    db_session.add(ModerationOperator(user_id=user_id, role="MODERATOR", active=True))
+    db_session.commit()
+
+    refreshed = api.post("/api/v1/auth/web/refresh", headers=csrf_headers(api))
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["capabilities"] == ["moderation.read"]
+
+    row = db_session.get(ModerationOperator, user_id)
+    assert row is not None
+    row.role = "ADMIN"
+    db_session.commit()
+
+    admin = api.post("/api/v1/auth/web/refresh", headers=csrf_headers(api))
+    assert admin.status_code == 200, admin.text
+    assert admin.json()["capabilities"] == ["moderation.read", "moderation.manage"]
 
 
 def test_web_refresh_requires_csrf_and_rotates_cookies(

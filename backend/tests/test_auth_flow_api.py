@@ -285,3 +285,17 @@ def test_security_events_do_not_store_tokens(
     assert tokens["access_token"] not in serialized
     assert tokens["refresh_token"] not in serialized
     assert any(event.event_type == AUTH_LOGOUT for event in events)
+
+
+def test_validation_errors_have_stable_shape(api: TestClient) -> None:
+    response = api.post(
+        "/api/v1/auth/phone/challenges",
+        json={"phone": "123", "purpose": "login"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "validation_error"
+    assert detail["message"] == "Dados inválidos"
+    assert any(field["field"] == "body.phone" for field in detail["fields"])
+    assert all(set(field) == {"field", "code", "message"} for field in detail["fields"])
