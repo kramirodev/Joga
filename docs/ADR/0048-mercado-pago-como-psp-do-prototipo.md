@@ -23,9 +23,10 @@ protótipo e levava configuração de sandbox a ambientes com dinheiro real.
 3. Fora do ambiente local/teste, o backend **não sobe** sem:
    `JOGA_PSP_PROVIDER=mercadopago`, access token, `JOGA_MERCADO_PAGO_WEBHOOK_SECRET`
    e `JOGA_MERCADO_PAGO_NOTIFICATION_URL` pública em HTTPS.
-4. Não há e-mail de pagador fictício em produção. Até o e-mail por usuário ser
-   implementado (MP-04), o ambiente exige `JOGA_MERCADO_PAGO_PAYER_EMAIL` real;
-   depois, a cobrança usa o e-mail do próprio pagador.
+4. Não há e-mail de pagador fictício nem global. A cobrança usa o e-mail da
+   própria conta (`users.email`, normalizado) e o snapshot fica em
+   `booking_payments.payer_email`/`purchase_payments.payer_email`; sem e-mail, a
+   abertura responde `422 payer_email_required`.
 5. O Mercado Pago **centraliza o valor**. O JOGA mantém ledger interno e o
    repasse ao estabelecimento continua manual/registrado no ledger, conforme a
    ADR 0040. **Não há split, recebedor automático nem promessa de repasse

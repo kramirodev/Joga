@@ -14,9 +14,9 @@ recebedor automático; repasse continua ledger/manual conforme ADR 0040.
 | ID | Tarefa | Estado |
 |---|---|---|
 | MP-01 | ADR 0048 + atualização de PLANS/PENDENCIAS/THREAT_MODEL/adapter | **Concluído em 2026-11-15** |
-| MP-02 | Guardas de configuração de produção (provider, token, segredo, URL HTTPS; sem e-mail fictício) | **Concluído em 2026-11-15** — e-mail por usuário pendente em MP-04 |
+| MP-02 | Guardas de configuração de produção (provider, token, segredo, URL HTTPS; sem e-mail global) | **Concluído em 2026-11-15** |
 | MP-03 | Validar Orders API real (qr_code, base64, ticket_url, expires_at, status, idempotência) | Pendente — exige credenciais do Mercado Pago |
-| MP-04 | E-mail do pagador por usuário, snapshot e `payer_email_required` | Pendente (P0) |
+| MP-04 | E-mail do pagador por usuário, snapshot e `payer_email_required` | **Concluído em 2026-11-15** |
 | MP-05 | Webhook real, retry (`attempts`, `last_error`, `next_attempt_at`) e worker | Pendente (P0) — persistência bruta e assinatura já existem |
 | MP-06 | Confirmação local dev-only + teste | **Concluído em 2026-11-15** |
 | MP-07 | Reembolso real (processing/failed/parcial/idempotência) | Pendente (P1) |
