@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -241,7 +242,7 @@ class ModerationService:
                 "severity": report.severity,
             },
         )
-        self._notify_operators(report, moment)
+        self._notify_report(report, moment)
         self.session.flush()
         return report
 
@@ -390,7 +391,7 @@ class ModerationService:
         )
         self.session.flush()
 
-    def _notify_operators(self, report: ModerationReport, moment: datetime) -> None:
+    def _operator_ids(self) -> set[uuid.UUID]:
         operator_ids = set(
             self.session.scalars(
                 select(ModerationOperator.user_id).where(ModerationOperator.active.is_(True))
@@ -401,20 +402,56 @@ class ModerationService:
                 operator_ids.add(uuid.UUID(raw))
             except ValueError:
                 continue
+        return operator_ids
+
+    def _notify_operators(
+        self,
+        *,
+        kind: str,
+        title: str,
+        body: str,
+        idempotency_key_prefix: str,
+        data: dict[str, Any],
+        moment: datetime,
+    ) -> None:
+        operator_ids = self._operator_ids()
         if not operator_ids:
             return
         NotificationService(self.session).create_many(
             list(operator_ids),
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key_prefix=idempotency_key_prefix,
+            data=data,
+            now=moment,
+        )
+
+    def _notify_report(self, report: ModerationReport, moment: datetime) -> None:
+        self._notify_operators(
             kind="moderation_report",
             title="Nova denúncia",
-            body=(f"{report.category} · {report.severity} · prioridade {report.priority}"),
+            body=f"{report.category} · {report.severity} · prioridade {report.priority}",
             idempotency_key_prefix=f"moderation_report:{report.id}",
             data={
                 "report_id": str(report.id),
                 "severity": report.severity,
                 "priority": report.priority,
             },
-            now=moment,
+            moment=moment,
+        )
+
+    def _notify_appeal(self, appeal: ModerationAppeal, moment: datetime) -> None:
+        self._notify_operators(
+            kind="moderation_appeal",
+            title="Novo recurso",
+            body="Uma medida foi contestada. Revise o recurso na fila interna.",
+            idempotency_key_prefix=f"moderation_appeal:{appeal.id}",
+            data={
+                "appeal_id": str(appeal.id),
+                "action_id": str(appeal.action_id),
+            },
+            moment=moment,
         )
 
     def review(
@@ -557,6 +594,7 @@ class ModerationService:
             resource_id=appeal.id,
             details={"action_id": str(action.id)},
         )
+        self._notify_appeal(appeal, moment)
         self.session.flush()
         return appeal
 
@@ -599,6 +637,19 @@ class ModerationService:
             report = self.session.get(ModerationReport, action.report_id)
             if report is not None:
                 report.status = "RESOLVED"
+        NotificationService(self.session).create(
+            user_id=appeal.user_id,
+            kind="moderation_appeal_result",
+            title="Recurso decidido",
+            body=(
+                "Seu recurso foi aceito e a medida foi revista."
+                if decision == "ACCEPTED"
+                else "Seu recurso foi analisado e a medida foi mantida."
+            ),
+            idempotency_key=f"moderation_appeal_result:{appeal.id}:{appeal.user_id}",
+            data={"appeal_id": str(appeal.id), "decision": decision},
+            now=moment,
+        )
         record_audit(
             self.session,
             actor_user_id=None,

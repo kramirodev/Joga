@@ -346,6 +346,31 @@ def test_admin_queue_notification_and_decision(
     after = api.get("/api/v1/moderation/queue", headers=bearer(admin_token))
     assert after.json()["reports"] == []
 
+    actions = api.get(
+        "/api/v1/moderation/actions/me",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert actions.status_code == 200, actions.text
+    action_id = actions.json()["actions"][0]["id"]
+
+    appeal = api.post(
+        f"/api/v1/moderation/actions/{action_id}/appeal",
+        headers=bearer(context["tokens"][1]),
+        json={"reason": "Quero contestar o aviso"},
+    )
+    assert appeal.status_code == 200, appeal.text
+    admin_notifications = NotificationService(db_session).list_for_user(admin_id)
+    assert any(item.kind == "moderation_appeal" for item in admin_notifications)
+
+    appeal_decision = api.post(
+        f"/api/v1/moderation/appeals/{appeal.json()['id']}/decision",
+        headers=bearer(admin_token),
+        json={"decision": "REJECTED", "reason": "Aviso mantido"},
+    )
+    assert appeal_decision.status_code == 200, appeal_decision.text
+    target_notifications = NotificationService(db_session).list_for_user(context["users"][1])
+    assert any(item.kind == "moderation_appeal_result" for item in target_notifications)
+
 
 def test_non_moderator_cannot_read_queue(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
