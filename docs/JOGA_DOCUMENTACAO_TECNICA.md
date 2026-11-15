@@ -336,7 +336,7 @@ Toda consulta ou mutação deve validar organização, associação do usuário,
 
 Um operador de um estabelecimento só pode ver quadras, agenda, reservas, pagamentos e dados necessários daquela organização. Um funcionário de uma arena só pode administrar quadras e reservas autorizadas.
 
-> **Nota de implementação — CEP do estabelecimento (Fase 1).** `GET /api/v1/geo/postal-codes/{postal_code}` resolve endereço e coordenadas sugeridas via BrasilAPI CEP v2, com cache persistente de 30 dias e rate limit por usuário. O `POST /organizations/{id}/venues` não mudou: continua recebendo `latitude`/`longitude` validadas. A coordenada sugerida tem precisão de logradouro/bairro e o pino ajustável do painel é a autoridade final. `postal_code` e metadados de geocodificação no banco ficam para a Fase 2.
+> **Nota de implementação - CEP do estabelecimento (Fases 1 e 2).** `GET /api/v1/geo/postal-codes/{postal_code}` resolve endereço e coordenadas sugeridas via BrasilAPI CEP v2, com cache persistente de 30 dias e rate limit por usuário. O `POST /organizations/{id}/venues` continua recebendo `latitude`/`longitude` validadas e, desde a Fase 2, aceita `postal_code`, `geocoding_source` e `geocoding_precision`; `geocoded_at` é gravado pelo servidor. Coordenada sem proveniência explícita é `manual`, e ajustar coordenada/CEP sem reenviar proveniência rebaixa para `manual`. A coordenada sugerida tem precisão de logradouro/bairro e o pino ajustável do painel é a autoridade final. Mapa e provedor pago continuam pendentes.
 
 ### 5.3 Telefone e OTP
 

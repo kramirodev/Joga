@@ -1,6 +1,6 @@
 # Proposta: localização de estabelecimento por CEP
 
-- **Status:** Fase 1 aprovada e implementada no backend em 2026-11-15; fases 2+ pendentes.
+- **Status:** Fases 1 e 2 aprovadas e implementadas no backend em 2026-11-15; mapa, provedor pago e backfill pendentes.
 - **Data:** 2026-11-15
 - **Origem:** auditoria de UI/UX do painel `web/` (JOGA y GESTÃO).
 - **Escopo:** backend + contrato HTTP. O painel só consome depois de aprovado.

@@ -1,8 +1,8 @@
-# Fase 13F — CEP e geocodificação de estabelecimento (Fase 1)
+# Fase 13F — CEP e geocodificação de estabelecimento (Fases 1 e 2)
 
-**Status:** implementado no backend em 2026-11-15.
+**Status:** Fases 1 e 2 implementadas no backend em 2026-11-15.
 **Depende de:** Fase 12/13 (estabelecimentos e quadras), Fase 4 (CEP do perfil).
-**Não inclui:** mapa no painel, persistência de CEP no venue, provedor pago, backfill.
+**Não inclui:** mapa no painel, provedor pago, backfill retroativo de endereço.
 
 ## Problema
 
@@ -64,6 +64,32 @@ Migração `c5d6e7f8a9b0`:
 
 A linha expirada é removida na próxima leitura do mesmo CEP.
 
+## Fase 2 — persistência no estabelecimento
+
+Migração `e7f8a9b0c1d2` adiciona a `organization_venues`:
+
+| Coluna | Tipo | Regra |
+|---|---|---|
+| `postal_code` | varchar(8) | opcional, gravado só com dígitos |
+| `geocoding_source` | varchar(40) | opcional, minúsculas (`brasilapi`) |
+| `geocoding_precision` | varchar(20) | `street`, `venue`, `approximate` ou `manual` |
+| `geocoded_at` | timestamptz | opcional, gravado pelo servidor |
+
+- `latitude`/`longitude` continuam obrigatórias na API e validadas por faixa.
+- O `POST`/`PATCH` aceitam `postal_code`, `geocoding_source` e
+  `geocoding_precision`; o `GET` devolve os quatro campos novos.
+- Sem proveniência, a coordenada é `manual`.
+- `street`, `venue` e `approximate` exigem `geocoding_source`; o servidor grava
+  `geocoded_at`.
+- `manual` zera `geocoding_source` e `geocoded_at`.
+- Mudar `latitude`, `longitude` ou `postal_code` sem reenviar proveniência
+  rebaixa para `manual`: o pino ajustado é a autoridade final.
+- O backfill da migração marca como `manual` os registros que já têm coordenada.
+- `venue.created` e `venue.updated` continuam auditados; a trilha inclui CEP e
+  mudanças de proveniência.
+- Valores fora do contrato respondem `422 invalid_input` (serviço) ou
+  `422 validation_error` com `fields` (enum/limite de tamanho).
+
 ## Segurança e privacidade
 
 - Chave/URL do provedor não sai do servidor.
@@ -86,11 +112,17 @@ A linha expirada é removida na próxima leitura do mesmo CEP.
 
 Nenhum teste chama provedor externo; o resolver é injetado.
 
+`backend/tests/test_organizations.py::test_venue_postal_code_and_geocoding_provenance`
+cobre normalização do CEP, persistência da proveniência, rebaixamento para
+`manual`, cadastro sem CEP, CEP inválido e proveniência incompleta.
+
+Suíte backend: **485 passed, 29 skipped**; `ruff check`, `ruff format --check` e
+`mypy app` limpos; Alembic no head `e7f8a9b0c1d2` com `alembic check` limpo.
+
 ## Pendente
 
-1. Persistir `postal_code`, `geocoding_source`, `geocoding_precision` e
-   `geocoded_at` no venue (Fase 2).
-2. Painel: CEP com máscara, endereço preenchido e pino ajustável.
-3. Decidir mapa estático versus interativo e CSP.
-4. Avaliar Nominatim/Google se a precisão de número for insuficiente.
-5. Política de retenção/limpeza do cache.
+1. Painel: CEP com máscara, endereço preenchido e pino ajustável.
+2. Decidir mapa estático versus interativo e CSP.
+3. Avaliar Nominatim/Google se a precisão de número for insuficiente.
+4. Política de retenção/limpeza do cache.
+5. Backfill de endereço/CEP para estabelecimentos existentes (opcional).

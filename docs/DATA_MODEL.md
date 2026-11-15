@@ -478,7 +478,7 @@ Retenção provisória (ADR 0027): mensagens 730 dias; convites encerrados 90 di
 - Resultados e disputas da Fase 7 estão modelados (ver seção acima). A retenção provisória está no ADR 0024 e é aplicada por `scripts/cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19. Migração, concorrência e rate limiting validados com PostgreSQL local.
 - Penalidades por no-show (banimento temporário e reputação) ficam para as Fases 8/17; a Fase 6 só registra `no_show`.
 - Capitães completos, com Trust Factor, MMR e histórico, ficam para a Fase 8; a Fase 7 usa a seleção provisória por `FINALIZED` e UUID.
-- Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); cache é por processo e some no restart.
+- Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); o cache é persistente em `postal_code_cache`, com TTL de 30 dias.
 - Disponibilidade não trata feriados, exceções pontuais nem conversão de fuso por usuário.
 
 ## Referência

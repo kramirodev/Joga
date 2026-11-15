@@ -1054,3 +1054,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Comandos:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos.
 - **Limpeza:** notificacao de teste e medida de teste removidas; denuncia restaurada para `RESOLVED`; conta `Zero Dois` ativa.
 - **Observacao:** a conta `Zero Dois` e operadora `ADMIN` em `moderation_operators`, por isso recebe notificacoes internas `moderation_report` com severidade/prioridade. Se a regra for que o app do jogador nunca exiba triagem interna, o backend deve separar o canal do painel ou o app deve filtrar esses kinds quando a conta nao estiver em modo operador.
+
+### 2026-11-15 - CEP e geocodificacao de estabelecimento (Fase 2)
+
+- **Persistencia:** organization_venues ganhou `postal_code` (8 digitos), `geocoding_source`, `geocoding_precision` (`street`/`venue`/`approximate`/`manual`) e `geocoded_at` na migracao `e7f8a9b0c1d2`.
+- **Contrato:** `POST`/`PATCH` de venue aceitam CEP com ou sem hifen e a proveniencia da coordenada; `GET` devolve os quatro campos. `latitude`/`longitude` continuam obrigatorias na API.
+- **Regra:** sem proveniencia a coordenada e `manual`; mudar coordenada ou CEP sem reenviar proveniencia rebaixa para `manual` e zera `geocoding_source`/`geocoded_at`. `street`/`venue`/`approximate` exigem `geocoding_source` e gravam `geocoded_at` no servidor.
+- **Backfill:** registros existentes com coordenada foram marcados como `manual`; nao houve geocodificacao retroativa.
+- **Auditoria:** `venue.created`/`venue.updated` registram CEP e mudancas de proveniencia.
+- **Testes:** novo teste em `tests/test_organizations.py` para normalizacao, persistencia, rebaixamento para manual, cadastro sem CEP e erros 422; suite completa com **485 passed, 29 skipped**, `ruff` e `mypy` limpos, Alembic no head `e7f8a9b0c1d2`.
+- **Limites:** mapa/pino ajustavel, provedor pago e backfill de endereco continuam pendentes.

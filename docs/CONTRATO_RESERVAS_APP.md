@@ -381,6 +381,7 @@ Authorization: Bearer <access_token>
 - `precision`: `street`, `venue`, `approximate` ou `unresolved`.
 - `latitude`/`longitude` podem ser `null` apenas com `precision: "unresolved"`.
 - O `POST /organizations/{id}/venues` continua exigindo `latitude`/`longitude`; o painel resolve antes e envia os números.
+- Desde a Fase 2, o venue aceita `postal_code`, `geocoding_source` e `geocoding_precision`; `GET`/`PATCH` devolvem também `geocoded_at`. Ver o contrato do estabelecimento abaixo.
 - Cache persistente por CEP+número+versão do provedor, TTL de 30 dias.
 - Rate limit de 30 consultas/minuto por usuário; `429 rate_limited` com `Retry-After`.
 - Provedor desta fase: BrasilAPI CEP v2, que já devolve endereço e coordenadas. Nominatim/Google ficam como evolução atrás da mesma interface.
@@ -393,3 +394,23 @@ Authorization: Bearer <access_token>
 | 429 | `rate_limited` |
 | 502 | `geocoding_provider_error` |
 | 504 | `geocoding_timeout` |
+
+### Estabelecimento com CEP e proveniência (Fase 2)
+
+`POST /api/v1/organizations/{organization_id}/venues` e `PATCH .../venues/{venue_id}` aceitam, além dos campos atuais:
+
+| Campo | Regra |
+|---|---|
+| `postal_code` | opcional; 8 dígitos com ou sem hífen (`20541-004`) — o backend grava só `20541004` |
+| `geocoding_source` | opcional; minúsculas, até 40 caracteres (`brasilapi`, `viacep+nominatim`) |
+| `geocoding_precision` | opcional; `street`, `venue`, `approximate` ou `manual` |
+
+Regras:
+
+- `latitude`/`longitude` continuam obrigatórias no `POST` e validadas por faixa.
+- Sem `geocoding_precision`, a coordenada é gravada como `manual`.
+- `street`, `venue` e `approximate` exigem `geocoding_source`; o backend grava `geocoded_at` no momento da gravação.
+- `manual` descarta o `geocoding_source` e grava `geocoded_at = null`.
+- Se `latitude`, `longitude` ou `postal_code` mudarem sem proveniência no mesmo payload, a coordenada volta a `manual` — o pino ajustado é a autoridade final.
+- `postal_code` ou proveniência inválidos respondem `422 invalid_input`; precision fora do enum responde `422 validation_error` com `fields`.
+- `GET`, `POST` e `PATCH` devolvem `postal_code`, `geocoding_source`, `geocoding_precision` e `geocoded_at` (além dos campos anteriores).
