@@ -261,8 +261,14 @@ def test_temporary_suspension_blocks_and_can_be_revoked(
         headers=bearer(context["tokens"][1]),
     )
     assert appeal.status_code == 200, appeal.text
+    appeal_body = appeal.json()
+    assert appeal_body["status"] == "OPEN"
+    assert appeal_body["reason"] == "Quero contestar a suspensão"
+    assert appeal_body["created_at"]
+    assert appeal_body["decided_at"] is None
+    assert appeal_body["decision_reason"] is None
     reviewed = service.review_appeal(
-        uuid.UUID(appeal.json()["id"]),
+        uuid.UUID(appeal_body["id"]),
         operator="op1",
         decision="REJECTED",
         reason="Suspensão mantida",
@@ -271,13 +277,26 @@ def test_temporary_suspension_blocks_and_can_be_revoked(
     assert reviewed.status == "REJECTED"
     db_session.commit()
 
+    # Rejeição não reativa a conta: o jogador segue suspenso, mas vê a decisão.
+    db_session.refresh(user)
+    assert user.status == "suspended"
     my_appeals = api.get(
         "/api/v1/moderation/appeals/me",
         headers=bearer(context["tokens"][1]),
     )
     assert my_appeals.status_code == 200, my_appeals.text
-    assert my_appeals.json()["appeals"][0]["status"] == "REJECTED"
-    assert my_appeals.json()["appeals"][0]["decision_reason"] == "Suspensão mantida"
+    my_appeal = my_appeals.json()["appeals"][0]
+    assert my_appeal["status"] == "REJECTED"
+    assert my_appeal["reason"] == "Quero contestar a suspensão"
+    assert my_appeal["created_at"]
+    assert my_appeal["decided_at"]
+    assert my_appeal["decision_reason"] == "Suspensão mantida"
+    player_notifications = NotificationService(db_session).list_for_user(context["users"][1])
+    result = next(item for item in player_notifications if item.kind == "moderation_appeal_result")
+    assert result.data == {"appeal_id": appeal_body["id"], "decision": "REJECTED"}
+    assert all(
+        item.kind not in {"moderation_report", "moderation_appeal"} for item in player_notifications
+    )
     assert (
         api.get("/api/v1/me/notifications", headers=bearer(context["tokens"][1])).status_code == 401
     )
@@ -566,10 +585,12 @@ def test_moderation_notifications_are_scoped_to_internal_channel(
     db_session.refresh(second)
     assert second.read_at is not None
     # A central do jogador não é afetada pela marcação interna.
-    assert (
-        api.get("/api/v1/me/notifications", headers=bearer(moderator_token)).json()["unread_count"]
-        == 1
-    )
+    player_listing = api.get(
+        "/api/v1/me/notifications",
+        headers=bearer(moderator_token),
+    ).json()
+    assert [item["kind"] for item in player_listing["notifications"]] == ["booking_confirmed"]
+    assert player_listing["unread_count"] == 1
 
     other_listing = api.get(
         "/api/v1/moderation/notifications",
