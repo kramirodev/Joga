@@ -72,6 +72,99 @@ def create_venue(
     return response.json()
 
 
+def test_venue_postal_code_and_geocoding_provenance(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    owner = make_user(db_session)
+    token = make_token(db_session, owner)
+    org = create_organization(api, token)
+    base = f"/api/v1/organizations/{org['id']}/venues"
+
+    created = api.post(
+        base,
+        headers=bearer(token),
+        json={
+            "name": "Arena CEP",
+            "city": "Rio de Janeiro",
+            "state": "RJ",
+            "latitude": -22.9234,
+            "longitude": -43.2456,
+            "postal_code": "20541-004",
+            "geocoding_source": "brasilapi",
+            "geocoding_precision": "street",
+        },
+    )
+    assert created.status_code == 201, created.text
+    venue = created.json()
+    assert venue["postal_code"] == "20541004"
+    assert venue["geocoding_source"] == "brasilapi"
+    assert venue["geocoding_precision"] == "street"
+    assert venue["geocoded_at"] is not None
+
+    # Ajustar o pino sem reapresentar a proveniência rebaixa para manual.
+    manual = api.patch(
+        f"{base}/{venue['id']}",
+        headers=bearer(token),
+        json={"latitude": -22.93, "longitude": -43.25},
+    )
+    assert manual.status_code == 200, manual.text
+    assert manual.json()["postal_code"] == "20541004"
+    assert manual.json()["geocoding_source"] is None
+    assert manual.json()["geocoding_precision"] == "manual"
+    assert manual.json()["geocoded_at"] is None
+
+    restored = api.patch(
+        f"{base}/{venue['id']}",
+        headers=bearer(token),
+        json={"geocoding_source": "brasilapi", "geocoding_precision": "street"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["geocoding_precision"] == "street"
+    assert restored.json()["geocoded_at"] is not None
+
+    # Sem CEP nem proveniência, o cadastro continua aceito como manual.
+    plain = api.post(
+        base,
+        headers=bearer(token),
+        json={"name": "Arena Manual", "latitude": 0.0, "longitude": 0.0},
+    )
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["postal_code"] is None
+    assert plain.json()["geocoding_precision"] == "manual"
+    assert plain.json()["geocoded_at"] is None
+
+    invalid_postal_code = api.post(
+        base,
+        headers=bearer(token),
+        json={
+            "name": "Arena CEP inválido",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "postal_code": "123",
+        },
+    )
+    assert invalid_postal_code.status_code == 422
+    assert invalid_postal_code.json() == {"detail": {"code": "invalid_input"}}
+
+    missing_source = api.patch(
+        f"{base}/{venue['id']}",
+        headers=bearer(token),
+        json={"geocoding_precision": "street"},
+    )
+    assert missing_source.status_code == 422
+    assert missing_source.json() == {"detail": {"code": "invalid_input"}}
+
+    source_without_precision = api.patch(
+        f"{base}/{venue['id']}",
+        headers=bearer(token),
+        json={"geocoding_source": "brasilapi"},
+    )
+    assert source_without_precision.status_code == 422
+    assert source_without_precision.json() == {"detail": {"code": "invalid_input"}}
+
+
 def test_owner_and_shared_identity_across_organizations(
     client: TestClient,
     db_session: Session,

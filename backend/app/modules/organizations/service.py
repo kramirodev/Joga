@@ -6,6 +6,7 @@ import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -394,6 +395,9 @@ class OrganizationService:
         address_line: str | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
+        postal_code: str | None = None,
+        geocoding_source: str | None = None,
+        geocoding_precision: str | None = None,
         timezone: str | None = None,
         venue_id: uuid.UUID | None = None,
     ) -> OrganizationVenue:
@@ -401,6 +405,14 @@ class OrganizationService:
 
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
         clean_latitude, clean_longitude = _clean_coordinates(latitude, longitude)
+        clean_source, clean_precision = _clean_geocoding(
+            geocoding_source,
+            geocoding_precision,
+        )
+        if clean_precision is None:
+            # Coordenada sem proveniência declarada é digitada ou ajustada à mão.
+            clean_precision = "manual"
+        geocoded_at = utcnow() if clean_precision in RESOLVED_GEOCODING_PRECISIONS else None
         venue = OrganizationVenue(
             organization_id=organization_id,
             venue_id=self._validate_discovery_venue(venue_id),
@@ -410,6 +422,10 @@ class OrganizationService:
             address_line=_clean_optional(address_line, max_length=200),
             latitude=clean_latitude,
             longitude=clean_longitude,
+            postal_code=_clean_postal_code(postal_code),
+            geocoding_source=clean_source,
+            geocoding_precision=clean_precision,
+            geocoded_at=geocoded_at,
             timezone=_clean_timezone(timezone),
         )
         try:
@@ -485,6 +501,14 @@ class OrganizationService:
 
         applied: dict[str, Any] = {}
         changes = dict(changes)
+        provenance_supplied = "geocoding_precision" in changes
+        source_raw = changes.pop("geocoding_source", None)
+        precision_raw = changes.pop("geocoding_precision", None)
+        if source_raw is not None and not provenance_supplied:
+            raise InvalidInput
+        address_or_coordinate_changed = bool(
+            {"latitude", "longitude", "postal_code"} & changes.keys()
+        )
         if "latitude" in changes or "longitude" in changes:
             clean_latitude, clean_longitude = _clean_coordinates(
                 changes.pop("latitude", venue.latitude),
@@ -500,6 +524,47 @@ class OrganizationService:
                     applied[field] = {
                         "from": _audit_value(previous),
                         "to": _audit_value(coordinate),
+                    }
+        if "postal_code" in changes:
+            clean_postal_code = _clean_postal_code(changes.pop("postal_code"))
+            previous_postal_code = venue.postal_code
+            if previous_postal_code != clean_postal_code:
+                venue.postal_code = clean_postal_code
+                applied["postal_code"] = {
+                    "from": _audit_value(previous_postal_code),
+                    "to": _audit_value(clean_postal_code),
+                }
+        if provenance_supplied:
+            clean_source, clean_precision = _clean_geocoding(source_raw, precision_raw)
+            clean_precision = clean_precision or "manual"
+            clean_geocoded_at = (
+                utcnow() if clean_precision in RESOLVED_GEOCODING_PRECISIONS else None
+            )
+            for field, provenance in (
+                ("geocoding_source", clean_source),
+                ("geocoding_precision", clean_precision),
+                ("geocoded_at", clean_geocoded_at),
+            ):
+                previous_provenance = getattr(venue, field)
+                if previous_provenance != provenance:
+                    setattr(venue, field, provenance)
+                    applied[field] = {
+                        "from": _audit_value(previous_provenance),
+                        "to": _audit_value(provenance),
+                    }
+        elif address_or_coordinate_changed:
+            # Sem proveniência explícita, a coordenada deixou de ser automática.
+            for field, manual_value in (
+                ("geocoding_source", None),
+                ("geocoding_precision", "manual"),
+                ("geocoded_at", None),
+            ):
+                previous_provenance = getattr(venue, field)
+                if previous_provenance != manual_value:
+                    setattr(venue, field, manual_value)
+                    applied[field] = {
+                        "from": _audit_value(previous_provenance),
+                        "to": _audit_value(manual_value),
                     }
         for field, value in changes.items():
             cleaned: Any
@@ -706,6 +771,44 @@ def _clean_coordinates(
     return float(latitude), float(longitude)
 
 
+GEOCODING_PRECISIONS = ("street", "venue", "approximate", "manual")
+RESOLVED_GEOCODING_PRECISIONS = frozenset({"street", "venue", "approximate"})
+
+
+def _clean_postal_code(value: str | None) -> str | None:
+    """Aceita CEP com hífen e grava apenas os oito dígitos."""
+
+    if value is None:
+        return None
+    digits = re.sub(r"\D", "", value)
+    if not re.fullmatch(r"[0-9]{8}", digits) or digits == "00000000":
+        raise InvalidInput
+    return digits
+
+
+def _clean_geocoding(
+    source: str | None,
+    precision: str | None,
+) -> tuple[str | None, str | None]:
+    """Valida a proveniência da coordenada; ``manual`` não guarda provedor."""
+
+    clean_precision = (precision or "").strip() or None
+    if clean_precision is not None and clean_precision not in GEOCODING_PRECISIONS:
+        raise InvalidInput
+    clean_source = (source or "").strip() or None
+    if clean_source is not None and not re.fullmatch(r"[a-z0-9+._-]{1,40}", clean_source):
+        raise InvalidInput
+    if clean_precision in RESOLVED_GEOCODING_PRECISIONS:
+        if clean_source is None:
+            raise InvalidInput
+        return clean_source, clean_precision
+    if clean_precision == "manual":
+        return None, "manual"
+    if clean_source is not None:
+        raise InvalidInput
+    return None, None
+
+
 def _clean_optional(value: str | None, *, max_length: int) -> str | None:
     if value is None:
         return None
@@ -736,7 +839,11 @@ def _clean_timezone(value: str | None) -> str:
 
 
 def _audit_value(value: Any) -> Any:
-    return str(value) if isinstance(value, uuid.UUID) else value
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
 
 
 PIX_KEY_TYPES = ("cnpj", "email", "phone", "random")
