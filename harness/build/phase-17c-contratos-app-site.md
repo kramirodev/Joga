@@ -8,9 +8,10 @@
 
 ### Conta suspensa
 
-- `POST /api/v1/auth/refresh` de conta suspensa responde
-  `401 {"detail":{"code":"account_suspended"}}`.
-- Refresh inválido/expirado continua `400/401 invalid_refresh_token`.
+- `POST /api/v1/auth/refresh` de conta suspensa rotaciona a sessão e responde
+  `200` com `user.status = "suspended"`. O app preserva a sessão e usa esse
+  access token apenas para contestar a própria medida.
+- Refresh inválido/expirado continua `invalid_refresh_token`.
 - `GET /api/v1/auth/me` e as demais rotas comuns continuam `401 invalid_token`.
 - `GET /api/v1/moderation/actions/me` e
   `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão

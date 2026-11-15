@@ -278,7 +278,7 @@ Content-Type: application/json
 
 Contrato de suspensão para o app:
 
-- `POST /api/v1/auth/refresh` de conta suspensa responde `401 {"detail":{"code":"account_suspended"}}`; refresh inválido/expirado continua `invalid_refresh_token`.
+- `POST /api/v1/auth/refresh` de conta suspensa rotaciona a sessão e responde `200` com `user.status = "suspended"`. O app deve preservar a sessão, mostrar a tela de suspensão e usar esse access token apenas nas duas rotas de contestação abaixo. Refresh inválido/expirado continua `invalid_refresh_token`.
 - `GET /api/v1/auth/me` e as demais rotas comuns respondem `401 invalid_token` para conta suspensa.
 - Exceções: `GET /api/v1/moderation/actions/me` e `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão suspensa para o jogador ver a própria medida e contestá-la. A autorização continua limitada ao alvo da medida; tentar contestar a medida de outro usuário retorna `404`.
 - Severidade, prioridade e identidade do denunciante não são expostas ao app.

@@ -1005,9 +1005,28 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 
 ### 2026-11-15 - Backend: contratos de suspensao, reservas e listas do painel
 
-- **App:** refresh de conta suspensa responde `401 account_suspended`; `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao suspensa para contestar a propria medida, com autoria limitada ao alvo. Demais rotas continuam `401 invalid_token`.
+- **App:** refresh de conta suspensa rotaciona a sessao e responde `200` com `user.status=suspended`, permitindo renovar o access token durante toda a suspensao; `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao suspensa para contestar a propria medida, com autoria limitada ao alvo. Demais rotas continuam `401 invalid_token`; refresh web do painel continua `401 account_suspended`.
 - **Reservas:** `GET /bookings` e `GET /organizations/{id}/bookings` aceitam `status`, `from`, `to`, `limit` e `offset`, devolvem `total` e `BookingView.timezone` (IANA). Datas sem fuso ou periodo invalido retornam `422 invalid_time_range`.
 - **Erros:** handler global de `RequestValidationError` padroniza `422` em `{detail:{code,message,fields}}`, sem ecoar o valor enviado.
 - **Painel:** sessao web passa a devolver `capabilities` (`moderation.read`/`moderation.manage`); recebiveis, extrato, disputas e auditoria devolvem `total` antes da paginacao.
 - **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
 - **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
+
+### 2026-11-15 - Validacao do fluxo de suspensao no app mobile
+
+- **Escopo:** somente front-end. Nenhum arquivo de `backend/` foi alterado nesta validacao.
+- **API local:** reiniciada com o contrato de suspensao ja suportado pelo backend.
+- **Fluxo exercitado no Moto G24:** chamada autenticada recebeu `401 invalid_token`, o refresh respondeu `401 account_suspended`, a sessao local foi preservada e a tela `SuspendedScreen` apareceu no lugar das abas.
+- **Dados da medida:** `GET /moderation/actions/me` retornou `200` e a tela exibiu motivo, inicio e fim previsto.
+- **Recurso:** `POST /moderation/actions/{id}/appeal` retornou `200`; a tela limpou o campo e mostrou "Recurso enviado. A analise e interna.".
+- **Recuperacao:** com a medida revogada e a conta reativada, "Tentar novamente" voltou para a aba Partidas com a barra inferior visivel.
+- **Limpeza:** a medida de teste (`operator=test-local`) foi removida, a denuncia usada no teste voltou para `RESOLVED` e a conta `Zero Dois` voltou para `active`.
+- **Verificacao front-end:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .` e `pnpm exec prettier --check .` limpos.
+- **Observacao para o backend:** `actions/me` e `appeal` autenticam a sessao suspensa, mas `SessionService.authenticate` continua rejeitando access token expirado. Se o access token vencer durante a suspensao, o refresh nao emite novo token e essas rotas passam a `401 invalid_token`; vale validar se a contestacao precisa ficar disponivel durante toda a suspensao.
+
+### 2026-11-15 - Correcao do refresh para conta suspensa
+
+- **Backend:** o refresh mobile de conta suspensa agora rotaciona a sessao e responde `200` com `user.status = "suspended"`. O app deve tratar esse status como suspensao, preservar os tokens e usar o access token apenas em `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal`.
+- **Escopo:** as demais rotas continuam exigindo conta ativa (`401 invalid_token`); o refresh web do painel continua `401 account_suspended`.
+- **Motivo:** o access token expira em poucos minutos e o app precisa renová-lo durante toda a suspensão para manter a contestação disponível.
+- **Verificacao:** testes de auth e moderação passaram; suíte completa e contagem no fechamento desta entrada.

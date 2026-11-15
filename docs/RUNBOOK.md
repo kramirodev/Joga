@@ -621,10 +621,11 @@ export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 
 Conta suspensa:
 
-- O refresh comum responde `401 account_suspended`; o app preserva a sessão.
+- O refresh mobile rotaciona a sessão e responde `200` com `user.status = "suspended"`; o app preserva a sessão e renova o access token durante toda a suspensão.
 - `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam
   a sessão suspensa para contestar a própria medida.
 - Todas as outras rotas continuam exigindo conta ativa.
+- O refresh web do painel continua respondendo `401 account_suspended`.
 
 CLI de contingência:
 
