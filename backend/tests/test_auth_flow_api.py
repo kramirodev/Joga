@@ -230,25 +230,6 @@ def test_logout_revokes_current_session(
     assert refresh_response.json() == {"detail": {"code": "invalid_refresh_token"}}
 
 
-def test_refresh_reports_suspended_account(
-    api: TestClient,
-    db_session: Session,
-    sms_sender: RecordingSmsSender,
-) -> None:
-    receipt = receipt_for(api, sms_sender, PHONE, "registration")
-    tokens = register(api, receipt).json()
-    user = db_session.scalar(select(User).where(User.id == UUID(tokens["user"]["id"])))
-    assert user is not None
-    user.status = "suspended"
-    db_session.commit()
-
-    response = refresh(api, tokens["refresh_token"])
-
-    assert response.status_code == 401
-    assert response.json() == {"detail": {"code": "account_suspended"}}
-    assert api.get("/api/v1/auth/me", headers=bearer(tokens["access_token"])).status_code == 401
-
-
 def test_logout_all_revokes_every_session(
     api: TestClient,
     db_session: Session,

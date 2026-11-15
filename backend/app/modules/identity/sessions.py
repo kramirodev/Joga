@@ -130,23 +130,18 @@ class SessionService:
         access_token: str,
         *,
         now: datetime | None = None,
-        require_active: bool = True,
     ) -> AuthenticatedSession:
-        """Valida o access token e devolve a sessão ativa.
-
-        ``require_active=False`` permite que contas suspensas acessem apenas
-        recursos de contestação da própria medida (ex.: recurso de moderação).
-        """
+        """Valida o access token e devolve a sessão ativa."""
         moment = ensure_utc(now or utcnow())
         token_hash = hash_token(access_token, self._secret, "access")
-        conditions = [
-            SessionRecord.access_token_hash == token_hash,
-            SessionRecord.revoked_at.is_(None),
-        ]
-        if require_active:
-            conditions.append(User.status == "active")
         row = self._session.scalar(
-            select(SessionRecord).join(User, User.id == SessionRecord.user_id).where(*conditions)
+            select(SessionRecord)
+            .join(User, User.id == SessionRecord.user_id)
+            .where(
+                SessionRecord.access_token_hash == token_hash,
+                SessionRecord.revoked_at.is_(None),
+                User.status == "active",
+            )
         )
         if row is None or ensure_utc(row.access_expires_at) <= moment:
             raise InvalidAccessToken("access token inválido")

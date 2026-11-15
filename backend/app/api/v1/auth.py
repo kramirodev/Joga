@@ -304,17 +304,6 @@ def get_current_session(
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
 
 
-def get_current_session_allow_suspended(
-    token: Annotated[str, Depends(_bearer_token)],
-    service: Annotated[SessionService, Depends(get_session_service)],
-) -> AuthenticatedSession:
-    """Autentica a sessão mesmo com a conta suspensa, para contestar a medida."""
-    try:
-        return service.authenticate(token, require_active=False)
-    except InvalidAccessToken:
-        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
-
-
 def _token_response(tokens: IssuedTokens, user: UserSummary) -> TokenResponse:
     return TokenResponse(
         access_token=tokens.access_token,
@@ -620,15 +609,10 @@ def refresh_tokens(
 
     user = session.get(User, tokens.user_id)
     if user is None or user.status != "active":
-        code = (
-            "account_suspended"
-            if user is not None and user.status == "suspended"
-            else "invalid_refresh_token"
-        )
         session.rollback()
         raise _error(
             status.HTTP_401_UNAUTHORIZED,
-            code,
+            "invalid_refresh_token",
             www_authenticate=True,
         ) from None
 

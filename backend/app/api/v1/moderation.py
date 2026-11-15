@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import get_current_session, get_current_session_allow_suspended
+from app.api.v1.auth import get_current_session
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.moderation.models import (
@@ -286,7 +286,7 @@ def list_my_reports(
 
 @router.get("/actions/me", response_model=ActionListResponse)
 def list_my_actions(
-    current: Annotated[AuthenticatedSession, Depends(get_current_session_allow_suspended)],
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
 ) -> ActionListResponse:
     rows = ModerationService(session).list_actions(current.user_id)
@@ -297,7 +297,7 @@ def list_my_actions(
 def appeal_action(
     action_id: UUID,
     payload: AppealCreate,
-    current: Annotated[AuthenticatedSession, Depends(get_current_session_allow_suspended)],
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
 ) -> AppealView:
     try:
