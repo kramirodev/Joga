@@ -619,19 +619,18 @@ def refresh_tokens(
         ) from None
 
     user = session.get(User, tokens.user_id)
-    if user is None or user.status != "active":
-        code = (
-            "account_suspended"
-            if user is not None and user.status == "suspended"
-            else "invalid_refresh_token"
-        )
+    if user is None or user.status not in {"active", "suspended"}:
         session.rollback()
         raise _error(
             status.HTTP_401_UNAUTHORIZED,
-            code,
+            "invalid_refresh_token",
             www_authenticate=True,
         ) from None
 
+    # A conta suspensa precisa de access token novo para consultar a própria
+    # medida e recorrer. O token não abre as rotas comuns: elas exigem
+    # User.status == "active"; apenas as duas rotas de contestação usam
+    # get_current_session_allow_suspended.
     record_security_event(session, AUTH_REFRESH_ROTATED, user_id=user.id)
     session.commit()
 

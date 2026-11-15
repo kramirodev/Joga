@@ -1,7 +1,7 @@
 """Testes do fluxo completo de conta e sessão (SQLite em memória)."""
 
 from collections.abc import Iterator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -230,7 +230,7 @@ def test_logout_revokes_current_session(
     assert refresh_response.json() == {"detail": {"code": "invalid_refresh_token"}}
 
 
-def test_refresh_reports_suspended_account(
+def test_refresh_rotates_suspended_session_with_limited_access(
     api: TestClient,
     db_session: Session,
     sms_sender: RecordingSmsSender,
@@ -244,9 +244,24 @@ def test_refresh_reports_suspended_account(
 
     response = refresh(api, tokens["refresh_token"])
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": {"code": "account_suspended"}}
-    assert api.get("/api/v1/auth/me", headers=bearer(tokens["access_token"])).status_code == 401
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user"]["status"] == "suspended"
+    assert body["access_token"]
+    assert body["refresh_token"] != tokens["refresh_token"]
+
+    suspended_access = bearer(body["access_token"])
+    assert api.get("/api/v1/auth/me", headers=suspended_access).status_code == 401
+    actions = api.get("/api/v1/moderation/actions/me", headers=suspended_access)
+    assert actions.status_code == 200, actions.text
+    assert actions.json()["actions"] == []
+    appeal = api.post(
+        f"/api/v1/moderation/actions/{uuid4()}/appeal",
+        json={"reason": "Contestação"},
+        headers=suspended_access,
+    )
+    assert appeal.status_code == 404
+    assert appeal.json()["detail"]["code"] == "not_found"
 
 
 def test_logout_all_revokes_every_session(
