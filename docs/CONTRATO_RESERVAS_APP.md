@@ -233,7 +233,31 @@ Content-Type: application/json
 - Tipos de medida: `WARNING`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
 - A conta suspensa não autentica; a reativação ocorre ao fim do prazo.
 
-A triagem é determinística (`rules_v1`), sem IA paga. A revisão é interna por CLI.
+A triagem é determinística (`rules_v1`), sem IA paga. A revisão é humana e interna.
+
+### 7.1 Painel interno de moderação (não é contrato mobile)
+
+Estas rotas exigem conta cadastrada em `moderation_operators`; conta comum recebe
+`403 moderator_required`. A gestão de operadores exige papel `ADMIN`.
+
+```http
+GET  /api/v1/moderation/me
+GET  /api/v1/moderation/queue?status_filter=OPEN&limit=50&offset=0
+GET  /api/v1/moderation/reports/{report_id}
+POST /api/v1/moderation/reports/{report_id}/decision
+GET  /api/v1/moderation/appeals?status_filter=OPEN
+POST /api/v1/moderation/appeals/{appeal_id}/decision
+GET  /api/v1/moderation/operators
+POST /api/v1/moderation/operators
+DELETE /api/v1/moderation/operators/{user_id}
+```
+
+- Decisão: `DISMISS`, `WARN`, `RESTRICT_RANKED` ou `SUSPEND_TEMP`; justificativa
+  obrigatória e `days` de 1–30 para suspensão.
+- Recurso: `ACCEPTED` ou `REJECTED`, com justificativa.
+- Nova denúncia gera notificação persistida de tipo `moderation_report` para os
+  operadores ativos. O app deve tratar a central de notificações como histórico.
+- O painel separado fica em `/moderation`; não há endpoint público de moderação.
 
 ## 8. O que ainda falta no app e no painel
 

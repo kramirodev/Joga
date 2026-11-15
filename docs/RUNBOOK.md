@@ -567,7 +567,7 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 - O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
 - Fases 5, 6, 7 e 8 estão implementadas no backend e no mobile; a Fase 9 está em implementação (9A backend). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
-- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais, clãs, moderação e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
+- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
 - Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
 - O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
 
@@ -599,14 +599,27 @@ Com a revisão `PENDING`, execute a partir de `backend/`:
 
 O worker `advance_matches.py` abre a rodada 1 em `scheduled_end_at`, fecha no prazo de 10 minutos, abre a rodada 2 por 5 minutos quando aplicável e encaminha os casos restantes à revisão. A API rejeita votos após o prazo mesmo que o worker esteja atrasado.
 
-## 8.2 Moderação de denúncias (Fase 17A)
+## 8.2 Moderação de denúncias (Fases 17A–17C)
 
-A revisão é interna e usa CLI; não há painel público de moderação.
+A revisão é interna e pode ser feita pelo painel web separado em `/moderation` ou
+pela CLI de contingência. O painel não é público e não se mistura ao JOGA y GESTÃO.
 
 ```bash
-export JOGA_MODERATION_OPERATORS="operador-1,operador-2"
+export JOGA_MODERATION_ADMIN_USER_IDS="<uuid-admin-1>,<uuid-admin-2>"
+export JOGA_MODERATION_OPERATORS="operador-1,operador-2"   # compatibilidade com 17A
 export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 ```
+
+1. Defina ao menos um UUID de conta em `JOGA_MODERATION_ADMIN_USER_IDS` e reinicie a API.
+2. Entre no painel com essa conta e abra `/moderation`.
+3. Cadastre os demais moderadores pelo bloco “Moderadores”. `MODERATOR` opera a
+   fila; `ADMIN` também altera papéis.
+4. A fila ordena por prioridade e atualiza a cada 30 segundos. Cada nova denúncia
+   gera uma notificação persistida `moderation_report` para os operadores ativos.
+5. A decisão exige justificativa e registra auditoria. Medidas: `DISMISS`,
+   `WARN`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
+
+CLI de contingência:
 
 ```bash
 .venv/bin/python -m scripts.review_moderation --list

@@ -22,6 +22,7 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | 14D — Ingresso, carteira e temporada | In progress | `main` | 14D.1–14D.15 implementadas no backend: faixas, fornecedor/Pix, carteira, pacotes, quitação, devolução, temporada, trilha, passe, Pix de checkout, fechamento, estatísticas e rede | UI mobile, buckets/validade do ingresso e conciliação de `purchase_payments` pendentes |
 | 15 — Interface financeira e conciliação | In progress | `main` | 15A/15B implementados como proposta técnica local: liberações, contestações, extrato, recebíveis, conciliação e aba Financeiro | Prazo de repasse real, contestação, PSP, MED, comprovantes e política financeira não aprovados |
 | 16 — Clãs e troféus | In progress | `main` | Backend implementado (ADR 0046): clãs, papéis, carência, chat, denúncia, troféus e snapshot; testes locais | UI mobile e moderação completa da Fase 17 pendentes |
+| 17 — Moderação e Trust & Safety | In progress | `feat/17c-painel-moderacao` | 17A/17B no backend; 17C adiciona operadores, fila interna, notificação ao admin e painel `/moderation` (ADR 0047) | Classificador local, central de notificações no painel e suspensão permanente pendentes |
 
 ## Histórico append-only
 
@@ -984,7 +985,20 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **OTP:** os seis campos foram substituidos por um unico input oculto sobre as caixas visuais, com foco automatico, avanco de dígitos, apagar natural, colar código, autofill de SMS e limite de 6 dígitos.
 - **Limites de entrada:** telefone (15), nome (60), bio (280), clã (nome 40, tag 8, descrição 280), chats (2.000), buscas (60), confirmação LGPD (7) e textarea padrão (2.000).
 - **Integracao 13C/14D.16/13D/9D:** vitrine ligada a `GET /discovery/bookable-venues` e ao detalhe com espacos, formatos, faixas, cobertura e `next_slots`; reserva chama `POST /bookings`; central de notificacoes persistidas com contador de nao lidas; carteira exibe lotes com validade e consumo passe -> nivel -> comprado; `BookingView`, participantes e erros novos (`payout_not_ready`, `space_unavailable`, `insufficient_lead_time`, `tickets_not_configured`, `band_missing`) foram tratados no app.
+- **Moderacao (Fase 17A):** denuncia real via `POST /moderation/reports`, historico em `/moderation/reports/me`, medidas em `/moderation/actions/me` e recurso em `/moderation/actions/{id}/appeal`. O app mostra apenas categoria, status, data e decisao; severidade e prioridade continuam internas. Nao ha upload de midia: o contexto usa mensagens reais do lobby e texto.
+- **Tema e acessibilidade:** Claro e Escuro continuam gratuitos e sem gate de passe; o tema Alto contraste e a opcao Areia foram removidos do seletor; a preferencia de alto contraste tambem saiu da acessibilidade. Personalizacao deixou de ser marcada como PASSE.
+- **Configuracoes:** linhas inteiras de Configuracoes, Seguranca, Privacidade, Ajuda, Sobre, Termos e Recuperacao passaram a abrir a tela; antes apenas o icone era clicavel.
 - **Consistencia:** `Card` pressable passou a aplicar layout no proprio container (corrige cards 2-up que encolhiam), botoes ajustam a fonte em uma linha, cabecalho e labels de aba nao quebram, textos tem limite de escala, OTP e flexivel em 320 dp, avatar do perfil e adaptativo e insets superior/inferior do Android sao calculados.
 - **Estados:** loading, erro e vazio reais em Quadras, Partidas, Amigos, Cla, Temporada/Trilha, Carteira, Ingressos, Passe e Reservas; removidos saldo, extrato, reservas e planos fabricados nessas telas. Saldo e custo da partida agora refletem a carteira.
 - **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos; login OTP, home, perfil, configuracoes, cla, temporada/trilha, carteira, custo da partida e loja exercitados no aparelho Android com backend local.
 - **Pendencias:** telas de estados terminais (offline, erro generico, loading, recusa/expiracao de reserva, no-show, segunda rodada e disputa) continuam acessiveis apenas quando o estado de dominio ocorrer; passkey real, pagamentos reais e KYC seguem fora do escopo atual.
+
+### 2026-11-14 - Fase 17C: painel interno de moderacao
+
+- **Escopo:** identidade de operador, fila interna, notificacao ao administrador e painel web separado do JOGA y GESTAO. Sem IA paga e sem alteracoes no mobile.
+- **Backend:** `moderation_operators` (migracao `b4c5d6e7f8a9`), bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS`, dependencias `get_moderator`/`require_admin`, rotas de fila/detalhe/decisao/recursos/operadores e notificacao persistida `moderation_report`.
+- **Painel:** rota `/moderation`, cabecalho "JOGA y MODERACAO", estatisticas, fila com atualizacao a cada 30s, detalhe com contexto, decisao com justificativa, recursos e gestao de moderadores por admin.
+- **Seguranca:** autorizacao verificada no servidor em cada rota; conta comum recebe `403 moderator_required`; gestao de papeis exige `ADMIN`; decisoes e alteracoes de operador geram auditoria.
+- **Verificacao:** `ruff check`, `ruff format --check`, `mypy app` e Alembic (`upgrade`, `check`, head `b4c5d6e7f8a9`) limpos; backend **473 passed, 29 skipped**; painel com **22 testes**, `tsc --noEmit`, `eslint .`, Prettier dos arquivos alterados e `vite build`/CSP limpos.
+- **Documentacao:** ADR 0047, `harness/build/phase-17c-painel-moderacao.md`, PLANS, PENDENCIAS, RUNBOOK e contrato do app atualizados.
+- **Limites:** sem push, merge, deploy ou reinicio da API viva; classificador local, central de notificacoes no painel e suspensao permanente seguem pendentes.

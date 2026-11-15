@@ -208,7 +208,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 17 - Moderação e Trust & Safety
 
-**Status:** 17A (denúncia de perfil no lobby, contexto limitado, triagem determinística, revisão humana por CLI, medidas reversíveis, recurso e auditoria) e 17B (cooldown para denúncia falsa, suspensão temporária com reativação, retenção/redação e limites operacionais) implementadas no backend em 2026-11-14. Sem IA paga, sem painel interno e sem suspensão permanente. 17C (painel interno e classificador local/open-source) pendente.
+**Status:** 17A (denúncia de perfil no lobby, contexto limitado, triagem determinística, revisão humana por CLI, medidas reversíveis, recurso e auditoria) e 17B (cooldown para denúncia falsa, suspensão temporária com reativação, retenção/redação e limites operacionais) implementadas no backend em 2026-11-14. A 17C acrescentou identidade de operador (`moderation_operators`), fila interna, notificação persistida ao administrador e painel web separado em `/moderation`. Sem IA paga e sem suspensão permanente. O classificador local/open-source continua pendente.
 
 **Escopo:** denúncia de perfil no lobby com categorias definidas e seleção de até cinco mensagens + janela limitada de contexto; moderação assistida por IA (classificação, agrupamento, priorização, medidas preventivas proporcionais e reversíveis, níveis de confiança); revisão humana em ferramenta interna separada do painel de gestão; recursos contra penalizações; histórico auditável de decisões; retenção e acesso limitados.
 

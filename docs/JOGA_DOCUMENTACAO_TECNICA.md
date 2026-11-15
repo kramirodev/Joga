@@ -725,7 +725,7 @@ A IA é camada auxiliar, com níveis de confiança e possibilidade de contestaç
 - Armazenar apenas o contexto necessário para analisar a denúncia, com política de retenção a definir (seção 26).
 - A automação prioriza o processamento eficiente; conversas não são encaminhadas continuamente para IA/revisão humana sem necessidade.
 
-> **Nota de implementação da Fase 17A/17B.** A primeira fatia usa triagem determinística (`rules_v1`) por categoria, reincidência e quantidade de contexto; não usa IA paga nem envia texto a terceiros. A decisão é humana por CLI com `JOGA_MODERATION_OPERATORS`. Medidas: aviso, restrição ranqueada reversível e suspensão temporária de 1–30 dias; recurso aceito revoga a medida. A 17B acrescenta cooldown de 7 dias após 3 denúncias improcedentes em 30 dias e redação provisória de contexto após 180 dias. O painel interno, o classificador local/open-source e a suspensão permanente ficam para a 17C.
+> **Nota de implementação das Fases 17A/17B/17C.** A primeira fatia usa triagem determinística (`rules_v1`) por categoria, reincidência e quantidade de contexto; não usa IA paga nem envia texto a terceiros. A decisão é humana por CLI e, desde a 17C, por painel web interno separado em `/moderation`. Operadores têm identidade em `moderation_operators` (`ADMIN|MODERATOR`), com bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS`; cada nova denúncia gera notificação persistida `moderation_report`. Medidas: aviso, restrição ranqueada reversível e suspensão temporária de 1–30 dias; recurso aceito revoga a medida. A 17B acrescenta cooldown de 7 dias após 3 denúncias improcedentes em 30 dias e redação provisória de contexto após 180 dias. O classificador local/open-source e a suspensão permanente continuam pendentes.
 
 ### 12.5 Troféus de clã
 
