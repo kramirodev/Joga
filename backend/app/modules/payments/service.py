@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.modules.bookings.models import (
     Booking,
     BookingParticipant,
@@ -19,6 +18,7 @@ from app.modules.bookings.models import (
 )
 from app.modules.bookings.service import BookingBundle, BookingNotFound, BookingService
 from app.modules.identity.clock import utcnow
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbySubstitute
 from app.modules.payments.adapter import (
     PixChargeRequest,
@@ -30,6 +30,9 @@ from app.modules.payments.models import (
     PaymentEvent,
     PaymentRefund,
     PspWebhookEvent,
+)
+from app.modules.payments.purchase import (
+    PayerEmailRequired,
 )
 from app.modules.payments.purchase import (
     apply_status as apply_purchase_status,
@@ -97,13 +100,22 @@ class PaymentService:
                 BookingPayment.version == booking.payment_version,
             )
         ).all()
-        settings = get_settings()
+        emails: dict[uuid.UUID, str | None] = {}
         for payment in payments:
             if payment.provider_order_id is not None:
                 continue
             participant = participants.get(payment.participant_id)
             if participant is None:
                 continue
+            payer_email: str | None = None
+            if self.adapter.provider_name == "mercadopago":
+                if participant.user_id not in emails:
+                    emails[participant.user_id] = self.session.scalar(
+                        select(User.email).where(User.id == participant.user_id)
+                    )
+                payer_email = emails[participant.user_id]
+                if not payer_email:
+                    raise PayerEmailRequired
             due = booking.payment_due_at
             if due is not None and due.tzinfo is None:
                 due = due.replace(tzinfo=UTC)
@@ -113,8 +125,7 @@ class PaymentService:
                     external_reference=str(payment.id),
                     amount_cents=payment.amount_cents,
                     description=f"JOGA reserva {booking.id} vaga {participant.seat}",
-                    payer_email=settings.mercado_pago_payer_email
-                    or f"user-{participant.user_id}@simulator.invalid",
+                    payer_email=payer_email or f"user-{participant.user_id}@simulator.invalid",
                     expiration_minutes=minutes,
                     metadata={
                         "booking_id": str(booking.id),
@@ -123,6 +134,7 @@ class PaymentService:
                     },
                 )
             )
+            payment.payer_email = payer_email
             payment.provider = result.provider
             payment.provider_order_id = result.provider_order_id
             payment.provider_payment_id = result.provider_payment_id

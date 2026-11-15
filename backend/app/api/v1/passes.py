@@ -34,6 +34,7 @@ from app.modules.passes.service import (
 from app.modules.payments.adapter import PspAdapter, PspError
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.purchase import (
+    PayerEmailRequired,
     PurchasePaymentError,
     PurchasePaymentMismatch,
     PurchasePaymentNotFound,
@@ -124,6 +125,11 @@ def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, PurchasePaymentMismatch):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "payment_mismatch"}
+        )
+    if isinstance(exc, PayerEmailRequired):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "payer_email_required"},
         )
     if isinstance(exc, PspError):
         return HTTPException(

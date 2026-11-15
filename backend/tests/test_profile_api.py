@@ -361,3 +361,40 @@ def test_location_region_rounds_and_replaces_cep(
     assert stored is not None
     assert stored.center_lat == -23.55
     assert stored.center_lng == -46.63
+
+
+def test_payer_email_is_normalized_and_scoped_to_the_user(
+    api: TestClient,
+    db_session: Session,
+) -> None:
+    access = make_user_with_tokens(db_session)
+
+    empty = api.get("/api/v1/me/email", headers=bearer(access))
+    assert empty.status_code == 200
+    assert empty.json() == {"email": None}
+
+    updated = api.put(
+        "/api/v1/me/email",
+        headers=bearer(access),
+        json={"email": "  Pagador@Example.COM "},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json() == {"email": "pagador@example.com"}
+
+    fetched = api.get("/api/v1/me/email", headers=bearer(access))
+    assert fetched.json() == {"email": "pagador@example.com"}
+
+    invalid = api.put(
+        "/api/v1/me/email",
+        headers=bearer(access),
+        json={"email": "sem-arroba"},
+    )
+    assert invalid.status_code == 422
+    assert invalid.json()["detail"]["code"] == "validation_error"
+
+    cleared = api.put(
+        "/api/v1/me/email",
+        headers=bearer(access),
+        json={"email": None},
+    )
+    assert cleared.json() == {"email": None}

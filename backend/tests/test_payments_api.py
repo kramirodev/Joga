@@ -77,7 +77,6 @@ def test_webhook_requires_signature_outside_local(client: TestClient, db_session
         mercado_pago_access_token=SecretStr("mp-access-token"),
         mercado_pago_webhook_secret=SecretStr("segredo"),
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
-        mercado_pago_payer_email="pagador@joga.example",
     )
     api = api_client(client, db_session, settings)
     response = api.post(

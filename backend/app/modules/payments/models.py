@@ -151,6 +151,7 @@ class PurchasePayment(Base):
     provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    payer_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     qr_code: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     qr_code_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
     ticket_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

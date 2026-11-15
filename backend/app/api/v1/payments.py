@@ -32,6 +32,7 @@ from app.modules.payments.financial import (
     ReleaseNotFound,
 )
 from app.modules.payments.models import FinancialDispute, PaymentRefund
+from app.modules.payments.purchase import PayerEmailRequired
 from app.modules.payments.service import PaymentError, PaymentNotFound, PaymentService
 
 router = APIRouter(tags=["payments"])
@@ -311,6 +312,9 @@ def open_charges(
     try:
         bundle = service.open_charges(booking_id)
         session.commit()
+    except PayerEmailRequired as exc:
+        session.rollback()
+        raise _error("payer_email_required", status.HTTP_422_UNPROCESSABLE_CONTENT) from exc
     except PspError as exc:
         session.rollback()
         raise _error("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE) from exc

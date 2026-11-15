@@ -14,7 +14,6 @@ def production_psp_kwargs(**overrides: object) -> dict[str, object]:
         "mercado_pago_access_token": SecretStr("mp-access-token"),
         "mercado_pago_webhook_secret": SecretStr("mp-webhook-secret"),
         "mercado_pago_notification_url": "https://api.joga.example/payments/mercadopago/webhook",
-        "mercado_pago_payer_email": "pagador@joga.example",
     }
     values.update(overrides)
     return values
@@ -81,8 +80,6 @@ def test_production_rejects_fixed_development_otp() -> None:
         {"mercado_pago_webhook_secret": None},
         {"mercado_pago_notification_url": None},
         {"mercado_pago_notification_url": "http://insecure.example/webhook"},
-        {"mercado_pago_payer_email": None},
-        {"mercado_pago_payer_email": "   "},
     ],
 )
 def test_production_requires_complete_mercadopago_configuration(
@@ -102,7 +99,6 @@ def test_local_keeps_simulator_default_without_webhook_secret() -> None:
     settings = Settings(_env_file=None, environment="local")
 
     assert settings.psp_provider == "simulator"
-    assert settings.mercado_pago_payer_email is None
     assert settings.mercado_pago_webhook_secret is None
 
 

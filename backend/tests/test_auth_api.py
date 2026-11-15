@@ -208,7 +208,6 @@ def test_production_without_sms_provider_returns_503(
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
-        mercado_pago_payer_email="pagador@joga.example",
     )
 
     response = post_challenge(client)

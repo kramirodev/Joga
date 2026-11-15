@@ -79,7 +79,6 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
-        mercado_pago_payer_email="pagador@joga.example",
     )
     production_tokens = SessionService(
         db_session,

@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, time
 from functools import lru_cache
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.models import User
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.profile.cep import (
     BrasilApiCepResolver,
@@ -238,6 +240,55 @@ def list_sports(
 ) -> CatalogResponse:
     """Catálogo público de modalidades e formatos ativos."""
     return CatalogResponse(sports=[SportResponse(**item) for item in service.catalog()])
+
+
+class EmailView(BaseModel):
+    email: str | None
+
+
+class EmailUpdateRequest(BaseModel):
+    email: str | None = Field(default=None, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if len(normalized) > 254 or not re.fullmatch(
+            r"[^@\s]+@[^@\s]+\.[^@\s]+",
+            normalized,
+        ):
+            raise ValueError("E-mail inválido")
+        return normalized
+
+
+@router.get("/me/email", response_model=EmailView)
+def get_my_email(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> EmailView:
+    user = session.get(User, current.user_id)
+    return EmailView(email=user.email if user is not None else None)
+
+
+@router.put("/me/email", response_model=EmailView)
+def update_my_email(
+    payload: EmailUpdateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> EmailView:
+    user = session.get(User, current.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "user_not_found"},
+        )
+    user.email = payload.email
+    session.commit()
+    return EmailView(email=user.email)
 
 
 @router.get("/me/profile", response_model=ProfileResponse)

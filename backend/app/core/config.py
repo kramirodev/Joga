@@ -128,13 +128,8 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=200,
     )
-    # Provisório até a Fase MP-04: fora do local, exige um e-mail real
-    # configurado por ambiente. O e-mail por usuário substitui este campo.
-    mercado_pago_payer_email: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=120,
-    )
+    # O e-mail do pagador vem do usuário (`users.email`); não existe e-mail
+    # global fixo para cobrança.
     mercado_pago_notification_url: str | None = Field(default=None, max_length=500)
     psp_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
@@ -213,11 +208,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JOGA_MERCADO_PAGO_NOTIFICATION_URL deve ser uma URL HTTPS pública "
                 "fora do ambiente local"
-            )
-        if not (self.mercado_pago_payer_email or "").strip():
-            raise ValueError(
-                "JOGA_MERCADO_PAGO_PAYER_EMAIL é obrigatório fora do ambiente local "
-                "até o e-mail por usuário ser implementado"
             )
         secrets = {
             "JOGA_PHONE_HASH_SECRET": (
