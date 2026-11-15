@@ -147,6 +147,13 @@ def test_purchase_then_confirm_credits_the_wallet(client: TestClient, db_session
     assert purchase["tickets"] == 10
     assert purchase["amount_cents"] == 3_400
     assert purchase["status"] == "pending"
+    payment = purchase["payment"]
+    assert payment["provider"] == "simulator"
+    assert payment["provider_status"] == "action_required"
+    assert payment["status_detail"] == "waiting_transfer"
+    assert payment["amount_cents"] == 3_400
+    assert payment["external_reference"] == f"ticket_pack:{purchase['id']}"
+    assert payment["qr_code"]
 
     confirmed = api.post(
         f"/api/v1/me/tickets/purchases/{purchase['id']}/confirm", headers=bearer(token)

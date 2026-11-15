@@ -125,6 +125,7 @@ def open_charge(
     payment.provider_order_id = result.provider_order_id
     payment.provider_payment_id = result.provider_payment_id
     payment.provider_status = result.status
+    payment.provider_status_detail = result.status_detail
     payment.payer_email = payer_email
     payment.qr_code = result.qr_code
     payment.qr_code_base64 = result.qr_code_base64
@@ -166,6 +167,7 @@ def apply_status(
     payment.provider_order_id = status.provider_order_id or payment.provider_order_id
     payment.provider_payment_id = status.provider_payment_id or payment.provider_payment_id
     payment.provider_status = status.status
+    payment.provider_status_detail = status.status_detail
     payment.last_synced_at = moment
 
     internal = map_provider_status(status.status)

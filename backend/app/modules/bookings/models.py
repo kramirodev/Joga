@@ -376,6 +376,7 @@ class BookingPayment(Base):
     provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    provider_status_detail: Mapped[str | None] = mapped_column(String(60), nullable=True)
     provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     payer_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     qr_code: Mapped[str | None] = mapped_column(String(2000), nullable=True)

@@ -105,6 +105,8 @@ class PaymentView(BaseModel):
     provider_order_id: str | None
     provider_payment_id: str | None
     provider_status: str | None
+    status_detail: str | None
+    external_reference: str | None
     qr_code: str | None
     qr_code_base64: str | None
     ticket_url: str | None
@@ -296,6 +298,8 @@ def _view(
                 provider_order_id=item.provider_order_id,
                 provider_payment_id=item.provider_payment_id,
                 provider_status=item.provider_status,
+                status_detail=item.provider_status_detail,
+                external_reference=str(item.id),
                 qr_code=(
                     item.qr_code
                     if not include_all_payments
