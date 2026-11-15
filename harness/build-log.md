@@ -1090,3 +1090,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Backend:** o teste de suspensao temporaria agora exige `status`, `reason`, `created_at`, `decided_at` e `decision_reason` em `appeals/me`; confirma que recurso `REJECTED` mantem a conta suspensa, que `moderation_appeal_result` chega no canal `player` com `data.decision` e `data.appeal_id` e que notificacoes internas nao aparecem na central do jogador.
 - **Testes:** `tests/test_moderation.py` e `tests/test_auth_flow_api.py` com 24 passed; `ruff` limpo.
 - **Sem mudanca de contrato:** os campos e canais esperados pelo app continuam os mesmos.
+
+### 2026-11-15 - Mercado Pago em producao (Bloco A)
+
+- **ADR 0048:** Mercado Pago Orders API passa a ser o PSP do prototipo com jogadores reais; Inter/Pagar.me ficam para o futuro e nao bloqueiam a fase. PLANS, PENDENCIAS, THREAT_MODEL e RUNBOOK atualizados.
+- **Configuracao:** fora de local/teste o startup exige `JOGA_PSP_PROVIDER=mercadopago`, token, `JOGA_MERCADO_PAGO_WEBHOOK_SECRET` e URL HTTPS publica; o e-mail global ficticio foi removido.
+- **E-mail do pagador:** `users.email` normalizado, `GET/PUT /me/email`, snapshot em `booking_payments`/`purchase_payments` e erro `422 payer_email_required` antes de abrir cobranca com Mercado Pago.
+- **Webhook:** evento bruto persistido antes do processamento, replay nao duplica, falha responde 5xx e agenda `next_attempt_at`; worker `scripts.retry_webhooks` com `--dry-run`.
+- **Confirmacao local:** `POST /tickets/purchases/{id}/confirm` e `POST /pass/subscriptions/{id}/confirm` seguem dev-only com `403 confirmation_requires_psp`, agora cobertos por teste.
+- **Contrato de pagamento (C-01):** reserva e compra expoem `status_detail`, `external_reference` e `amount_cents`, alem dos campos que ja existiam.
+- **Parser Orders API:** `date_of_expiration`, `external_reference` e `status_detail` do payload real sao lidos; fixture cobre o formato esperado. Validacao live depende de credenciais.
+- **Migracoes:** `f9b0c1d2e3f4` (e-mail), `g0c1d2e3f4a5` (retry) e `h1d2e3f4a5b6` (status detail); `alembic check` limpo no head `h1d2e3f4a5b6`.
+- **Testes:** suite completa com **499 passed, 29 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos.
+- **Pendente:** MP-03 live, MP-07 reembolso real, MP-08 conciliacao real, MP-09 metricas/alertas, MP-10 MED/chargeback.

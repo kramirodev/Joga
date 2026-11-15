@@ -21,9 +21,9 @@ recebedor automático; repasse continua ledger/manual conforme ADR 0040.
 | MP-06 | Confirmação local dev-only + teste | **Concluído em 2026-11-15** |
 | MP-07 | Reembolso real (processing/failed/parcial/idempotência) | Pendente (P1) |
 | MP-08 | Conciliação real com o Mercado Pago | Pendente (P1) — exige credenciais |
-| MP-09 | Observabilidade e runbook de Pix/webhook/estorno | Pendente (P1) |
+| MP-09 | Observabilidade e runbook de Pix/webhook/estorno | **Parcial em 2026-11-15** — runbook de webhook/retry publicado; métricas e alertas pendentes |
 | MP-10 | MED/chargeback e bloqueio de liberação | Pendente (P1) |
-| MP-11 | Documentar repasse centralizado/manual e ausência de split | Pendente (P1) — documentação parcial na ADR 0048 |
+| MP-11 | Documentar repasse centralizado/manual e ausência de split | **Parcial em 2026-11-15** — ADR 0048 e RUNBOOK registram conta centralizada + ledger/manual; painel deve evitar prometer split |
 
 ## Bloco B — Contratos para app e site
 
