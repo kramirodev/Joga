@@ -49,5 +49,9 @@ export const queryKeys = {
   sports: ["sports"] as const,
   bands: ["pricing-bands"] as const,
   presence: (bookingId: string) => ["bookings", bookingId, "presence"] as const,
+  moderatorMe: ["moderator", "me"] as const,
+  moderationQueue: (status: string) => ["moderation", "queue", status] as const,
+  moderationAppeals: ["moderation", "appeals"] as const,
+  moderationOperators: ["moderation", "operators"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
 };
