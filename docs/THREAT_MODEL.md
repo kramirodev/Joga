@@ -62,9 +62,9 @@
 | Timer adulterado ou reiniciado | Cliente tentar prorrogar T1/T2/T3 ou agir após o prazo | prazos no backend, timers independentes, rejeição após deadline, worker idempotente | T2 em horário comercial pendente |
 | Pagamento simulado exposto | Usar endpoint de simulação em produção | rota só permite ambiente local/teste/development/ci | revisão de configuração de deploy necessária |
 | Acesso indevido a reserva | Participante ou organização consultar reserva alheia | autorização por participante/organização em cada rota | testes contínuos a cada novo endpoint |
-| Custódia centralizada no beta | Dinheiro real ficar na conta do JOGA sem retenção/split de produção | escopo restrito a protótipo/beta de teste, ledger interno, repasse no horário da partida (ADR 0040), CNPJ/MEI e revisão jurídica para dinheiro real | risco jurídico/regulatório se o beta operar dinheiro real sem validação |
-| Troca de PSP sem abstração | Domínio acoplado ao Mercado Pago e difícil migrar para Inter | adaptador de PSP com modos `mercadopago_beta` e `inter_production` | 14A implementada com Mercado Pago; adaptador do Inter pendente |
-| Webhook de pagamento forjado/replay | Confirmar reserva sem pagamento real | assinatura HMAC, consulta server-to-server, `psp_webhook_events` idempotente e ledger append-only | segredo e URL de produção ainda não configurados |
+| Custódia centralizada no protótipo | Dinheiro real ficar na conta do JOGA sem retenção/split de produção | Mercado Pago centraliza o valor; ledger interno e repasse manual/`starts_at + 2h` (ADR 0040); CNPJ/MEI e revisão jurídica antes de dinheiro real | risco jurídico/regulatório se o protótipo operar dinheiro real sem validação |
+| Troca de PSP sem abstração | Domínio acoplado ao Mercado Pago e difícil migrar no futuro | adaptador de PSP desacoplado; Mercado Pago é o PSP atual e Inter/Pagar.me ficam para o futuro (ADR 0048) | adaptador do Inter não é dependência do protótipo |
+| Webhook de pagamento forjado/replay | Confirmar reserva sem pagamento real | assinatura HMAC, consulta server-to-server, `psp_webhook_events` idempotente e ledger append-only; segredo e URL HTTPS obrigatórios fora do local | retry/reprocessamento pendente (MP-05) |
 | Divergência de valor/referência | PSP devolver valor diferente da cobrança | conferência de `amount_cents` e `external_reference` antes de aplicar status | conciliação periódica pertence à Fase 15 |
 | Reembolso indevido/duplicado | Cancelar reserva e tentar estornar duas vezes ou reembolsar cobrança não paga | autorização por organização, idempotência por `payment_refunds`, ledger append-only e teste de repetição | reembolso real e MED pendentes na 14B |
 | Reembolso após repasse | Estornar reserva já concluída/liberada | `VENUE_RELEASE` só para `COMPLETED`; política de cancelamento pós-confirmação pendente | precisa de contrato e conciliação real |
@@ -105,10 +105,9 @@
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pertencem à Fase 17.
 - **Médio:** storage de fotos é local; provedor de produção, criptografia, backup e limpeza de órfãos não definidos.
 - **Médio:** T2 de reservas usa tempo corrido; horário comercial, feriados e dias fechados pendentes.
-- **Médio:** pagamento de reserva é simulado; PSP real, webhooks e reembolso pertencem à Fase 14.
-- **Médio:** no protótipo/beta, a custódia é centralizada e de teste; dinheiro real exige CNPJ/MEI, contrato e revisão jurídica.
-- **Médio:** produção depende de contratação do Pagar.me e validação de retenção/split/reembolso.
-- **Médio:** webhook do Mercado Pago ainda não foi validado com credenciais sandbox reais; testes usam HTTP simulado.
+- **Médio:** no protótipo, o pagamento usa o Mercado Pago com jogadores reais; dinheiro real exige CNPJ/MEI, contrato e revisão jurídica.
+- **Médio:** o Mercado Pago centraliza o valor; repasse ao estabelecimento é ledger/manual, sem split automático.
+- **Médio:** webhook do Mercado Pago ainda não foi validado com credenciais reais; testes usam HTTP simulado.
 - **Médio:** e-mail do pagador é obrigatório na Orders API e o cadastro atual é por telefone.
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 

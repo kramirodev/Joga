@@ -166,9 +166,9 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14 — Pagamentos Pix e reembolsos
 
-**Status:** 14A (Mercado Pago sandbox, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; 14B (Inter PJ em produção, Pix, estorno parcial e repasse) pendente.
+**Status:** 14A (Mercado Pago Orders API, Pix, webhook e ledger) e 14C (reembolsos, extrato e conciliação com PSP simulado) implementadas e validadas localmente em 2026-11-07; desde a ADR 0048 o Mercado Pago é o PSP do protótipo com jogadores reais. Inter/Pagar.me ficam para o futuro e não bloqueiam a fase. Pendentes: e-mail do pagador, retry de webhook, validação com credenciais reais, MED/chargeback e conciliação externa.
 
-**Escopo:** integração com PSP, uma cobrança Pix por compra de pacote ou passe; Mercado Pago no protótipo/beta e **Inter PJ em produção**; webhooks autenticados e idempotentes; ledger financeiro interno auditável; estorno parcial de Pix para os 7 dias do CDC; repasse ao estabelecimento em `starts_at + 2h` (ADR 0040); conciliação básica. O fluxo de ingresso segue a ADR 0042 e não usa split nem recebedor de marketplace.
+**Escopo:** integração com PSP, uma cobrança Pix por compra de pacote ou passe; **Mercado Pago (Orders API) no protótipo com jogadores reais** (ADR 0048); webhooks autenticados e idempotentes; ledger financeiro interno auditável; estorno parcial de Pix para os 7 dias do CDC; repasse ao estabelecimento em `starts_at + 2h` (ADR 0040); conciliação básica. O fluxo de ingresso segue a ADR 0042 e não usa split nem recebedor de marketplace.
 
 **Não fazer:** construir processador próprio ou carteira custodial; armazenar dados completos de cartão; confiar no retorno visual do app; abrir cobrança antes do bloqueio; liberar valor ao estabelecimento antes da confirmação; deduzir tarifas do reembolso do jogador.
 

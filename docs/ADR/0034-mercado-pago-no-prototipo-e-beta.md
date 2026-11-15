@@ -5,7 +5,7 @@
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** `docs/ADR/0021-politica-de-precificacao-e-fluxo-financeiro.md`; `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` §12; `docs/JOGA_DOCUMENTACAO_TECNICA.md` §15; `PLANS.md` Fase 14.
 
-> **Nota de escopo (ADR 0042):** a decisão de produção mudou para o **Inter PJ** (ADR 0042 §8). O Mercado Pago continua restrito ao protótipo e beta fechado; o modo `pagarme_production` permanece apenas como reserva técnica.
+> **Nota de escopo (ADR 0048):** o Mercado Pago passa a ser o PSP do protótipo **com jogadores reais**; Inter e Pagar.me deixam de ser dependência. As restrições de sandbox e as referências a Pagar.me/Inter nesta ADR ficam como histórico.
 
 ## Contexto
 
