@@ -43,6 +43,8 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Interface financeira completa do estabelecimento | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
 | Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine e criação de reserva prontas no backend; app ainda precisa ligar as telas a `discovery` e `POST /bookings` | Implementar consumo no mobile |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
+| CEP do estabelecimento | 13F | **Fase 1 implementada**: endpoint autenticado, BrasilAPI, cache e rate limit. Persistência no venue, mapa e pino ajustável pendentes |
+| Provedor de geocoding de produção | 13F | BrasilAPI atende a Fase 1; Nominatim/Google e orçamento ainda não decididos |
 | Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |
 | Catálogo definitivo de equipamento | 13/17 | Pendente; catálogo inicial (bola/rede) definido na ADR 0030 |

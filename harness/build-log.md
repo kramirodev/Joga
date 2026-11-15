@@ -1013,6 +1013,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
 - **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
 
+### 2026-11-15 - CEP e geocodificacao de estabelecimento (Fase 1)
+
+- **Endpoint:** `GET /api/v1/geo/postal-codes/{postal_code}?number=...`, autenticado, sem alterar o `POST` de venue.
+- **Provedor:** BrasilAPI CEP v2, reaproveitado do perfil; endereco e coordenadas com `precision` (`street`/`approximate`/`unresolved`) e `source=brasilapi`.
+- **Cache:** tabela `postal_code_cache` (migracao `c5d6e7f8a9b0`), TTL de 30 dias, chave CEP+numero+versao do provedor.
+- **Protecoes:** rate limit de 30/min por usuario, timeout de 3 s e erros `invalid_postal_code`/`postal_code_not_found`/`rate_limited`/`geocoding_provider_error`/`geocoding_timeout` sem vazar o provedor.
+- **Testes:** `tests/test_geo_api.py` com resolver falso, cache hit, erros, `unresolved` e rate limit; nenhuma chamada externa.
+- **Limites:** sem mapa, sem persistencia de CEP no venue e sem provedor pago; Fase 2 pendente.
+
 ### 2026-11-15 - Validacao do fluxo de suspensao no app mobile
 
 - **Escopo:** somente front-end. Nenhum arquivo de `backend/` foi alterado nesta validacao.

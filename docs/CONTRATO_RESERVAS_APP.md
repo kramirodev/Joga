@@ -344,3 +344,44 @@ Os envelopes abaixo incluem `total` (antes da paginação) além de `limit` e
 - App: exibir quitação por ingressos e a faixa congelada.
 - Painel: cadastrar payout, editar faixa/cobertura e mostrar o repasse a receber.
 - Ambos: notificações de prazo e nova reserva.
+
+## 9. CEP e geocodificação de estabelecimento (Fase 1)
+
+```http
+GET /api/v1/geo/postal-codes/20541-004?number=1200
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "postal_code": "20541004",
+  "street": "Rua Barão de Mesquita",
+  "neighborhood": "Tijuca",
+  "city": "Rio de Janeiro",
+  "state": "RJ",
+  "country": "BR",
+  "latitude": -22.9234,
+  "longitude": -43.2456,
+  "precision": "street",
+  "source": "brasilapi",
+  "resolved_at": "2026-11-15T12:00:00Z"
+}
+```
+
+- `postal_code` aceita 8 dígitos com ou sem hífen.
+- `number` é opcional (até 20 caracteres; `s/n` aceito) e não altera o `POST` de venue.
+- `precision`: `street`, `venue`, `approximate` ou `unresolved`.
+- `latitude`/`longitude` podem ser `null` apenas com `precision: "unresolved"`.
+- O `POST /organizations/{id}/venues` continua exigindo `latitude`/`longitude`; o painel resolve antes e envia os números.
+- Cache persistente por CEP+número+versão do provedor, TTL de 30 dias.
+- Rate limit de 30 consultas/minuto por usuário; `429 rate_limited` com `Retry-After`.
+- Provedor desta fase: BrasilAPI CEP v2, que já devolve endereço e coordenadas. Nominatim/Google ficam como evolução atrás da mesma interface.
+
+| HTTP | `code` |
+|---:|---|
+| 400 | `invalid_postal_code` |
+| 404 | `postal_code_not_found` |
+| 422 | `postal_code_ambiguous` (reservado; não emitido nesta fase) |
+| 429 | `rate_limited` |
+| 502 | `geocoding_provider_error` |
+| 504 | `geocoding_timeout` |

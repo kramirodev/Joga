@@ -150,6 +150,10 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_DEV_FIXED_OTP` | vazio; apenas local, para testes manuais |
 | `JOGA_CEP_API_BASE_URL` | `https://brasilapi.com.br/api/cep/v2` |
 | `JOGA_CEP_TIMEOUT_SECONDS` | `5` |
+| `JOGA_GEO_TIMEOUT_SECONDS` | `3` |
+| `JOGA_GEO_CACHE_TTL_DAYS` | `30` |
+| `JOGA_GEO_RATE_LIMIT_PER_MINUTE` | `30` |
+| `JOGA_GEO_PROVIDER_VERSION` | `brasilapi_v1` |
 | `JOGA_DISCOVERY_MAX_RADIUS_KM` | `100` |
 | `JOGA_DISCOVERY_DEFAULT_RADIUS_KM` | `10` |
 | `JOGA_DISCOVERY_PAGE_SIZE` | `20` |
