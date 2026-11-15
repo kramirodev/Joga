@@ -248,6 +248,40 @@ def test_temporary_suspension_blocks_and_can_be_revoked(
     blocked = api.get("/api/v1/auth/me", headers=bearer(context["tokens"][1]))
     assert blocked.status_code == 401
 
+    actions = api.get(
+        "/api/v1/moderation/actions/me",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert actions.status_code == 200, actions.text
+    assert actions.json()["actions"][0]["action_type"] == "SUSPEND_TEMP"
+
+    appeal = api.post(
+        f"/api/v1/moderation/actions/{action.id}/appeal",
+        json={"reason": "Quero contestar a suspensão"},
+        headers=bearer(context["tokens"][1]),
+    )
+    assert appeal.status_code == 200, appeal.text
+    reviewed = service.review_appeal(
+        uuid.UUID(appeal.json()["id"]),
+        operator="op1",
+        decision="REJECTED",
+        reason="Suspensão mantida",
+        authorized_operators=frozenset({"op1"}),
+    )
+    assert reviewed.status == "REJECTED"
+    db_session.commit()
+
+    my_appeals = api.get(
+        "/api/v1/moderation/appeals/me",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert my_appeals.status_code == 200, my_appeals.text
+    assert my_appeals.json()["appeals"][0]["status"] == "REJECTED"
+    assert my_appeals.json()["appeals"][0]["decision_reason"] == "Suspensão mantida"
+    assert (
+        api.get("/api/v1/me/notifications", headers=bearer(context["tokens"][1])).status_code == 401
+    )
+
     other_user = api.post(
         f"/api/v1/moderation/actions/{action.id}/appeal",
         json={"reason": "Tentativa de terceiro"},
@@ -321,7 +355,10 @@ def test_admin_queue_notification_and_decision(
         },
     )
     assert report.status_code == 201, report.text
-    notification = NotificationService(db_session).list_for_user(admin_id)
+    notification = NotificationService(db_session).list_for_user(
+        admin_id,
+        channel="moderation",
+    )
     assert any(item.kind == "moderation_report" for item in notification)
 
     queue = api.get("/api/v1/moderation/queue", headers=bearer(admin_token))
@@ -359,8 +396,15 @@ def test_admin_queue_notification_and_decision(
         json={"reason": "Quero contestar o aviso"},
     )
     assert appeal.status_code == 200, appeal.text
-    admin_notifications = NotificationService(db_session).list_for_user(admin_id)
+    admin_notifications = NotificationService(db_session).list_for_user(
+        admin_id,
+        channel="moderation",
+    )
     assert any(item.kind == "moderation_appeal" for item in admin_notifications)
+    player_notifications = NotificationService(db_session).list_for_user(admin_id)
+    assert all(
+        item.kind not in {"moderation_report", "moderation_appeal"} for item in player_notifications
+    )
 
     appeal_decision = api.post(
         f"/api/v1/moderation/appeals/{appeal.json()['id']}/decision",

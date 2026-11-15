@@ -278,9 +278,11 @@ Content-Type: application/json
 
 Contrato de suspensão para o app:
 
-- `POST /api/v1/auth/refresh` de conta suspensa rotaciona a sessão e responde `200` com `user.status = "suspended"`. O app deve preservar a sessão, mostrar a tela de suspensão e usar esse access token apenas nas duas rotas de contestação abaixo. Refresh inválido/expirado continua `invalid_refresh_token`.
+- `POST /api/v1/auth/refresh` de conta suspensa rotaciona a sessão e responde `200` com `user.status = "suspended"`. O app deve preservar a sessão, mostrar a tela de suspensão e usar esse access token apenas nas rotas de contestação abaixo. Refresh inválido/expirado continua `invalid_refresh_token`.
 - `GET /api/v1/auth/me` e as demais rotas comuns respondem `401 invalid_token` para conta suspensa.
-- Exceções: `GET /api/v1/moderation/actions/me` e `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão suspensa para o jogador ver a própria medida e contestá-la. A autorização continua limitada ao alvo da medida; tentar contestar a medida de outro usuário retorna `404`.
+- Exceções: `GET /api/v1/moderation/actions/me`, `GET /api/v1/moderation/appeals/me` e `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão suspensa para o jogador ver a própria medida, consultar o resultado do recurso e contestá-la. A autorização continua limitada ao alvo da medida/recurso; tentar contestar a medida de outro usuário retorna `404`.
+- `GET /api/v1/moderation/appeals/me` devolve `status` (`OPEN`, `ACCEPTED`, `REJECTED`), `decided_at` e `decision_reason`, permitindo mostrar uma rejeição sem esperar o fim da suspensão.
+- `GET /api/v1/me/notifications` continua exigindo conta ativa.
 - Severidade, prioridade e identidade do denunciante não são expostas ao app.
 
 A triagem é determinística (`rules_v1`), sem IA paga. A revisão é humana e interna.
@@ -306,9 +308,15 @@ DELETE /api/v1/moderation/operators/{user_id}
   obrigatória e `days` de 1–30 para suspensão.
 - Recurso: `ACCEPTED` ou `REJECTED`, com justificativa.
 - Nova denúncia gera notificação persistida `moderation_report` para os
-  operadores ativos.
-- Novo recurso gera `moderation_appeal` para os operadores ativos.
-- A decisão do recurso gera `moderation_appeal_result` para o jogador.
+  operadores ativos, no canal interno `moderation`.
+- Novo recurso gera `moderation_appeal` para os operadores ativos, no canal
+  interno `moderation`.
+- A decisão do recurso gera `moderation_appeal_result` para o jogador, no canal
+  `player`.
+- A central do jogador (`GET /me/notifications`) lista apenas o canal `player`;
+  notificações internas não aparecem no app e não geram push para o jogador.
+- O painel interno ainda não tem central de notificações; a fila e os recursos
+  continuam sendo a superfície operacional.
 
 ### 7.2 Sessão web e capacidades
 

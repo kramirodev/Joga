@@ -95,6 +95,61 @@ def test_booking_creates_notifications_for_venue_and_participants(
     )
 
 
+def test_moderation_channel_is_hidden_from_player_surface(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = booking_api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+    db_session.add(
+        DevicePushToken(
+            user_id=user_id,
+            token="device-token",
+            platform="android",
+        )
+    )
+    service = NotificationService(db_session)
+    player_notification, _ = service.create(
+        user_id=user_id,
+        kind="test",
+        title="Jogador",
+        body="Visível no app",
+        idempotency_key="channel:player",
+    )
+    internal_notification, _ = service.create(
+        user_id=user_id,
+        kind="moderation_report",
+        title="Nova denúncia",
+        body="Uso interno",
+        idempotency_key="channel:moderation",
+        channel="moderation",
+    )
+    db_session.commit()
+
+    listing = api.get("/api/v1/me/notifications", headers=bearer(token))
+    assert listing.status_code == 200, listing.text
+    assert [item["id"] for item in listing.json()["notifications"]] == [str(player_notification.id)]
+    assert listing.json()["unread_count"] == 1
+
+    hidden_read = api.post(
+        f"/api/v1/me/notifications/{internal_notification.id}/read",
+        headers=bearer(token),
+    )
+    assert hidden_read.status_code == 404
+    assert service.list_for_user(user_id, channel="moderation")[0].id == internal_notification.id
+
+    sender = RecordingPushSender()
+    assert dispatch_notifications(db_session, sender) == 1
+    assert [item["body"] for item in sender.sent] == ["Visível no app"]
+    internal_event = db_session.scalar(
+        select(OutboxEvent).where(
+            OutboxEvent.aggregate_id == internal_notification.id,
+        )
+    )
+    assert internal_event is not None and internal_event.status == "DISPATCHED"
+
+
 def test_dispatcher_sends_push_and_marks_outbox(db_session: Session) -> None:
     user_id = make_user(db_session)
     db_session.add(

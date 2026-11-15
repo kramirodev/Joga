@@ -424,6 +424,7 @@ class ModerationService:
             body=body,
             idempotency_key_prefix=idempotency_key_prefix,
             data=data,
+            channel="moderation",
             now=moment,
         )
 
@@ -597,6 +598,21 @@ class ModerationService:
         self._notify_appeal(appeal, moment)
         self.session.flush()
         return appeal
+
+    def list_my_appeals(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int = 30,
+    ) -> list[ModerationAppeal]:
+        return list(
+            self.session.scalars(
+                select(ModerationAppeal)
+                .where(ModerationAppeal.user_id == user_id)
+                .order_by(ModerationAppeal.created_at.desc(), ModerationAppeal.id.desc())
+                .limit(limit)
+            ).all()
+        )
 
     def review_appeal(
         self,

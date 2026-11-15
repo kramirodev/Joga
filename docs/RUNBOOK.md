@@ -628,10 +628,17 @@ export JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 Conta suspensa:
 
 - O refresh mobile rotaciona a sessão e responde `200` com `user.status = "suspended"`; o app preserva a sessão e renova o access token durante toda a suspensão.
-- `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam
-  a sessão suspensa para contestar a própria medida.
+- `GET /moderation/actions/me`, `GET /moderation/appeals/me` e
+  `POST /moderation/actions/{id}/appeal` aceitam a sessão suspensa para ver e
+  contestar a própria medida.
 - Todas as outras rotas continuam exigindo conta ativa.
 - O refresh web do painel continua respondendo `401 account_suspended`.
+
+Notificações:
+
+- `moderation_report` e `moderation_appeal` usam o canal interno `moderation`;
+  não aparecem em `GET /me/notifications` nem geram push no app do jogador.
+- `moderation_appeal_result` usa o canal `player`.
 
 CLI de contingência:
 

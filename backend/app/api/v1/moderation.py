@@ -117,6 +117,10 @@ class AppealView(BaseModel):
     decision_reason: str | None
 
 
+class AppealListResponse(BaseModel):
+    appeals: list[AppealView]
+
+
 def _report_view(item: ModerationReport) -> ReportView:
     return ReportView(
         id=item.id,
@@ -373,6 +377,16 @@ def moderation_decision(
         session.rollback()
         raise _handle(exc) from None
     return _admin_report_view(report)
+
+
+@router.get("/appeals/me", response_model=AppealListResponse)
+def list_my_appeals(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session_allow_suspended)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> AppealListResponse:
+    rows = ModerationService(session).list_my_appeals(current.user_id, limit=limit)
+    return AppealListResponse(appeals=[_appeal_view(item) for item in rows])
 
 
 @router.get("/appeals", response_model=list[AppealView])

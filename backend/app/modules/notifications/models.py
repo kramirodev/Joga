@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -31,13 +32,18 @@ class Notification(Base):
 
     __tablename__ = "notifications"
     __table_args__ = (
+        CheckConstraint("channel IN ('player','moderation')", name="channel_valid"),
         Index("ix_notifications_user_created", "user_id", "created_at"),
+        Index("ix_notifications_user_channel_created", "user_id", "channel", "created_at"),
         Index("ix_notifications_user_unread", "user_id", "read_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="player", server_default="player"
     )
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     title: Mapped[str] = mapped_column(String(120), nullable=False)

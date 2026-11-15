@@ -1010,6 +1010,7 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Erros:** handler global de `RequestValidationError` padroniza `422` em `{detail:{code,message,fields}}`, sem ecoar o valor enviado.
 - **Painel:** sessao web passa a devolver `capabilities` (`moderation.read`/`moderation.manage`); recebiveis, extrato, disputas e auditoria devolvem `total` antes da paginacao.
 - **Notificacoes 17C:** recurso novo gera `moderation_appeal` para operadores ativos; decisao do recurso gera `moderation_appeal_result` para o jogador. A denuncia continua gerando `moderation_report`.
+- **Canais 17C:** notificacoes internas (`moderation_report`, `moderation_appeal`) usam `channel=moderation`; `GET /me/notifications` lista apenas `player` e o dispatcher nao envia push interno ao app. `GET /moderation/appeals/me` aceita conta suspensa e mostra o resultado do recurso.
 - **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
 - **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
 
@@ -1040,3 +1041,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Escopo:** as demais rotas continuam exigindo conta ativa (`401 invalid_token`); o refresh web do painel continua `401 account_suspended`.
 - **Motivo:** o access token expira em poucos minutos e o app precisa renová-lo durante toda a suspensão para manter a contestação disponível.
 - **Verificacao:** testes de auth e moderação passaram; suíte completa e contagem no fechamento desta entrada.
+
+### 2026-11-15 - App: refresh 200 de suspensao e notificacao de recurso
+
+- **Escopo:** somente `mobile/`; nenhum arquivo de backend alterado. A API local foi reiniciada antes do teste.
+- **Refresh:** ao receber `200` com `user.status = "suspended"`, o app atualiza os tokens, preserva a sessao, nao executa a carga normal e mantem a `SuspendedScreen`. O fallback para `401 account_suspended` continua existindo.
+- **Token novo:** o retry automatico do cliente HTTP usa o access token renovado. `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` funcionam mesmo depois da expiracao do access token anterior; as demais rotas seguem `401 invalid_token`.
+- **Recuperacao:** com a conta reativada, "Tentar novamente" autentica, recarrega os dados e volta ao app.
+- **Notificacao:** a central passou a reconhecer `moderation_appeal_result`, exibir a decisao de `data.decision` como `RECURSO ACEITO` ou `RECURSO REJEITADO` e abrir a tela de moderacao ao tocar.
+- **Erros de recurso:** mensagens especificas para `appeal_already_exists`, `action_not_active`, `not_found`, `forbidden` e `account_suspended`. O caso `action_not_active` foi exercitado no aparelho.
+- **Verificacao no aparelho:** refresh `200`, sessao preservada, motivo/datas via `actions/me` `200`, notificacao de recurso renderizada com decisao e navegacao para moderacao. O envio de recurso retornou `409 action_not_active` porque a medida foi revogada durante o teste, e o app exibiu a mensagem correta.
+- **Comandos:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos.
+- **Limpeza:** notificacao de teste e medida de teste removidas; denuncia restaurada para `RESOLVED`; conta `Zero Dois` ativa.
+- **Observacao:** a conta `Zero Dois` e operadora `ADMIN` em `moderation_operators`, por isso recebe notificacoes internas `moderation_report` com severidade/prioridade. Se a regra for que o app do jogador nunca exiba triagem interna, o backend deve separar o canal do painel ou o app deve filtrar esses kinds quando a conta nao estiver em modo operador.
