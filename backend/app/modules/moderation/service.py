@@ -61,6 +61,10 @@ class ActionNotFound(ModerationError):
     """Medida inexistente."""
 
 
+class OperatorNotFound(ModerationError):
+    """Conta que se pretende promover a operador não existe."""
+
+
 class AppealConflict(ModerationError):
     """Recurso duplicado ou em estado inválido."""
 
@@ -344,6 +348,8 @@ class ModerationService:
     ) -> ModerationOperator:
         if role not in {"ADMIN", "MODERATOR"}:
             raise ReportInvalid("role_invalid")
+        if self.session.get(User, user_id) is None:
+            raise OperatorNotFound
         row = self.session.get(ModerationOperator, user_id)
         if row is None:
             row = ModerationOperator(
@@ -693,6 +699,7 @@ __all__ = [
     "ModerationError",
     "ModerationService",
     "OperatorNotAuthorized",
+    "OperatorNotFound",
     "ReportConflict",
     "ReportForbidden",
     "ReportInvalid",

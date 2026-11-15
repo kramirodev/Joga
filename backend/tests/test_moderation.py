@@ -363,3 +363,19 @@ def test_admin_can_add_operator(client: TestClient, db_session: Session) -> None
     me = api.get("/api/v1/moderation/me", headers=bearer(token))
     assert me.status_code == 200
     assert me.json()["role"] == "MODERATOR"
+
+
+def test_admin_cannot_add_unknown_operator(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    admin_id = make_user(db_session)
+    admin_token = make_token(db_session, admin_id)
+    db_session.add(ModerationOperator(user_id=admin_id, role="ADMIN", active=True))
+    db_session.flush()
+
+    response = api.post(
+        "/api/v1/moderation/operators",
+        headers=bearer(admin_token),
+        json={"user_id": str(uuid.uuid4()), "role": "MODERATOR"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "not_found"

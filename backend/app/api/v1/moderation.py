@@ -25,6 +25,7 @@ from app.modules.moderation.service import (
     AppealConflict,
     ModerationService,
     OperatorNotAuthorized,
+    OperatorNotFound,
     ReportConflict,
     ReportForbidden,
     ReportInvalid,
@@ -235,7 +236,7 @@ def _error(code: str, status_code: int) -> HTTPException:
 
 
 def _handle(exc: Exception) -> HTTPException:
-    if isinstance(exc, (ReportNotFound, ActionNotFound)):
+    if isinstance(exc, (ReportNotFound, ActionNotFound, OperatorNotFound)):
         return _error("not_found", status.HTTP_404_NOT_FOUND)
     if isinstance(exc, ReportForbidden):
         return _error("forbidden", status.HTTP_403_FORBIDDEN)
