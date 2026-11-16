@@ -68,7 +68,7 @@ def test_ranked_restriction_blocks_only_ranked_queue(
     sport_format = seed_format(db_session)
     give_region(db_session, user)
     give_sport_profile(db_session, user, sport_format.id)
-    now = datetime(2026, 11, 9, 12, 0, tzinfo=UTC)
+    now = datetime.now(UTC)
     service = TrustService(db_session)
     service.apply_event(user, "no_show", now=now)
     service.apply_event(user, "no_show", now=now)
