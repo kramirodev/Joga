@@ -1,0 +1,49 @@
+import { createContext, useContext } from 'react';
+
+import { dark, light, type Palette } from '../ui/theme';
+
+export type TabKey = 'jogar' | 'partidas' | 'temporada' | 'social' | 'perfil';
+
+export type Params = Record<string, string | number | boolean | null | undefined>;
+
+export type NavValue = {
+  id: string;
+  tab: TabKey;
+  params: Params;
+  canGoBack: boolean;
+  go: (id: string, params?: Params) => void;
+  replace: (id: string, params?: Params) => void;
+  reset: (id: string, params?: Params) => void;
+  back: () => void;
+  tabTo: (tab: TabKey) => void;
+  openModal: (id: string, onConfirm?: () => void) => void;
+  toast: (message: string) => void;
+};
+
+export const NavContext = createContext<NavValue | null>(null);
+
+export function useNav(): NavValue {
+  const value = useContext(NavContext);
+  if (!value) {
+    throw new Error('useNav fora do provider');
+  }
+  return value;
+}
+
+export type ThemeValue = {
+  palette: Palette;
+  dark: boolean;
+  setDark: (value: boolean) => void;
+};
+
+export const ThemeContext = createContext<ThemeValue>({
+  palette: light,
+  dark: false,
+  setDark: () => undefined,
+});
+
+export function useTheme(): ThemeValue {
+  return useContext(ThemeContext);
+}
+
+export const palettes = { light, dark };

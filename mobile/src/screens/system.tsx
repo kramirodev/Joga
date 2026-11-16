@@ -1,0 +1,1021 @@
+import { useEffect, useState } from 'react';
+import { Text, View } from 'react-native';
+
+import { api } from '../api/client';
+import type { Device, Passkey } from '../api/types';
+import { useApp } from '../state/app';
+import { useNav, useTheme } from '../state/context';
+import { Icon } from '../ui/icons';
+import {
+  Badge,
+  Btn,
+  Card,
+  CardList,
+  Chip,
+  Field,
+  IconBtn,
+  Input,
+  Kv,
+  ListRow,
+  Notice,
+  Page,
+  Row,
+  Seg,
+  SegBtn,
+  StateScreen,
+  Toggle,
+  Txt,
+} from '../ui/kit';
+import type { ScreenDef } from './types';
+
+function Settings() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const items = [
+    {
+      icon: 'user' as const,
+      title: 'Conta e perfil',
+      sub: 'Nome, tag, e-mail, telefone',
+      go: 'profile-edit',
+    },
+    {
+      icon: 'chat' as const,
+      title: 'Notificações',
+      sub: 'Prazos, partidas, pagamentos e social',
+      go: 'notifications',
+    },
+    {
+      icon: 'eye' as const,
+      title: 'Privacidade',
+      sub: 'Convites, região e bloqueios',
+      go: 'privacy',
+    },
+    {
+      icon: 'eye' as const,
+      title: 'Acessibilidade',
+      sub: 'Fonte, movimento e alvos',
+      go: 'accessibility',
+    },
+    {
+      icon: 'bolt' as const,
+      title: 'Personalização',
+      sub: 'Temas, densidade, home, sons e háptica',
+      go: 'customization',
+    },
+    {
+      icon: 'shield' as const,
+      title: 'Segurança',
+      sub: 'Passkeys, dispositivos e sessões',
+      go: 'security',
+    },
+    {
+      icon: 'download' as const,
+      title: 'LGPD',
+      sub: 'Exportar dados e excluir conta',
+      go: 'lgpd-export',
+    },
+    {
+      icon: 'trash' as const,
+      title: 'Excluir conta',
+      sub: 'Consequências, prazo e confirmação',
+      go: 'lgpd-delete',
+    },
+    {
+      icon: 'info' as const,
+      title: 'Termos e privacidade',
+      sub: 'Termos, privacidade e cancelamento',
+      go: 'terms-privacy',
+    },
+    {
+      icon: 'chat' as const,
+      title: 'Ajuda e suporte',
+      sub: 'Contestação, moderação e pagamentos',
+      go: 'support',
+    },
+    {
+      icon: 'info' as const,
+      title: 'Sobre o JOGA',
+      sub: 'Versão, licenças e ambiente',
+      go: 'about',
+    },
+  ];
+  return (
+    <Page title="Configurações">
+      <CardList>
+        {items.map((item, index) => (
+          <ListRow
+            key={item.title}
+            last={index === items.length - 1}
+            onPress={() => nav.go(item.go)}
+          >
+            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.title}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+      <Btn tone="ghost" icon="logout" modal="logout">
+        Sair da conta
+      </Btn>
+    </Page>
+  );
+}
+
+function Accessibility() {
+  const [size, setSize] = useState('AA');
+  const [motion, setMotion] = useState(false);
+  const [targets, setTargets] = useState(true);
+  return (
+    <Page title="Acessibilidade">
+      <Card>
+        <Row between>
+          <Txt variant="h3">Tamanho do texto</Txt>
+          <Badge tone="green">LIVRE</Badge>
+        </Row>
+        <Seg style={{ marginTop: 8 }}>
+          {['A', 'AA', 'AAA'].map((item) => (
+            <SegBtn key={item} on={size === item} onPress={() => setSize(item)}>
+              {item}
+            </SegBtn>
+          ))}
+        </Seg>
+      </Card>
+      <Card>
+        <Row between>
+          <Txt variant="h3">Reduzir movimento</Txt>
+          <Toggle checked={motion} onChange={setMotion} />
+        </Row>
+        <Row between style={{ marginTop: 12 }}>
+          <Txt variant="h3">Alvos de toque ampliados</Txt>
+          <Toggle checked={targets} onChange={setTargets} />
+        </Row>
+      </Card>
+      <Notice tone="green" icon="shield">
+        Essas preferências não são itens de catálogo e não dependem do passe.
+      </Notice>
+      <Btn tone="primary" toast="Preferências salvas no protótipo">
+        Salvar preferências
+      </Btn>
+    </Page>
+  );
+}
+
+function Customization() {
+  const { dark, setDark } = useApp();
+  const { palette } = useTheme();
+  const [density, setDensity] = useState('Confortável');
+  const [sounds, setSounds] = useState(true);
+  const [animations, setAnimations] = useState(true);
+  return (
+    <Page title="Personalização">
+      <Row between>
+        <Badge tone="green">GRÁTIS</Badge>
+        <Badge>APARÊNCIA</Badge>
+      </Row>
+      <Card>
+        <Txt variant="h3">Tema</Txt>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {['Claro', 'Escuro'].map((item) => (
+            <Chip
+              key={item}
+              on={item === 'Escuro' ? dark : !dark}
+              onPress={() => setDark(item === 'Escuro')}
+            >
+              {item}
+            </Chip>
+          ))}
+        </View>
+        <Txt variant="tiny" style={{ marginTop: 8 }}>
+          Claro e escuro são gratuitos e acompanham o sistema até você escolher manualmente.
+        </Txt>
+      </Card>
+      <Card>
+        <Txt variant="h3">Cor de destaque</Txt>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          {['#E53935', '#62686E', '#62686E', '#E53935', '#62686E'].map((color, index) => (
+            <View
+              key={index}
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: color,
+                borderWidth: index === 0 ? 2 : 1.5,
+                borderColor: index === 0 ? '#17191B' : palette.line,
+              }}
+            />
+          ))}
+        </View>
+      </Card>
+      <Card>
+        <Txt variant="h3">Densidade dos cartões</Txt>
+        <Seg style={{ marginTop: 8 }}>
+          {['Confortável', 'Compacta'].map((item) => (
+            <SegBtn key={item} on={density === item} onPress={() => setDensity(item)}>
+              {item}
+            </SegBtn>
+          ))}
+        </Seg>
+      </Card>
+      <Card>
+        <Row between>
+          <Txt variant="h3">Blocos da home</Txt>
+          <Txt variant="tiny">ordem</Txt>
+        </Row>
+        <View style={{ marginTop: 6 }}>
+          {['Próxima partida', 'Saldo', 'Missão', 'Temporada'].map((item, index) => (
+            <View
+              key={item}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 11,
+                borderBottomWidth: index === 3 ? 0 : 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Text style={{ width: 24, fontWeight: '900', color: palette.ink }}>{index + 1}</Text>
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item}
+              </Text>
+              <Text style={{ color: palette.muted }}>⋯</Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+      <Card>
+        <Row between>
+          <Txt variant="h3">Sons e háptica</Txt>
+          <Toggle checked={sounds} onChange={setSounds} />
+        </Row>
+        <Row between style={{ marginTop: 12 }}>
+          <Txt variant="h3">Animações</Txt>
+          <Toggle checked={animations} onChange={setAnimations} />
+        </Row>
+      </Card>
+      <Btn tone="primary" toast="Personalização salva no protótipo">
+        Salvar personalização
+      </Btn>
+    </Page>
+  );
+}
+
+function Security() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const { session } = useApp();
+  const [keys, setKeys] = useState<Passkey[]>([]);
+  useEffect(() => {
+    if (session) {
+      api.auth
+        .passkeys(session.accessToken)
+        .then((result) => setKeys(result.credentials))
+        .catch(() => undefined);
+    }
+  }, [session]);
+  const list = keys.length
+    ? keys.map((item) => ({
+        id: item.credential_id,
+        name: item.name ?? 'Passkey',
+        sub: item.last_used_at ? 'último uso recente' : 'sem uso',
+      }))
+    : [
+        { id: 'iphone', name: 'iPhone de Susan', sub: 'último uso hoje · Face ID' },
+        { id: 'notebook', name: 'Notebook', sub: 'último uso 12 nov' },
+      ];
+  const revoke = async (id: string) => {
+    if (session && !['iphone', 'notebook'].includes(id)) {
+      try {
+        await api.auth.revokePasskey(session.accessToken, id);
+        setKeys((current) => current.filter((item) => item.credential_id !== id));
+      } catch {
+        return;
+      }
+    }
+  };
+  return (
+    <Page title="Segurança">
+      <Card>
+        <Row between>
+          <Txt variant="h3">Passkeys</Txt>
+          <Badge tone="green">{list.length} ativas</Badge>
+        </Row>
+        <View style={{ marginTop: 6 }}>
+          {list.map((item, index) => (
+            <View
+              key={item.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingVertical: 11,
+                borderBottomWidth: index === list.length - 1 ? 0 : 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Text style={{ color: palette.ink }}>◈</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.name}
+                </Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+              </View>
+              {index === 0 ? (
+                <Badge tone="lime">ATUAL</Badge>
+              ) : (
+                <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
+                  Revogar
+                </Btn>
+              )}
+            </View>
+          ))}
+        </View>
+        <View style={{ marginTop: 10 }}>
+          <Btn tone="primary" icon="plus" toast="Passkey adicionada no protótipo">
+            Adicionar passkey
+          </Btn>
+        </View>
+      </Card>
+      <CardList>
+        {[
+          {
+            icon: 'user' as const,
+            title: 'Trocar telefone',
+            sub: '+55 (11) 9****-1234',
+            go: 'phone-change',
+          },
+          {
+            icon: 'eye' as const,
+            title: 'Dispositivos e sessões',
+            sub: '2 dispositivos conectados',
+            go: 'devices',
+          },
+          {
+            icon: 'shield' as const,
+            title: 'Recuperação de conta',
+            sub: 'Passkey + análise de risco',
+            go: 'recovery',
+          },
+        ].map((item, index, all) => (
+          <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
+            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+      <Notice tone="orange" icon="lock">
+        Trocar o telefone encerra todas as sessões.
+      </Notice>
+    </Page>
+  );
+}
+
+function Devices() {
+  const { palette } = useTheme();
+  const { session } = useApp();
+  const [devices, setDevices] = useState<Device[]>([]);
+  useEffect(() => {
+    if (session) {
+      api.auth
+        .devices(session.accessToken)
+        .then((result) => setDevices(result.devices))
+        .catch(() => undefined);
+    }
+  }, [session]);
+  const list = devices.length
+    ? devices.map((item, index) => ({
+        id: item.id,
+        name: `${item.name ?? item.platform} ${index === 0 ? '· este aparelho' : ''}`,
+        sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
+        current: index === 0,
+      }))
+    : [
+        {
+          id: 'iphone',
+          name: 'iPhone 15 · este aparelho',
+          sub: 'São Paulo · agora',
+          current: true,
+        },
+        { id: 'pixel', name: 'Pixel 8', sub: 'São Paulo · há 2 dias', current: false },
+        { id: 'chrome', name: 'Chrome · notebook', sub: 'São Paulo · há 8 dias', current: false },
+      ];
+  const revoke = async (id: string) => {
+    if (session && !['iphone', 'pixel', 'chrome'].includes(id)) {
+      try {
+        await api.auth.revokeDevice(session.accessToken, id);
+        setDevices((current) => current.filter((item) => item.id !== id));
+      } catch {
+        return;
+      }
+    }
+  };
+  return (
+    <Page title="Dispositivos">
+      <CardList>
+        {list.map((item, index) => (
+          <ListRow key={item.id} last={index === list.length - 1}>
+            <Text style={{ color: palette.ink }}>◉</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.name}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            {item.current ? (
+              <Badge tone="lime">ATUAL</Badge>
+            ) : (
+              <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
+                Revogar
+              </Btn>
+            )}
+          </ListRow>
+        ))}
+      </CardList>
+      <Btn tone="ghost" modal="confirm">
+        Revogar todas as outras
+      </Btn>
+    </Page>
+  );
+}
+
+function Privacy() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const [invites, setInvites] = useState('Amigos');
+  const [showRegion, setShowRegion] = useState(true);
+  return (
+    <Page title="Privacidade">
+      <Card>
+        <Row between>
+          <Txt variant="h3">Quem pode me convidar</Txt>
+          <Badge>amigos</Badge>
+        </Row>
+        <Seg style={{ marginTop: 8 }}>
+          {['Todos', 'Amigos', 'Ninguém'].map((item) => (
+            <SegBtn key={item} on={invites === item} onPress={() => setInvites(item)}>
+              {item}
+            </SegBtn>
+          ))}
+        </Seg>
+      </Card>
+      <Card>
+        <Row between>
+          <Txt variant="h3">Mostrar região no perfil</Txt>
+          <Toggle checked={showRegion} onChange={setShowRegion} />
+        </Row>
+        <Txt variant="tiny" style={{ marginTop: 6 }}>
+          Apenas cidade e raio aproximado. Nunca endereço, bairro exato ou coordenada.
+        </Txt>
+      </Card>
+      <Card>
+        <Row between>
+          <Txt variant="h3">Quem pode ver meu histórico</Txt>
+          <Badge>público</Badge>
+        </Row>
+        <Txt variant="tiny" style={{ marginTop: 6 }}>
+          Divisão, nível, partidas e conquistas. Valores financeiros e telefone nunca.
+        </Txt>
+      </Card>
+      <CardList>
+        {[
+          {
+            icon: 'lock' as const,
+            title: 'Usuários bloqueados',
+            sub: '1 bloqueado',
+            go: 'block-user',
+          },
+          {
+            icon: 'chat' as const,
+            title: 'Notificações',
+            sub: 'Prazos, partidas e social',
+            go: 'notifications',
+          },
+        ].map((item, index, all) => (
+          <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
+            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+    </Page>
+  );
+}
+
+function LgpdExport() {
+  const { palette } = useTheme();
+  return (
+    <Page title="Exportar dados">
+      <Card>
+        <Txt variant="h3">O que entra</Txt>
+        <View style={{ marginTop: 6 }}>
+          {[
+            'Perfil, modalidades e disponibilidade',
+            'Partidas, resultados e divisão',
+            'Ingressos, reservas e recibos',
+            'Mensagens e consentimentos',
+          ].map((item, index) => (
+            <View
+              key={item}
+              style={{
+                flexDirection: 'row',
+                gap: 8,
+                paddingVertical: 11,
+                borderBottomWidth: index === 3 ? 0 : 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Icon name="check" size={16} color={palette.ink} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+      <Notice tone="green" icon="shield">
+        A exportação é gratuita e não exige passe. Dados de terceiros são omitidos.
+      </Notice>
+      <Btn tone="primary" icon="download" toast="Exportação solicitada no protótipo">
+        Solicitar exportação
+      </Btn>
+      <Btn tone="ghost" go="lgpd-delete">
+        Excluir minha conta
+      </Btn>
+    </Page>
+  );
+}
+
+function LgpdDelete() {
+  const [confirmation, setConfirmation] = useState('');
+  const canDelete = confirmation.trim().toUpperCase() === 'EXCLUIR';
+  return (
+    <Page title="Excluir conta">
+      <Card tone="red">
+        <Txt variant="h3">O que acontece</Txt>
+        <Txt variant="tiny" style={{ marginTop: 6 }}>
+          Sua conta, perfil, avatar, mensagens e preferências são excluídos. Registros financeiros e
+          fiscais podem ser retidos pelo prazo legal. Ingressos não usados são perdidos.
+        </Txt>
+      </Card>
+      <Field label="Digite EXCLUIR para confirmar">
+        <Input
+          value={confirmation}
+          onChangeText={setConfirmation}
+          placeholder="EXCLUIR"
+          maxLength={7}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+      </Field>
+      <Btn tone="danger" modal="confirm" disabled={!canDelete}>
+        Excluir minha conta
+      </Btn>
+      <Btn tone="ghost" back>
+        Cancelar
+      </Btn>
+    </Page>
+  );
+}
+
+function TermsPrivacy() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const items = [
+    {
+      icon: 'info' as const,
+      title: 'Termos de uso',
+      sub: 'Versão 2026-11 · revisão jurídica pendente',
+      readOnly: true,
+    },
+    {
+      icon: 'shield' as const,
+      title: 'Política de privacidade',
+      sub: 'LGPD, localização e retenção',
+      readOnly: true,
+    },
+    {
+      icon: 'clock' as const,
+      title: 'Política de cancelamento',
+      sub: 'Cutoff, T4, no-show e devolução',
+      readOnly: false,
+    },
+    {
+      icon: 'wallet' as const,
+      title: 'Política de ingressos',
+      sub: 'Validade, consumo e devolução',
+      readOnly: false,
+    },
+  ];
+  return (
+    <Page title="Termos e privacidade">
+      <CardList>
+        {items.map((item, index) => (
+          <ListRow
+            key={item.title}
+            last={index === items.length - 1}
+            onPress={() => {
+              if (item.readOnly) {
+                nav.go('terms', { readOnly: 1 });
+                return;
+              }
+              nav.toast(`${item.title} disponível no protótipo.`);
+            }}
+          >
+            <IconBtn
+              icon={item.icon}
+              label={item.title}
+              plain
+              onPress={item.readOnly ? () => nav.go('terms', { readOnly: 1 }) : undefined}
+              toast={item.readOnly ? undefined : `${item.title} aberto no protótipo`}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+      <Notice tone="orange" icon="alert">
+        O texto final depende de revisão jurídica. O protótipo mostra a estrutura e os pontos
+        obrigatórios.
+      </Notice>
+    </Page>
+  );
+}
+
+function Support() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const items = [
+    {
+      icon: 'clock' as const,
+      title: 'Prazos, cutoff e no-show',
+      sub: 'Como T1–T9 funcionam',
+      toast: 'Artigo aberto no protótipo',
+    },
+    {
+      icon: 'shield' as const,
+      title: 'Restrição da fila ranqueada',
+      sub: 'Contestar a restrição',
+      go: 'queue-restricted',
+    },
+    {
+      icon: 'alert' as const,
+      title: 'Moderação e denúncia',
+      sub: 'Acompanhar caso e recurso',
+      go: 'moderation-status',
+    },
+    {
+      icon: 'wallet' as const,
+      title: 'Pagamentos e reembolsos',
+      sub: 'Pix, ingressos e recibos',
+      go: 'booking-history',
+    },
+    {
+      icon: 'alert' as const,
+      title: 'Denunciar jogador',
+      sub: 'Ofensas, assédio, fraude',
+      go: 'report-profile',
+    },
+  ];
+  return (
+    <Page title="Ajuda e suporte">
+      <CardList>
+        {items.map((item, index) => (
+          <ListRow
+            key={item.title}
+            last={index === items.length - 1}
+            onPress={() => {
+              if ('go' in item && typeof item.go === 'string') {
+                nav.go(item.go);
+                return;
+              }
+              if ('toast' in item && typeof item.toast === 'string') {
+                nav.toast(item.toast);
+              }
+            }}
+          >
+            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+      <Btn tone="primary" icon="chat" toast="Atendimento aberto no protótipo">
+        Abrir atendimento
+      </Btn>
+      <Notice tone="blue" icon="shield">
+        Toda contestação gera registro e possibilidade de revisão humana.
+      </Notice>
+    </Page>
+  );
+}
+
+function About() {
+  const { palette } = useTheme();
+  return (
+    <Page title="Sobre">
+      <Card tone="ink">
+        <Text
+          style={{
+            fontSize: 42,
+            lineHeight: 39,
+            fontWeight: '900',
+            letterSpacing: -2,
+            textTransform: 'uppercase',
+            color: '#F1F3F0',
+          }}
+        >
+          JOGA<Text style={{ color: '#E53935' }}>.</Text>
+        </Text>
+        <Txt variant="tiny" color="softOnInk" style={{ marginTop: 6 }}>
+          Futebol e vôlei, quadra de verdade.
+        </Txt>
+        <View style={{ marginTop: 10 }}>
+          <Badge tone="lime">PROTÓTIPO v3 · 2026-11-13</Badge>
+        </View>
+      </Card>
+      <Card>
+        <Kv label="Versão" value="3.0.0-prototipo" />
+        <Kv label="Ambiente" value="Local · sem dados reais" />
+        <Kv label="Conta" value="Susan #4821" />
+        <Kv label="Temporada" value="2026-Q4" />
+      </Card>
+      <CardList>
+        {[
+          {
+            icon: 'info' as const,
+            title: 'Decisões desta versão',
+            sub: 'O que mudou nesta rodada',
+            go: 'decisions',
+          },
+          {
+            icon: 'info' as const,
+            title: 'Licenças',
+            sub: 'Sem bibliotecas externas',
+            toast: 'Licenças abertas no protótipo',
+          },
+        ].map((item, index, all) => (
+          <ListRow key={item.title} last={index === all.length - 1}>
+            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                {item.title}
+              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+            </View>
+            <Text style={{ color: palette.muted }}>›</Text>
+          </ListRow>
+        ))}
+      </CardList>
+    </Page>
+  );
+}
+
+function Offline() {
+  return (
+    <Page title="Conexão">
+      <StateScreen
+        icon="wifi-off"
+        title="Sem conexão"
+        text="Você pode ver o que já foi carregado, mas confirmações e pagamentos precisam de conexão."
+        actions={
+          <>
+            <Btn tone="primary" toast="Tentando conectar no protótipo">
+              Tentar novamente
+            </Btn>
+            <Btn tone="ghost" go="lobby-detail">
+              Ver dados em cache
+            </Btn>
+          </>
+        }
+      />
+    </Page>
+  );
+}
+
+function Error403() {
+  return (
+    <Page title="Acesso">
+      <StateScreen
+        icon="lock"
+        title="Sem permissão"
+        text="Seu vínculo com este lobby, clã ou reserva não permite esta ação."
+        actions={
+          <>
+            <Btn tone="primary" back>
+              Voltar
+            </Btn>
+            <Btn tone="ghost" go="support">
+              Falar com suporte
+            </Btn>
+          </>
+        }
+      />
+    </Page>
+  );
+}
+
+function ErrorGeneric() {
+  return (
+    <Page title="Erro">
+      <StateScreen
+        icon="alert"
+        title="Algo deu errado"
+        text="Não conseguimos carregar esta tela. Tente novamente. Se o problema continuar, o suporte tem o identificador da sessão."
+        actions={
+          <>
+            <Btn tone="primary" toast="Tentando novamente no protótipo">
+              Tentar novamente
+            </Btn>
+            <Btn tone="ghost" go="support">
+              Falar com suporte
+            </Btn>
+          </>
+        }
+      />
+    </Page>
+  );
+}
+
+function Loading() {
+  const { palette } = useTheme();
+  const skeleton = (style: object) => (
+    <View
+      style={[
+        {
+          height: 16,
+          borderRadius: 10,
+          backgroundColor: palette.surface2,
+          borderWidth: 1,
+          borderColor: palette.line,
+        },
+        style,
+      ]}
+    />
+  );
+  return (
+    <Page title="Carregando">
+      <Card>
+        {skeleton({ width: '60%' })}
+        <View style={{ height: 10 }} />
+        {skeleton({ width: '80%' })}
+        <View style={{ height: 10 }} />
+        {skeleton({ width: '40%' })}
+        <View style={{ height: 10 }} />
+        <View
+          style={{
+            height: 92,
+            borderRadius: 16,
+            backgroundColor: palette.surface2,
+            borderWidth: 1,
+            borderColor: palette.line,
+          }}
+        />
+        <View style={{ height: 10 }} />
+        <View
+          style={{
+            height: 92,
+            borderRadius: 16,
+            backgroundColor: palette.surface2,
+            borderWidth: 1,
+            borderColor: palette.line,
+          }}
+        />
+      </Card>
+      <Card>
+        {skeleton({ width: '80%' })}
+        <View style={{ height: 10 }} />
+        {skeleton({ width: '60%' })}
+        <View style={{ height: 10 }} />
+        <View
+          style={{
+            height: 92,
+            borderRadius: 16,
+            backgroundColor: palette.surface2,
+            borderWidth: 1,
+            borderColor: palette.line,
+          }}
+        />
+      </Card>
+      <Txt variant="tiny" align="center">
+        Buscando suas informações.
+      </Txt>
+    </Page>
+  );
+}
+
+function Decisions() {
+  const { palette } = useTheme();
+  const items = [
+    [
+      '1',
+      'Filas separadas, mesma tela',
+      'Casual e ranqueada mantêm mecanismos separados, mas compartilham o componente de fila.',
+    ],
+    [
+      '2',
+      'PIX só em pacote e passe',
+      'T3 extinto: os ingressos são consumidos na confirmação do lobby.',
+    ],
+    ['3', 'Check-in GPS + estabelecimento', 'GPS com fallback do estabelecimento.'],
+    ['4', 'Notificações dentro do app', 'Central de prazos e ações.'],
+    ['5', 'Avatar no cadastro', 'Configurado no onboarding e editável no perfil.'],
+    ['6', 'Passe 10/20/30/50', 'Franquia mensal, cobrança trimestral, entrega mês a mês.'],
+    [
+      '7',
+      'Divisão reseta por temporada',
+      'Decisão desta rodada. Altera a leitura anterior da ADR 0045 §1.6; registrar ADR.',
+    ],
+    ['8', 'Medalhas no MVP', 'Bloco separado de insígnias no perfil.'],
+    [
+      '9',
+      'Sem glow, brilho ou neon',
+      'Sombras apenas como profundidade; foco com contorno chapado.',
+    ],
+    ['10', 'Kit e capitão removidos', 'O lobby não tem checklist de kit nem papel de capitão.'],
+    [
+      '11',
+      'Rede é sobre o app',
+      'Quadras, horários, densidade e ocupação; não é estatística do jogador.',
+    ],
+    ['12', '5 abas + seletor', 'Jogar, Partidas, Temporada, Social e Perfil.'],
+  ];
+  return (
+    <Page title="Decisões da v3">
+      <Card>
+        <View>
+          {items.map(([num, title, sub], index) => (
+            <View
+              key={num}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                gap: 10,
+                paddingVertical: 11,
+                borderBottomWidth: index === items.length - 1 ? 0 : 1,
+                borderBottomColor: palette.line,
+              }}
+            >
+              <Badge tone={num === '7' ? 'orange' : 'lime'}>{num}</Badge>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>{title}</Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{sub}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </Card>
+      <Notice tone="orange" icon="alert">
+        A decisão 7 precisa ser registrada em ADR para substituir a regra anterior de divisão que
+        não resetava.
+      </Notice>
+    </Page>
+  );
+}
+
+export const systemScreens: ScreenDef[] = [
+  { id: 'settings', tab: 'perfil', render: () => <Settings /> },
+  { id: 'accessibility', tab: 'perfil', render: () => <Accessibility /> },
+  { id: 'customization', tab: 'perfil', render: () => <Customization /> },
+  { id: 'security', tab: 'perfil', render: () => <Security /> },
+  { id: 'devices', tab: 'perfil', render: () => <Devices /> },
+  { id: 'privacy', tab: 'perfil', render: () => <Privacy /> },
+  { id: 'lgpd-export', tab: 'perfil', render: () => <LgpdExport /> },
+  { id: 'lgpd-delete', tab: 'perfil', render: () => <LgpdDelete /> },
+  { id: 'terms-privacy', tab: 'perfil', render: () => <TermsPrivacy /> },
+  { id: 'support', tab: 'perfil', render: () => <Support /> },
+  { id: 'about', tab: 'perfil', render: () => <About /> },
+  { id: 'offline', tab: 'jogar', render: () => <Offline /> },
+  { id: 'error-403', tab: 'jogar', render: () => <Error403 /> },
+  { id: 'error-generic', tab: 'jogar', render: () => <ErrorGeneric /> },
+  { id: 'loading', tab: 'jogar', render: () => <Loading /> },
+  { id: 'decisions', tab: 'perfil', render: () => <Decisions /> },
+];

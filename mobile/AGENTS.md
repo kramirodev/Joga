@@ -2,10 +2,12 @@
 
 ## Conexão com a governança do projeto
 
-Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre o protótipo da **Fase 1 (prova técnica mobile/nativa)**, o painel competitivo da **Fase 8C**, o painel de comunicação da **Fase 9B** (chat por lobby, amigos, convites e bloqueios) e o painel de reservas da **Fase 13B** (T1/T2/T3, confirmação, recusa e pagamento simulado). Navegação de produto completa, pagamentos reais, KYC e demais módulos continuam fora do escopo até a fase correspondente.
+Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre o protótipo da **Fase 1 (prova técnica mobile/nativa)** e a reconstrução completa da UI de produto a partir de `telas/jogo/prototipo-v3.html`, incluindo as 136 telas do guia, navegação por abas/pilha, tema claro/escuro e integração com os endpoints disponíveis do backend. Telas sem endpoint correspondente permanecem visuais. Navegação de produto completa, pagamentos reais, KYC e demais módulos continuam fora do escopo até a fase correspondente.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
-- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo; `App.tsx` reúne a prova de localização/passkey, o painel de identidade (`src/IdentityPanel.tsx`), o perfil (`src/ProfilePanel.tsx`), o painel competitivo (`src/CompetitivePanel.tsx`) e o painel de comunicação (`src/CommunicationPanel.tsx`).
+- `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo. `App.tsx` monta o app real da nova UI (`src/screens/`), com componentes em `src/ui/`, cliente HTTP em `src/api/`, estado global em `src/state/` e sessão em `src/session.ts`. Os antigos painéis técnicos (`IdentityPanel`, `ProfilePanel`, `CompetitivePanel`, `CommunicationPanel`) e a UI de demonstração em `src/joga/` foram removidos por decisão do produto.
+- O tema claro/escuro segue o sistema via `Appearance` e a barra de navegação Android acompanha o esquema forçado pela aplicação; não há dependência adicional para isso.
+
 - A estratégia mobile foi decidida no **ADR 0009 (aprovado)**: Expo development build com `expo prebuild`, mantendo `android/` e `ios/` gerados e não versionados neste momento. EAS Build, distribuição e OTA continuam sem decisão; não presumir EAS. Não introduzir dependências, telas ou módulos fora do escopo da fase em execução.
 - O módulo nativo local `mobile/modules/passkey-proof` foi criado para a prova de Credential Manager e está registrado no **ADR 0011**; na Fase 3 passou a aceitar as opções WebAuthn emitidas pelo backend. É código de prova, não biblioteca de produção.
 - O fluxo de identidade usa `expo-secure-store` para os tokens e `http://127.0.0.1:8000/api/v1`; no aparelho, as portas 8081 e 8000 precisam de `adb reverse`. `JOGA_DEV_FIXED_OTP` é apenas local e nunca deve ser usado em ambiente compartilhado.
@@ -36,7 +38,7 @@ Expo entrega breaking changes a cada SDK. Antes de escrever código que toque AP
 
 ## Regras de escopo
 
-- Não avançar para outras fases; as telas competitiva (8C), de comunicação (9B) e de reservas (13B) são as únicas telas de produto autorizadas neste diretório. Não criar, sem autorização da fase, telas de pagamentos reais, KYC, clãs ou publicidade.
+- Não avançar para outras fases. A UI atual reproduz o guia `telas/jogo/prototipo-v3.html`; não criar telas ou funcionalidades fora desse guia sem autorização. Integrações de backend devem usar somente endpoints existentes; o que não tiver endpoint permanece visual.
 - Não editar `android/`/`ios/` manualmente enquanto a estrutura for gerada por prebuild; o ADR 0009 mantém os projetos nativos gerados e não versionados e prevê reavaliar se surgir módulo nativo próprio.
 - Não configurar chaves, credenciais, bundles/identificadores de loja nem provedores reais de SMS/mapas/payment sem autorização explícita.
 - Coordenadas de localização não devem ser exibidas nem persistidas no protótipo (decisão vigente da prova).
