@@ -9,6 +9,11 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.modules.ledger.accounts import (
+    SINGLETON_ACCOUNTS,
+    ensure_chart_of_accounts,
+    player_credit_code,
+)
 from app.modules.ledger.models import LedgerAccount, LedgerEntry, LedgerTransaction
 from app.modules.ledger.service import (
     LedgerError,
@@ -193,3 +198,31 @@ def test_balance_for_code_and_missing_account(db_session: Session) -> None:
     assert service.balance_for_code("psp_clearing") == 500
     with pytest.raises(LedgerError):
         service.balance_for_code("missing")
+
+
+def test_chart_of_accounts_seed_is_idempotent(db_session: Session) -> None:
+    ensure_chart_of_accounts(db_session)
+    ensure_chart_of_accounts(db_session)
+    codes = set(db_session.scalars(select(LedgerAccount.code)).all())
+    assert set(SINGLETON_ACCOUNTS) <= codes
+    assert len([code for code in codes if code in SINGLETON_ACCOUNTS]) == len(SINGLETON_ACCOUNTS)
+
+    service = LedgerService(db_session)
+    user_id = uuid.uuid4()
+    credit = service.account(
+        player_credit_code(user_id),
+        "liability",
+        owner_kind="user",
+        owner_id=user_id,
+    )
+    service.post(
+        kind="credit_purchase",
+        ref_type="ticket_purchase",
+        ref_id=uuid.uuid4(),
+        idempotency_key="chart:1",
+        postings=[
+            LedgerPosting(service.account("psp_clearing", "asset"), "D", 1_000),
+            LedgerPosting(credit, "C", 1_000),
+        ],
+    )
+    assert service.balance_cents(credit) == 1_000
