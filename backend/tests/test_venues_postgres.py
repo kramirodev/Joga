@@ -20,6 +20,7 @@ from app.infrastructure.database.base import Base
 from app.modules.identity.models import User
 from app.modules.organizations.models import Organization, OrganizationMembership
 from app.modules.organizations.permissions import Role
+from app.modules.pricing.service import seed_default_bands
 from app.modules.venues.models import VenueAvailability, VenueSpace
 from app.modules.venues.service import VenueConflict, VenueService
 from app.modules.venues.storage import LocalPhotoStorage
@@ -93,6 +94,7 @@ def tenant(session_factory: sessionmaker[Session]) -> tuple[uuid.UUID, uuid.UUID
         session.flush()
         space = VenueSpace(organization_venue_id=venue.id, name="Quadra 1")
         session.add(space)
+        seed_default_bands(session)
         session.commit()
         return user.id, organization.id, space.id
 
