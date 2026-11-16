@@ -1103,3 +1103,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migracoes:** `f9b0c1d2e3f4` (e-mail), `g0c1d2e3f4a5` (retry) e `h1d2e3f4a5b6` (status detail); `alembic check` limpo no head `h1d2e3f4a5b6`.
 - **Testes:** suite completa com **499 passed, 29 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos.
 - **Pendente:** MP-03 live, MP-07 reembolso real, MP-08 conciliacao real, MP-09 metricas/alertas, MP-10 MED/chargeback.
+
+### 2026-11-16 - ADR 0049: ledger, taxa e placeholders fiscais
+
+- **Documentos:** ADR 0049, decisoes de backend, termo de referencia e pesquisa de custodia versionados; pendencias juridicas atualizadas.
+- **Placeholders:** modulos `fiscal/` e `legal/`, migracao `i2e3f4a5b6c7`, flags da ADR 0049 e `.env.example` corrigido (sem e-mail global e sem "sandbox only"). `money_mode=real` exige referencia, SHA-256 e data do parecer; `custody_model=C` e `fiscal_mode=provider` falham no boot.
+- **BUG-01:** aceite de reserva sem e-mail com Mercado Pago responde `422 payer_email_required` e sofre rollback; nenhuma reserva fica aceita pela metade.
+- **A49-01:** `money.py` com `compute_fee_cents` (round half up, piso, teto) e `allocate_cents` (resto por assento), com testes de propriedade.
+- **A49-02:** ledger de dupla entrada com `ledger_accounts`, `ledger_transactions`, `ledger_entries`, ids idempotentes, validacao de balanceamento no servico, view `v_ledger_balances` e triggers Postgres (saldo diferido e append-only). A tabela antiga `ledger_entries` foi renomeada para `booking_ledger_entries` (migracao `j3f4a5b6c7d8`).
+- **Testes:** suite completa com **525 passed, 29 skipped, 1 failed**; a falha e ambiental (`test_access_log_does_not_include_query_string` consulta PostgreSQL e o banco em 127.0.0.1:5434 esta fora do ar). `ruff` e `mypy app` limpos. Alembic nao foi validado enquanto o Postgres estiver parado.
+- **Proximo:** A49-03 (migracao de saldos em dry-run) exige PostgreSQL de pe.
