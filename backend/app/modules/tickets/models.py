@@ -74,6 +74,14 @@ class TicketPurchase(Base):
         CheckConstraint("tickets > 0", name="tickets_positive"),
         CheckConstraint("amount_cents > 0", name="amount_positive"),
         Index("ix_ticket_purchases_user_created", "user_id", "created_at"),
+        Index(
+            "uq_ticket_purchases_pending_pack",
+            "user_id",
+            "pack_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

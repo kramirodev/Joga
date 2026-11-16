@@ -16,6 +16,7 @@ from app.infrastructure.database.dependency import get_session
 from app.modules.payments.adapter import ProviderStatus, PspUnavailable
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import PspWebhookEvent
+from app.modules.payments.service import PaymentService
 
 
 def api_client(client: TestClient, db_session: Session, settings: Settings) -> TestClient:
@@ -178,3 +179,74 @@ def test_webhook_requires_signature_outside_local(client: TestClient, db_session
     )
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "invalid_webhook_signature"
+
+
+def test_webhook_same_event_with_different_payload_is_rejected(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    settings = Settings(
+        environment="test",
+        mercado_pago_webhook_secret=SecretStr("segredo"),
+    )
+    api = api_client(client, db_session, settings)
+    first_payload = {"id": "evt-dup", "type": "order", "data": {"id": "ORD-A"}}
+    second_payload = {"id": "evt-dup", "type": "order", "data": {"id": "ORD-B"}}
+
+    first = api.post(
+        "/api/v1/payments/mercadopago/webhook",
+        json=first_payload,
+        headers={
+            "x-signature": signature("segredo", "1", "req-a", "ORD-A"),
+            "x-request-id": "req-a",
+        },
+    )
+    second = api.post(
+        "/api/v1/payments/mercadopago/webhook",
+        json=second_payload,
+        headers={
+            "x-signature": signature("segredo", "2", "req-b", "ORD-B"),
+            "x-request-id": "req-b",
+        },
+    )
+    assert first.status_code == 200, first.text
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"]["code"] == "webhook_payload_mismatch"
+    event = db_session.scalar(
+        select(PspWebhookEvent).where(PspWebhookEvent.provider_event_id == "evt-dup")
+    )
+    assert event is not None
+    assert event.payload == first_payload
+
+
+def test_webhook_failure_rolls_back_partial_processing(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        environment="test",
+        mercado_pago_webhook_secret=SecretStr("segredo"),
+    )
+    api = api_client(client, db_session, settings)
+
+    def broken(self, webhook, *, data_id=None):  # noqa: ANN001, ANN202
+        webhook.event_type = "MUTATED"
+        raise PspUnavailable("falha simulada")
+
+    monkeypatch.setattr(PaymentService, "process_webhook", broken)
+    response = api.post(
+        "/api/v1/payments/mercadopago/webhook",
+        json={"id": "evt-rollback", "type": "order", "data": {"id": "ORD-R"}},
+        headers={
+            "x-signature": signature("segredo", "1", "req-r", "ORD-R"),
+            "x-request-id": "req-r",
+        },
+    )
+    assert response.status_code == 503, response.text
+    event = db_session.scalar(
+        select(PspWebhookEvent).where(PspWebhookEvent.provider_event_id == "evt-rollback")
+    )
+    assert event is not None
+    assert event.event_type == "order"
+    assert event.last_error == "PspUnavailable"

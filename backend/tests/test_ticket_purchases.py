@@ -22,6 +22,9 @@ from app.modules.payments.adapter import (
 )
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import PurchasePayment
+from app.modules.payments.purchase import apply_status
+from app.modules.tickets.models import TicketPurchase
+from app.modules.tickets.service import get_balance
 from tests.helpers_results import make_token, make_user
 
 
@@ -256,3 +259,93 @@ def test_mercadopago_requires_payer_email_and_snapshots_it(
     )
     assert stored is not None
     assert stored.payer_email == "pagador@example.com"
+
+
+def test_ticket_purchase_is_idempotent_while_pending(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    first = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "pequeno"},
+    )
+    second = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "pequeno"},
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+    purchases = db_session.scalars(
+        select(TicketPurchase).where(
+            TicketPurchase.user_id == user_id,
+            TicketPurchase.status == "pending",
+        )
+    ).all()
+    assert len(purchases) == 1
+    payments = db_session.scalars(
+        select(PurchasePayment).where(
+            PurchasePayment.kind == "ticket_pack",
+            PurchasePayment.reference_id == purchases[0].id,
+        )
+    ).all()
+    assert len(payments) == 1
+
+
+def test_purchase_refund_revokes_unused_credit(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "pequeno"},
+    )
+    assert created.status_code == 201, created.text
+    purchase_id = UUID(created.json()["id"])
+    purchase = db_session.get(TicketPurchase, purchase_id)
+    assert purchase is not None
+    assert get_balance(db_session, user_id) == 0
+
+    confirmed = api.post(
+        f"/api/v1/me/tickets/purchases/{purchase_id}/confirm",
+        headers=bearer(token),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert get_balance(db_session, user_id) == purchase.tickets
+
+    payment = db_session.scalar(
+        select(PurchasePayment).where(
+            PurchasePayment.reference_id == purchase_id,
+        )
+    )
+    assert payment is not None
+    apply_status(
+        db_session,
+        payment,
+        ProviderStatus(
+            provider="simulator",
+            provider_order_id=payment.provider_order_id,
+            provider_payment_id=payment.provider_payment_id,
+            status="refunded",
+            status_detail=None,
+            amount_cents=payment.amount_cents,
+            external_reference=f"{payment.kind}:{payment.reference_id}",
+            raw={},
+        ),
+    )
+    db_session.commit()
+    db_session.refresh(purchase)
+    assert purchase.status == "cancelled"
+    assert get_balance(db_session, user_id) == 0

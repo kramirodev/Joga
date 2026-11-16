@@ -144,6 +144,23 @@ def cancel_subscription(
     return subscription
 
 
+def revoke_subscription(
+    session: Session,
+    subscription_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> PassSubscription:
+    """Cancela uma assinatura reembolsada e impede entregas futuras."""
+
+    subscription = lock_subscription(session, subscription_id)
+    if subscription.status in {"cancelled", "expired"}:
+        return subscription
+    subscription.status = "cancelled"
+    subscription.ends_at = now or utcnow()
+    session.flush()
+    return subscription
+
+
 def active_subscription(
     session: Session,
     user_id: uuid.UUID,

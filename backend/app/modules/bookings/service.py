@@ -671,6 +671,10 @@ class BookingService:
         participant = self._active_participant(booking.id, actor_user_id)
         if participant is None:
             raise BookingForbidden
+        if participant.payment_status == "PAID":
+            return self._bundle(booking)
+        if self._paid_payment(booking, participant) is not None:
+            return self._bundle(booking)
         if participant.tickets_consumed > 0:
             return self._bundle(booking)
         if booking.status != "PAYMENT_PENDING":
@@ -776,6 +780,20 @@ class BookingService:
         ).all()
         for payment in pending:
             payment.status = "CANCELLED"
+
+    def _paid_payment(
+        self,
+        booking: Booking,
+        participant: BookingParticipant,
+    ) -> BookingPayment | None:
+        return self.session.scalar(
+            select(BookingPayment).where(
+                BookingPayment.booking_id == booking.id,
+                BookingPayment.participant_id == participant.id,
+                BookingPayment.version == booking.payment_version,
+                BookingPayment.status == "PAID",
+            )
+        )
 
     def _refund_tickets(
         self,
@@ -1071,6 +1089,7 @@ class BookingService:
                 booking.cancellation_reason = "t3_expired"
                 self._expire_timer(timer, moment)
                 self._release_hold(booking.id, "EXPIRED", moment)
+                self._refund_tickets(booking)
             else:
                 continue
             self._event(
