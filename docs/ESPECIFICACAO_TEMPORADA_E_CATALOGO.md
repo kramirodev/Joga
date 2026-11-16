@@ -32,7 +32,7 @@ Fora do escopo: troféus de clã (ADR 0044), MMR e ranking (ADR 0025), estatíst
 | **Divisão** | Leitura **competitiva** derivada do MMR, por modalidade. Visível a todos, sempre sem número bruto (ADR 0045) |
 | **Nível** | Degrau da **temporada** (1–30) e faixa bronze/prata/ouro. Reseta a cada trimestre |
 
-> **Divisão não é nível.** "Divisão" é competitiva, por modalidade e não reseta com a temporada. "Nível" é de temporada, reseta a cada trimestre. A interface não pode usar a mesma palavra para os dois, nem o mesmo ícone.
+> **Divisão não é nível.** "Divisão" é competitiva, por modalidade, e **sofre reset suave a cada temporada** — o rating interno persiste e a divisão exibida é reatribuída no início do trimestre. "Nível" é de temporada (1–30, bronze/prata/ouro) e reseta por completo. A interface não pode usar a mesma palavra para os dois, nem o mesmo ícone.
 
 ---
 

@@ -2,6 +2,8 @@ import type {
   AuditListResponse,
   Booking,
   BookingListResponse,
+  BusinessHour,
+  BusinessHourListResponse,
   ChallengeResponse,
   FinancialDispute,
   FinancialDisputeListResponse,
@@ -11,6 +13,8 @@ import type {
   Organization,
   OrganizationFinancialSummary,
   OrganizationListResponse,
+  Presence,
+  PricingBand,
   ReceivableListResponse,
   Role,
   SportCatalogResponse,
@@ -19,6 +23,8 @@ import type {
   VenueAvailabilityListResponse,
   VenueBlackout,
   VenueBlackoutListResponse,
+  VenueClosure,
+  VenueClosureListResponse,
   VenueListResponse,
   VenuePhoto,
   VenuePhotoListResponse,
@@ -281,6 +287,16 @@ export const api = {
     });
   },
 
+  updatePayout(
+    organizationId: string,
+    payload: { legal_document: string; pix_key_type: string; pix_key: string },
+  ): Promise<Organization> {
+    return request<Organization>(`/organizations/${encodeURIComponent(organizationId)}/payout`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
   listMembers(organizationId: string): Promise<MemberListResponse> {
     return request<MemberListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/members`,
@@ -432,8 +448,57 @@ export const api = {
     );
   },
 
+  cancelBookingByVenue(
+    organizationId: string,
+    bookingId: string,
+    reason: string,
+  ): Promise<Booking> {
+    return request<Booking>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/cancel`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+
+  refundBooking(
+    organizationId: string,
+    bookingId: string,
+    reason: string,
+  ): Promise<{ refunded: number }> {
+    return request<{ refunded: number }>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/refund`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+
+  listPresence(bookingId: string): Promise<{ participants: Presence[] }> {
+    return request<{ participants: Presence[] }>(
+      `/bookings/${encodeURIComponent(bookingId)}/presence`,
+    );
+  },
+
+  confirmPresence(bookingId: string, userId: string, method: "VENUE" | "GPS"): Promise<Presence> {
+    return request<Presence>(`/bookings/${encodeURIComponent(bookingId)}/presence`, {
+      method: "POST",
+      body: JSON.stringify({ target_user_id: userId, method }),
+    });
+  },
+
   listSports(): Promise<SportCatalogResponse> {
     return request<SportCatalogResponse>("/sports");
+  },
+
+  listBands(): Promise<{ bands: PricingBand[] }> {
+    return request<{ bands: PricingBand[] }>("/pricing/bands");
   },
 
   listSpaces(organizationId: string, venueId: string): Promise<VenueSpaceListResponse> {
@@ -443,7 +508,7 @@ export const api = {
   createSpace(
     organizationId: string,
     venueId: string,
-    payload: { name: string; description: string | null },
+    payload: { name: string; description: string | null; is_covered?: boolean },
   ): Promise<VenueSpace> {
     return request<VenueSpace>(`${venueBase(organizationId, venueId)}/spaces`, {
       method: "POST",
@@ -455,7 +520,7 @@ export const api = {
     organizationId: string,
     venueId: string,
     spaceId: string,
-    payload: Partial<Pick<VenueSpace, "name" | "description" | "status">>,
+    payload: Partial<Pick<VenueSpace, "name" | "description" | "status" | "is_covered">>,
   ): Promise<VenueSpace> {
     return request<VenueSpace>(
       `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(spaceId)}`,
@@ -519,6 +584,30 @@ export const api = {
     );
   },
 
+  updateAvailability(
+    organizationId: string,
+    venueId: string,
+    spaceId: string,
+    availabilityId: string,
+    payload: Partial<{
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      slot_minutes: number;
+    }>,
+  ): Promise<VenueAvailability> {
+    return request<VenueAvailability>(
+      `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(
+        spaceId,
+      )}/availability/${encodeURIComponent(availabilityId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
   deleteAvailability(
     organizationId: string,
     venueId: string,
@@ -573,6 +662,70 @@ export const api = {
       `${venueBase(organizationId, venueId)}/spaces/${encodeURIComponent(
         spaceId,
       )}/blackouts/${encodeURIComponent(blackoutId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listBusinessHours(
+    organizationId: string,
+    venueId: string,
+  ): Promise<BusinessHourListResponse> {
+    return request<BusinessHourListResponse>(
+      `${venueBase(organizationId, venueId)}/business-hours`,
+    );
+  },
+
+  createBusinessHour(
+    organizationId: string,
+    venueId: string,
+    payload: { weekday: number; opens_at: string; closes_at: string },
+  ): Promise<BusinessHour> {
+    return request<BusinessHour>(
+      `${venueBase(organizationId, venueId)}/business-hours`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  deleteBusinessHour(
+    organizationId: string,
+    venueId: string,
+    businessHourId: string,
+  ): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/business-hours/${encodeURIComponent(
+        businessHourId,
+      )}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listClosures(organizationId: string, venueId: string): Promise<VenueClosureListResponse> {
+    return request<VenueClosureListResponse>(
+      `${venueBase(organizationId, venueId)}/closures`,
+    );
+  },
+
+  createClosure(
+    organizationId: string,
+    venueId: string,
+    payload: { starts_at: string; ends_at: string; reason: string },
+  ): Promise<VenueClosure> {
+    return request<VenueClosure>(`${venueBase(organizationId, venueId)}/closures`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteClosure(
+    organizationId: string,
+    venueId: string,
+    closureId: string,
+  ): Promise<void> {
+    return request<void>(
+      `${venueBase(organizationId, venueId)}/closures/${encodeURIComponent(closureId)}`,
       { method: "DELETE" },
     );
   },

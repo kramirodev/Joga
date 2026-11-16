@@ -113,18 +113,19 @@ def test_level_follows_accumulated_xp(db_session: Session) -> None:
 def test_win_streak_increments_and_loss_resets(db_session: Session) -> None:
     user_id = make_user(db_session)
     match = uuid.uuid4()
+    other = uuid.uuid4()
 
-    record = record_match_result(
-        db_session, user_id, match_id=match, won=True, played_at=MONDAY
-    )
-    record = record_match_result(
-        db_session, user_id, match_id=match, won=True, played_at=MONDAY
-    )
+    record = record_match_result(db_session, user_id, match_id=match, won=True, played_at=MONDAY)
+    record = record_match_result(db_session, user_id, match_id=other, won=True, played_at=MONDAY)
     assert record.current_wins == 2
     assert record.best_wins == 2
 
+    # Repetir a mesma partida não infla a sequência.
+    record = record_match_result(db_session, user_id, match_id=other, won=True, played_at=MONDAY)
+    assert record.current_wins == 2
+
     record = record_match_result(
-        db_session, user_id, match_id=match, won=False, played_at=MONDAY
+        db_session, user_id, match_id=uuid.uuid4(), won=False, played_at=MONDAY
     )
     assert record.current_wins == 0
     assert record.best_wins == 2
@@ -132,9 +133,7 @@ def test_win_streak_increments_and_loss_resets(db_session: Session) -> None:
 
 def test_streak_expires_after_a_full_empty_week(db_session: Session) -> None:
     user_id = make_user(db_session)
-    record_match_result(
-        db_session, user_id, match_id=uuid.uuid4(), won=True, played_at=MONDAY
-    )
+    record_match_result(db_session, user_id, match_id=uuid.uuid4(), won=True, played_at=MONDAY)
     record = streak_for(db_session, user_id)
 
     assert effective_streak(record, MONDAY + timedelta(days=5)) == 1

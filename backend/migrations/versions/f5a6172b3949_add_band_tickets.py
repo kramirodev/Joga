@@ -103,9 +103,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_constraint(
-        "tickets_consumed_non_negative", "booking_participants", type_="check"
-    )
+    op.drop_constraint("tickets_consumed_non_negative", "booking_participants", type_="check")
     op.drop_constraint("settled_with_valid", "booking_participants", type_="check")
     op.drop_column("booking_participants", "tickets_consumed")
     op.drop_column("booking_participants", "settled_with")

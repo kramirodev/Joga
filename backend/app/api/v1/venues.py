@@ -24,6 +24,8 @@ from app.modules.profile.models import Sport
 from app.modules.venues.models import (
     VenueAvailability,
     VenueBlackout,
+    VenueBusinessHour,
+    VenueClosure,
     VenuePhoto,
 )
 from app.modules.venues.photos import InvalidPhoto
@@ -139,6 +141,41 @@ class BlackoutListResponse(BaseModel):
     blackouts: list[BlackoutView]
 
 
+class BusinessHourCreate(BaseModel):
+    weekday: int = Field(ge=1, le=7)
+    opens_at: time
+    closes_at: time
+
+
+class BusinessHourView(BaseModel):
+    id: UUID
+    weekday: int
+    opens_at: time
+    closes_at: time
+
+
+class BusinessHourListResponse(BaseModel):
+    business_hours: list[BusinessHourView]
+
+
+class ClosureCreate(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class ClosureView(BaseModel):
+    id: UUID
+    starts_at: datetime
+    ends_at: datetime
+    reason: str
+    created_at: datetime
+
+
+class ClosureListResponse(BaseModel):
+    closures: list[ClosureView]
+
+
 class PhotoView(BaseModel):
     id: UUID
     venue_id: UUID
@@ -235,6 +272,25 @@ def _blackout_view(item: VenueBlackout) -> BlackoutView:
         ends_at=item.ends_at,
         reason=item.reason,
         external_reference=item.external_reference,
+        created_at=item.created_at,
+    )
+
+
+def _business_hour_view(item: VenueBusinessHour) -> BusinessHourView:
+    return BusinessHourView(
+        id=item.id,
+        weekday=item.weekday,
+        opens_at=item.opens_at,
+        closes_at=item.closes_at,
+    )
+
+
+def _closure_view(item: VenueClosure) -> ClosureView:
+    return ClosureView(
+        id=item.id,
+        starts_at=item.starts_at,
+        ends_at=item.ends_at,
+        reason=item.reason,
         created_at=item.created_at,
     )
 
@@ -591,6 +647,139 @@ def delete_blackout(
             space_id,
             blackout_id,
         )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+
+
+# -- expediente e fechamentos ------------------------------------------------
+
+
+@router.get("/business-hours", response_model=BusinessHourListResponse)
+def list_business_hours(
+    organization_id: UUID,
+    venue_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> BusinessHourListResponse:
+    service = _service(session, storage)
+    try:
+        rows = service.list_business_hours(current.user_id, organization_id, venue_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _handle(exc) from None
+    return BusinessHourListResponse(business_hours=[_business_hour_view(row) for row in rows])
+
+
+@router.post(
+    "/business-hours", response_model=BusinessHourView, status_code=status.HTTP_201_CREATED
+)
+def create_business_hour(
+    organization_id: UUID,
+    venue_id: UUID,
+    payload: BusinessHourCreate,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> BusinessHourView:
+    service = _service(session, storage)
+    try:
+        row = service.create_business_hour(
+            current.user_id,
+            organization_id,
+            venue_id,
+            weekday=payload.weekday,
+            opens_at=payload.opens_at,
+            closes_at=payload.closes_at,
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _business_hour_view(row)
+
+
+@router.delete(
+    "/business-hours/{business_hour_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_business_hour(
+    organization_id: UUID,
+    venue_id: UUID,
+    business_hour_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> None:
+    service = _service(session, storage)
+    try:
+        service.delete_business_hour(
+            current.user_id,
+            organization_id,
+            venue_id,
+            business_hour_id,
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+
+
+@router.get("/closures", response_model=ClosureListResponse)
+def list_closures(
+    organization_id: UUID,
+    venue_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> ClosureListResponse:
+    service = _service(session, storage)
+    try:
+        rows = service.list_closures(current.user_id, organization_id, venue_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _handle(exc) from None
+    return ClosureListResponse(closures=[_closure_view(row) for row in rows])
+
+
+@router.post("/closures", response_model=ClosureView, status_code=status.HTTP_201_CREATED)
+def create_closure(
+    organization_id: UUID,
+    venue_id: UUID,
+    payload: ClosureCreate,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> ClosureView:
+    service = _service(session, storage)
+    try:
+        row = service.create_closure(
+            current.user_id,
+            organization_id,
+            venue_id,
+            starts_at=payload.starts_at,
+            ends_at=payload.ends_at,
+            reason=payload.reason,
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _closure_view(row)
+
+
+@router.delete("/closures/{closure_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_closure(
+    organization_id: UUID,
+    venue_id: UUID,
+    closure_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> None:
+    service = _service(session, storage)
+    try:
+        service.delete_closure(current.user_id, organization_id, venue_id, closure_id)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()

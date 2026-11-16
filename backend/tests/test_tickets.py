@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.tickets.models import TicketLedgerEntry, TicketLot
 from app.modules.tickets.service import (
     InsufficientTickets,
     TicketConflict,
     consume,
+    expire_due,
     get_balance,
     grant,
     refund,
@@ -80,6 +84,94 @@ def test_reusing_key_with_other_effect_is_rejected(db_session: Session) -> None:
         grant(db_session, user_id, 11, source="purchase", idempotency_key="purchase:5")
 
 
+def test_consumption_uses_pass_before_purchase(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    future = datetime.now(UTC) + timedelta(days=30)
+    grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:order")
+    grant(
+        db_session,
+        user_id,
+        5,
+        source="pass",
+        idempotency_key="pass:month",
+        expires_at=future,
+    )
+
+    assert consume(db_session, user_id, 6, ref_type="booking", ref_id=uuid.uuid4()) == 9
+    lots = {
+        lot.source: lot
+        for lot in db_session.scalars(select(TicketLot).where(TicketLot.user_id == user_id)).all()
+    }
+    assert lots["pass"].remaining == 0
+    assert lots["purchase"].remaining == 9
+
+
+def test_expired_lot_does_not_count_in_the_balance(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    past = datetime.now(UTC) - timedelta(minutes=1)
+    grant(
+        db_session,
+        user_id,
+        5,
+        source="pass",
+        idempotency_key="pass:expired",
+        expires_at=past,
+    )
+    assert get_balance(db_session, user_id) == 5
+
+    assert expire_due(db_session) == 1
+    assert get_balance(db_session, user_id) == 0
+    entry = db_session.scalar(
+        select(TicketLedgerEntry).where(
+            TicketLedgerEntry.user_id == user_id,
+            TicketLedgerEntry.source == "expired",
+        )
+    )
+    assert entry is not None and entry.amount == -5
+
+    with pytest.raises(InsufficientTickets):
+        consume(db_session, user_id, 1, ref_type="booking", ref_id=uuid.uuid4())
+
+
+def test_refund_restores_the_active_lot(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    booking_id = uuid.uuid4()
+    grant(
+        db_session,
+        user_id,
+        5,
+        source="pass",
+        idempotency_key="pass:active",
+        expires_at=datetime.now(UTC) + timedelta(days=20),
+    )
+    consume(db_session, user_id, 5, ref_type="booking", ref_id=booking_id)
+
+    assert refund(db_session, user_id, 5, ref_type="booking_cancel", ref_id=booking_id) == 5
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None and lot.remaining == 5
+
+
+def test_refund_does_not_convert_expired_pass_into_purchase(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    booking_id = uuid.uuid4()
+    grant(
+        db_session,
+        user_id,
+        3,
+        source="pass",
+        idempotency_key="pass:will_expire",
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    consume(db_session, user_id, 3, ref_type="booking", ref_id=booking_id)
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None
+    lot.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db_session.flush()
+
+    assert refund(db_session, user_id, 3, ref_type="booking_cancel", ref_id=booking_id) == 0
+    assert get_balance(db_session, user_id) == 0
+
+
 def test_wallet_endpoint_returns_balance_and_entries(
     client: TestClient, db_session: Session
 ) -> None:
@@ -97,6 +189,8 @@ def test_wallet_endpoint_returns_balance_and_entries(
     assert len(body["entries"]) == 2
     assert body["entries"][0]["amount"] == -4
     assert body["entries"][1]["amount"] == 10
+    assert body["lots"][0]["source"] == "purchase"
+    assert body["lots"][0]["remaining"] == 6
 
 
 def test_wallet_is_scoped_to_the_user(client: TestClient, db_session: Session) -> None:

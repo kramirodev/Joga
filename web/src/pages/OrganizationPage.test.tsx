@@ -41,6 +41,13 @@ const booking: Booking = {
   organization_id: "org-1",
   organization_venue_id: "venue-1",
   venue_space_id: "space-1",
+  organization_venue_name: "Quadra Central",
+  venue_space_name: "Quadra 1",
+  format_id: "format-1",
+  format_name: "Futebol 2x2",
+  band_code: "economica_dia",
+  band_label: "Econômica dia",
+  tickets_per_seat: 6,
   status: "REQUESTED",
   starts_at: "2026-12-15T18:00:00Z",
   ends_at: "2026-12-15T19:00:00Z",
@@ -57,6 +64,9 @@ const booking: Booking = {
   cancelled_at: null,
   expired_at: null,
   completed_at: null,
+  presence_closed_at: null,
+  players_per_team: null,
+  formation_note: null,
   cancellation_reason: null,
   created_at: "2026-12-01T12:00:00Z",
   updated_at: "2026-12-01T12:00:00Z",
@@ -93,6 +103,10 @@ function organizationFor(role: Role): Organization {
     name: "Arena Tijuca",
     status: "active",
     role,
+    payout_ready: true,
+    payout_status: "active",
+    pix_key_type: "cnpj",
+    pix_key_masked: "****0001",
     created_at: "2026-11-01T12:00:00Z",
     updated_at: "2026-11-01T12:00:00Z",
   };
@@ -160,6 +174,9 @@ function stubApi(role: Role, bookings: Booking[] = []) {
       }
       return jsonResponse({ disputes: [], limit: 50, offset: 0 });
     }
+    if (url.endsWith("/payout") && init?.method === "PUT") {
+      return jsonResponse(organizationFor(role));
+    }
     if (url.includes("/audit")) return jsonResponse({ audit: [], limit: 50, offset: 0 });
     return jsonResponse({ detail: { code: "not_found" } }, 404);
   });
@@ -210,7 +227,7 @@ describe("OrganizationPage — permissões na interface", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(false);
 
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    expect(await screen.findByText(/previsão técnica de liberação em/)).toBeInTheDocument();
+    expect(await screen.findByText(/previsão técnica de repasse em/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Contestar" })).not.toBeInTheDocument();
   });
 
@@ -262,6 +279,27 @@ describe("OrganizationPage — permissões na interface", () => {
     await waitFor(() =>
       expect(
         fetchMock.mock.calls.some(([url]) => String(url).includes("/bookings/booking-1/accept")),
+      ).toBe(true),
+    );
+  });
+
+  it("proprietário configura o destino de repasse", async () => {
+    const fetchMock = stubApi("OWNER");
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
+    await user.type(await screen.findByLabelText("CNPJ"), "12345678000199");
+    await user.type(screen.getByLabelText("Chave Pix"), "12345678000199");
+    await user.click(screen.getByRole("button", { name: /Salvar destino de repasse/ }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/payout") && (init as RequestInit | undefined)?.method === "PUT",
+        ),
       ).toBe(true),
     );
   });

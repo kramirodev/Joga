@@ -35,8 +35,8 @@ function money(cents: number): string {
 }
 
 const RELEASE_STATUS_LABELS: Record<string, string> = {
-  PENDING: "A liberar",
-  RELEASED: "Liberado",
+  PENDING: "A repassar",
+  RELEASED: "Repassado",
   FAILED: "Falhou",
   REVERSED: "Revertido",
 };
@@ -191,6 +191,9 @@ export function OrganizationPage() {
   const [venueAddress, setVenueAddress] = useState("");
   const [venueLatitude, setVenueLatitude] = useState("");
   const [venueLongitude, setVenueLongitude] = useState("");
+  const [payoutDocument, setPayoutDocument] = useState("");
+  const [payoutKeyType, setPayoutKeyType] = useState("cnpj");
+  const [payoutKey, setPayoutKey] = useState("");
 
   const organizationQuery = useQuery({
     queryKey: queryKeys.organization(organizationId),
@@ -372,6 +375,66 @@ export function OrganizationPage() {
     },
   });
 
+  const cancelVenueBookingMutation = useMutation({
+    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
+      api.cancelBookingByVenue(organizationId, bookingId, reason),
+    onSuccess: async () => {
+      setNotice("Reserva cancelada pelo estabelecimento.");
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const refundBookingMutation = useMutation({
+    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
+      api.refundBooking(organizationId, bookingId, reason),
+    onSuccess: async (result) => {
+      setNotice(`${result.refunded} cobrança(s) reembolsada(s).`);
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const presenceMutation = useMutation({
+    mutationFn: ({ bookingId, userId }: { bookingId: string; userId: string }) =>
+      api.confirmPresence(bookingId, userId, "VENUE"),
+    onSuccess: async () => {
+      setNotice("Presença confirmada pelo estabelecimento.");
+      await invalidateBookings();
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
+  const payoutMutation = useMutation({
+    mutationFn: () =>
+      api.updatePayout(organizationId, {
+        legal_document: payoutDocument,
+        pix_key_type: payoutKeyType,
+        pix_key: payoutKey,
+      }),
+    onSuccess: (updated: Organization) => {
+      queryClient.setQueryData(queryKeys.organization(organizationId), updated);
+      setPayoutDocument("");
+      setPayoutKey("");
+      setActionError(null);
+      setNotice("Destino de repasse atualizado.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
+    },
+    onError: (caught) => {
+      setNotice(null);
+      setActionError(caught);
+    },
+  });
+
   const openDisputeMutation = useMutation({
     mutationFn: (payload: { bookingId: string; reason: string }) =>
       api.openFinancialDispute(organizationId, {
@@ -380,7 +443,7 @@ export function OrganizationPage() {
       }),
     onSuccess: async () => {
       setActionError(null);
-      setNotice("Contestação registrada e liberação suspensa até a análise.");
+      setNotice("Contestação registrada e repasse suspenso até a análise.");
       await invalidateFinancial();
     },
     onError: (caught) => {
@@ -407,6 +470,10 @@ export function OrganizationPage() {
     acceptBookingMutation.error ??
     declineBookingMutation.error ??
     completeBookingMutation.error ??
+    cancelVenueBookingMutation.error ??
+    refundBookingMutation.error ??
+    presenceMutation.error ??
+    payoutMutation.error ??
     openDisputeMutation.error;
   const busy =
     renameMutation.isPending ||
@@ -416,6 +483,10 @@ export function OrganizationPage() {
     acceptBookingMutation.isPending ||
     declineBookingMutation.isPending ||
     completeBookingMutation.isPending ||
+    cancelVenueBookingMutation.isPending ||
+    refundBookingMutation.isPending ||
+    presenceMutation.isPending ||
+    payoutMutation.isPending ||
     openDisputeMutation.isPending;
 
   const members = membersQuery.data ?? [];
@@ -686,8 +757,8 @@ export function OrganizationPage() {
                 <div>
                   <h2>Estabelecimentos</h2>
                   <p className="muted">
-                    Perfil comercial vinculado a esta organização. Quadras e agenda pertencem à Fase
-                    12.
+                    Perfil comercial vinculado a esta organização. Quadras, agenda, preços e
+                    cobertura são geridos na página de cada estabelecimento.
                   </p>
                 </div>
               </div>
@@ -882,6 +953,14 @@ export function OrganizationPage() {
                           {activeParticipants} vagas · {money(booking.price_cents)}
                         </small>
                         <small>
+                          {booking.format_name ?? "Formato não informado"} ·{" "}
+                          {booking.venue_space_name ?? "Quadra"} ·{" "}
+                          {booking.band_label ?? "Faixa não informada"}
+                          {booking.tickets_per_seat
+                            ? ` · ${booking.tickets_per_seat} ingressos/vaga`
+                            : ""}
+                        </small>
+                        <small>
                           {booking.timers
                             .map(
                               (timer) =>
@@ -894,6 +973,39 @@ export function OrganizationPage() {
                         {booking.cancellation_reason ? (
                           <small>Motivo: {booking.cancellation_reason}</small>
                         ) : null}
+                        <details className="booking-details">
+                          <summary>Participantes, pagamento e presença</summary>
+                          <ul className="booking-participants">
+                            {booking.participants.map((participant) => (
+                              <li key={participant.id}>
+                                <span>
+                                  Vaga {participant.seat} · {participant.user_id.slice(0, 8)} ·{" "}
+                                  {participant.payment_status}
+                                  {participant.settled_with
+                                    ? ` (${participant.settled_with})`
+                                    : ""}{" "}
+                                  · {participant.presence_status}
+                                </span>
+                                {booking.status === "CONFIRMED" &&
+                                ["PENDING", "UNVERIFIED"].includes(participant.presence_status) ? (
+                                  <button
+                                    type="button"
+                                    className="button button--small"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      presenceMutation.mutate({
+                                        bookingId: booking.id,
+                                        userId: participant.user_id,
+                                      })
+                                    }
+                                  >
+                                    Confirmar presença
+                                  </button>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
                       </div>
                       <div className="booking-card__actions">
                         {booking.status === "REQUESTED" ? (
@@ -934,6 +1046,54 @@ export function OrganizationPage() {
                             Concluir
                           </button>
                         ) : null}
+                        {["HOLD_CONFIRMED", "PAYMENT_PENDING", "CONFIRMED"].includes(
+                          booking.status,
+                        ) ? (
+                          <button
+                            type="button"
+                            className="button button--small button--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              const reason = window.prompt(
+                                "Motivo do cancelamento pelo estabelecimento (obrigatório):",
+                              );
+                              if (reason) {
+                                cancelVenueBookingMutation.mutate({
+                                  bookingId: booking.id,
+                                  reason,
+                                });
+                              }
+                            }}
+                          >
+                            Cancelar pela quadra
+                          </button>
+                        ) : null}
+                        {canManageFinances &&
+                        booking.payments.some((payment) => payment.status === "PAID") ? (
+                          <button
+                            type="button"
+                            className="button button--small button--danger"
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  "Reembolsar as cobranças pagas desta reserva? A ação é auditada.",
+                                )
+                              ) {
+                                return;
+                              }
+                              const reason = window.prompt("Motivo do reembolso (obrigatório):");
+                              if (reason) {
+                                refundBookingMutation.mutate({
+                                  bookingId: booking.id,
+                                  reason,
+                                });
+                              }
+                            }}
+                          >
+                            Reembolsar
+                          </button>
+                        ) : null}
                         {booking.status === "PAYMENT_PENDING" ? (
                           <small className="muted">Aguardando pagamentos</small>
                         ) : null}
@@ -952,11 +1112,82 @@ export function OrganizationPage() {
               <div>
                 <h2>Financeiro</h2>
                 <p className="muted">
-                  Extrato, agenda de recebíveis e contestações das reservas originadas no JOGA.
+                  Extrato, agenda de repasses e contestações das reservas originadas no JOGA.
                   Configuração técnica local: prazos e política de liberação ainda não aprovados.
                 </p>
               </div>
             </div>
+
+            <h3>Repasse ao fornecedor</h3>
+            {organization ? (
+              <div className="payout-status">
+                <span
+                  className={
+                    organization.payout_ready ? "badge badge--active" : "badge badge--muted"
+                  }
+                >
+                  {organization.payout_ready ? "Apto a receber" : "Repasse pendente"}
+                </span>
+                <small>
+                  {organization.payout_status} ·{" "}
+                  {organization.pix_key_masked ?? "chave Pix não cadastrada"}
+                </small>
+                <p className="muted">
+                  O JOGA paga o estabelecimento por Pix. A reserva paga só é aberta com CNPJ e chave
+                  de repasse ativos.
+                </p>
+              </div>
+            ) : null}
+            {canManageFinances ? (
+              <form
+                className="form form--inline"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  payoutMutation.mutate();
+                }}
+              >
+                <h3>Configurar repasse</h3>
+                <div className="form-row">
+                  <label className="field">
+                    <span>CNPJ</span>
+                    <input
+                      type="text"
+                      value={payoutDocument}
+                      onChange={(event) => setPayoutDocument(event.target.value)}
+                      placeholder="00.000.000/0000-00"
+                      required
+                    />
+                  </label>
+                  <label className="field field--short">
+                    <span>Tipo de chave</span>
+                    <select
+                      value={payoutKeyType}
+                      onChange={(event) => setPayoutKeyType(event.target.value)}
+                    >
+                      <option value="cnpj">CNPJ</option>
+                      <option value="email">E-mail</option>
+                      <option value="phone">Telefone</option>
+                      <option value="random">Aleatória</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Chave Pix</span>
+                  <input
+                    type="text"
+                    value={payoutKey}
+                    onChange={(event) => setPayoutKey(event.target.value)}
+                    placeholder="Chave de titularidade do CNPJ"
+                    required
+                  />
+                </label>
+                <button className="button button--primary" type="submit" disabled={busy}>
+                  {payoutMutation.isPending ? "Salvando..." : "Salvar destino de repasse"}
+                </button>
+              </form>
+            ) : (
+              <p className="muted">Somente proprietário ou administrador altera o repasse.</p>
+            )}
 
             {financialSummary ? (
               <div className="financial-summary">
@@ -969,11 +1200,11 @@ export function OrganizationPage() {
                   <strong>{money(financialSummary.paid_cents)}</strong>
                 </div>
                 <div>
-                  <span>A liberar</span>
+                  <span>A repassar</span>
                   <strong>{money(financialSummary.pending_release_cents)}</strong>
                 </div>
                 <div>
-                  <span>Liberado</span>
+                  <span>Repassado</span>
                   <strong>{money(financialSummary.released_cents)}</strong>
                 </div>
                 <div>
@@ -991,12 +1222,12 @@ export function OrganizationPage() {
               </div>
             ) : null}
 
-            <h3>Agenda de recebíveis</h3>
+            <h3>Repasses a receber</h3>
             {receivablesQuery.isPending ? (
-              <LoadingBlock label="Carregando recebíveis..." />
+              <LoadingBlock label="Carregando repasses..." />
             ) : receivables.length === 0 ? (
-              <EmptyState title="Nenhum recebível">
-                Reservas concluídas aparecem aqui com o prazo de liberação.
+              <EmptyState title="Nenhum repasse">
+                Reservas confirmadas aparecem aqui com o prazo de repasse.
               </EmptyState>
             ) : (
               <ul className="booking-list">
@@ -1010,17 +1241,15 @@ export function OrganizationPage() {
                         {RELEASE_STATUS_LABELS[item.status] ?? item.status}
                       </span>
                       <small>
-                        {money(item.amount_cents)} · previsão técnica de liberação em{" "}
+                        {money(item.amount_cents)} · previsão técnica de repasse em{" "}
                         {formatDate(item.eligible_at)}
                       </small>
                       {item.released_at ? (
-                        <small>
-                          Liberação técnica registrada em {formatDate(item.released_at)}
-                        </small>
+                        <small>Repasse técnico registrado em {formatDate(item.released_at)}</small>
                       ) : null}
                       {item.has_open_dispute ? (
                         <small>
-                          Contestação em análise — liberação suspensa nesta proposta técnica.
+                          Contestação em análise — repasse suspenso nesta proposta técnica.
                         </small>
                       ) : null}
                     </div>

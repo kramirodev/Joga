@@ -25,7 +25,7 @@ A decisão é a **Leitura A**: "MMR" nas estatísticas é a **leitura visível**
 3. `RD`, volatilidade, fórmula e parâmetros internos nunca são exibidos.
 4. Sem isso, o jogador não entende as consequências das próprias ações. É requisito de confiança, não perk.
 5. A taxa de presença é histórica e pessoal. **Não é o Trust Factor** e não expõe o score interno.
-6. **Divisão não é nível.** "Divisão" é a leitura competitiva derivada do MMR, por modalidade, e não reseta com a temporada. "Nível" é o degrau da temporada (1–30) e a faixa bronze/prata/ouro, que reseta a cada trimestre (ADR 0043 §4). São dois "elos" distintos, ambos visíveis a todos; a interface não usa a mesma palavra nem o mesmo ícone para os dois.
+6. **Divisão não é nível.** "Divisão" é a leitura competitiva derivada do MMR, por modalidade, e **é recalculada a cada temporada (reset suave)**: o rating interno persiste, a divisão exibida é reatribuída no início da temporada após as partidas de colocação. "Nível" é o degrau da temporada (1–30) e a faixa bronze/prata/ouro, que reseta a cada trimestre (ADR 0043 §4). São dois "elos" distintos, ambos visíveis a todos; a interface não usa a mesma palavra nem o mesmo ícone para os dois.
 
 ### 2. Estatísticas do passe
 
@@ -74,6 +74,14 @@ A decisão é a **Leitura A**: "MMR" nas estatísticas é a **leitura visível**
 - O preço do passe ou dos pacotes, que continua na ADR 0042.
 - O catálogo cosmético, que continua na ADR 0043 e em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`.
 - O preço e o acesso comercial do painel B2B.
+
+## Nota de implementação (14D.15)
+
+- `GET /api/v1/me/stats` (livre): partidas, vitórias, empates, derrotas, taxa de presença, streak atual e recorde, com recorte por formato.
+- `GET /api/v1/me/stats/courts` e `GET /api/v1/me/stats/passport` (passe): histórico por quadra, temporadas, insígnias e total de quadras.
+- `GET /api/v1/me/network`: faixas madrugada/manhã/tarde/noite no fuso de São Paulo, janela de 30 dias e mínimo de 20 partidas por célula. O plano gratuito vê quadras com mais movimento e os próprios horários; o passe vê as faixas por quadra.
+- A atualização é diária: a data da leitura é a referência. Não há mapa em tempo real nem identificação de pessoa.
+- Célula abaixo do mínimo não é retornada; o total amostral aparece apenas como contexto.
 
 ## Pendências
 

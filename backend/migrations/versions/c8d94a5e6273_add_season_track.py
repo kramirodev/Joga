@@ -63,9 +63,7 @@ def upgrade() -> None:
         sa.Column("xp_required", sa.Integer(), nullable=False),
         sa.Column("item_code", sa.String(length=40), nullable=True),
         sa.Column("free_tickets", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column(
-            "track", sa.String(length=6), server_default=sa.text("'free'"), nullable=False
-        ),
+        sa.Column("track", sa.String(length=6), server_default=sa.text("'free'"), nullable=False),
         sa.CheckConstraint("level BETWEEN 1 AND 30", name="level_valid"),
         sa.CheckConstraint("xp_required >= 0", name="xp_non_negative"),
         sa.CheckConstraint("free_tickets >= 0", name="tickets_non_negative"),

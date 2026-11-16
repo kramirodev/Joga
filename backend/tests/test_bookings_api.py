@@ -45,7 +45,13 @@ def setup_booking(
 ) -> dict:
     users = [make_user(db_session) for _ in range(4)]
     _, format_ = make_format(db_session, team_size=2)
-    organization = Organization(name="Arena Reservas")
+    organization = Organization(
+        name="Arena Reservas",
+        legal_document="12345678000199",
+        pix_key_type="cnpj",
+        pix_key="12345678000199",
+        payout_status="active",
+    )
     db_session.add(organization)
     db_session.flush()
     db_session.add(

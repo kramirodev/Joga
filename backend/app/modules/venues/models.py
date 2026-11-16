@@ -155,6 +155,58 @@ class VenueBlackout(Base):
     )
 
 
+class VenueBusinessHour(Base):
+    """Expediente semanal do estabelecimento, usado pelo prazo T2."""
+
+    __tablename__ = "venue_business_hours"
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 1 AND 7", name="weekday_valid"),
+        CheckConstraint("opens_at < closes_at", name="time_order_valid"),
+        UniqueConstraint(
+            "organization_venue_id",
+            "weekday",
+            "opens_at",
+            name="uq_venue_business_hours_venue_weekday_open",
+        ),
+        Index("ix_venue_business_hours_venue_weekday", "organization_venue_id", "weekday"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_venue_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization_venues.id", ondelete="CASCADE"), nullable=False
+    )
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    opens_at: Mapped[time] = mapped_column(Time, nullable=False)
+    closes_at: Mapped[time] = mapped_column(Time, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class VenueClosure(Base):
+    """Feriado, recesso ou fechamento excepcional do estabelecimento."""
+
+    __tablename__ = "venue_closures"
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at", name="time_order_valid"),
+        Index("ix_venue_closures_venue_start", "organization_venue_id", "starts_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    organization_venue_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization_venues.id", ondelete="CASCADE"), nullable=False
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
 class VenuePhoto(Base):
     """Foto de quadra/estabelecimento, com revisão e remoção auditáveis."""
 

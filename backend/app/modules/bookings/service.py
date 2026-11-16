@@ -24,16 +24,24 @@ from app.modules.bookings.models import (
     BookingTimer,
 )
 from app.modules.identity.audit import record_audit
-from app.modules.identity.clock import utcnow
+from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
-from app.modules.organizations.models import Organization, OrganizationVenue
+from app.modules.matchmaking.policy import haversine_km
+from app.modules.notifications.service import NotificationService
+from app.modules.organizations.models import (
+    Organization,
+    OrganizationMembership,
+    OrganizationVenue,
+)
 from app.modules.organizations.permissions import Capability
 from app.modules.organizations.service import (
     Forbidden,
     OrganizationNotFound,
     OrganizationService,
+    payout_ready,
 )
+from app.modules.pricing.models import PricingBand
 from app.modules.pricing.service import PricingBandError as PricingError
 from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
@@ -47,14 +55,20 @@ from app.modules.season.service import (
     week_start,
 )
 from app.modules.tickets.service import InsufficientTickets, consume, refund
-from app.modules.venues.models import VenueAvailability, VenueBlackout, VenueSpace
+from app.modules.venues.business_hours import business_deadline
+from app.modules.venues.models import (
+    VenueAvailability,
+    VenueBlackout,
+    VenueBusinessHour,
+    VenueClosure,
+    VenueSpace,
+    VenueSport,
+)
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 SPACE_BLOCKING_STATUSES = frozenset(
     {"HOLD_CONFIRMED", "PAYMENT_PENDING", "SUBSTITUTING", "CONFIRMED"}
 )
-
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
 
 class BookingError(Exception):
@@ -87,13 +101,20 @@ class BookingTransitionError(BookingError):
 
 @dataclass(frozen=True)
 class BookingBundle:
-    """Reserva com participantes, timers, hold e pagamentos."""
+    """Reserva com participantes, timers, hold, pagamentos e contexto de vitrine."""
 
     booking: Booking
     participants: list[BookingParticipant]
     timers: list[BookingTimer]
     hold: BookingHold | None
     payments: list[BookingPayment]
+    organization_venue_name: str | None = None
+    venue_space_name: str | None = None
+    format_id: uuid.UUID | None = None
+    format_name: str | None = None
+    band_code: str | None = None
+    band_label: str | None = None
+    tickets_per_seat: int | None = None
 
 
 class BookingService:
@@ -143,6 +164,8 @@ class BookingService:
         organization = self.session.get(Organization, venue.organization_id)
         if organization is None or organization.status != "active":
             raise BookingInvalid
+        if not payout_ready(organization):
+            raise BookingConflict("payout_not_ready")
         space = self.session.scalar(
             select(VenueSpace).where(
                 VenueSpace.id == venue_space_id,
@@ -166,10 +189,10 @@ class BookingService:
         now = utcnow()
         settings = get_settings()
         t1 = timedelta(minutes=settings.booking_t1_minutes)
-        t2 = timedelta(minutes=settings.booking_t2_minutes)
+        t2_reserve = timedelta(minutes=settings.booking_t2_max_minutes)
         t3 = timedelta(minutes=settings.booking_t3_minutes)
         buffer = timedelta(minutes=settings.booking_payment_buffer_minutes)
-        if now + t1 + t2 + t3 + buffer >= starts_at:
+        if now + t1 + t2_reserve + t3 + buffer >= starts_at:
             raise BookingConflict("insufficient_lead_time")
 
         booking = Booking(
@@ -186,6 +209,15 @@ class BookingService:
             policy_version="v1",
             cancellation_policy="full_refund_until_confirmed",
         )
+        availability = self._availability_for(booking, venue, space)
+        booking.band_id = availability.band_id
+        if availability.band_id is not None:
+            try:
+                booking.tickets_per_seat = tickets_for(
+                    self.session, availability.band_id, format_.team_size
+                )
+            except PricingError:
+                booking.tickets_per_seat = None
         try:
             with self.session.begin_nested():
                 self.session.add(booking)
@@ -212,7 +244,7 @@ class BookingService:
                 timer_type="T1",
                 status="RUNNING",
                 started_at=now,
-                deadline_at=min(now + t1, starts_at - t2 - t3 - buffer),
+                deadline_at=min(now + t1, starts_at - t2_reserve - t3 - buffer),
             )
         )
         self._event(
@@ -471,6 +503,13 @@ class BookingService:
             "PAYMENT_PENDING",
         )
         self._audit(actor_user_id, booking, "booking.accepted", {})
+        self._notify_participants(
+            booking,
+            "booking_accepted",
+            "Reserva aceita",
+            "A quadra aceitou a reserva. O pagamento ou a quitação por ingressos está aberto.",
+            now,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -505,6 +544,13 @@ class BookingService:
         )
         self._audit(
             actor_user_id, booking, "booking.declined", {"reason": booking.cancellation_reason}
+        )
+        self._notify_participants(
+            booking,
+            "booking_declined",
+            "Reserva recusada",
+            "A quadra recusou a solicitação. O lobby pode buscar outra quadra.",
+            utcnow(),
         )
         self.session.flush()
         return self._bundle(booking)
@@ -709,9 +755,7 @@ class BookingService:
         )
         return other is None
 
-    def _cancel_pending_payments(
-        self, booking: Booking, participant: BookingParticipant
-    ) -> None:
+    def _cancel_pending_payments(self, booking: Booking, participant: BookingParticipant) -> None:
         """Quem quitou por ingresso não deixa cobrança Pix aberta."""
 
         pending = self.session.scalars(
@@ -750,8 +794,10 @@ class BookingService:
             participant.payment_status = "REFUNDED"
 
     def _tickets_per_seat(self, booking: Booking) -> int:
-        """Resolve a tabela 2D para a reserva: faixa da janela × formato do lobby."""
+        """Resolve a tabela 2D: snapshot da criação ou fallback pela agenda."""
 
+        if booking.tickets_per_seat:
+            return booking.tickets_per_seat
         venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
         space = self.session.get(VenueSpace, booking.venue_space_id)
         lobby = self.session.get(Lobby, booking.lobby_id)
@@ -760,6 +806,11 @@ class BookingService:
         fmt = self.session.get(SportFormat, lobby.format_id)
         if fmt is None:
             raise BookingInvalid
+        if booking.band_id is not None:
+            try:
+                return tickets_for(self.session, booking.band_id, fmt.team_size)
+            except PricingError as exc:
+                raise BookingConflict("tickets_not_configured") from exc
         availability = self._availability_for(booking, venue, space)
         if availability.band_id is None:
             raise BookingConflict("band_missing")
@@ -813,6 +864,18 @@ class BookingService:
         self._release_hold(booking.id, "CONFIRMED", now)
         self._event(booking, actor_user_id, "booking.confirmed", previous, "CONFIRMED")
         self._audit(actor_user_id, booking, "booking.confirmed", {})
+        # A obrigação com o fornecedor nasce na confirmação, não no pagamento
+        # individual. Isso cobre Pix, ingressos e composição mista.
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).ensure_release(booking.id)
+        self._notify_participants(
+            booking,
+            "booking_confirmed",
+            "Reserva confirmada",
+            "Todos os participantes quitaram a vaga. A reserva está confirmada.",
+            now,
+        )
 
     # -- cancelamento/conclusão --------------------------------------------
 
@@ -865,6 +928,20 @@ class BookingService:
             "booking.cancelled",
             {"status": target, "reason": booking.cancellation_reason},
         )
+        self._notify_participants(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva foi cancelada: {booking.cancellation_reason}",
+            now,
+        )
+        self._notify_org_members(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva foi cancelada: {booking.cancellation_reason}",
+            now,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -904,6 +981,13 @@ class BookingService:
             "booking.cancelled",
             {"status": "CANCELLED", "reason": booking.cancellation_reason},
         )
+        self._notify_participants(
+            booking,
+            "booking_cancelled",
+            "Reserva cancelada",
+            f"A reserva não se confirmou: {booking.cancellation_reason}",
+            moment,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -934,6 +1018,13 @@ class BookingService:
         self._award_season_progress(booking, present, booking.completed_at)
         self._event(booking, actor_user_id, "booking.completed", "CONFIRMED", "COMPLETED")
         self._audit(actor_user_id, booking, "booking.completed", {})
+        self._notify_participants(
+            booking,
+            "booking_completed",
+            "Partida concluída",
+            "A partida foi marcada como concluída pelo estabelecimento.",
+            booking.completed_at,
+        )
         self.session.flush()
         return self._bundle(booking)
 
@@ -986,6 +1077,124 @@ class BookingService:
         return expired
 
     # -- leitura ------------------------------------------------------------
+
+    def create_from_lobby(
+        self,
+        actor_user_id: uuid.UUID,
+        lobby_id: uuid.UUID,
+    ) -> BookingBundle:
+        """Escolhe a quadra comercial elegível e cria a reserva do lobby.
+
+        Ordena por distância ao centro do lobby e depois por preço. A escolha
+        explícita continua disponível em ``POST /bookings``.
+        """
+
+        existing = self.session.scalar(select(Booking).where(Booking.lobby_id == lobby_id))
+        if existing is not None:
+            self._require_access(actor_user_id, existing)
+            return self._bundle(existing)
+
+        lobby = self.session.get(Lobby, lobby_id)
+        if lobby is None:
+            raise BookingNotFound
+        if lobby.status != "scheduled":
+            raise BookingInvalid
+        if lobby.court_preference == "PUBLIC_ONLY":
+            raise BookingConflict("no_bookable_space")
+        participants = list(
+            self.session.scalars(
+                select(LobbyParticipant).where(LobbyParticipant.lobby_id == lobby.id)
+            ).all()
+        )
+        if not any(item.user_id == actor_user_id for item in participants):
+            raise BookingForbidden
+        format_ = self.session.get(SportFormat, lobby.format_id)
+        if format_ is None:
+            raise BookingInvalid
+
+        candidates = self._bookable_candidates(lobby, format_)
+        if not candidates:
+            raise BookingConflict("no_bookable_space")
+        last_conflict: BookingConflict | None = None
+        for venue, space, _distance in candidates:
+            try:
+                return self.create(
+                    actor_user_id,
+                    lobby_id=lobby.id,
+                    organization_venue_id=venue.id,
+                    venue_space_id=space.id,
+                    starts_at=ensure_utc(lobby.scheduled_start_at),
+                    ends_at=ensure_utc(lobby.scheduled_end_at),
+                )
+            except BookingConflict as exc:
+                last_conflict = exc
+                continue
+        raise last_conflict or BookingConflict("no_bookable_space")
+
+    def _bookable_candidates(
+        self,
+        lobby: Lobby,
+        format_: SportFormat,
+    ) -> list[tuple[OrganizationVenue, VenueSpace, float | None]]:
+        rows = self.session.execute(
+            select(OrganizationVenue, VenueSpace)
+            .join(Organization, Organization.id == OrganizationVenue.organization_id)
+            .join(VenueSpace, VenueSpace.organization_venue_id == OrganizationVenue.id)
+            .join(VenueSport, VenueSport.venue_space_id == VenueSpace.id)
+            .where(
+                Organization.status == "active",
+                OrganizationVenue.status == "active",
+                VenueSpace.status == "active",
+                VenueSport.sport_id == format_.sport_id,
+            )
+            .order_by(OrganizationVenue.name, VenueSpace.name)
+        ).all()
+
+        candidates: list[tuple[OrganizationVenue, VenueSpace, float | None]] = []
+        start = ensure_utc(lobby.scheduled_start_at)
+        end = ensure_utc(lobby.scheduled_end_at)
+        for venue, space in rows:
+            organization = self.session.get(Organization, venue.organization_id)
+            if organization is None or not payout_ready(organization):
+                continue
+            if venue.latitude is not None and venue.longitude is not None:
+                distance = haversine_km(
+                    lobby.center_lat,
+                    lobby.center_lng,
+                    venue.latitude,
+                    venue.longitude,
+                )
+                if distance > lobby.radius_km:
+                    continue
+            else:
+                distance = None
+            try:
+                self._validate_space_window(venue, space, start, end, check_hold=True)
+            except BookingError:
+                continue
+            candidates.append((venue, space, distance))
+
+        candidates.sort(
+            key=lambda item: (
+                item[2] is None,
+                item[2] if item[2] is not None else 0.0,
+                self._space_price(item[1], item[0], start, end),
+                str(item[1].id),
+            )
+        )
+        return candidates
+
+    def _space_price(
+        self,
+        space: VenueSpace,
+        venue: OrganizationVenue,
+        start: datetime,
+        end: datetime,
+    ) -> int:
+        try:
+            return self._validate_space_window(venue, space, start, end, check_hold=False)
+        except BookingError:
+            return 10_000_000
 
     def get(self, actor_user_id: uuid.UUID, booking_id: uuid.UUID) -> BookingBundle:
         booking = self.session.get(Booking, booking_id)
@@ -1061,12 +1270,42 @@ class BookingService:
                 .order_by(BookingPayment.created_at)
             ).all()
         )
+        venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
+        space = self.session.get(VenueSpace, booking.venue_space_id)
+        lobby = self.session.get(Lobby, booking.lobby_id)
+        format_ = self.session.get(SportFormat, lobby.format_id) if lobby is not None else None
+        band: PricingBand | None = None
+        tickets_per_seat: int | None = None
+        if booking.band_id is not None:
+            band = self.session.get(PricingBand, booking.band_id)
+        elif venue is not None and space is not None:
+            try:
+                availability = self._availability_for(booking, venue, space)
+            except (BookingError, PricingError):
+                availability = None
+            if availability is not None and availability.band_id is not None:
+                band = self.session.get(PricingBand, availability.band_id)
+        if band is not None and format_ is not None:
+            if booking.tickets_per_seat:
+                tickets_per_seat = booking.tickets_per_seat
+            else:
+                try:
+                    tickets_per_seat = tickets_for(self.session, band.id, format_.team_size)
+                except PricingError:
+                    tickets_per_seat = None
         return BookingBundle(
             booking=booking,
             participants=participants,
             timers=timers,
             hold=hold,
             payments=payments,
+            organization_venue_name=venue.name if venue is not None else None,
+            venue_space_name=space.name if space is not None else None,
+            format_id=format_.id if format_ is not None else None,
+            format_name=format_.name if format_ is not None else None,
+            band_code=band.code if band is not None else None,
+            band_label=band.label if band is not None else None,
+            tickets_per_seat=tickets_per_seat,
         )
 
     def _lock_booking(self, booking_id: uuid.UUID) -> Booking:
@@ -1122,8 +1361,32 @@ class BookingService:
         settings = get_settings()
         now = utcnow()
         previous = booking.status
+        venue = self.session.get(OrganizationVenue, booking.organization_venue_id)
+        if venue is None:
+            raise BookingInvalid
+        hours = list(
+            self.session.scalars(
+                select(VenueBusinessHour).where(VenueBusinessHour.organization_venue_id == venue.id)
+            ).all()
+        )
+        closures = list(
+            self.session.scalars(
+                select(VenueClosure).where(
+                    VenueClosure.organization_venue_id == venue.id,
+                    VenueClosure.ends_at > now,
+                )
+            ).all()
+        )
+        deadline = business_deadline(
+            now,
+            settings.booking_t2_minutes,
+            settings.booking_t2_max_minutes,
+            hours,
+            closures,
+            timezone=venue.timezone,
+        )
         booking.status = "REQUESTED"
-        booking.response_due_at = now + timedelta(minutes=settings.booking_t2_minutes)
+        booking.response_due_at = deadline
         self._finish_timer(booking.id, "T1", "COMPLETED", now)
         self.session.add(
             BookingTimer(
@@ -1136,6 +1399,13 @@ class BookingService:
         )
         self._event(booking, actor_user_id, "booking.requested", previous, "REQUESTED")
         self._audit(actor_user_id, booking, "booking.requested", {})
+        self._notify_org_members(
+            booking,
+            "booking_requested",
+            "Nova solicitação de reserva",
+            f"Uma reserva foi solicitada para {booking.starts_at.isoformat()}.",
+            now,
+        )
 
     def _finish_timer(
         self, booking_id: uuid.UUID, timer_type: str, status: str, now: datetime
@@ -1300,6 +1570,50 @@ class BookingService:
             resource_type="booking",
             resource_id=booking.id,
             details=details,
+        )
+
+    def _notify_org_members(
+        self,
+        booking: Booking,
+        kind: str,
+        title: str,
+        body: str,
+        now: datetime,
+    ) -> None:
+        user_ids = list(
+            self.session.scalars(
+                select(OrganizationMembership.user_id).where(
+                    OrganizationMembership.organization_id == booking.organization_id
+                )
+            ).all()
+        )
+        NotificationService(self.session).create_many(
+            user_ids,
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key_prefix=f"{kind}:{booking.id}",
+            data={"booking_id": str(booking.id)},
+            now=now,
+        )
+
+    def _notify_participants(
+        self,
+        booking: Booking,
+        kind: str,
+        title: str,
+        body: str,
+        now: datetime | None,
+    ) -> None:
+        user_ids = [item.user_id for item in self._active_participants(booking.id)]
+        NotificationService(self.session).create_many(
+            user_ids,
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key_prefix=f"{kind}:{booking.id}",
+            data={"booking_id": str(booking.id)},
+            now=now,
         )
 
 

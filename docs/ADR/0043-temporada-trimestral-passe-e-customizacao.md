@@ -44,6 +44,8 @@ Ao mesmo tempo, era preciso resolver uma tensão: a ADR 0042 §10 dizia que cust
 8. **O passe inclui lobby privado:** fechar a partida para o grupo sem depender de clã.
 9. **Busca por CEP é benefício do passe.** O plano gratuito busca apenas pela **localização do aparelho**. Justificativa: a busca por CEP permite declarar intenção em qualquer lugar, inclusive onde o jogador não tem como comparecer, e isso obriga o motor a formar partidas que não vão acontecer. Restringir ao passe reduz drasticamente esse volume, sem custo para quem realmente vai jogar, e entrega uma vantagem real e não competitiva ao assinante.
 
+> **Nota de implementação (14D.12).** A assinatura vigora por **três meses a partir do pagamento**, não do primeiro dia do trimestre civil. Cada mês entrega uma franquia; mês anterior à compra não é retroativo. A trilha paga fica liberada enquanto a assinatura estiver vigente. Vender apenas no início da temporada e eventual pro-rata continuam pendentes de decisão de produto.
+
 ### 2.1 Ingressos grátis por nível
 
 1. **Free:** 1 ingresso a cada 5 níveis (5, 10, 15, 20, 25, 30). Teto de **6 por temporada**.
@@ -144,7 +146,7 @@ Os ajustes de **acessibilidade** listados na seção 5 permanecem livres para to
 1. Cada temporada publica **7 itens**, distribuídos pela trilha, incluindo emotes de chat.
 2. Categorias: **acessório de personagem**, **animação de lobby**, **emote/reação de chat**, **ícone de entrada** e **insígnia**.
 3. Distribuição por nível: 4, 8, 12, 17, 21, 26 e 30. O nível 30 entrega a **insígnia da temporada**.
-4. **Insígnia não é medalha.** Insígnia marca temporada ou fundador; medalha é conquista competitiva. São tipos distintos no mesmo perfil.
+4. **Insígnia não é medalha.** Insígnia marca temporada ou fundador; medalha é conquista competitiva. São tipos distintos no mesmo perfil. **Medalhas entram no MVP**: o perfil reserva um bloco próprio para elas, separado das três insígnias.
 5. O perfil exibe até **3 insígnias equipadas**. Hoje existe uma: a da temporada 2026-Q4.
 6. A trilha tem 30 níveis. Ingressos grátis caem nos níveis 5, 10, 15, 20, 25 e 30.
 7. Parte dos itens fica na **trilha do passe**; sem passe ativo, o resgate é recusado.

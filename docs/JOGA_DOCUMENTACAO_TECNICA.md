@@ -824,6 +824,8 @@ Toda consulta ou mutação deve validar organização, associação do usuário,
 
 A 13A implementa `bookings`, `booking_participants`, `booking_holds`, `booking_timers`, `booking_events` e `booking_payments`. A reserva nasce em `PARTICIPANT_CONFIRMATION` (T1), passa a `REQUESTED` (T2) quando todas as vagas confirmam, e a `PAYMENT_PENDING` (T3) após o aceite e o hold. T2 usa tempo corrido nesta fase; horário comercial fica pendente. O pagamento é simulado apenas em ambiente local/teste e a conclusão é operacional pelo estabelecimento; a Fase 14 substitui a simulação pelo PSP real.
 
+A **13C** acrescenta a vitrine autenticada em `/api/v1/discovery/bookable-venues`, com quadras ativas, modalidades, faixas, agenda, fotos aprovadas e próximos horários. A criação de reserva exige `payout_ready`, congela `band_id`/`tickets_per_seat` e registra a obrigação de repasse na confirmação, inclusive quando a quitação é por ingressos. O contrato para o app está em `docs/CONTRATO_RESERVAS_APP.md`.
+
 ### 14.1 Solicitação e aceite
 
 O fluxo começa com uma solicitação de reserva vinculada a:
@@ -852,7 +854,7 @@ Em PostgreSQL, a proteção pode usar constraint de exclusão por intervalo (`ts
 
 **T1 — confirmação de participação.** Prazo inicial de 1 hora para os jogadores confirmarem que pretendem participar. Controlado pelo backend.
 
-**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio.
+**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio. A **13E** implementa expediente semanal, fechamentos excepcionais e o teto `JOGA_BOOKING_T2_MAX_MINUTES`; sem expediente cadastrado, o cálculo cai para tempo corrido.
 
 **T3 — bloqueio e pagamento.** 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos para conciliação. As cobranças são abertas depois do aceite e do bloqueio.
 
@@ -1035,6 +1037,10 @@ O valor é congelado na abertura da cobrança e não muda por recalibração pos
 Decisão registrada na **ADR 0042**. Esta seção fixa apenas o contrato técnico do fluxo.
 
 **Unidades.** O ingresso é a unidade de acesso: preço de referência de R$ 3,10 (pacote grande) a R$ 3,70 (avulso), pessoal, intransferível, sem saque, sem revenda e sem transferência entre contas. Ingresso comprado não expira; franquia de passe reseta mensalmente.
+
+A **14D.16** materializa a unidade em lotes (`ticket_lots`): compra sem validade, passe com validade mensal e ingresso de nível com validade até o fim da temporada. O consumo segue `pass` → `free_level` → `purchase`; lote expirado não conta no saldo e devolução só restaura o lote ainda válido.
+
+A **9D** adiciona a central de notificações persistida em `/api/v1/me/notifications`, com contador de não lidas, marcação de leitura e evento `notification.created` na Outbox. Push continua sendo transporte externo e não é fonte de verdade.
 
 **Dois momentos distintos.** A compra do pacote ou do passe é um evento de caixa e cria **passivo** (`ingressos_emitidos`). O consumo ocorre na confirmação da reserva e extingue o passivo do jogador ao mesmo tempo em que reconhece a obrigação com o estabelecimento. Nenhum dos dois é receita no momento da compra.
 

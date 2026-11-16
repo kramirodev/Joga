@@ -8,13 +8,20 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | 1 — Prova técnica mobile/nativa | In progress | `feat/01-prova-mobile-nativa` | Build Android próprio instalado e executado no Moto G24 e no moto g(7) play; permissões precisa/aproximada/negada provadas; React Native CLI comparado; OTP por SMS com adapter simulado (12 testes); ADR 0009 aprovado (Expo development build); associação Android publicada em `https://joga-passkeys.vercel.app` e reconhecida pela API Digital Asset Links; cerimônia de passkey Android executada via Credential Manager (criação + autenticação, `rpIdHashMatches: true`); ADR 0011 | iOS/Xcode e associação AASA pendentes, por decisão de manter a fase em andamento |
 | 2 — Fundação de engenharia | Complete | `feat/02-fundacao-engenharia` | Backend FastAPI mínimo com health live/ready, PostgreSQL/PostGIS local, migração baseline reversível, lint/formatação/tipos/testes verdes, CI verde nos dois jobs (run 41475001880) e app aberto no Moto G24 e no moto g(7) play (Android 10, 32 bits, APK nativo) | — |
 | 3 — Identidade e segurança | Complete | `feat/03-identidade-e-seguranca` | ADRs 0012–0017; backend de identidade com OTP, contas, sessões, passkeys, telefone, dispositivos, recuperação e retenção; app Android integrado (OTP, passkey real, troca de telefone); 95 testes unitários/API + 5 de integração PostgreSQL | iOS/AASA bloqueado e formalmente aceito no ADR 0017; SMS real e ratificação de produção pendentes |
-| 4 — Perfil e descoberta | Not started | — | — | — |
-| 5 — Filas e matchmaking | Not started | — | — | — |
-| 6 — Ciclo de partidas | Not started | — | — | — |
-| 7 — Resultados e disputas | Not started | — | — | — |
-| 8 — Sistema competitivo | Not started | — | — | — |
-| 9 — Comunicação em tempo real | Not started | — | — | — |
-| 10 — Hardening e piloto | Not started | — | — | — |
+| 4 — Perfil e descoberta | Complete (local) | `main` | Perfil, modalidades, disponibilidade, região, descoberta PostGIS e fallback SQLite; testes de perfil e venues; validação Android | Mapas/geocodificação de produção pendentes |
+| 5 — Filas e matchmaking | Complete (local) | `main` | Fila persistente, formação transacional, locks/constraints e testes de concorrência | Redis/fan-out multi-processo não necessários nesta fase |
+| 6 — Ciclo de partidas | Complete (local) | `main` | Máquina de estados, confirmação, check-in, expiração e worker `advance_matches` | Piloto real pendente |
+| 7 — Resultados e disputas | Complete (local) | `main` | Relatos, quórum, segunda rodada, evidência privada, disputa e revisão humana; validado com PostgreSQL local | CLI de revisão sem operadores configurados; retenção LGPD na Fase 19 |
+| 8 — Sistema competitivo | Complete (local) | `main` | Glicko-2, histórico append-only, divisão, ranking e Trust Factor separado; MMR bruto não exposto | Calibração e simulações em produção pendentes |
+| 9 — Comunicação em tempo real | Complete (local) | `main` | Chat de lobby, amigos, convites, bloqueios, Outbox, WebSocket e tokens de push; retenção provisória | Push real, central de notificações e fan-out multi-processo pendentes |
+| 10 — Hardening e piloto | In progress | `main` | 10A (hardening local) e 10B (limites, auditoria e carga autenticada) concluídos | Piloto real depende de provedores, orçamento, infraestrutura e LGPD |
+| 11 — Organizações e painel | Complete (local) | `main` | 11A (organizações, papéis, BOLA e auditoria), 11B (painel web) e 11C (CSP, testes de UI e observabilidade) | Sem deploy; painel ainda precisa das atualizações 14D |
+| 12 — Quadras, agenda e KYC | In progress | `main` | 12A (quadras, modalidades, agenda, preços, bloqueios e fotos) implementada e testada | 12B (fornecedor/KYC contratual) pendente de PSP e revisão jurídica |
+| 13 — Reservas e temporizadores | In progress | `main` | 13A (reservas, holds e T1/T2/T3) e 13B (painel mobile de reservas) implementados localmente | Criação automática a partir do lobby, descoberta comercial e jornada completa do app pendentes; T2 comercial pendente |
+| 14 — Pagamentos Pix e reembolsos | In progress | `main` | 14A (Mercado Pago sandbox, webhook e ledger) e 14C (reembolsos, extrato e conciliação simulada) | 14B (Inter PJ, KYC, transferência real, MED e chargeback) pendente |
+| 14D — Ingresso, carteira e temporada | In progress | `main` | 14D.1–14D.15 implementadas no backend: faixas, fornecedor/Pix, carteira, pacotes, quitação, devolução, temporada, trilha, passe, Pix de checkout, fechamento, estatísticas e rede | UI mobile, buckets/validade do ingresso e conciliação de `purchase_payments` pendentes |
+| 15 — Interface financeira e conciliação | In progress | `main` | 15A/15B implementados como proposta técnica local: liberações, contestações, extrato, recebíveis, conciliação e aba Financeiro | Prazo de repasse real, contestação, PSP, MED, comprovantes e política financeira não aprovados |
+| 16 — Clãs e troféus | In progress | `main` | Backend implementado (ADR 0046): clãs, papéis, carência, chat, denúncia, troféus e snapshot; testes locais | UI mobile e moderação completa da Fase 17 pendentes |
 
 ## Histórico append-only
 
@@ -872,3 +879,112 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migração:** `d9e95b6f7384`; upgrade, downgrade e novo upgrade aplicados.
 - **Testes:** `tests/test_season_hooks.py` com três casos; suíte completa verde.
 - **Pendente:** XP de vitória (depende do resultado confirmado), missão de check-in e fechamento de temporada.
+
+### 2026-11-13 - 14D.12 + 14D.13 Passe como assinatura e Pix no checkout
+
+- **Assinatura:** `pass_subscriptions` com quatro planos (10/20/30/50 por mes, R$ 3,25 por ingresso), status `pending`/`active`/`expired`/`cancelled` e valor do trimestre gravado na compra.
+- **Entrega:** `pass_deliveries` com uma linha por mes (1..3), chave `pass:{subscription}:{month}` e sem retroacao.
+- **Trilha paga:** `claim_level` recebe `has_pass`; a API calcula pela assinatura vigente. Sem passe continua 403 `pass_required`.
+- **Cobranca:** `purchase_payments` cobre pacote e passe com `kind` + `reference_id`; webhook do PSP liquida e `/sync` repete a consulta.
+- **Idempotencia:** replay de webhook nao duplica ingressos nem ativacao; valor ou referencia divergente e recusado.
+- **API:** `/me/pass/plans`, `/me/pass`, `/me/pass/subscriptions` e `/sync`, `/confirm` local, `DELETE` de pendente; `POST /me/tickets/purchases` agora abre Pix e `/sync` credita.
+- **Rotina:** `python -m scripts.deliver_pass_months` entrega franquias e expira assinaturas.
+- **Migracao:** `e4a1c9d7b203`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_pass.py` e `tests/test_ticket_pix.py` (11 casos); suite completa verde.
+- **Pendente:** politica de venda no meio da temporada, reembolso de passe/pacote, conciliacao do PSP e UI.
+
+### 2026-11-13 - 14D.10 + 14D.11 Resultado para XP/streak e missao de check-in
+
+- **Gatilho:** resultado confirmado (apuro automatico ou decisao humana FINALIZE) credita +40 XP por vencedor presente e atualiza a streak; disputa e anulacao nao pagam.
+- **Idempotencia:** chave `win:{match}:{user}` e guarda por `last_match_id` na streak.
+- **Check-in:** presenca antes do inicio grava a missao semanal `on_time_checkin` (40 XP), uma vez por semana.
+- **Testes:** `tests/test_season_result_hooks.py` (4 casos) e ajuste de `tests/test_season.py`.
+
+### 2026-11-13 - 14D.14 Fechamento de temporada e reset suave
+
+- **Rotina:** `close_expired_season` fecha a temporada vencida, abre a do trimestre e semeia a trilha; `scripts/close_seasons.py` roda em lote.
+- **Reset suave:** `season_placements` conta ranqueadas por temporada; rating persiste e a divisao volta a Provisiorio ate 5 partidas.
+- **API:** `/ratings/me`, posicao e top 100 usam a contagem da temporada ativa.
+- **Migracao:** `f5b2d8e4c310`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_season_close.py` e ajuste de `tests/test_ratings_api.py`.
+
+### 2026-11-13 - 14D.15 Estatisticas e inteligencia de rede
+
+- **API:** `GET /me/stats` (livre), `/me/stats/courts` e `/me/stats/passport` (passe), `GET /me/network`.
+- **Estatistica:** partidas, V/E/D, presenca, streak e recorte por formato; sem MMR bruto.
+- **Rede:** faixas por quadra, janela de 30 dias, amostra minima de 20, atualizacao diaria representada pela data; faixas so no passe.
+- **Testes:** `tests/test_stats.py` (3 casos), incluindo 19 partidas ocultas e 20 visiveis.
+
+### 2026-11-13 - Fase 16 Clas, trofeus e moderacao minima
+
+- **Decisoes (ADR 0046):** 30 membros, entrada por aprovacao, um cla ativo por jogador, carencia de 7 dias, trofeus por temporada/formato, denuncia com ocultacao imediata.
+- **Modelo:** `clans`, `clan_members` (indice unico parcial por jogador ativo), `clan_join_requests`, `clan_trophy_events`, `clan_trophy_snapshots`, `clan_messages` e `clan_reports`.
+- **Trofeus:** vitoria 50, empate 30, derrota 20; 10 melhores membros; 7 dias de permanencia; snapshot no fechamento da temporada (`scripts/close_seasons`).
+- **Chat:** so para membros ativos; denuncia oculta na hora e o admin decide entre manter ou restaurar, com registro de autor e data.
+- **API:** criacao, descoberta, pedidos/aprovacao, papeis, transferencia, saida, chat, denuncias, revisao e ranking de clas.
+- **Migracao:** `b7d4f1a9c620`; upgrade, downgrade e novo upgrade aplicados; `alembic check` limpo.
+- **Testes:** `tests/test_clans.py` (8 casos); suite completa verde.
+
+### 2026-11-13 - UI mobile do JOGA (app de demonstracao)
+
+- **Pedido:** levar a UI do prototipo `telas/jogo/prototipo-v3.html` para um app React Native/Expo, sem mexer no HTML.
+- **Entrada:** `mobile/App.tsx` passa a renderizar `src/joga/JogaApp`; os paineis tecnicos continuam no repositorio, fora da entrada visual.
+- **Navegacao:** 5 abas e 17 telas secundarias com pilha propria, barra de abas e tema claro/escuro.
+- **Espacamento:** margem lateral de 20 px (HTML usava 16), gap de 16, padding de card 18, area segura no topo e na barra de abas. A correcao de margem foi feita no app, nao no prototipo.
+- **Dependencia:** `@expo/vector-icons` para os icones do Ionicons.
+- **Verificacao:** `tsc --noEmit` e `eslint` limpos; `expo export --platform android` gerou o bundle.
+- **Execucao:** `expo start --lan` em `exp://192.168.0.105:8081`.
+
+### 2026-11-13 - APK Android do app de UI
+
+- **Toolchain local:** JDK 17, Android SDK platform 36/37, build-tools 36.0.0, NDK 27.1.12297006 e CMake 3.22.1 em `.tools` (ignorado pelo Git); platform-tools com adb.
+- **Build:** `expo prebuild --platform android` e `gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`; BUILD SUCCESSFUL em 31 min.
+- **Artefato:** `mobile/android/app/build/outputs/apk/release/app-release.apk` (23,9 MB, minSdk 24, target 36, arm64-v8a, assinado com a debug key).
+- **Instalacao:** pendente de aparelho visivel no adb (nenhum dispositivo detectado ate o momento).
+
+### 2026-11-13 - UI mobile refeita 1:1 a partir do prototipo v3
+
+- **Correcao de rumo:** a camada visual anterior foi descartada; as 5 abas foram reimplementadas copiando textos, ordem, tamanhos e componentes do HTML.
+- **Tokens exatos:** header 16px, titulo 16/900, sub 13, corpo 16/14, card padding 16, raio 18, borda 1.5, botao 52, chip 46, tab bar 76.
+- **Icones:** sprite SVG original extraido para `src/joga/icons.ts` e renderizado com react-native-svg; sem Ionicons.
+- **Avatar:** SVG em camadas copiado do HTML, com recorte circular.
+- **Telas portadas:** Jogar, Partidas, Temporada, Social (Amigos) e Perfil.
+- **Ajuste forcado:** respiro inferior da tab bar para nao ficar sob os botoes de navegacao do Android.
+- **Backend:** ainda nao conectado nestas telas; o lote de Entrada trara o fluxo real de telefone/OTP/passkey.
+
+### 2026-11-14 - Reconstrução completa do app mobile a partir do protótipo v3
+
+- **Escopo:** a UI anterior (`src/joga/`, painéis técnicos e `src/api.ts`) foi removida e o app foi refeito do zero em React Native a partir de `telas/jogo/prototipo-v3.html`, sem WebView.
+- **Estrutura:** 136 telas registradas em `mobile/src/screens/` (entrada, núcleo, quadras/partidas, carteira/passe, temporada, estatísticas, social e sistema), kit visual em `mobile/src/ui/`, cliente HTTP em `mobile/src/api/` e estado global/sessão em `mobile/src/state/` e `mobile/src/session.ts`.
+- **Navegação:** 5 abas (Jogar, Partidas, Temporada, Social, Perfil) + pilha própria, back do Android, modal/sheet e toast. Os títulos das telas passaram a rolar junto com o conteúdo, a pedido do produto.
+- **Backend:** autenticação por telefone/OTP, refresh rotativo, perfil, modalidades, disponibilidade (com editor de dia/início/fim), região por GPS, fila casual/ranqueada, partidas, presença, resultados/disputa, carteira, compra Pix simulada, passe, temporada/XP/insígnias/missões, estatísticas, reservas, chat por lobby, amigos/convites/bloqueios, clãs, ranking e dispositivos/passkeys. Telas sem endpoint permanecem visuais.
+- **Dados reais e zero state:** home, partidas, carteira, perfil, amigos, clã, ranking, notificações, quadras e estatísticas passaram a usar apenas dados do backend; sem partidas/saldo/amigos/quadras, exibem estado vazio. Formulários deixaram de pré-preencher nome, telefone e horários de exemplo; usam placeholders (“Seu nome”, “HH:MM”). Conta zerada `Zero Dois` (telefone `11900000002`) criada e login por OTP exercitado no aparelho.
+- **Placar:** não existe campo/endpoint de gols por partida no backend; o resultado é apenas `TEAM_1`/`TEAM_2`/`DRAW`. Foram removidos os placares fabricados (“3x1”, “2x2”) do histórico e do detalhe da partida.
+- **Tema:** claro/escuro seguindo o sistema e `Appearance`; a barra de navegação Android acompanha o esquema. Corrigido o título fixo, o corte de números grandes (line-height de `Txt`), o outline vermelho de botões `ghost` dentro de cartões ink/coloridos no tema escuro e o overflow do cartão de ingressos consumidos.
+- **Dependência:** nenhuma nova dependência de tema; `expo-navigation-bar` foi removido após validar que `Appearance` resolve a barra Android.
+- **Verificação:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .` e `pnpm exec expo export --platform android` limpos; fluxo real de cadastro, onboarding, home, fila, perfil, carteira e disponibilidade exercitado em aparelho Android com backend local.
+
+### 2026-11-14 - Checkpoint de continuidade do backend
+
+- **Escopo:** revisão e consolidação do trabalho local de 14D.10–14D.15 e da Fase 16, sem alterar mobile, painel web ou contratos.
+- **Auditoria:** rotas conferidas no OpenAPI (144 caminhos); banco local no head `b7d4f1a9c620`, 99 tabelas, PostGIS 3.6.2; `alembic check` sem operações novas.
+- **Testes:** `pytest -o addopts="" -q` com **442 passed, 29 skipped** (integração PostgreSQL ignorada por falta de `JOGA_TEST_DATABASE_URL`); `ruff check .` e `mypy app` sem achados.
+- **Correção:** normalizadas as 7 linhas CRLF do build-log e removida a linha em branco final de `backend/app/modules/payments/service.py`; `git diff --check` limpo.
+- **Documentação:** tabela de fases atualizada para refletir 4–16; histórico preservado. O mobile permanece fora deste checkpoint e segue sujeito à revisão da outra IA.
+- **Limites:** nenhum push, merge ou deploy; nenhum serviço reiniciado; nenhuma migração executada; nenhum arquivo de mobile ou `telas/` commitado neste checkpoint.
+
+### 2026-11-14 - Auditoria de UX/UI, consistencia e fluidez do app mobile
+
+- **Escopo:** auditoria de navegacao, estados, responsividade, fidelidade visual e microinteracoes sem alterar regras competitivas, contratos do backend ou endpoints.
+- **Navegacao:** pilha propria por aba com memoria de posicao; `replace` e `reset` para fluxos pos-acao; aba ativa estavel; sem botao de voltar em raizes; back do Android encerra o app na raiz em vez de prender o usuario. Telas antes orfas ganharam entradas naturais: Configuracoes, seguranca e LGPD (Perfil), clas e ranking (Amigos e Inicio), quadras (Inicio), trilha/recompensas (Temporada, com nos e itens tocaveis), carteira/passe/custo/reembolso (Inicio e Carteira), check-in/resultado (Partidas e lobby), termos (cadastro e Configuracoes) e amizades (Social).
+- **Sessao:** refresh concorrente deduplicado no cliente HTTP e sessao local encerrada apenas quando o refresh realmente falha. Evita logout acidental quando varias telas recebem 401 ao mesmo tempo apos a expiracao do access token.
+- **Fluidez:** transicoes de pilha e de aba com `Animated` no driver nativo (slide/fade de 220 ms), sheet com entrada/saida, toast animado acima da tab bar, feedback de pressao em botoes/cards/linhas/chips, indicador ativo animado e skeleton pulsante.
+- **Carregamento contextual:** o skeleton unico foi substituido por variantes que seguem o layout real de cada destino (home, lista, cards, quadras, carteira, temporada, trilha, timers, grade, social e cla), mantendo cabecalho e voltar visiveis; o boot passou a exibir a marca JOGA em vez de uma tela universal centralizada.
+- **Transicoes:** o crossfade duplo foi removido. A camada de navegacao agora mantem a tela de origem montada e usa apenas slide/fade de cobertura (a nova tela entra opaca por cima; no voltar, a antiga sai revelando a nova), sem duas opacidades simultaneas em elementos grandes.
+- **OTP:** os seis campos foram substituidos por um unico input oculto sobre as caixas visuais, com foco automatico, avanco de dígitos, apagar natural, colar código, autofill de SMS e limite de 6 dígitos.
+- **Limites de entrada:** telefone (15), nome (60), bio (280), clã (nome 40, tag 8, descrição 280), chats (2.000), buscas (60), confirmação LGPD (7) e textarea padrão (2.000).
+- **Integracao 13C/14D.16/13D/9D:** vitrine ligada a `GET /discovery/bookable-venues` e ao detalhe com espacos, formatos, faixas, cobertura e `next_slots`; reserva chama `POST /bookings`; central de notificacoes persistidas com contador de nao lidas; carteira exibe lotes com validade e consumo passe -> nivel -> comprado; `BookingView`, participantes e erros novos (`payout_not_ready`, `space_unavailable`, `insufficient_lead_time`, `tickets_not_configured`, `band_missing`) foram tratados no app.
+- **Consistencia:** `Card` pressable passou a aplicar layout no proprio container (corrige cards 2-up que encolhiam), botoes ajustam a fonte em uma linha, cabecalho e labels de aba nao quebram, textos tem limite de escala, OTP e flexivel em 320 dp, avatar do perfil e adaptativo e insets superior/inferior do Android sao calculados.
+- **Estados:** loading, erro e vazio reais em Quadras, Partidas, Amigos, Cla, Temporada/Trilha, Carteira, Ingressos, Passe e Reservas; removidos saldo, extrato, reservas e planos fabricados nessas telas. Saldo e custo da partida agora refletem a carteira.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos; login OTP, home, perfil, configuracoes, cla, temporada/trilha, carteira, custo da partida e loja exercitados no aparelho Android com backend local.
+- **Pendencias:** telas de estados terminais (offline, erro generico, loading, recusa/expiracao de reserva, no-show, segunda rodada e disputa) continuam acessiveis apenas quando o estado de dominio ocorrer; passkey real, pagamentos reais e KYC seguem fora do escopo atual.

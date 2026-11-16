@@ -75,9 +75,14 @@ class Booking(Base):
         CheckConstraint("ends_at > starts_at", name="time_order_valid"),
         CheckConstraint("price_cents >= 0", name="price_non_negative"),
         CheckConstraint("seats > 0", name="seats_positive"),
+        CheckConstraint(
+            "tickets_per_seat IS NULL OR tickets_per_seat >= 0",
+            name="tickets_per_seat_non_negative",
+        ),
         CheckConstraint("payment_version > 0", name="payment_version_positive"),
         UniqueConstraint("lobby_id", name="uq_bookings_lobby"),
         Index("ix_bookings_organization_status", "organization_id", "status"),
+        Index("ix_bookings_band_id", "band_id"),
         Index("ix_bookings_space_start", "venue_space_id", "starts_at"),
     )
 
@@ -106,6 +111,10 @@ class Booking(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    band_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pricing_bands.id", ondelete="RESTRICT"), nullable=True
+    )
+    tickets_per_seat: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="BRL", server_default=text("'BRL'")
     )

@@ -279,6 +279,7 @@ Padrões: contadores de rate limit 24 h; evidências 365 dias após o encerramen
 - `GET /api/v1/ws` abre o WebSocket autenticado por `Authorization: Bearer <token>`. O cliente envia `{"type":"subscribe","lobby_id":"..."}`.
 - `GET/POST /api/v1/friends`, `/api/v1/blocks`, `/api/v1/lobbies/{id}/invites` e `/api/v1/lobby-invites` cobrem amigos, bloqueios e convites.
 - `PUT /api/v1/push-tokens` registra token; o envio real depende de provedor autorizado.
+- `GET /api/v1/me/notifications`, `/unread-count`, `/{id}/read` e `/read-all` formam a central persistida; push é apenas transporte.
 
 Nesta fase o WebSocket entrega apenas conexões do processo atual. Para reiniciar após queda, o cliente busca o histórico pela API; Redis e fan-out multi-processo ficam para hardening/escala.
 
@@ -293,6 +294,18 @@ Set-Location C:\prog\joga\backend
 ```
 
 Padrões: mensagens de lobby 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. Eventos `PENDING`, convites pendentes/aceitos e tokens ativos são preservados.
+
+Notificações têm retenção provisória de 180 dias:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.cleanup_notifications --dry-run
+```
+
+Dispatcher de push (requer `JOGA_PUSH_WEBHOOK_URL`):
+
+```powershell
+.venv\Scripts\python.exe -m scripts.dispatch_notifications --loop --interval 30
+```
 
 ## 4.1 Observabilidade, carga e backup
 
@@ -335,7 +348,7 @@ O painel **Competitivo** (Fase 8C) usa `GET /api/v1/ratings/me` e `GET /api/v1/r
 
 O painel **Comunicação** (Fase 9B/9C) usa `GET /api/v1/matches`, chat por lobby, amigos e convites. Ele abre um WebSocket autenticado para o lobby selecionado e reconcilia o histórico pela API após reconexão.
 
-O painel **Reservas** (Fase 13B) usa `GET /api/v1/bookings`, confirmação de participante e pagamento simulado local. A criação da reserva ainda depende do lobby/quadra; não há seletor de quadra no mobile nesta rodada.
+O painel **Reservas** (Fase 13B) usa `GET /api/v1/bookings`, confirmação de participante e pagamento simulado local. A vitrine e a criação de reserva estão prontas no backend (Fase 13C); o app ainda precisa ligar as telas a `/api/v1/discovery/bookable-venues` e `POST /api/v1/bookings`.
 
 ### Abrir no aparelho
 
@@ -414,11 +427,13 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel. A Fase 15 acrescentou a aba Financeiro com extrato, recebíveis, liberação simulada e contestação. Reservas no mobile, pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel; a 13C acrescentou a vitrine reservável e a criação ponta a ponta; a 13D alinhou o painel ao fornecedor com payout, cobertura, reajuste, cancelamento, reembolso e presença. A Fase 15 acrescentou a aba Financeiro com extrato, repasses, liberação simulada e contestação. Pagamentos reais, KYC, clãs, moderação e publicidade não estão implementados.
 
 ### Reservas e temporizadores (Fase 13A)
 
 - Endpoints: `POST/GET /api/v1/bookings`, `GET /api/v1/bookings/{id}`, confirmação de participante, substituição, cancelamento e pagamento simulado; no painel, `GET /api/v1/organizations/{org}/bookings` e ações de aceite/recusa/conclusão.
+- Reserva automática: `POST /api/v1/bookings/from-lobby` escolhe quadra ativa, compatível, com payout e sem conflito.
+- Expediente e T2: `GET/POST /organizations/{org}/venues/{venue}/business-hours`, `GET/POST .../closures`; o painel usa esses endpoints e o T2 passa a contar minutos úteis, limitado por `JOGA_BOOKING_T2_MAX_MINUTES`.
 - T1 começa na criação; T2 começa quando todas as vagas confirmam; T3 começa no aceite com hold ativo. Os prazos são independentes e controlados pelo backend.
 - T2 usa tempo corrido nesta fase; horário comercial e feriados ficam pendentes.
 - O pagamento é simulado apenas em ambiente `local`/`test`/`development`/`ci`; nenhum PSP real é acionado.

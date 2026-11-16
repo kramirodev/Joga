@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     func,
     text,
@@ -28,6 +29,7 @@ TICKET_SOURCES = (
     "free_level",
     "consumption",
     "refund",
+    "expired",
     "admin",
 )
 
@@ -99,7 +101,7 @@ class TicketLedgerEntry(Base):
     __table_args__ = (
         CheckConstraint("amount <> 0", name="amount_non_zero"),
         CheckConstraint(
-            "source IN ('purchase','pass','free_level','consumption','refund','admin')",
+            "source IN ('purchase','pass','free_level','consumption','refund','expired','admin')",
             name="source_valid",
         ),
         Index("ix_ticket_ledger_user_created", "user_id", "created_at"),
@@ -137,4 +139,72 @@ class TicketBalance(Base):
         default=utcnow,
         onupdate=utcnow,
         server_default=func.now(),
+    )
+
+
+class TicketLot(Base):
+    """Lote de ingressos com origem, saldo e validade próprios.
+
+    O saldo de ``ticket_balances`` é a soma dos lotes ativos. Lotes expirados
+    permanecem para auditoria, mas não contam no saldo.
+    """
+
+    __tablename__ = "ticket_lots"
+    __table_args__ = (
+        CheckConstraint("original_amount > 0", name="original_amount_positive"),
+        CheckConstraint(
+            "remaining >= 0 AND remaining <= original_amount",
+            name="remaining_valid",
+        ),
+        CheckConstraint(
+            "source IN ('purchase','pass','free_level','admin','refund')",
+            name="source_valid",
+        ),
+        Index("ix_ticket_lots_user_expiry", "user_id", "expires_at"),
+        Index("ix_ticket_lots_user_source", "user_id", "source"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    original_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ref_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    ledger_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ticket_ledger.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
+class TicketLotConsumption(Base):
+    """Relação entre consumo de uma reserva e o lote de origem."""
+
+    __tablename__ = "ticket_lot_consumptions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="amount_positive"),
+        UniqueConstraint("lot_id", "ref_type", "ref_id", name="uq_ticket_lot_consumption_ref"),
+        Index("ix_ticket_lot_consumptions_user_ref", "user_id", "ref_type", "ref_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    lot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ticket_lots.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    ref_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    ref_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    ledger_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ticket_ledger.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

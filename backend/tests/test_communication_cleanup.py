@@ -98,7 +98,12 @@ def test_cleanup_removes_only_expired_communication(db_session: Session) -> None
     assert result.push_tokens == 1
     assert db_session.scalar(select(func.count()).select_from(LobbyMessage)) == 1
     assert db_session.scalar(select(func.count()).select_from(LobbyInvite)) == 1
-    assert db_session.scalar(select(func.count()).select_from(OutboxEvent)) == 2
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(OutboxEvent).where(OutboxEvent.event_type == "test")
+        )
+        == 2
+    )
     assert db_session.scalar(select(func.count()).select_from(DevicePushToken)) == 1
 
 

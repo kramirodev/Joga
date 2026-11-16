@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.season.models import Season
 from app.modules.season.service import award_xp, seed_current_season
+from app.modules.tickets.models import TicketLot
 from app.modules.tickets.service import get_balance
 from tests.helpers_results import make_token, make_user
 
@@ -76,6 +79,15 @@ def test_claim_grants_ticket_once(client: TestClient, db_session: Session) -> No
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
     assert get_balance(db_session, user_id) == 1
+    season = db_session.scalar(select(Season).where(Season.status == "active"))
+    lot = db_session.scalar(
+        select(TicketLot).where(
+            TicketLot.user_id == user_id,
+            TicketLot.source == "free_level",
+        )
+    )
+    assert season is not None and lot is not None
+    assert lot.expires_at == season.ends_at
 
 
 def test_pass_level_is_blocked_without_pass(client: TestClient, db_session: Session) -> None:
@@ -90,9 +102,7 @@ def test_pass_level_is_blocked_without_pass(client: TestClient, db_session: Sess
     assert response.json()["detail"]["code"] == "pass_required"
 
 
-def test_level_thirty_awards_badge_and_equips(
-    client: TestClient, db_session: Session
-) -> None:
+def test_level_thirty_awards_badge_and_equips(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)

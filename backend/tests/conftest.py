@@ -12,12 +12,15 @@ from app.infrastructure.database.base import Base
 from app.main import create_app
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
+from app.modules.clans import models as clans_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.identity.sms import RecordingSmsSender
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
+from app.modules.notifications import models as notifications_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
 from app.modules.outbox import models as outbox_models  # noqa: F401
+from app.modules.passes import models as passes_models  # noqa: F401
 from app.modules.payments import models as payments_models  # noqa: F401
 from app.modules.payments.adapter import SimulatorPspAdapter
 from app.modules.payments.dependency import get_psp_adapter

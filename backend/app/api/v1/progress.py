@@ -15,6 +15,7 @@ from app.api.v1.auth import get_current_session
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.passes.service import has_active_pass
 from app.modules.season.models import Badge, Season, SeasonItem, SeasonTrackLevel
 from app.modules.season.service import (
     MAX_LEVEL,
@@ -75,6 +76,7 @@ class TrackView(BaseModel):
     season: SeasonView
     xp_total: int
     level: int
+    has_pass: bool
     levels: list[TrackLevelView]
 
 
@@ -190,6 +192,7 @@ def read_track(
         season=_season_view(season),
         xp_total=xp_total,
         level=level_for(xp_total),
+        has_pass=has_active_pass(session, current.user_id, utcnow()),
         levels=levels,
     )
 
@@ -205,7 +208,11 @@ def claim_track_level(
     season = _require_season(session, utcnow())
     try:
         _claim, item_code, free_tickets = claim_level(
-            session, user_id=current.user_id, season=season, level=level
+            session,
+            user_id=current.user_id,
+            season=season,
+            level=level,
+            has_pass=has_active_pass(session, current.user_id, utcnow()),
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001
@@ -304,9 +311,7 @@ def read_missions(
     week = week_start(utcnow())
     rows = {
         row.mission_code: row
-        for row in missions_for(
-            session, user_id=current.user_id, season=season, week=week
-        )
+        for row in missions_for(session, user_id=current.user_id, season=season, week=week)
     }
     return MissionListResponse(
         week_start=week,

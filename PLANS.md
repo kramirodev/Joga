@@ -114,7 +114,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 9 — Comunicação em tempo real
 
-**Status:** 9A, 9B e 9C implementados em 2026-11-06 (backend + mobile + retenção provisória).
+**Status:** 9A, 9B, 9C implementados em 2026-11-06 (backend + mobile + retenção provisória); 9D (central de notificações persistida, leitura e gatilhos de reserva/partida) implementado no backend em 2026-11-14. Push real e dispatcher de notificações pendentes.
 
 **Escopo:** WebSocket autenticado e autorizado, Outbox transacional, push por adaptadores, gestão de tokens de dispositivo, reconciliação de notificações, lista de amigos com convites a lobbies, bloqueios e limites contra spam.
 
@@ -156,7 +156,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 13 — Reservas e temporizadores
 
-**Status:** 13A (backend de reservas, holds e T1/T2/T3) e 13B (painel mobile de reservas e ajustes de painel) implementados e validados localmente em 2026-11-07; criação automática a partir do lobby, T2 em horário comercial e pagamentos reais pendentes.
+**Status:** 13A (backend de reservas, holds e T1/T2/T3), 13B (painel mobile de reservas e ajustes de painel), 13C (vitrine reservável, criação ponta a ponta, portão de payout e snapshot de faixa/ingressos), 13D (payout, cobertura, reajuste, cancelamento, reembolso e presença no painel) e 13E (T2 em horário comercial, reserva automática do lobby e dispatcher de notificações) implementados e validados localmente. Criação automática a partir do lobby, telas do app ligadas à vitrine, push real e pagamentos reais ainda pendentes.
 
 **Escopo:** solicitação de reserva ao estabelecimento, aceite/recusa, bloqueio temporário do espaço específico, T1 (confirmação de participação), T2 (resposta do estabelecimento), T3 (bloqueio e confirmação do acesso), expiração, substituição de participantes, cancelamento antes da confirmação, origem `JOGA` e máquina de estados auditável. **No fluxo de ingresso não há cobrança na reserva:** o ingresso é consumido na confirmação (ADR 0042). O fluxo de reserva avulsa mantém a cobrança por participante.
 
@@ -176,7 +176,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14D — Ingresso, carteira e temporada
 
-**Status:** fatias **14D.1 a 14D.9** implementadas em 2026-11-12. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, e XP de partida com missões semanais. Faltam XP de vitória, fechamento de temporada, o passe como assinatura e as estatísticas pessoais e de rede da ADR 0045.
+**Status:** fatias **14D.1 a 14D.16** implementadas entre 2026-11-12 e 2026-11-14. Quitação por ingresso no modelo A, devolução conforme a ADR 0039, temporada com trilha de 7 itens e insígnia, XP de partida e de vitória com streak e missões semanais, passe como assinatura trimestral com entrega mensal, cobrança Pix de pacote e passe via Mercado Pago, fechamento de temporada com reset suave da divisão, estatísticas pessoais e de rede da ADR 0045 e lotes de ingresso com validade e conciliação de compras. Falta a UI mobile dessas telas, a política de reembolso de pacote/passe e a calibração de produto (janela de venda do passe, amostra de rede e retrospectiva).
 
 **Depende de:** 12 (faixas de preço e fornecedor) e 14 (PSP e ledger). Alimenta as Fases 15, 16 e 19.
 
@@ -198,7 +198,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 16 — Clãs e troféus
 
-**Status:** antecipada para o **escopo do MVP** pela ADR 0044. Pode rodar em paralelo às Fases 11 a 15, mantendo a dependência da Fase 8, e deve estar concluída antes do primeiro evento de marketing e antes da Fase 19. Uma fatia mínima de moderação de chat de clã entra junto com esta fase.
+**Status:** antecipada para o **escopo do MVP** pela ADR 0044 e **implementada no backend em 2026-11-13** (ADR 0046). Clãs de até 30 membros com entrada por aprovação, papéis, carência de 7 dias, chat com denúncia e ocultação imediata, troféus por temporada/formato com os 10 melhores membros e snapshot no fechamento. Falta a UI mobile e a moderação completa da Fase 17.
 
 **Escopo:** clãs abertos/fechados com membros, administradores, convites e limites; chat de clã em texto e referências internas; vínculo clã–jogador na data de cada partida; troféus por modalidade com fórmula-base 50/30/20 versionada, considerando os 10 melhores membros elegíveis, temporadas configuráveis e snapshots; ciclo de moderação do chat segue a Fase 17.
 

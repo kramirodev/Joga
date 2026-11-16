@@ -118,6 +118,37 @@ class RatingEvent(Base):
     )
 
 
+class SeasonPlacement(Base):
+    """Partidas ranqueadas dentro da temporada, para o reset suave da divisão.
+
+    O rating interno persiste; a divisão exibida volta a "Provisório" na virada
+    e é reatribuída após as partidas de colocação da nova temporada.
+    """
+
+    __tablename__ = "season_placements"
+    __table_args__ = (
+        CheckConstraint("matches_played >= 0", name="matches_played_non_negative"),
+        Index("ix_season_placements_season_played", "season_id", "matches_played"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    season_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seasons.id", ondelete="CASCADE"), primary_key=True
+    )
+    matches_played: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        server_default=func.now(),
+    )
+
+
 class TrustAccount(Base):
     """Score interno de confiança; oculto e sem penalidade automática."""
 
