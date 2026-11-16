@@ -47,9 +47,7 @@ def record_document_intent(
     if amount_cents < 0:
         raise ValueError("Valor do documento fiscal não pode ser negativo")
 
-    existing = session.scalar(
-        select(FiscalDocument).where(FiscalDocument.booking_id == booking_id)
-    )
+    existing = session.scalar(select(FiscalDocument).where(FiscalDocument.booking_id == booking_id))
     if existing is not None:
         return existing
 

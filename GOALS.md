@@ -2,7 +2,7 @@
 
 ## Propósito
 
-Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável. O produto também inclui comunidade (lobbies, amigos, clãs), descoberta de espaços e **reserva de quadras com pagamento individual**, conforme a referência máxima em `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`.
+Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais, forme partidas e equipes equilibradas e mantenha uma experiência casual/competitiva confiável. O produto também inclui comunidade (lobbies, amigos, clãs), descoberta de espaços e **reserva de quadras com crédito pré-pago e pagamento avulso**, conforme a referência máxima em `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` e a decisão vigente da ADR 0049.
 
 ## Resultados desejados
 
@@ -13,8 +13,8 @@ Criar o JOGA, um aplicativo mobile que conecte jogadores de esportes presenciais
 5. Participantes conseguem confirmar presença, relatar resultados e contestar divergências.
 6. O rating é atualizado exclusivamente pelo backend, uma única vez por partida válida, com histórico auditável.
 7. Sinais de confiabilidade são tratados separadamente da habilidade esportiva.
-8. Um grupo consegue solicitar uma quadra, obter bloqueio temporário e pagar individualmente por Pix dentro do prazo.
-9. A reserva só é confirmada com todos os pagamentos aprovados e o bloqueio confirmado pelo estabelecimento.
+8. Um grupo consegue solicitar uma quadra, obter bloqueio temporário e quitar as vagas por crédito ou, no fluxo avulso, por Pix individual, dentro do prazo.
+9. A reserva só é confirmada com todas as vagas quitadas e o bloqueio confirmado pelo estabelecimento.
 10. Falhas de SMS, push, Redis ou WebSocket não corrompem partidas, resultados, reservas ou rating.
 11. O produto protege dados pessoais, telefone, localização e dados financeiros, respeitando a LGPD.
 
@@ -24,11 +24,11 @@ Referência máxima: `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` (seção 3). O
 
 1. **Competitividade:** matchmaking, partidas casuais e ranqueadas, MMR, rankings individuais e troféus de clã por modalidade.
 2. **Comunidade:** lobbies, chat por contexto, lista de amigos, convites e clãs, com moderação dedicada.
-3. **Infraestrutura esportiva e reservas:** descoberta de locais públicos e privados, solicitação de reserva, bloqueio temporário, pagamento Pix individual, confirmação e liberação do valor ao estabelecimento.
+3. **Infraestrutura esportiva e reservas:** descoberta de locais públicos e privados, solicitação de reserva, bloqueio temporário, compra de crédito em reais exibida em tickets, pagamento avulso individual, confirmação e repasse ao fornecedor.
 
 A camada transversal reúne identidade, autorização, auditoria, notificações, prazos controlados pelo servidor, prevenção de abuso e transparência de preços.
 
-A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo corresponde às fases 0–10; reservas, interface financeira do estabelecimento, clãs, moderação e publicidade têm fases próprias (11+).
+A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo corresponde às fases 0–10; reservas, interface financeira do fornecedor, clãs, moderação e publicidade têm fases próprias (11+). Clãs e troféus integram o MVP pela ADR 0044 e devem estar concluídos antes da 19.
 
 ## Fora do escopo do produto
 
@@ -45,15 +45,16 @@ A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo cor
 
 ## Fora do escopo do MVP (fases 0–10)
 
-- Organizações, painel de gestão web e onboarding de estabelecimentos (fase 11).
-- Quadras, agenda, disponibilidade e KYC do recebedor (fase 12).
+- Organizações, painel de gestão web e onboarding de fornecedores (fase 11).
+- Quadras, agenda, disponibilidade e cadastro do fornecedor (fase 12).
 - Reservas, temporizadores, bloqueio e máquina de estados (fase 13).
-- Pagamentos Pix, split, PSP, webhooks e reembolsos (fase 14).
-- Interface financeira do estabelecimento, liberação e conciliação (fase 15).
+- Pagamentos Pix, compra de crédito, PSP, webhooks e reembolsos (fases 14/14E).
+- Crédito, carteira, temporada e NFS-e (fase 14D/14E).
+- Interface financeira do fornecedor, repasse e conciliação (fase 15).
 - Clãs, troféus e temporadas (fase 16).
 - Moderação dedicada e Trust & Safety (fase 17).
 - Publicidade (fase 18).
-- Hardening final e lançamento comercial (fase 19).
+- Jurídico/fiscal/LGPD (fase 19A) e hardening final (fase 19B).
 - Aluguel de equipamentos, gestão completa de academias/clubes, intermediação de profissionais e torneios: exclusões do escopo atual do conceito (seção 22) — reavaliar como decisão de produto antes de qualquer implementação.
 
 ## Restrições não negociáveis
@@ -66,8 +67,8 @@ A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo cor
 - Localização deve ser minimizada, contextual e opcional para fluxos que aceitam região manual.
 - O sistema deve ser idempotente, auditável e testável sob concorrência.
 - O backend controla prazos, estados de reserva e confirmação financeira; o cliente não é autoridade.
-- A quadra só recebe a liberação depois da confirmação da reserva e da realização da partida.
-- Estabelecimento sem recebedor ativo (KYC) não pode originar reserva paga.
+- A quadra recebe o repasse após a confirmação e a quitação, em `starts_at + 2h` (ADR 0040), independentemente de a partida ser declarada realizada.
+- Fornecedor sem chave de repasse validada não pode originar reserva paga; o KYC contratual do modelo C pertence à fase comercial.
 - Não declarar segurança absoluta; usar controles em camadas, testes e monitoramento.
 
 ## Critérios de sucesso do MVP
@@ -89,14 +90,17 @@ A execução é dividida nas fases de `PLANS.md`. O MVP do núcleo esportivo cor
 - Provedor de SMS e política de custo/abuso.
 - Domínio técnico e hospedagem dos arquivos de associação de plataforma.
 - Provedor de mapas/geocodificação e custos/licenças.
-- PSP: Pagar.me Flex como primeira opção condicionada e Inter como alternativa centralizada; tarifas, saque autônomo, estorno Pix com split, MED e KYC precisam de confirmação formal (ADR 0021).
-- Valor de `N` para liberação automática após a partida e janela de disputa.
+- PSP: Mercado Pago no protótipo com jogadores reais (ADR 0048); Inter PJ e Pagar.me no futuro. Tarifas, repasse, MED, chargeback e conciliação precisam de confirmação formal.
+- Janela de contestação após o repasse e tratamento de divergência; o repasse em si está definido em `starts_at + 2h` (ADR 0040).
 - Política de cancelamento após a reserva confirmada e desistência individual.
-- Framework e estratégia de deploy do painel web de gestão.
+- Framework e estratégia de deploy do painel web de gestão (React + Vite, ADR 0028); falta ambiente de produção.
 - Infraestrutura e região de hospedagem após estimativa de tráfego, custo e requisitos LGPD.
-- Regra de confirmação de resultados por modalidade: prazo de 10 minutos, segunda rodada de 5 minutos, quórum `ceil(elegíveis/2)`, resultado por maioria simples, evidência textual de 2.000 caracteres e rate limiting **implementados no backend na Fase 7 e validados com PostgreSQL local**. Retenção provisória no ADR 0024; revisão definitiva na fase de LGPD. Pendente: configurar operadores autorizados da CLI.
+- Regra de confirmação de resultados por modalidade: implementada no backend na Fase 7 e validada com PostgreSQL local. Retenção provisória no ADR 0024; revisão definitiva na fase de LGPD. Pendente: configurar operadores autorizados da CLI.
 - Política de moderação, limites de contexto e retenção de mensagens.
 - Parâmetros iniciais do rating e da fórmula de troféus, a validar com simulações e testes.
 - Parâmetros medidos de `q`, `C_k`, `C_c`, `τ` e `p_t` para a fórmula de precificação.
+- ADR 0049: pareceres fiscal e jurídico, custódia C, CPF, NFS-e, percentual final da taxa e política de reembolso de passe/pacote.
+- Acesso por quadra (ACL) versus permissão por organização.
+- Marca, bundle/package IDs, SMS, mapas e storage de produção.
 
-A lista completa de pendências e fases responsáveis está em `docs/JOGA_DOCUMENTACAO_TECNICA.md`, seção 26.
+A lista completa de pendências e fases responsáveis está em `docs/PENDENCIAS.md`.

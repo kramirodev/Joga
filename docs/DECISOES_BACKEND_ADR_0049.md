@@ -119,8 +119,8 @@ Persistir por reserva, congelado:
 
 - **[B]** escolher escrow.
 - **[R]** o ledger **não pode presumir** que o dinheiro recebido é receita. Modelo
-  de dupla entrada com o plano de contas da **§9.2**. A ADR 0049 §7 lista as três
-  contas essenciais; a §9.2 lista as onze necessárias para operar de verdade,
+  de dupla entrada com o plano de contas da **§9.2**. A ADR 0049 §7 lista as contas
+  conceituais; a §9.2 lista as **quatorze** necessárias para operar de verdade,
   incluindo PSP em trânsito, receita diferida, receivable de chargeback e
   incobrável.
 - **Não criar `CustodyAdapter` agora.** Não há duas implementações concretas; a
@@ -131,9 +131,11 @@ Persistir por reserva, congelado:
 
 O passe concede **cota mensal**, não ingressos.
 
-- `pass_period_quota(period, total, remaining)` — sem `expires_at`.
-- Ordem de consumo: **primeiro a cota do passe, depois o crédito comprado**
-  (ADR 0042 §4.4, mantida).
+- `pass_period_quota` não existe como tabela nova: a cota do passe é um lote
+  `ticket_lots` com `source='pass'` e `period='YYYY-MM'`, conforme §9.1. Criar uma
+  segunda estrutura para a mesma coisa duplicaria a fonte de verdade.
+- Ordem de consumo: **primeiro a cota do passe, depois a cortesia, depois o
+  crédito comprado** — ordem completa em §9.1.
 - Cota não usada **não vira crédito** e não é receita de breakage; a receita do
   passe é do mês, pela disponibilização (ADR 0049 §2.6).
 

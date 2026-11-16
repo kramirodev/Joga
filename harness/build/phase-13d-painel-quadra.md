@@ -1,4 +1,4 @@
-# Fase 13D/15C — Painel JOGA y QUADRA alinhado ao fornecedor
+# Fase 13D/15C — Painel JOGA y GESTÃO alinhado ao fornecedor
 
 **Status:** implementado no painel web em 2026-11-14.
 **Depende de:** 11B/11C (painel), 12A (quadras), 13C (reserva), 14D.1 (faixa), 14D.2 (payout), 15A/15B (financeiro local).

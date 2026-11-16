@@ -1,488 +1,273 @@
-# Modelo de dados — JOGA
+# Modelo de dados — JOGA (as-built)
 
-Documento incremental. Cobre o subconjunto de **identidade** (Fase 3) e de **perfil, disponibilidade, região e locais** (Fase 4); as demais entidades serão adicionadas nas fases correspondentes.
+**Versão:** 2.0<br>
+**Data:** 16 de novembro de 2026<br>
+**Fonte:** migrations Alembic em `backend/migrations/versions/` e modelos SQLAlchemy em `backend/app/modules/`.<br>
+**Head de migrations:** `j3f4a5b6c7d8` (cadeia linear, 53 revisões).<br>
+**Natureza:** este documento substitui a versão incremental das Fases 3–4. Ele descreve o schema **existente**, não o alvo. O alvo financeiro da ADR 0049 está na Fase 14E.
 
-## Convenções
+> **Regra de leitura.** O banco é a fonte da verdade. Este resumo existe para orientar leitura e revisão; a definição exata de colunas, tipos e constraints está nos modelos e migrations. Não usar este documento para `alembic revision --autogenerate`.
 
-- Chaves internas em `UUID`; telefone nunca é chave primária.
-- Datas de evento em `timestamptz` (UTC no backend).
-- Nomes de constraints seguem a convenção de `app/infrastructure/database/base.py`.
-- Migrações Alembic revisáveis; nenhuma alteração manual de schema.
-- Dados sensíveis não são persistidos em claro: telefone, IP e OTP usam HMAC-SHA256 com segredo de ambiente.
+---
 
-## `users`
+## 1. Convenções
 
-Identidade central e estado da conta.
+- UUID como chave primária; telefone nunca é chave primária.
+- `timestamptz`/UTC no backend; datas de evento em UTC.
+- Valores monetários em centavos inteiros.
+- Tabelas de histórico financeiro e competitivo são append-only por convenção; o ledger novo tem trigger de imutabilidade.
+- `organization_id` isola dados de estabelecimentos; a autorização é verificada no serviço, não apenas pelo UUID.
+- Nomes de constraint seguem a convenção `ck_<tabela>_<nome>` / `uq_<tabela>_<nome>`.
 
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `status` | varchar(20) | `pending`, `active`, `suspended`, `deleted` |
-| `created_at` | timestamptz | default `now()` |
-| `updated_at` | timestamptz | default `now()` |
+---
 
-## `user_phones`
-
-Telefone verificado. Nesta iteração guarda apenas o hash de busca.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `phone_hash` | varchar(64) | HMAC do telefone E.164 |
-| `is_primary` | boolean | contato principal |
-| `verified_at` | timestamptz | quando verificado |
-| `released_at` | timestamptz | libera o hash para reutilização |
-| `created_at` | timestamptz | default `now()` |
-
-Constraint: índice único parcial `uq_user_phones_active_hash` em `phone_hash` quando `released_at IS NULL`. Na troca de telefone, o vínculo antigo recebe `released_at` e o novo é gravado verificado; a troca revoga todas as sessões (ADR 0016).
-
-## `phone_challenges`
-
-Desafio OTP de uso único.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK e vínculo do HMAC do OTP |
-| `phone_hash` | varchar(64) | hash do telefone |
-| `user_id` | UUID | FK opcional `users.id` |
-| `purpose` | varchar(20) | `registration`, `login`, `phone_change`, `recovery` |
-| `code_hash` | varchar(64) | HMAC do OTP |
-| `attempts` | integer | tentativas consumidas |
-| `max_attempts` | integer | limite por desafio |
-| `request_ip_hash` | varchar(64) | hash do IP, nunca o IP |
-| `expires_at` | timestamptz | expiração |
-| `consumed_at` | timestamptz | uso único da verificação |
-| `receipt_used_at` | timestamptz | consumo do recibo pelo cadastro/login |
-| `created_at` | timestamptz | default `now()` |
-
-Índices: `ix_phone_challenges_phone_created` (`phone_hash`, `created_at`).
-
-O `id` do desafio consumido (`consumed_at` preenchido) funciona como recibo de verificação de curta duração; a expiração do recibo é calculada a partir de `consumed_at` + política (`JOGA_OTP_RECEIPT_TTL_SECONDS`, padrão 600 s). O recibo não é sessão (ADR 0015).
-
-## `devices`
-
-Dispositivo vinculado ao usuário.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `platform` | varchar(20) | `android`, `ios`, `web`, `unknown` |
-| `name` | varchar(80) | rótulo opcional |
-| `created_at` | timestamptz | default `now()` |
-| `last_seen_at` | timestamptz | opcional |
-| `revoked_at` | timestamptz | opcional |
-
-## `passkey_challenges`
-
-Desafio WebAuthn de uso único para registro ou autenticação.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK opcional `users.id` (registro/autenticação específica) |
-| `challenge` | varchar(128) | nonce público, único |
-| `purpose` | varchar(20) | `registration` ou `authentication` |
-| `expires_at` | timestamptz | expiração curta |
-| `consumed_at` | timestamptz | uso único |
-| `request_ip_hash` | varchar(64) | hash do IP |
-| `created_at` | timestamptz | default `now()` |
-
-O desafio é um nonce público enviado ao cliente; não é segredo, mas nunca deve ir para logs. O limite de criação por IP/hora é aplicado no serviço.
-
-## `passkey_credentials`
-
-Credencial pública de passkey; não guarda chave privada.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `device_id` | UUID | FK opcional `devices.id`, `SET NULL` |
-| `credential_id` | text | único |
-| `public_key` | bytea | chave pública |
-| `sign_count` | bigint | contador de assinatura |
-| `transports` | json | transportes informados |
-| `name` | varchar(80) | rótulo opcional |
-| `created_at` | timestamptz | default `now()` |
-| `last_used_at` | timestamptz | opcional |
-| `revoked_at` | timestamptz | revogação individual |
-
-## `sessions`
-
-Sessão com refresh opaco armazenado apenas como hash.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `device_id` | UUID | FK opcional `devices.id`, `SET NULL` |
-| `family_id` | UUID | família de rotação |
-| `access_token_hash` | varchar(64) | HMAC do access token, único |
-| `access_expires_at` | timestamptz | expiração curta do access |
-| `refresh_token_hash` | varchar(64) | HMAC do refresh, único |
-| `created_at` | timestamptz | default `now()` |
-| `last_used_at` | timestamptz | opcional |
-| `expires_at` | timestamptz | expiração absoluta |
-| `idle_expires_at` | timestamptz | expiração por inatividade |
-| `revoked_at` | timestamptz | opcional |
-| `revoked_reason` | varchar(40) | opcional |
-| `replaced_by_session_id` | UUID | rotação |
-
-Índices: `ix_sessions_user_revoked` (`user_id`, `revoked_at`).
-
-Access e refresh são valores opacos; o banco guarda apenas HMAC. A rotação cria uma nova linha na mesma família e marca a anterior como `rotated`/`replaced_by_session_id`. Reutilização de um refresh já rotacionado revoga toda a família. O cadastro/login consome `phone_challenges.receipt_used_at` antes de criar a sessão.
-
-## `security_events`
-
-Evento de autenticação ou abuso, sem PII em claro.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK opcional `users.id`, `SET NULL` |
-| `event_type` | varchar(50) | tipo do evento |
-| `ip_hash` | varchar(64) | hash do IP |
-| `metadata` | json | detalhes não sensíveis |
-| `created_at` | timestamptz | default `now()` |
-
-Usado pelos endpoints de OTP para registrar solicitação, verificação, falha e bloqueio, sem telefone, OTP ou IP em claro.
-
-## `audit_logs`
-
-Trilha append-only de ações sensíveis, com ator, recurso, motivo e data.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `actor_user_id` | UUID | FK opcional `users.id`, `SET NULL` |
-| `action` | varchar(80) | ação |
-| `resource_type` | varchar(50) | tipo do recurso |
-| `resource_id` | varchar(100) | identificador do recurso |
-| `reason` | text | justificativa |
-| `metadata` | json | detalhes não sensíveis |
-| `created_at` | timestamptz | default `now()` |
-
-## `sports`
-
-Catálogo de modalidades.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `slug` | varchar(40) | único |
-| `name` | varchar(80) | nome exibido |
-| `active` | boolean | default `true` |
-| `created_at` | timestamptz | default `now()` |
-
-Seeds: `futebol` e `volei`.
-
-## `sport_formats`
-
-Configuração versionada do formato esportivo. Constraints garantem `total_participants = team_size * 2` e `duration_minutes = play_minutes + break_minutes`.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `sport_id` | UUID | FK `sports.id`, cascade |
-| `slug` | varchar(40) | único com `version` |
-| `name` | varchar(80) | nome exibido |
-| `team_size` | integer | > 0 |
-| `total_participants` | integer | = 2 × `team_size` |
-| `play_minutes` | integer | > 0 |
-| `break_minutes` | integer | >= 0 |
-| `duration_minutes` | integer | = `play_minutes` + `break_minutes` |
-| `version` | integer | default `1` |
-| `active` | boolean | default `true` |
-| `created_at` | timestamptz | default `now()` |
-
-Seeds ativos: `futebol-5x5` (5 por equipe, 10 participantes, 50 + 10 = 60 min) e `volei-6x6` (6 por equipe, 12 participantes, 60 + 0 = 60 min).
-
-## `user_profiles`
-
-Dados básicos do jogador. Público: nome de exibição e bio.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `user_id` | UUID | PK e FK `users.id`, cascade |
-| `display_name` | varchar(60) | opcional |
-| `bio` | varchar(280) | opcional |
-| `created_at` | timestamptz | default `now()` |
-| `updated_at` | timestamptz | default `now()` |
-
-## `user_sport_profiles`
-
-Nível autodeclarado e preferência de quadra por formato.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `format_id` | UUID | FK `sport_formats.id`, cascade |
-| `level` | varchar(20) | `beginner`, `intermediate`, `advanced` |
-| `court_preference` | varchar(20) | `PUBLIC_ONLY`, `PRIVATE_ONLY`, `ANY` (default) |
-| `created_at` | timestamptz | default `now()` |
-| `updated_at` | timestamptz | default `now()` |
-
-Constraint única `(user_id, format_id)`; a substituição do conjunto é transacional (apaga e regrava na mesma transação).
-
-## `availabilities`
-
-Janelas semanais recorrentes de disponibilidade.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `weekday` | smallint | 1 a 7 |
-| `start_time` | time | < `end_time` |
-| `end_time` | time | > `start_time` |
-| `timezone` | varchar(64) | IANA, padrão `America/Sao_Paulo` |
-| `created_at` | timestamptz | default `now()` |
-
-Índice `(user_id, weekday)`. Um mesmo dia pode ter **várias faixas** (por exemplo, sábado às 14h, 18h e 20h) e dias diferentes podem ter quantidades e horários distintos. Sobreposição no mesmo dia é rejeitada pelo serviço, não pelo banco.
-
-## `user_regions`
-
-Centro **aproximado** de busca. Guarda apenas o ponto arredondado (duas casas decimais), nunca a coordenada residencial exata, e nenhum histórico de deslocamento.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `user_id` | UUID | PK e FK `users.id`, cascade |
-| `source` | varchar(10) | `gps` ou `cep` |
-| `cep` | varchar(8) | obrigatório quando `source = 'cep'` |
-| `city` | varchar(120) | obrigatório quando `source = 'cep'` |
-| `state` | varchar(2) | obrigatório quando `source = 'cep'` |
-| `radius_km` | integer | 1 a 200 |
-| `center_lat` | double | -90 a 90, arredondado |
-| `center_lng` | double | -180 a 180, arredondado |
-| `updated_at` | timestamptz | default `now()` |
-
-Usar GPS substitui a região anterior e limpa `cep`/`city`/`state`; não há acúmulo de pontos.
-
-## `venues`
-
-Local esportivo descoberto. Catálogo **vazio** nesta fase; cadastro público pertence às Fases 12/13.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `name` | varchar(120) | nome do local |
-| `kind` | varchar(20) | `public` ou `private` |
-| `city` | varchar(120) | município |
-| `state` | varchar(2) | UF |
-| `cep` | varchar(8) | opcional |
-| `address` | varchar(200) | opcional |
-| `lat` | double | -90 a 90 |
-| `lng` | double | -180 a 180 |
-| `active` | boolean | default `true` |
-| `created_at` | timestamptz | default `now()` |
-
-Índices: `ix_venues_city_state` (`city`, `state`) e `ix_venues_location_gist`, índice GiST sobre `ST_SetSRID(ST_MakePoint(lng, lat), 4326)` criado apenas no PostgreSQL. A busca usa `ST_DWithin` sobre `geography` com raio em metros, ordenada por `ST_Distance`.
-
-Quadras (`venue_spaces`), vínculo esporte–quadra (`venue_sports`), agenda (`venue_availability`), bloqueios (`venue_blackouts`), reservas (`bookings`), recebedor (`venue_payment_accounts`), cobranças, ledger, reembolsos e liberações **não** existem nesta fase; pertencem às Fases 12–15.
-
-## `queue_entries`
-
-Entrada persistente na fila. O usuário mantém no máximo uma entrada ativa por formato e modo.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `format_id` | UUID | FK `sport_formats.id`, cascade |
-| `mode` | varchar(10) | `casual` ou `ranked` |
-| `court_preference` | varchar(20) | preferência efetiva da entrada |
-| `level` | varchar(20) | nível no momento da entrada |
-| `status` | varchar(20) | `waiting`, `matched`, `cancelled`, `expired` |
-| `center_lat` / `center_lng` | double | centro aproximado copiado de `user_regions` |
-| `radius_km` | integer | 1 a 200 |
-| `lobby_id` | UUID | FK `lobbies.id`, `SET NULL` |
-| `created_at` / `updated_at` | timestamptz | default `now()` |
-| `matched_at` | timestamptz | opcional |
-| `expires_at` | timestamptz | TTL da entrada (24 h por padrão) |
-
-Índice `ix_queue_entries_waiting` (`format_id`, `mode`, `status`, `created_at`) e índice único parcial `uq_queue_entries_active` em (`user_id`, `format_id`, `mode`) quando `status = 'waiting'` — impede duplicidade ativa, inclusive sob concorrência.
-
-## `lobbies`
-
-Agrupamento formado pelo matchmaking, com horário concreto.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `format_id` | UUID | FK `sport_formats.id`, `RESTRICT` |
-| `format_version` | integer | versão do formato aplicada |
-| `origin` | varchar(20) | `matchmaking` ou `manual` |
-| `mode` | varchar(10) | `casual` ou `ranked` |
-| `status` | varchar(20) | `scheduled`, `cancelled`, `completed` |
-| `court_preference` | varchar(20) | interseção efetiva das preferências |
-| `scheduled_start_at` / `scheduled_end_at` | timestamptz | horário concreto; fim > início |
-| `duration_minutes` | integer | copiada do formato |
-| `center_lat` / `center_lng` | double | média geográfica dos centros aproximados |
-| `radius_km` | integer | menor raio informado, limitado a 30 km |
-| `venue_id` | UUID | FK `venues.id`, `SET NULL`; nulo nesta fase |
-| `algorithm_version` | varchar(40) | ex. `level_v1` |
-| `created_at` | timestamptz | default `now()` |
-
-## `lobby_participants`
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `lobby_id` | UUID | FK `lobbies.id`, cascade |
-| `user_id` | UUID | FK `users.id`, cascade |
-| `queue_entry_id` | UUID | FK `queue_entries.id`, `SET NULL`, único |
-| `team` | smallint | 1 ou 2 |
-| `level` | varchar(20) | nível usado no balanceamento |
-| `created_at` | timestamptz | default `now()` |
-
-Únicos: `(lobby_id, user_id)` e `queue_entry_id`.
-
-## `matchmaking_runs`
-
-Trilha de cada rodada do worker.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `status` | varchar(20) | `running`, `completed`, `failed` |
-| `algorithm_version` | varchar(40) | política aplicada |
-| `entries_expired` | integer | >= 0 |
-| `lobbies_formed` | integer | >= 0 |
-| `started_at` | timestamptz | default `now()` |
-| `finished_at` | timestamptz | opcional |
-
-## `matches`
-
-Partida criada a partir de um lobby, com estado controlado pelo servidor.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `lobby_id` | UUID | FK `lobbies.id`, cascade, único |
-| `state` | varchar(24) | `PENDING_CONFIRMATION`, `READY`, `IN_PROGRESS`, `RESULT_PENDING`, `FINALIZED`, `DISPUTED`, `VOIDED`, `CANCELLED`, `EXPIRED` |
-| `scheduled_start_at` / `scheduled_end_at` | timestamptz | cópia do lobby; fim > início |
-| `confirmation_deadline` | timestamptz | `min(formado + 24 h, início − 45 min)` |
-| `check_in_opens_at` | timestamptz | início − 60 min |
-| `check_in_deadline` | timestamptz | início − 30 min |
-| `substitution_deadline` | timestamptz | início − 15 min |
-| `cancelled_reason` | varchar(40) | `declined`, `confirmation_deadline`, `no_substitute`, `missing_check_in` |
-| `started_at` | timestamptz | quando entrou em `IN_PROGRESS` |
-| `final_result` | varchar(8) | `TEAM_1`, `TEAM_2`, `DRAW` ou nulo; validado por check |
-| `finalized_at` | timestamptz | quando o resultado foi finalizado |
-| `voided_reason` | text | justificativa da anulação |
-| `result_version` | integer | começa em 0 e incrementa a cada finalização/anulação; default 0 |
-| `created_at` / `updated_at` | timestamptz | default `now()` |
-
-Constraints garantem a ordem dos prazos e que tudo acontece antes do início. A fase 6 alcança `PENDING_CONFIRMATION → READY → IN_PROGRESS`; a fase 7 adiciona `IN_PROGRESS → RESULT_PENDING → FINALIZED | DISPUTED | VOIDED` e `DISPUTED → FINALIZED | VOIDED`.
-
-## `match_participants`
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `match_id` | UUID | FK `matches.id`, cascade |
-| `user_id` | UUID | FK `users.id`, cascade; único com `match_id` |
-| `team` | smallint | 1 ou 2 |
-| `level` | varchar(20) | nível usado no balanceamento |
-| `status` | varchar(20) | `invited`, `confirmed`, `declined`, `checked_in`, `no_show` |
-| `is_substitute` | boolean | suplente convidado após ausência |
-| `is_captain` | boolean | capitão simbólico da equipe, selecionado na formação |
-| `captain_selection_version` | varchar(20) | `provisional_v1` na Fase 7; nulo para não capitães |
-| `captain_selected_at` | timestamptz | momento da seleção; não recalculado |
-| `queue_entry_id` | UUID | FK `queue_entries.id`, `SET NULL` |
-| `invited_at` | timestamptz | default `now()` |
-| `confirmed_at` / `checked_in_at` | timestamptz | opcionais |
-| `updated_at` | timestamptz | default `now()` |
-
-Índice `(match_id, status)`. Suplente entra na vaga do ausente mantendo o time, e o ausente fica `no_show` sem contar como ativo.
-
-## `match_state_transitions`
-
-Trilha append-only das transições, com ator e motivo.
-
-| Coluna | Tipo | Regra |
-|---|---|---|
-| `id` | UUID | PK |
-| `match_id` | UUID | FK `matches.id`, cascade |
-| `from_state` | varchar(24) | nulo na criação |
-| `to_state` | varchar(24) | obrigatório |
-| `actor_user_id` | UUID | FK opcional `users.id`, `SET NULL` |
-| `reason` | text | motivo auditável |
-| `created_at` | timestamptz | default `now()` |
-
-## Resultados e disputas (Fase 7)
-
-Implementado na migração `e1a4c7d9b230_add_match_results.py`. Todas as tabelas de histórico são append-only por convenção: não há endpoint de atualização ou exclusão.
+## 2. Identidade e sessões
 
 | Tabela | Papel |
 |---|---|
-| `match_result_eligible_participants` | conjunto de elegíveis congelado na abertura da rodada 1; único por partida/participante e partida/usuário |
-| `match_result_rounds` | rodada 1 ou 2, status `OPEN`/`CLOSED`, `opens_at`, `deadline`, `eligible_count`, `quorum`, `valid_votes`, `evaluated_outcome`, `divergent_votes` e `outcome` |
-| `match_result_reports` | relato append-only por participante/rodada; na rodada 2 o último envio válido é o voto efetivo |
-| `match_result_captain_confirmations` | confirmação separada do capitão; não conta como voto |
-| `match_disputes` | disputa aberta para todo caso enviado à revisão humana (`QUORUM`, `DIVERGENCE`, `TIE`, `SECOND_ROUND_50`, `NO_UNIQUE_RESULT`) |
-| `match_dispute_evidence` | evidência textual privada, uma por participante/disputa, 1–2.000 caracteres |
-| `match_result_analyses` | parecer interno com `signals` em JSONB; conclusão sempre `INCONCLUSIVE` na Fase 7 |
-| `match_result_reviews` | revisão `PENDING`/`RESOLVED`/`CANCELLED` por partida/rodada |
-| `match_result_decisions` | decisão humana auditável (`FINALIZE`, `VOID`, `REQUEST_MORE_INFO`) com operador, motivo e timestamp |
-| `idempotency_records` | replay idempotente de POSTs por `scope`/`key`, com hash do corpo e resposta gravada |
-| `rate_limit_counters` | contador por `scope`/`key`/janela fixa, usado nos POSTs de resultado, confirmação e evidência |
+| `users` | Identidade central, status, e-mail, `suspended_until` |
+| `user_phones` | Telefone protegido, hash de busca, verificação e estado |
+| `phone_challenges` | Desafios OTP, hash, tentativas, expiração e recibo |
+| `devices` | Dispositivos vinculados e sinais mínimos |
+| `passkey_credentials` | Credenciais WebAuthn, contador e revogação |
+| `passkey_challenges` | Desafios de registro/autenticação, uso único |
+| `sessions` | Access/refresh hashes, família, rotação e revogação |
+| `security_events` | Eventos de autenticação e abuso |
+| `audit_logs` | Ator, ação, recurso, motivo e timestamp |
 
-O worker `advance_matches.py` abre e fecha rodadas; a API rejeita votos após o prazo mesmo com worker atrasado. `signals` e `response_body` usam JSONB no PostgreSQL e JSON no SQLite de testes (variante do tipo).
+**Constraints relevantes:** telefone ativo único por hash; `credential_id` único; refresh hash único; sessão revogada não autentica; conta suspensa só acessa rotas de recurso.
 
-## Rating e Trust Factor (Fase 8)
+**Lacunas conhecidas:** não há endpoint de recuperação de conta; `ChallengePurpose.recovery` existe no modelo, mas não é aceito pela API. Não há limite por dispositivo em refresh/passkey/WS.
 
-Implementado na migração `a3f7c9e2d641_add_ratings_and_trust_events.py`.
+---
 
-| Tabela | Papel |
-|---|---|
-| `rating_accounts` | MMR atual por usuário e formato: rating, RD, volatilidade, partidas, última aplicação e versão do algoritmo |
-| `rating_events` | histórico append-only por partida/usuário/versão, com rating anterior/posterior, RD, volatilidade, expectativa, delta e resultado. Base do histórico competitivo e da evolução da divisão (ADR 0045) |
-| `trust_accounts` | score interno oculto, neutro em 100; não é exposto no app |
-| `trust_events` | sinais auditáveis de confiança, com tipo, severidade, metadados mínimos e timestamp |
-
-O worker `apply_ratings.py` processa partidas `ranked` em `FINALIZED`. A constraint única `(match_id, user_id, algorithm_version)` garante aplicação única. O Trust Factor não aplica penalidade automática na Fase 8; eventos ficam disponíveis para a Fase 17.
-
-## Comunicação, amigos e Outbox (Fase 9)
-
-Implementado na migração `b4e8d1f6c752_add_social_chat_outbox.py`.
+## 3. Perfil, catálogo e descoberta
 
 | Tabela | Papel |
 |---|---|
-| `lobby_messages` | chat textual append-only por lobby; 1–2.000 caracteres, sem mídia |
-| `outbox_events` | evento transacional para entrega assíncrona; status e tentativas auditáveis |
-| `friendships` | par único ordenado, status `PENDING`/`ACCEPTED`/`REMOVED` e solicitante |
-| `user_blocks` | bloqueio unilateral único; impede amizade, convite e eventos sociais |
-| `lobby_invites` | convite de participante para amigo; status e expiração |
-| `device_push_tokens` | token opaco por dispositivo, revogável e nunca exposto a terceiros |
+| `sports` | Modalidades |
+| `sport_formats` | Formatos, duração, composição e versão |
+| `user_profiles` | Nome, gênero, cidade e preferências |
+| `user_sport_profiles` | Nível autodeclarado e preferência por formato |
+| `availabilities` | Janelas de disponibilidade do jogador |
+| `user_regions` | Região aproximada e coordenada arredondada |
+| `venues` | Locais descobertos, geografia e endereço |
+| `postal_code_cache` | Cache de CEP/geocoding com TTL e proveniência |
 
-O WebSocket serve apenas à entrega local do processo; o PostgreSQL continua sendo a fonte de verdade. Mensagens são persistidas antes da entrega, e a reconexão recupera o histórico pela API. Redis/fan-out multi-processo e provedor real de push ficam para a fase de hardening/escala.
+**Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor.
 
-Retenção provisória (ADR 0027): mensagens 730 dias; convites encerrados 90 dias; eventos de Outbox entregues/falhos 30 dias; tokens de push revogados 90 dias. A limpeza é manual por `scripts/cleanup_communication.py`.
+**Lacunas conhecidas:** não há `user_avatars`; o avatar é decisão de catálogo ainda não implementada. `sport_equipment_requirements` não existe.
 
-## Pendências deste modelo
+---
 
-- Armazenamento cifrado do telefone para contato futuro (recuperação/notificações): decidir cifra e gestão de chaves antes do bloco de recuperação.
-- Estratégia de rotação do segredo de HMAC e versionamento dos hashes.
-- Política de retenção e agendamento da limpeza em produção (o script existe).
-- Rate limit de tentativas de verificação por IP, além do limite de criação por telefone/IP.
-- Vínculo de dispositivo com atestação; hoje há nome/plataforma e revogação por sessões.
-- Recuperação assistida quando o usuário perde todas as passkeys e o telefone.
-- Índices adicionais para consultas de sessões e eventos após os fluxos reais.
-- Migração de dados existentes não se aplica: o banco ainda não tem dados de produção.
-- Catálogo de locais vazio: quadras, vínculo esporte–quadra, agenda, bloqueios, reservas, KYC do recebedor, cobranças e liberações pertencem às Fases 12–15.
-- Modelo financeiro de reservas (cobranças, ledger, reembolsos, liberações e MED) ainda não existe; será modelado na Fase 14 e detalhado na Fase 15.
-- Resultados e disputas da Fase 7 estão modelados (ver seção acima). A retenção provisória está no ADR 0024 e é aplicada por `scripts/cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19. Migração, concorrência e rate limiting validados com PostgreSQL local.
-- Penalidades por no-show (banimento temporário e reputação) ficam para as Fases 8/17; a Fase 6 só registra `no_show`.
-- Capitães completos, com Trust Factor, MMR e histórico, ficam para a Fase 8; a Fase 7 usa a seleção provisória por `FINALIZED` e UUID.
-- Geocoding de CEP depende do BrasilAPI (gratuito, sem SLA); o cache é persistente em `postal_code_cache`, com TTL de 30 dias.
-- Disponibilidade não trata feriados, exceções pontuais nem conversão de fuso por usuário.
+## 4. Organizações, estabelecimentos e quadras
 
-## Referência
+| Tabela | Papel |
+|---|---|
+| `organizations` | Estabelecimento/organização, CNPJ, chave Pix e `payout_status` |
+| `organization_memberships` | Usuário, papel e vínculo |
+| `organization_venues` | Perfil comercial do estabelecimento, endereço, CEP, coordenada e proveniência |
+| `venue_spaces` | Quadras/espaços, cobertura e estado |
+| `venue_sports` | Vínculo espaço–modalidade |
+| `venue_availability` | Janelas semanais, preço e duração |
+| `venue_blackouts` | Bloqueios manuais e reservas externas |
+| `venue_business_hours` | Expediente e horário comercial |
+| `venue_closures` | Fechamentos e feriados |
+| `venue_photos` | Fotos, revisão, motivo, storage e retenção |
+| `pricing_bands` | Faixas de exibição/preço, versão e teto |
+| `pricing_band_tickets` | Conversão tickets ↔ faixa |
 
-- Migração: `backend/migrations/versions/3c9d51a7e2b4_identity_foundation.py`, `d4a7f2c9e610_add_session_access_and_receipt.py`, `b8d2f4a6c910_add_profile_and_discovery.py`, `c5e1a7d3f208_add_matchmaking_queue_and_lobbies.py`, `d7f2b9c4e615_add_matches_and_lifecycle.py`, `e1a4c7d9b230_add_match_results.py`, `f2b5d8e1a7c3_add_rate_limit_counters.py`, `a3f7c9e2d641_add_ratings_and_trust_events.py` e `b4e8d1f6c752_add_social_chat_outbox.py`
-- Modelos: `backend/app/modules/identity/models.py`, `backend/app/modules/profile/models.py`, `backend/app/modules/matchmaking/models.py`, `backend/app/modules/matches/models.py`, `backend/app/modules/results/models.py`, `backend/app/modules/idempotency/models.py`, `backend/app/modules/ratelimit/models.py`, `backend/app/modules/ratings/models.py`, `backend/app/modules/chat/models.py`, `backend/app/modules/social/models.py` e `backend/app/modules/outbox/models.py`
-- Decisões: ADR 0012, ADR 0013, ADR 0014, ADR 0015, ADR 0019 e ADR 0023.
+**Constraints relevantes:** CNPJ válido; chave Pix tipada; `payout_status` em `pending/active/blocked`; foto só pública após revisão; vínculo `organization_venues.venue_id` único e opcional.
+
+**Lacunas conhecidas:** não existe `venue_payment_accounts`; o repasse é armazenado em `organizations`. Não há ACL por quadra. A tabela de faixas é hoje usada como preço; a ADR 0049 exige que ela seja apenas exibição/conversão, com preço do espaço + taxa persistidos na reserva (Fase 14E).
+
+---
+
+## 5. Reservas, holds e presença
+
+| Tabela | Papel |
+|---|---|
+| `bookings` | Reserva, estado, preço, faixa, política e timestamps |
+| `booking_participants` | Vaga, contribuição, pagamento, `settled_with` e tickets consumidos |
+| `booking_holds` | Bloqueio do espaço e expiração |
+| `booking_timers` | T1/T2/T3 independentes |
+| `booking_events` | Histórico append-only de transições e ações |
+| `booking_substitutions` | Substituições e vínculo com a vaga |
+| `lobby_substitutes` | Fila de substitutos do lobby |
+| `booking_refund_exclusions` | Exclusões de reembolso por desistência |
+
+**Estados de `bookings`:** `PARTICIPANT_CONFIRMATION`, `REQUESTED`, `DECLINED`, `EXPIRED`, `HOLD_CONFIRMED`, `PAYMENT_PENDING`, `CONFIRMED`, `CANCELLED`, `CANCELLED_BY_VENUE`, `CANCELLED_BY_PLAYER`, `SUBSTITUTING`, `COMPLETED`.
+
+**Estados de `booking_participants.payment_status`:** `PENDING`, `PAID`, `REFUNDED`, `FAILED`, `WAIVED`.
+
+**Constraints relevantes:** uma reserva por lobby; vaga ativa única por assento/usuário; timers por tipo; hold ativo único por espaço/intervalo (lógica de serviço); preço não negativo.
+
+**Lacunas conhecidas:** não há `ExclusionConstraint`/`tstzrange` para sobreposição; a proteção é feita no serviço. `booking_participants.payment_status` não aceita `EXPIRED`/`CANCELLED`, mas o serviço escreve `EXPIRED` em `register_payment_result`. `bookings` não tem `venue_price_cents`, `fee_cents` ou `fee_percent_applied` (Fase 14E).
+
+---
+
+## 6. Pagamentos, PSP e ledger
+
+| Tabela | Papel |
+|---|---|
+| `booking_payments` | Cobrança por participante/versão, status e dados do provedor |
+| `purchase_payments` | Compra de pacote/passe, `kind` e `reference_id` |
+| `payment_refunds` | Reembolso por cobrança (um por pagamento) |
+| `payment_events` | Eventos append-only de cobrança/PSP |
+| `psp_webhook_events` | Webhook bruto, idempotência por provedor e retry |
+| `booking_ledger_entries` | Ledger legado single-entry por reserva |
+| `ticket_ledger` | Ledger append-only de créditos/consumos |
+| `ledger_accounts` | Plano de contas do ledger de dupla entrada (ADR 0049) |
+| `ledger_transactions` | Transação balanceada e idempotente |
+| `ledger_entries` | Lançamentos de débito/crédito, imutáveis por trigger |
+| `venue_releases` | Repasse ao fornecedor, status e elegibilidade |
+| `financial_disputes` | Contestação do fornecedor |
+| `fiscal_documents` | Intenção/documento fiscal por reserva (placeholder) |
+| `terms_versions` | Versões de termos e aceite |
+
+**Constraints relevantes:** webhook único por `(provider, event_id)`; reembolso único por pagamento; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado.
+
+**Lacunas conhecidas:** o ledger de dupla entrada existe, mas **não é usado por nenhum fluxo**; pagamentos, compras e repasses ainda escrevem `booking_ledger_entries`/`ticket_ledger`. `compute_fee_cents` existe, mas não é chamado. `payment_refunds` não permite reembolso parcial. `purchase.apply_status` ignora `REFUNDED`. `venue_releases.REVERSED` não é usado. `fiscal_documents` e `terms_versions` não têm chamador.
+
+---
+
+## 7. Crédito, carteira, passe e temporada
+
+| Tabela | Papel |
+|---|---|
+| `ticket_packs` | Escada de pacotes e preço de exibição |
+| `ticket_purchases` | Compra de pacote, valor, status e idempotência |
+| `ticket_lots` | Lote de origem, saldo projetado, preço unitário e período |
+| `ticket_lot_consumptions` | Consumo por lote e referência |
+| `ticket_balances` | Projeção de saldo por usuário |
+| `pass_subscriptions` | Assinatura trimestral, status e período |
+| `pass_deliveries` | Entrega mensal idempotente por assinatura/mês |
+| `seasons` | Temporada trimestral, início/fim e estado |
+| `season_progress` | Nível, XP e progresso |
+| `xp_events` | Ledger append-only de XP |
+| `win_streaks` | Sequência de vitórias por semana |
+| `season_items` | Itens da trilha e do catálogo |
+| `season_track_levels` | Níveis da trilha e item associado |
+| `season_claims` | Resgates de nível |
+| `badges` / `player_badges` | Insígnias e atribuições |
+| `player_items` | Itens possuídos e equipados |
+| `mission_progress` | Missões semanais |
+| `season_placements` | Posição/divisão no fechamento |
+
+**Constraints relevantes:** consumo idempotente por `ref_type/ref_id/user`; entrega de passe única por assinatura/mês; XP idempotente por `ref_id`; lote expirado não conta no saldo.
+
+**Lacunas conhecidas:** `season_items.code` é único globalmente, não por temporada; `player_items` é único por `(user, item_code)`, impedindo recompensa por temporada. Não há revogação de item de passe. A fronteira de temporada/semana usa UTC, não o fuso local.
+
+---
+
+## 8. Matchmaking, lobbies, partidas e resultados
+
+| Tabela | Papel |
+|---|---|
+| `queue_entries` | Fila persistente por formato/modo |
+| `lobbies` | Origem, visibilidade, horário, formato e quadra |
+| `lobby_participants` | Participantes, capitão e estado |
+| `matchmaking_runs` | Execuções do worker e versão do algoritmo |
+| `lobby_messages` | Chat do lobby |
+| `lobby_invites` | Convites e estado |
+| `matches` | Partida e estado |
+| `match_participants` | Jogadores, equipes e presença |
+| `match_state_transitions` | Histórico de estados |
+| `match_result_reports` | Relatos de resultado |
+| `match_result_rounds` | Rodadas de votação |
+| `match_result_disputes` | Disputas |
+| `match_result_evidence` | Evidência textual privada |
+| `match_result_reviews` | Revisão humana |
+| `match_result_decisions` | Decisão e justificativa |
+| `idempotency_records` | Idempotência de operações HTTP |
+
+**Constraints relevantes:** uma entrada ativa por usuário/formato/modo; uma partida por lobby; voto único por participante/rodada; rating uma vez por partida/usuário/versão; evidência limitada a 2.000 caracteres.
+
+**Lacunas conhecidas:** não há `lobby_venue_votes`; a votação de troca de quadra não existe no backend. Não há `match_equipment`/claims. `GET /matches` não pagina. `advance` não usa lock de partida.
+
+---
+
+## 9. Rating, Trust Factor e clãs
+
+| Tabela | Papel |
+|---|---|
+| `rating_accounts` | Rating interno por usuário/formato |
+| `rating_events` | Histórico append-only de rating |
+| `trust_accounts` | Score e restrição ranqueada |
+| `trust_events` | Eventos de confiabilidade |
+| `clans` | Clã, visibilidade e dono |
+| `clan_members` | Membros, papéis, vínculo e carência |
+| `clan_join_requests` | Pedidos de entrada |
+| `clan_messages` | Chat do clã |
+| `clan_reports` | Denúncias de mensagem |
+| `clan_trophy_events` | Pontuação de troféus |
+| `clan_trophy_snapshots` | Snapshot no fechamento da temporada |
+
+**Constraints relevantes:** um vínculo ativo por clã; troféus ligados a partida/temporada; rating imutável por partida/versão.
+
+**Lacunas conhecidas:** o código atribui troféus a partidas finalizadas, incluindo casuais (ADR 0046), mas o documento técnico dizia “somente ranqueadas”; a decisão vigente é a ADR 0046.
+
+---
+
+## 10. Social, notificações e moderação
+
+| Tabela | Papel |
+|---|---|
+| `friendships` | Solicitações, aceite e vínculo |
+| `user_blocks` | Bloqueios entre usuários |
+| `notifications` | Central persistida, canal e leitura |
+| `device_push_tokens` | Tokens de push por dispositivo |
+| `outbox_events` | Eventos transacionais pendentes |
+| `rate_limit_counters` | Contadores de janela fixa |
+| `moderation_reports` | Denúncia de perfil e contexto |
+| `moderation_actions` | Medidas, justificativa, prazo e recurso |
+| `moderation_appeals` | Recursos e decisão |
+| `moderation_operators` | Operadores e papel ADMIN |
+
+**Constraints relevantes:** notificação única por chave; operador por usuário; report com contexto limitado; medida temporária de 1–30 dias.
+
+**Lacunas conhecidas:** não há `chat_rooms`/`chat_memberships`; o chat usa `lobby_messages`/`clan_messages`. Não há busca de usuário para amizade. `create_report` e `NotificationService.create` são select-then-insert. Revogar uma medida limpa a suspensão global.
+
+---
+
+## 11. Constraints críticas e invariantes
+
+1. Telefone ativo único por hash protegido.
+2. `credential_id` de passkey único; refresh hash único.
+3. Um membro ativo por organização; um vínculo ativo por clã.
+4. Foto de quadra só pública após revisão e organização ativa.
+5. Vaga ativa única por reserva/assento e por reserva/usuário.
+6. Um timer por tipo/reserva; hold ativo único por espaço/intervalo.
+7. Reserva só confirma com todas as vagas quitadas (crédito ou Pix).
+8. Webhook único por provedor/evento; reembolso único por pagamento (limitação atual).
+9. Rating uma vez por partida/usuário/versão; MMR bruto nunca exposto.
+10. Resultado em disputa não gera rating.
+11. Denúncia só por participante do lobby e com mensagens da própria conversa.
+12. Ledger de dupla entrada balanceado e imutável (quando integrado).
+
+---
+
+## 12. Lacunas que a Fase 14E deve fechar
+
+- `bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`.
+- Integração do `ledger_*` como fonte da verdade, aposentando o uso de `booking_ledger_entries`/`ticket_ledger` como ledger principal.
+- Migração de `ticket_lots.remaining` para saldo em reais, 1:1, pelo preço unitário pago.
+- `credit` sem expiração; passe com `period`, não `expires_at`.
+- CPF cifrado e documento fiscal por reserva.
+- Reembolso parcial.
+- Constraint de exclusão para sobreposição de reservas.
+- Unicidade de item de temporada por temporada.
+- Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço.
+
+---
+
+## 13. Migrations de referência
+
+- Identidade: `3c9d51a7e2b4`, `d4a7f2c9e610`, `a7c3e9f2b415`.
+- Perfil/descoberta: `b8d2f4a6c910`, `c5d6e7f8a9b0`.
+- Organizações/quadras: `a1b2c3d4e5f6`, `99c1055b81b5`, `a1c2e3f40517`, `e1f2a3b4c5d6`, `f5a6172b3949`.
+- Reservas/pagamentos: `26b70fd0fbc7`, `c97807d1b140`, `bb4083b7b697`, `c15a1b2c3d4e`, `f4b5c6d7e8f9`, `e4a1c9d7b203`.
+- Crédito/temporada: `d3e4f5061927`, `e4f5061a2838`, `c9f0a1b2d3e4`, `b7c8394d5162`, `c8d94a5e6273`, `d9e95b6f7384`, `f5b2d8e4c310`.
+- Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`.
+
+O head atual é `j3f4a5b6c7d8`. A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.

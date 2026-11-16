@@ -1,6 +1,7 @@
 # ADR 0042 — Ingresso JOGA, tabela 2D e natureza da intermediação
 
-- **Status:** Aprovado como direção de produto; não implementado.
+- **Status:** Aprovado como direção de produto; implementado como protótipo de crédito nas fatias 14D.1–14D.16. A unidade de conta, o preço e a custódia foram substituídos pela **ADR 0049** no que conflitar; a natureza de intermediação e as regras não conflitantes permanecem.
+- **Nota de exibição (ADR 0049):** o ticket continua sendo a unidade de exibição 1:1; o saldo em reais não é exibido como carteira, mas o valor do espaço, a taxa e a tabela de conversão aparecem antes da confirmação. O contexto abaixo descreve a motivação original do fluxo e não revoga essa regra.
 - **Data:** 2026-11-11
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0021 (precificação e fluxo financeiro), ADR 0022 (sem marketplace de produtos), ADR 0025 (MMR/rankings/cosméticos), ADR 0034 (Mercado Pago no beta), ADR 0037 (reembolsos e conciliação), ADR 0039 (cancelamento, substituição e ausência), ADR 0040 (repasse no horário da partida). Substitui a ADR 0021 **no fluxo de ingresso**, preservando dela os componentes de custo e a regra de elegibilidade.

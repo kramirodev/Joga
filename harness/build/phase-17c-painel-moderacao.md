@@ -109,8 +109,7 @@ JOGA_MODERATION_MAX_REPORTS_PER_DAY=5
 ## Pendente
 
 1. Classificador local/open-source com dataset, avaliação offline e versionamento.
-2. Consumir a central de notificações internas no painel web; o backend já expõe
-   `/moderation/notifications` e o app do jogador não recebe essas notificações.
+2. A central de notificações internas do painel está implementada; o backend expõe `/moderation/notifications` e o app do jogador não recebe essas notificações.
 3. Suspensão permanente com política, dupla revisão e revisão jurídica.
 4. Retenção definitiva/LGPD e direito de exclusão.
 5. Tela mobile dedicada a acompanhar denúncias e medidas recebidas.

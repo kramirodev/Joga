@@ -1,6 +1,6 @@
 # JOGA — início do desenvolvimento com Codex
 
-Este guia complementar prepara o repositório para um desenvolvimento incremental. O ponto de entrada principal é `README.md`. O repositório já contém código do aplicativo e do backend a partir da Fase 2.
+Este guia complementar prepara o repositório para um desenvolvimento incremental. O ponto de entrada principal é `README.md`. O repositório já contém código do aplicativo, do painel e do backend até a Fase 17, com pendências e a transição da ADR 0049.
 
 ## 1. Repositório da V2
 

@@ -1,7 +1,17 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
-**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e lotes; painel ainda pendente.
+**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; os campos de `fee` abaixo entram na Fase 14E.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
+
+## 0. Preço, tickets e NFS-e (ADR 0049)
+
+- A substância jurídica e contábil é **crédito em reais**; o ticket é **unidade de exibição 1:1**.
+- O saldo em reais não é exibido como carteira.
+- Antes da confirmação, o app mostra o valor do espaço, a taxa de intermediação e a tabela de conversão tickets ↔ faixa/valor.
+- A NFS-e materializa o valor: locação/uso pelo fornecedor e intermediação pelo JOGA.
+- `price_cents` é hoje o valor do espaço. A 14E adicionará `venue_price_cents`, `fee_cents`, `fee_percent_applied` e `total_cents`.
+- `band_code`/`tickets_per_seat` são exibição/conversão, não preço jurídico.
+- **Atenção:** em `BookingView.payments[]`, `participant_id` é o id da **vaga** (`booking_participants`), não o `user_id`. O app deve localizar o pagamento pelo participante correspondente, não comparar com `session.userId`.
 
 ## 1. Descobrir quadras reserváveis
 

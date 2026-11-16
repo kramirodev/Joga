@@ -62,7 +62,7 @@ Requer autenticação (mesmo `get_current_session` do painel).
   "latitude": -22.9234,
   "longitude": -43.2456,
   "precision": "street",
-  "source": "viacep+nominatim",
+  "source": "brasilapi",
   "resolved_at": "2026-11-15T12:00:00Z"
 }
 ```

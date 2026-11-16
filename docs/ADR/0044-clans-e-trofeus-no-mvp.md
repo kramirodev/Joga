@@ -1,6 +1,6 @@
 # ADR 0044 — Clãs e troféus no escopo do MVP
 
-- **Status:** Aprovado; altera a ordem de fases do `PLANS.md`. Não implementado.
+- **Status:** Aprovado; altera a ordem de fases do `PLANS.md`. Implementado no backend em 2026-11-13 (ADR 0046); UI mobile parcial.
 - **Data:** 2026-11-11
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0007 (hierarquia documental e roadmap), ADR 0025 (MMR, rankings e troféus), ADR 0043 (temporada e customização), `PLANS.md` Fase 16 e Fase 17.

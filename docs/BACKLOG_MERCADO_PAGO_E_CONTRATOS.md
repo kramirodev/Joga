@@ -1,11 +1,11 @@
 # Backlog — Mercado Pago, contratos e dívidas de backend
 
-Atualizado em 2026-11-15. Este arquivo separa o Bloco A (Mercado Pago em
-produção), o Bloco B (contratos consumidos por app/site) e o Bloco C (backlog
+Atualizado em 2026-11-16. Este arquivo separa o Bloco A (Mercado Pago no
+protótipo/beta), o Bloco B (contratos consumidos por app/site) e o Bloco C (backlog
 não-PSP). `PLANS.md` continua sendo a fonte de ordem das fases e
 `docs/PENDENCIAS.md` o painel consolidado.
 
-## Bloco A — Mercado Pago em produção
+## Bloco A — Mercado Pago no protótipo/beta
 
 Decisão registrada na **ADR 0048**: Mercado Pago Orders API é o PSP do protótipo
 com jogadores reais; Inter/Pagar.me ficam para o futuro. Sem split e sem

@@ -1,21 +1,21 @@
 # Pendências abertas do JOGA
 
-**Atualizado em:** 15 de novembro de 2026
+**Atualizado em:** 16 de novembro de 2026
 
 Backlog detalhado do Mercado Pago e dos contratos: `docs/BACKLOG_MERCADO_PAGO_E_CONTRATOS.md`.
 Pendências jurídicas, fiscais e regulatórias: `docs/JURIDICO_PENDENCIAS.md`.
 
-Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
+Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como protótipo, a 15 como proposta técnica local e a 14E como transição obrigatória da ADR 0049. Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
 ## Bloqueios externos
 
 | Pendência | Fase | Impacto | Próximo passo |
 |---|---|---|---|
-| Mercado Pago em produção | 14 | PSP do protótipo com jogadores reais (ADR 0048); credenciais, webhook e validação real pendentes | Configurar conta, token, segredo e URL pública; validar Orders API |
-| KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
+| Mercado Pago no protótipo | 14 | PSP do protótipo com jogadores reais (ADR 0048); validação live, reembolso real e conciliação pendentes | Fase 14B; credenciais e webhook público |
+| KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada; o KYC do modelo C é da fase comercial | Decidir contrato e onboarding; escrow na 19A |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
 | Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
-| Central de notificações | 9D/17C | Backend pronto: canal player no app e canal moderation no painel | Consumir /moderation/notifications no painel e testar leitura |
+| Central de notificações | 9D/17C | **Implementada** no app e no painel; backend separa canais | Testar leitura e push real |
 | Mapas | 10/19 | Camada visual de descoberta | Pode esperar; usar lista/distância no início |
 | CNPJ/MEI e revisão jurídica | 14B/19 | Dinheiro real e contratos | Definir entidade, contador e parecer jurídico |
 | Storage de fotos de produção | 12A/19 | Fotos privadas e retenção | Escolher storage, criptografia e backup |
@@ -24,10 +24,10 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 
 | Pendência | Fase | Estado |
 |---|---|---|
-| T2 em horário comercial | 14B | Hoje usa tempo corrido; falta calendário, feriados e dias fechados |
+| T2 em horário comercial | 13E/14B | **Implementado** com expediente, feriados e fechamentos; falta validar casos de borda |
 | T2 máximo de 60 min | 13B/14B | **Implementado** em 2026-11-09 (ADR 0039) |
 | T3 configurável por estabelecimento | 13B/14B | Hoje usa configuração global |
-| Política consolidada de cancelamento, substituição e ausência | 14B/15 | **Definida na ADR 0039**, que supera a ADR 0038; fatia 1 implementada, demais fatias pendentes |
+| Política consolidada de cancelamento, substituição e ausência | 14B/15 | **Definida na ADR 0039**, que supera a ADR 0038; fatias 1–6 implementadas no backend |
 | Fila de substitutos e timers T4–T9 | 13B/15 | Fatias 1–6 implementadas (fila, chamada automática, T4/T5, cancelamento, expiração, atribuição/pagamento, paid seat e presença T6–T9) |
 | Adaptação de formato (4x4 + rodízio) | 13B/15 | **Recomendação automática implementada** (`players_per_team`/`formation_note`); rodízio controlado não existe |
 | Vaga paga em no-show | 15 | **Implementada**: substituto `WAIVED`/`covered_by_payment_id`, sem nova cobrança |
@@ -35,16 +35,16 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Trust Factor interno | 17 | **Implementado** na ADR 0041: −30 no-show, −7 cancelamento pós-confirmação, −2 pré-pagamento, recuperação não linear e restrição ranqueada |
 | UI de presença/check-in no mobile | 13B/19 | Backend pronto; tela e revisão LGPD pendentes |
 | Reversão/ajuste da ADR 0038 no código | 15 | **Concluída**: coluna, migração, lógica e testes da ADR 0038 foram removidos |
-| Repasse à quadra em desistência pós-confirmação | 14B/15 | Valor não reembolsado permanece no ledger sem regra específica de liberação; decisão pendente |
+| Repasse à quadra em desistência pós-confirmação | 14B/15 | Valor não reembolsado permanece no ledger sem regra específica de repasse; decisão pendente |
 | Check-in por localização e retenção LGPD | 19 | Definido na ADR 0039; implementação e revisão jurídica pendentes |
 | Termos de uso e tela de pagamento com exemplos de cancelamento/substituição/ausência | 19 | Pendente de revisão jurídica |
 | Reembolso real, MED e chargeback | 14B/15 | Apenas simulado |
 | Conciliação periódica com PSP | 15 | Conciliação interna de referência; comparação com PSP real pendente |
-| Repasse após a partida | 15 | **Implementado** na ADR 0040 (`starts_at + 2h`); repasse real/PSP pendente |
-| Janela de disputa antes da liberação | 15 | Contestação `OPEN` suspende a liberação na proposta técnica; prazos **não definidos** |
-| Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; recibos e comprovantes fiscais pendentes |
-| Interface financeira completa do estabelecimento | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
-| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine e criação de reserva prontas no backend; app ainda precisa ligar as telas a `discovery` e `POST /bookings` | Implementar consumo no mobile |
+| Repasse ao fornecedor | 15 | **Implementado como elegibilidade** em `starts_at + 2h` (ADR 0040); transferência real/PSP pendente |
+| Janela de contestação antes/depois do repasse | 15 | Contestação `OPEN` suspende o repasse na proposta técnica; prazos **não definidos** |
+| Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; NFS-e e comprovantes fiscais pendentes |
+| Interface financeira completa do fornecedor | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
+| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine, criação e pagamento existem no app; faltam cancelamento, presença, substituição e correção do pagador | Completar fluxo e testes |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
 | CEP do estabelecimento | 13F | **Fases 1 e 2 implementadas**: endpoint autenticado, BrasilAPI, cache, rate limit, `postal_code`/proveniência no venue e rebaixamento para `manual`. Mapa e pino ajustável pendentes | Implementar mapa/pino no painel |
 | Provedor de geocoding de produção | 13F | BrasilAPI atende a Fase 1; Nominatim/Google e orçamento ainda não decididos |
@@ -60,30 +60,32 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Integração da conclusão com o ciclo da partida | 15 | Hoje é ação operacional do estabelecimento |
 | Testes de UI mobile | 19 | Ainda manuais |
 | LGPD e retenção definitiva | 19 | Revisão jurídica pendente |
+| Ledger de dupla entrada integrado | 14E | Módulo existe, mas não é usado pelos fluxos; P0 |
+| Taxa/preço em duas linhas | 14E | `compute_fee_cents` existe sem chamador; reserva não persiste taxa |
+| CPF e NFS-e | 14E/19A | Placeholders; sem fluxo operacional |
 
-## Ingresso JOGA (ADR 0042)
+## Crédito JOGA, 14E e NFS-e (ADR 0042/0049)
 
-Modelo aprovado como direção de produto e implementado no backend pelas fatias 14D.1 a 14D.6 e 14D.12/14D.13. O PSP do beta é o **Mercado Pago**; o Inter PJ fica para a 1.0.
+O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, mas a ADR 0049 substitui a unidade de conta, o preço e a custódia. A **Fase 14E** é obrigatória antes de 14B/15 e de qualquer dinheiro real. O PSP do protótipo é o **Mercado Pago**; Inter PJ e Pagar.me ficam para o futuro.
 
 | Pendência | Bloqueia | Próximo passo |
 |---|---|---|
 | Parecer fiscal: base de cálculo da comissão, ISS por município, retenção pelo tomador, IBS/CBS na transição | Produção com dinheiro real | Contador e advogado tributário |
-| Parecer jurídico: intermediação, conta segregada, saldo em insolvência, 7 dias do CDC | Contrato e termos de uso | Advogado |
-| `C_c` recalibrado para R$ 0,47 por reserva cancelada (`q` = 75%) | Feito | Validar `q` e `C_c` com dados reais do piloto; a tabela se move ±1 ingresso por faixa |
-| Custódia, Payouts no Brasil e Pix Automático por API em cada PSP | PSP de produção | Comercial dos PSPs |
-| Taxonomia final de atributos e teto de V por faixa | Contrato com a quadra | Produto e comercial |
-| Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real (3,3%/6,7% da receita) e conversão no piloto |
-| Busca por CEP restrita ao passe | Definido | Definir como o usuário free que mudou de cidade ou planeja jogar fora resolve isso (ex.: troca de cidade base com limite) |
-| Reclassificação de faixa com aviso de 30 dias | 14D.1 entregou teto e reajuste | Decorrido: a quadra reajusta e a faixa é recalculada; falta o aviso contratual de 30 dias |
-| Arredondamento de 4x4 | Tabela 2D | Produto |
-| Reajuste de preço e pausa do estabelecimento | Definido na ADR 0042 §9 | Implementação no painel pendente |
-| Orçamento do crédito de estreia | Funil de aquisição | Produto e financeiro |
-| Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak de vitórias persiste |
-| Venda do passe no meio da temporada e pro-rata | 14D.12 | **Implementado como três meses a partir do pagamento**; decidir se haverá restrição de janela |
-| Reembolso de passe e de pacote | 14D.12/14D.13 | Política não definida; hoje só existe reembolso de reserva |
-| Conciliação de `purchase_payments` com o extrato do PSP | 14D.13/14D.16 | **Rotina `scripts/reconcile_purchases.py` implementada**; falta comparação com PSP real |
-| Lotes e validade de ingresso | 14D.16 | **Implementados**: passe mensal, ingresso grátis por temporada, comprados sem validade; falta backfill em ambiente com dados |
-| Recibo e comprovante do passe | 14D.12 | Depende de revisão fiscal |
+| Parecer jurídico: intermediação, escrow, insolvência, 7 dias do CDC | Contrato e termos de uso | Advogado |
+| Ledger de dupla entrada integrado | 14E | Usar `LedgerService` em reserva, compra, passe e repasse |
+| Preço em duas linhas e taxa persistida | 14E | `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` |
+| Migração de lotes para saldo em reais | 14E | Converter pelo preço unitário pago, 1:1, com idempotência |
+| CPF e NFS-e | 14E/19A | Placeholders; definir fluxo e município |
+| Custódia B→C e escrow | 19A | Contratar fornecedor de C |
+| Reembolso parcial e política de passe/pacote | 14E/14B | Schema e regra pendentes |
+| Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real e conversão no piloto |
+| Busca por CEP restrita ao passe | Definido | Definir exceção para mudança de cidade |
+| Reajuste de preço e pausa do fornecedor | ADR 0042 §9 | Implementação no painel pendente |
+| Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak persiste |
+| Venda do passe no meio da temporada e pro-rata | 14D.12 | **Implementado como três meses a partir do pagamento**; decidir restrição de janela |
+| Conciliação de `purchase_payments` com o extrato do PSP | 14D.13/14B | Rotina interna implementada; falta comparação com PSP real |
+| Lotes e validade | 14D.16/14E | Passe mensal e grátis de temporada; comprado sem validade; falta backfill |
+| Recibo e comprovante do passe | 14D.12/19A | Depende de revisão fiscal |
 
 ## Estatísticas e inteligência de rede (ADR 0045)
 
@@ -130,23 +132,24 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 
 ## Reescopo das Fases 11–15 (ADR 0042/0043)
 
-As fases 11–15 foram desenhadas para **reserva paga por participante**. O ingresso mudou três objetos: a cobrança, o reembolso e o recebedor. Nada disso é ajuste de texto — é reescopo de schema e de máquina de estados.
+As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 0042 mudou a cobrança, o reembolso e o recebedor; a ADR 0049 mudou a unidade de conta, o preço e a custódia. A 14D é protótipo do crédito; a **14E** é o reescopo obrigatório.
 
 | Fase | Divergência | O que fazer | Estado |
 |---|---|---|---|
-| **12A** | `venue_spaces` tem preço livre; a tabela 2D exige faixa com atributo e teto | Criar `pricing_bands` versionada, vincular cada quadra a uma faixa e implementar reajuste "sem reserva afetada" | **Implementado (14D.1)**: faixa resolvida por teto, `is_covered` e reajuste que vale só para reservas novas |
-| **12B** | Escopo era KYC de recebedor de marketplace | Reescrever para cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato com teto | **Implementado (14D.2)**: CNPJ com dígito verificador, chave Pix tipada, chave mascarada e `payout_ready`. **Portão aplicado na criação da reserva (13C)**; falta KYC contratual |
-| **13** | T3 = bloqueio **e pagamento** | T3 passa a ser janela de confirmação; no fluxo de ingresso não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por ingresso |
-| **14A** | Uma cobrança Pix **por participante** | Cobrança por compra de pacote ou passe; `purchase` + `ticket_ledger` | **Implementado (14D.13)**: `purchase_payments` com `kind` + `reference_id` e webhook idempotente |
-| **14C** | Reembolso **integral em dinheiro** | Devolução em ingresso; dinheiro só nos 7 dias do CDC | **Implementado (14D.6)**: devolução em ingresso; reembolso de passe/pacote ainda pendente |
-| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor**; "recebíveis" viram "repasse a receber" | Parcialmente implementado como proposta local (15A/15B); modelo de repasse ao fornecedor ainda pendente |
-| **10** | Threat model cita adaptadores de PSP antigos | Atualizar para Inter e para o fluxo de ingresso | Pendente |
+| **12A** | A faixa/teto era tratada como preço | Preço do espaço + taxa em reais; faixa/tabela apenas como exibição/conversão | **Parcial (14D.1)**: faixa implementada; reclassificação para exibição na 14E |
+| **12B** | Escopo era KYC de recebedor de marketplace | Cadastro de fornecedor: CNPJ, chave Pix de titularidade e contrato | **Técnico implementado (14D.2)**: CNPJ, chave tipada e `payout_ready`; falta KYC contratual/escrow |
+| **13** | T3 = bloqueio **e pagamento** | T3 é janela de confirmação; no crédito não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por crédito |
+| **14A** | Uma cobrança Pix **por participante** | Compra de crédito/passe; `purchase_payments` | **Implementado (14D.13)** como protótipo; migrar para ledger em reais na 14E |
+| **14C** | Reembolso **integral em dinheiro** | Devolução em crédito; dinheiro só nos 7 dias do CDC | **Parcial (14D.6)**: devolução em crédito; reembolso de passe/pacote pendente |
+| **14E** | Unidade e preço ainda em tickets/2D; ledger/fee desconectados | Saldo em reais, duas linhas, ledger de dupla entrada, CPF/NFS-e | **Não iniciada** |
+| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Proposta local (15A/15B); refazer após 14E/14B |
+| **10** | Threat model cita PSP/reservas antigos | Atualizar para MP, custódia B/C, crédito e NFS-e | **Atualizado em 16/11** |
 
 **Fases 0–10 não mudam.** Identidade, perfil, matchmaking, partidas, resultados, MMR e tempo real são indiferentes ao meio de pagamento.
 
-**Fase nova:** `14D — Ingresso, carteira e temporada` foi criada no `PLANS.md`. O ingresso, a temporada e o catálogo não tinham fase; agora têm escopo, dependências e critérios de aceite.
+**Fase nova:** `14E — Realinhamento da ADR 0049` foi criada no `PLANS.md`; `14D` permanece como protótipo do crédito, e `14B` passa a ter escopo formal de hardening do Mercado Pago.
 
-**Risco de execução:** a 13 e a 14A estão implementadas com testes. Mexer no T3 e no modelo de cobrança derruba cobertura existente. Tratar como reescopo de fase, com arquivo próprio em `harness/build/`, não como patch.
+**Risco de execução:** a 13 e a 14A estão implementadas com testes. Mexer no T3, no crédito e no modelo de cobrança derruba cobertura existente. Tratar como reescopo de fase, com arquivo próprio em `harness/build/`, não como patch.
 
 ## Decisões financeiras não aprovadas (Fase 15)
 
@@ -180,21 +183,44 @@ A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2
 - O webhook real depende de URL pública/túnel e segredo configurado no painel.
 - O Mercado Pago (Orders API) é o PSP do protótipo com jogadores reais; Inter/Pagar.me ficam para o futuro (ADR 0048).
 - O e-mail do pagador é obrigatório na Orders API; MP-04 adiciona e-mail ao usuário e remove o e-mail global fixo.
-- O repasse ao estabelecimento é um lançamento simulado no ledger; não há transferência real.
+- O repasse ao fornecedor é um lançamento simulado no ledger; não há transferência real.
 - O worker de reservas reembolsa com o adaptador configurado; se o PSP real falhar, a operação precisa de retry e conciliação.
-- A interface financeira ainda não tem comprovantes, exportação nem contestação de MED/chargeback.
-- `JOGA_RELEASE_DELAY_HOURS=2` é a regra da ADR 0040 (repasse em `starts_at + 2h`); a janela de contestação após liberação continua pendente.
+- A interface financeira ainda não tem comprovantes, NFS-e, exportação nem contestação de MED/chargeback.
+- `JOGA_RELEASE_DELAY_HOURS=2` é a regra da ADR 0040 (repasse em `starts_at + 2h`); a janela de contestação após o repasse continua pendente.
 - A decisão de contestação financeira por CLI com `JOGA_REVIEW_OPERATORS` é **provisória para teste**; não é o modelo aprovado de moderação financeira.
 - Marcar divergência de ledger como `FAILED` é uma salvaguarda técnica; o procedimento oficial de divergência não está definido.
 - A implementação da ADR 0038 foi revertida. As fatias 1–6 da ADR 0039 têm fila, chamada automática, T4/T5, cancelamento individual, expiração, exclusão de reembolso, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação. O Trust Factor interno está na ADR 0041; falta a UI de presença/suporte.
 - O valor não reembolsado de desistência pós-confirmação ainda não tem regra de repasse/liberação à quadra; não liberar automaticamente sem decisão. A ADR 0039 determina que ele não pode virar receita silenciosa do JOGA.
 - `cancellation_policy` voltou a `full_refund_until_confirmed`/`policy_version="v1"` após a reversão; a ADR 0039 exige novo rótulo/estrutura quando o fluxo completo existir. A oferta e os termos ainda precisam refletir a política consolidada.
 - T6–T9 (presença/check-in), a atribuição/pagamento do substituto e a recomendação de formação estão implementados no backend; falta a UI mobile.
-- O repasse à quadra de reserva entregue está definido na ADR 0040 (no horário da partida); a conciliação/repasse real com PSP continua pendente.
+- O repasse ao fornecedor está definido na ADR 0040 (`starts_at + 2h`); a conciliação/repasse real com PSP continua pendente.
+
+## Achados da auditoria de 16/11/2026
+
+Itens descobertos na auditoria integral e ainda não implementados. São bloqueantes para 14E/14B/15 e para o piloto.
+
+| Item | Severidade | Evidência | Ação |
+|---|---|---|---|
+| Ledger de dupla entrada não integrado | P0 | `LedgerService` só é usado em testes; fluxos usam ledgers legados | 14E |
+| Taxa calculada e não aplicada | P0 | `compute_fee_cents` sem chamador; reserva divide `price_cents` | 14E |
+| T3 expirado não devolve ingressos | P0 | `bookings/service.py:1065-1073` | Correção P0 |
+| Pix pago + quitação por ingressos | P0 | `bookings/service.py:670-695` | Correção P0 |
+| Reembolso não reverte repasse | P0 | `payments/service.py:422-453`; `REVERSED` sem uso | Correção P0 |
+| Reembolso parcial impossível | P1 | unique por pagamento e valor integral | 14E/14B |
+| Reembolso de compra não revoga crédito | P1 | `purchase.apply_status` ignora `REFUNDED` | Correção P0/P1 |
+| Compra de pacote sem idempotência de requisição | P1 | `api/v1/tickets.py:194-219` | Correção P1 |
+| `EXPIRED` viola constraint de participante | P1 | `bookings/service.py:652-653` vs. model | Correção P1 |
+| Migração `a6b7` e `env.py` com risco | P0 | nomes de constraint divergentes; imports ausentes | S0 |
+| CI vermelha e teste com data fixa | P0 | 524/2/29; `ruff format` falha; `test_trust` | S0 |
+| Payer da reserva errado no app | P1 | `venues.tsx:2075-2078` | Correção mobile |
+| Retry de checkout no-op | P1 | `wallet.tsx:638,699-704` | Correção mobile |
+| Documentação normativa desatualizada | P0 | técnica/DATA_MODEL/README/GOALS/RUNBOOK | Revisão 16/11 |
 
 ## Regra de avanço
 
-- Não iniciar 14B sem PSP/contrato e autorização.
-- Fase 15 pode avançar sobre o ledger simulado, sem prometer repasse real.
+- Não iniciar 14B, 15 ou 19 antes da 14E e dos pareceres da ADR 0049.
+- Não iniciar 18 antes da 15 e da 19A.
+- A 14E pode avançar sobre o ledger simulado, sem prometer dinheiro real.
 - Fases 16–18 exigem autorização específica e registro em `PLANS.md`.
-- Qualquer mudança de dinheiro real, custódia, KYC ou retenção exige ADR e revisão jurídica.
+- Qualquer mudança de dinheiro real, custódia, KYC, NFS-e ou retenção exige ADR e revisão jurídica.
+- O próximo passo autorizado é a estabilização do repositório, seguida da 14E.

@@ -44,12 +44,11 @@ profissional antes de escalar o JOGA.
 
 Proposta atual para discussão (não aprovada):
 
-- **Pacote de ingressos:** reembolso em dinheiro somente dos ingressos pagos e
-  não utilizados; proporcional ao saldo restante.
-- **Passe:** sem reembolso após a primeira entrega/ativação.
-- **No-show, cut-off e desistência:** sem reembolso.
-- **Ingressos gratuitos/promocionais:** não geram reembolso em dinheiro.
-- **Ingressos expirados:** não reembolsáveis.
+- **Crédito comprado:** não expira. Nos 7 dias do CDC, devolução em dinheiro pelo mesmo meio; depois, devolução em crédito enquanto a conta estiver ativa e em dinheiro no encerramento, conforme ADR 0049 C8/C13.
+- **Passe:** assinatura de franquia mensal; a franquia não acumula e não se converte em saldo. Política de reembolso após a primeira entrega ainda não aprovada.
+- **No-show, cut-off e desistência:** regra pendente na ADR 0039; não tratar como confisco automático.
+- **Tickets gratuitos/promocionais:** não geram reembolso em dinheiro; expiram com a temporada.
+- **Crédito comprado expirado:** não existe; a expiração de crédito comprado é proibida pela ADR 0049.
 
 Perguntas para o jurídico:
 
@@ -87,12 +86,15 @@ com titularidade confirmada e comprovante.
 
 ## 5. LGPD e dados
 
-- Base legal para telefone, e-mail, localização, presença e histórico.
+- Base legal para telefone, e-mail, localização, presença, CPF e histórico.
 - Retenção definitiva de mensagens, contexto de moderação, resultados e
-  evidências (hoje há redação provisória em 180 dias).
+  evidências. O ADR 0024 fixa política provisória; o ADR 0027 usa 730 dias para
+  mensagens. Reconciliar antes da LGPD.
+- CPF: base legal, cifra, acesso restrito e prazo (ADR 0049 §3.8/§9.3).
+- NFS-e: guarda do documento, município e compartilhamento com o tomador.
 - Direito de exclusão versus obrigação de guardar dados financeiros/fiscais.
 - Check-in por localização: minimização, finalidade e prazo.
-- Compartilhamento com PSP, SMS, push e storage.
+- Compartilhamento com PSP, SMS, push, storage e escrow.
 - Política de incidentes e comunicação de vazamento.
 - Registro de operações de tratamento e encarregado (DPO).
 - Consentimento de menores e idade mínima.
