@@ -1178,3 +1178,24 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** seed idempotente e compra de credito lancada contra `player_credit`.
 - **Migracao:** ciclo downgrade/upgrade e `alembic check` validados no PostgreSQL.
 - **Proximo (14E.1):** sombra de escrita no ledger para compra/consumo/estorno, com reconciliador por usuario e sem trocar a leitura.
+
+### 2026-11-16 - S0: reconhecimento e estabilizacao verificada
+
+- **Branch:** `feat/17c-painel-moderacao`, HEAD `37e3871`, 10 commits a frente de `main` e nenhum commit de `main` fora da branch.
+- **Arvore suja:** apenas `mobile/`, `web/` e `telas/` de outra sessao. Nada de backend pendente. Os arquivos foram preservados e **nao** commitados nesta etapa.
+- **Portoes:** `pytest` **538 passed, 30 skipped**; `ruff check`, `ruff format --check` e `mypy app` limpos. Os P0 de CI (`test_trust` com data fixa, `ruff format` em fiscal, `test_observability`) ja estavam fechados pelos commits `99c5225`, `a8a258e` e `ed61c1e`.
+- **Migracoes:** head unico `l6c7d8e9f0a1`; `alembic upgrade head` -> `downgrade base` -> `upgrade head` executados no PostgreSQL local (`127.0.0.1:5434`) e `alembic check` sem diff.
+- **`migrations/env.py`:** importa `fiscal`, `legal` e `ledger`; o commit `99c5225` corrigiu a lacuna.
+- **`a6b7283c4051`:** o `drop_constraint("status_valid")` resolve para `ck_booking_payments_status_valid` pela convencao de nomes do Alembic; o ciclo completo (inclusive downgrade) passou. Nao foi necessaria migracao corretiva.
+- **P0 financeiros:** T3 com devolucao, Pix + ingressos, `REFUNDED` prematuro, reversao de repasse, `EXPIRED` na constraint, idempotencia de compra e revogacao de credito estao implementados por `ed61c1e`, com testes proprios.
+- **Pendente para as proximas etapas:** ledger ainda sem chamador, `compute_fee_cents` sem chamador e preco em duas linhas ainda nao persistido.
+
+### 2026-11-16 - 17C.1: PATCH de expediente do estabelecimento
+
+- **API:** `PATCH /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours/{business_hour_id}` aceita `weekday`, `opens_at` e `closes_at` (parcial), mantendo os demais campos.
+- **Validacao:** dia 1-7, abertura antes do fechamento, unicidade exata e ausencia de sobreposicao no mesmo dia. Conflito responde `409 business_hour_conflict`; entrada invalida responde `422 invalid_input`.
+- **Autorizacao:** mesma capacidade do `POST`/`DELETE` (`venues:manage`), escopada pela organizacao; membro de outra organizacao recebe `404`.
+- **Auditoria:** `venue_business_hour.updated` com `before` e `after`.
+- **T2:** confirmado no codigo que `booking_timers`/`response_due_at` sao gravados apenas em `_start_t2`; editar expediente nao recalcula prazos ja gravados.
+- **Testes:** 5 novos testes (atualizacao feliz, duplicidade, sobreposicao/encostar, janela invalida e autorizacao negativa) em `tests/test_business_hours.py`; suite completa **543 passed, 30 skipped**.
+- **Contrato:** `docs/CONTRATO_RESERVAS_APP.md` e `docs/JOGA_DOCUMENTACAO_TECNICA.md` atualizados.

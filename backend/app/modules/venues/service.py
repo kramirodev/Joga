@@ -574,6 +574,12 @@ class VenueService:
         )
         if not 1 <= weekday <= 7 or opens_at >= closes_at:
             raise VenueInvalid
+        self._ensure_business_hour_slot(
+            venue.id,
+            weekday=weekday,
+            opens_at=opens_at,
+            closes_at=closes_at,
+        )
         row = VenueBusinessHour(
             organization_venue_id=venue.id,
             weekday=weekday,
@@ -598,6 +604,113 @@ class VenueService:
             },
         )
         return row
+
+    def update_business_hour(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        venue_id: uuid.UUID,
+        business_hour_id: uuid.UUID,
+        *,
+        weekday: int | None = None,
+        opens_at: time | None = None,
+        closes_at: time | None = None,
+    ) -> VenueBusinessHour:
+        """Edita o expediente sem apagar e recriar a janela.
+
+        A edição é validada como no ``POST``: dia entre 1 e 7, abertura antes
+        do fechamento, unicidade exata e ausência de sobreposição no mesmo dia.
+        Prazos T2 já gravados em ``booking_timers`` não são recalculados.
+        """
+
+        venue, _ = self._venue_access(
+            actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
+        )
+        row = self.session.scalar(
+            select(VenueBusinessHour)
+            .where(
+                VenueBusinessHour.id == business_hour_id,
+                VenueBusinessHour.organization_venue_id == venue.id,
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise VenueInvalid
+
+        new_weekday = row.weekday if weekday is None else weekday
+        new_opens_at = row.opens_at if opens_at is None else opens_at
+        new_closes_at = row.closes_at if closes_at is None else closes_at
+        if not 1 <= new_weekday <= 7 or new_opens_at >= new_closes_at:
+            raise VenueInvalid
+        if (
+            new_weekday == row.weekday
+            and new_opens_at == row.opens_at
+            and new_closes_at == row.closes_at
+        ):
+            return row
+
+        before = {
+            "weekday": row.weekday,
+            "opens_at": row.opens_at.isoformat(),
+            "closes_at": row.closes_at.isoformat(),
+        }
+        self._ensure_business_hour_slot(
+            venue.id,
+            weekday=new_weekday,
+            opens_at=new_opens_at,
+            closes_at=new_closes_at,
+            ignore_id=row.id,
+        )
+        row.weekday = new_weekday
+        row.opens_at = new_opens_at
+        row.closes_at = new_closes_at
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            raise VenueConflict("business_hour_conflict") from exc
+        self._audit(
+            actor_user_id,
+            organization_id,
+            "venue_business_hour.updated",
+            "venue_business_hour",
+            row.id,
+            {
+                "before": before,
+                "after": {
+                    "weekday": row.weekday,
+                    "opens_at": row.opens_at.isoformat(),
+                    "closes_at": row.closes_at.isoformat(),
+                },
+            },
+        )
+        self.session.flush()
+        return row
+
+    def _ensure_business_hour_slot(
+        self,
+        venue_id: uuid.UUID,
+        *,
+        weekday: int,
+        opens_at: time,
+        closes_at: time,
+        ignore_id: uuid.UUID | None = None,
+    ) -> None:
+        """Rejeita sobreposição de janelas no mesmo dia da semana."""
+
+        statement = (
+            select(VenueBusinessHour)
+            .where(
+                VenueBusinessHour.organization_venue_id == venue_id,
+                VenueBusinessHour.weekday == weekday,
+                VenueBusinessHour.opens_at < closes_at,
+                VenueBusinessHour.closes_at > opens_at,
+            )
+            .with_for_update()
+        )
+        if ignore_id is not None:
+            statement = statement.where(VenueBusinessHour.id != ignore_id)
+        if self.session.scalar(statement) is not None:
+            raise VenueConflict("business_hour_conflict")
 
     def delete_business_hour(
         self,

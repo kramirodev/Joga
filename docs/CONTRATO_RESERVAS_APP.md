@@ -440,6 +440,33 @@ Regras:
 - `postal_code` ou proveniência inválidos respondem `422 invalid_input`; precision fora do enum responde `422 validation_error` com `fields`.
 - `GET`, `POST` e `PATCH` devolvem `postal_code`, `geocoding_source`, `geocoding_precision` e `geocoded_at` (além dos campos anteriores).
 
+### Expediente do estabelecimento (Fase 13E)
+
+O painel lê e edita o expediente sem apagar e recriar a janela:
+
+```http
+GET   /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours
+POST  /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours
+PATCH /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours/{business_hour_id}
+DELETE /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours/{business_hour_id}
+```
+
+`POST` recebe `weekday`, `opens_at` e `closes_at`; `PATCH` aceita qualquer
+subconjunto desses três campos e mantém os demais. Regras válidas nos dois:
+
+- `weekday` entre 1 (segunda) e 7 (domingo); `opens_at < closes_at`.
+- Não pode existir outra janela do mesmo dia com o mesmo `opens_at` nem com
+  sobreposição de horário. A violação responde `409 business_hour_conflict`.
+- Valor inválido responde `422 invalid_input`.
+- A escrita exige a capacidade `venues:manage` escopada pela organização. Membro
+  de outra organização recebe `404`.
+- `PATCH` grava auditoria `venue_business_hour.updated` com `before` e `after`.
+
+**Prazos T2 não são recalculados.** `booking_timers` e `response_due_at` são
+gravados quando o T2 começa, a partir do expediente vigente naquele instante.
+Editar o expediente depois não altera reservas já em andamento; a mudança vale
+para os próximos T2.
+
 ## E-mail do pagador e cobrança Pix (Bloco A)
 
 O Mercado Pago exige e-mail do pagador. O app consulta e atualiza o e-mail da conta:

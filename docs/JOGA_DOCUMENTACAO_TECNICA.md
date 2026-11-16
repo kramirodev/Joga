@@ -803,6 +803,14 @@ A agenda deve considerar:
 - Reservas externas e bloqueios manuais.
 - Preço por faixa de horário, quando existir.
 
+O expediente semanal (`venue_business_hours`) pode ser lido, criado, editado e
+removido por endpoint próprio. A edição (`PATCH .../business-hours/{id}`) aceita
+`weekday`, `opens_at` e `closes_at`, rejeita sobreposição no mesmo dia com
+`409 business_hour_conflict` e grava auditoria com antes/depois. **Prazos T2 já
+gravados em `booking_timers` não são recalculados** por edição de expediente: o
+prazo é congelado quando o T2 começa e a alteração vale apenas para reservas
+futuras.
+
 ### 13.3 Fornecedor e repasse
 
 O fornecedor que recebe pagamento precisa de cadastro no JOGA, não de recebedor no PSP:
