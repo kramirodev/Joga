@@ -111,6 +111,7 @@ class ReceivableView(BaseModel):
 
 class ReceivableListResponse(BaseModel):
     receivables: list[ReceivableView]
+    total: int
     limit: int
     offset: int
 
@@ -129,6 +130,7 @@ class StatementEntryView(BaseModel):
 
 class StatementListResponse(BaseModel):
     entries: list[StatementEntryView]
+    total: int
     limit: int
     offset: int
 
@@ -158,6 +160,7 @@ class DisputeView(BaseModel):
 
 class DisputeListResponse(BaseModel):
     disputes: list[DisputeView]
+    total: int
     limit: int
     offset: int
 
@@ -440,7 +443,8 @@ def list_receivables(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReceivableListResponse:
     _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
-    rows = FinancialService(session).list_receivables(
+    financial = FinancialService(session)
+    rows = financial.list_receivables(
         organization_id,
         status=status_filter,
         limit=limit,
@@ -462,6 +466,7 @@ def list_receivables(
             )
             for release, booking, dispute_id in rows
         ],
+        total=financial.count_receivables(organization_id, status=status_filter),
         limit=limit,
         offset=offset,
     )
@@ -479,7 +484,8 @@ def financial_statement(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StatementListResponse:
     _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
-    entries = FinancialService(session).statement(organization_id, limit=limit, offset=offset)
+    financial = FinancialService(session)
+    entries = financial.statement(organization_id, limit=limit, offset=offset)
     return StatementListResponse(
         entries=[
             StatementEntryView(
@@ -495,6 +501,7 @@ def financial_statement(
             )
             for item in entries
         ],
+        total=financial.count_statement(organization_id),
         limit=limit,
         offset=offset,
     )
@@ -516,7 +523,8 @@ def list_disputes(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DisputeListResponse:
     _require_org_capability(session, current.user_id, organization_id, Capability.FINANCIAL_READ)
-    disputes = FinancialService(session).list_disputes(
+    financial = FinancialService(session)
+    disputes = financial.list_disputes(
         organization_id,
         status=status_filter,
         limit=limit,
@@ -524,6 +532,7 @@ def list_disputes(
     )
     return DisputeListResponse(
         disputes=[_dispute_view(item) for item in disputes],
+        total=financial.count_disputes(organization_id, status=status_filter),
         limit=limit,
         offset=offset,
     )

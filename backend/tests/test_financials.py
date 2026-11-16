@@ -82,6 +82,7 @@ def test_completion_schedules_release_without_paying_immediately(
     )
     assert receivables.status_code == 200, receivables.text
     body = receivables.json()["receivables"]
+    assert receivables.json()["total"] == 1
     assert len(body) == 1
     assert body[0]["status"] == "PENDING"
     assert body[0]["amount_cents"] == 40_000
@@ -95,6 +96,7 @@ def test_completion_schedules_release_without_paying_immediately(
     )
     assert filtered.status_code == 200, filtered.text
     assert filtered.json()["receivables"] == []
+    assert filtered.json()["total"] == 0
 
 
 def test_release_is_idempotent_and_only_after_eligibility(
@@ -220,6 +222,7 @@ def test_open_dispute_blocks_release_until_decision(
         headers=bearer(context["tokens"][0]),
     )
     assert listed.status_code == 200
+    assert listed.json()["total"] == 1
     assert listed.json()["disputes"][0]["status"] == "ACCEPTED"
 
 
@@ -286,6 +289,7 @@ def test_statement_and_reconciliation_detect_divergence(
     )
     assert statement.status_code == 200, statement.text
     types = [entry["entry_type"] for entry in statement.json()["entries"]]
+    assert statement.json()["total"] >= len(types)
     assert "CHARGE_CREATED" in types
     assert "PAYMENT_CONFIRMED" in types
     assert "VENUE_RELEASE" in types

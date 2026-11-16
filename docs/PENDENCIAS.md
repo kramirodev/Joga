@@ -1,6 +1,6 @@
 # Pendências abertas do JOGA
 
-**Atualizado em:** 14 de novembro de 2026
+**Atualizado em:** 15 de novembro de 2026
 
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
@@ -11,8 +11,8 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | PSP de produção (Inter PJ) | 14B | Sem Pix real, estorno, repasse e conciliação | Contratar conta PJ, validar taxa de 0,90% e perfil transacional |
 | KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
-| Push real | 10/19 | Notificações de prazo e resultado | **Dispatcher por webhook implementado (13E)**; configurar APNs/FCM e worker real |
-| Central de notificações | 9D | Backend implementado; falta consumir no app e no painel | Ligar telas e testar marcação de leitura |
+| Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
+| Central de notificações | 9D/17C | Backend pronto: canal player no app e canal moderation no painel | Consumir /moderation/notifications no painel e testar leitura |
 | Mapas | 10/19 | Camada visual de descoberta | Pode esperar; usar lista/distância no início |
 | CNPJ/MEI e revisão jurídica | 14B/19 | Dinheiro real e contratos | Definir entidade, contador e parecer jurídico |
 | Storage de fotos de produção | 12A/19 | Fotos privadas e retenção | Escolher storage, criptografia e backup |
@@ -21,7 +21,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 
 | Pendência | Fase | Estado |
 |---|---|---|
-| T2 em horário comercial | 13E/14B | **Implementado localmente**: expediente semanal, fechamentos e teto em tempo corrido; falta validar feriados reais com os primeiros estabelecimentos |
+| T2 em horário comercial | 14B | Hoje usa tempo corrido; falta calendário, feriados e dias fechados |
 | T2 máximo de 60 min | 13B/14B | **Implementado** em 2026-11-09 (ADR 0039) |
 | T3 configurável por estabelecimento | 13B/14B | Hoje usa configuração global |
 | Política consolidada de cancelamento, substituição e ausência | 14B/15 | **Definida na ADR 0039**, que supera a ADR 0038; fatia 1 implementada, demais fatias pendentes |
@@ -41,8 +41,12 @@ Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma
 | Janela de disputa antes da liberação | 15 | Contestação `OPEN` suspende a liberação na proposta técnica; prazos **não definidos** |
 | Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; recibos e comprovantes fiscais pendentes |
 | Interface financeira completa do estabelecimento | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
-| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine, criação explícita, `POST /bookings/from-lobby` e notificações prontos no backend; app ainda precisa ligar as telas | Implementar consumo no mobile |
+| Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine e criação de reserva prontas no backend; app ainda precisa ligar as telas a `discovery` e `POST /bookings` | Implementar consumo no mobile |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
+| CEP do estabelecimento | 13F | **Fases 1 e 2 implementadas**: endpoint autenticado, BrasilAPI, cache, rate limit, `postal_code`/proveniência no venue e rebaixamento para `manual`. Mapa e pino ajustável pendentes | Implementar mapa/pino no painel |
+| Provedor de geocoding de produção | 13F | BrasilAPI atende a Fase 1; Nominatim/Google e orçamento ainda não decididos |
+| Precisão da coordenada da BrasilAPI | 13F | Coordenadas de bairro são rotuladas como `street`; CEPs vizinhos podem receber o mesmo ponto | Avaliar `approximate` ou provedor por endereço |
+| Fallback de CEP/geocoding | 13F | BrasilAPI agrega Correios/ViaCEP/WideNet e devolve 404/504 quando todos falham; não há segundo provedor | Decidir ViaCEP (endereço) e Nominatim (coordenada) |
 | Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |
 | Catálogo definitivo de equipamento | 13/17 | Pendente; catálogo inicial (bola/rede) definido na ADR 0030 |
@@ -105,6 +109,21 @@ Clãs e troféus deixam de ser fase posterior e passam a integrar o MVP, como pr
 | Data-alvo do primeiro evento de marketing | Critério de saída da Fase 16 | Produto |
 | Catálogo cosmético por temporada (livre, XP, passe) e balanceamento de XP | Customização | Modelo técnico em `docs/ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`; falta arte e calibração |
 | UI mobile de clã, chat e troféus | Fase 16 | Implementar telas e testes de UI |
+
+## Moderação (Fase 17A)
+
+| Pendência | Bloqueia | Próximo passo |
+|---|---|---|
+| Denúncia de perfil no lobby | 17A | **Implementada**: categorias, até 5 mensagens do alvo, limite diário e triagem determinística |
+| Revisão humana | 17A/17C | **Implementada por CLI e painel web separado**; operadores em `moderation_operators` e bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS` |
+| Medidas reversíveis | 17A/17B | **Implementado**: aviso, restrição ranqueada e suspensão temporária de 1–30 dias; suspensão permanente fora da fatia |
+| Recurso | 17A | **Implementado**: alvo recorre e outro operador decide; recurso aceito revoga a medida |
+| IA de moderação | 17C | **Não usar IA paga**; avaliar modelo local/open-source após dataset rotulado |
+| Denúncia falsa e limite por jogador | 17B | **Implementado**: 3 improcedentes em 30 dias geram cooldown de 7 dias |
+| Suspensão temporária | 17B | **Implementada**: bloqueia autenticação e reativa por script ao fim do prazo |
+| Suspensão permanente | 17C | Pendente de política, dupla revisão e revisão jurídica |
+| Retenção/LGPD de contexto e evidências | 17B/19 | **Redação provisória em 180 dias**; revisão jurídica final pendente |
+| Painel interno de moderação | 17C | **Implementado** em `/moderation`, separado do JOGA y GESTÃO; central interna pronta no backend (`/moderation/notifications`) | Consumir a central interna no painel |
 
 ## Reescopo das Fases 11–15 (ADR 0042/0043)
 

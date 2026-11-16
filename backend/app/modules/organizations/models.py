@@ -127,6 +127,11 @@ class OrganizationVenue(Base):
             "longitude IS NULL OR longitude BETWEEN -180 AND 180",
             name="longitude_valid",
         ),
+        CheckConstraint(
+            "geocoding_precision IS NULL OR geocoding_precision IN "
+            "('street', 'venue', 'approximate', 'manual')",
+            name="geocoding_precision_valid",
+        ),
         Index("ix_organization_venues_organization_id", "organization_id"),
     )
 
@@ -143,6 +148,10 @@ class OrganizationVenue(Base):
     address_line: Mapped[str | None] = mapped_column(String(200), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    geocoding_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    geocoding_precision: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    geocoded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     timezone: Mapped[str] = mapped_column(
         String(64),
         nullable=False,

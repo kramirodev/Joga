@@ -10,6 +10,11 @@ import type {
   FinancialStatementListResponse,
   Member,
   MemberListResponse,
+  ModerationAppeal,
+  ModerationOperator,
+  ModerationQueue,
+  ModerationReport,
+  ModeratorMe,
   Organization,
   OrganizationFinancialSummary,
   OrganizationListResponse,
@@ -666,10 +671,7 @@ export const api = {
     );
   },
 
-  listBusinessHours(
-    organizationId: string,
-    venueId: string,
-  ): Promise<BusinessHourListResponse> {
+  listBusinessHours(organizationId: string, venueId: string): Promise<BusinessHourListResponse> {
     return request<BusinessHourListResponse>(
       `${venueBase(organizationId, venueId)}/business-hours`,
     );
@@ -680,13 +682,10 @@ export const api = {
     venueId: string,
     payload: { weekday: number; opens_at: string; closes_at: string },
   ): Promise<BusinessHour> {
-    return request<BusinessHour>(
-      `${venueBase(organizationId, venueId)}/business-hours`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-    );
+    return request<BusinessHour>(`${venueBase(organizationId, venueId)}/business-hours`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   deleteBusinessHour(
@@ -695,17 +694,13 @@ export const api = {
     businessHourId: string,
   ): Promise<void> {
     return request<void>(
-      `${venueBase(organizationId, venueId)}/business-hours/${encodeURIComponent(
-        businessHourId,
-      )}`,
+      `${venueBase(organizationId, venueId)}/business-hours/${encodeURIComponent(businessHourId)}`,
       { method: "DELETE" },
     );
   },
 
   listClosures(organizationId: string, venueId: string): Promise<VenueClosureListResponse> {
-    return request<VenueClosureListResponse>(
-      `${venueBase(organizationId, venueId)}/closures`,
-    );
+    return request<VenueClosureListResponse>(`${venueBase(organizationId, venueId)}/closures`);
   },
 
   createClosure(
@@ -719,11 +714,7 @@ export const api = {
     });
   },
 
-  deleteClosure(
-    organizationId: string,
-    venueId: string,
-    closureId: string,
-  ): Promise<void> {
+  deleteClosure(organizationId: string, venueId: string, closureId: string): Promise<void> {
     return request<void>(
       `${venueBase(organizationId, venueId)}/closures/${encodeURIComponent(closureId)}`,
       { method: "DELETE" },
@@ -780,5 +771,69 @@ export const api = {
       await parseResponse<unknown>(response);
     }
     return response.blob();
+  },
+
+  getModeratorMe(): Promise<ModeratorMe> {
+    return request<ModeratorMe>("/moderation/me");
+  },
+
+  getModerationQueue(statusFilter = "OPEN"): Promise<ModerationQueue> {
+    return request<ModerationQueue>(
+      `/moderation/queue?status_filter=${encodeURIComponent(statusFilter)}`,
+    );
+  },
+
+  getModerationReport(reportId: string): Promise<ModerationReport> {
+    return request<ModerationReport>(`/moderation/reports/${encodeURIComponent(reportId)}`);
+  },
+
+  decideModerationReport(
+    reportId: string,
+    payload: { decision: string; reason: string; days?: number },
+  ): Promise<ModerationReport> {
+    return request<ModerationReport>(
+      `/moderation/reports/${encodeURIComponent(reportId)}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  listModerationAppeals(): Promise<ModerationAppeal[]> {
+    return request<ModerationAppeal[]>("/moderation/appeals?status_filter=OPEN");
+  },
+
+  decideModerationAppeal(
+    appealId: string,
+    payload: { decision: "ACCEPTED" | "REJECTED"; reason: string },
+  ): Promise<ModerationAppeal> {
+    return request<ModerationAppeal>(
+      `/moderation/appeals/${encodeURIComponent(appealId)}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  listModerationOperators(): Promise<ModerationOperator[]> {
+    return request<ModerationOperator[]>("/moderation/operators");
+  },
+
+  upsertModerationOperator(
+    userId: string,
+    role: "ADMIN" | "MODERATOR",
+  ): Promise<ModerationOperator> {
+    return request<ModerationOperator>("/moderation/operators", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, role }),
+    });
+  },
+
+  removeModerationOperator(userId: string): Promise<void> {
+    return request<void>(`/moderation/operators/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    });
   },
 };

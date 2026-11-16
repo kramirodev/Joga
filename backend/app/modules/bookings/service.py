@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -115,6 +115,15 @@ class BookingBundle:
     band_code: str | None = None
     band_label: str | None = None
     tickets_per_seat: int | None = None
+    timezone: str | None = None
+
+
+@dataclass(frozen=True)
+class BookingPage:
+    """Página de reservas com o total anterior à paginação."""
+
+    bundles: list[BookingBundle]
+    total: int
 
 
 class BookingService:
@@ -1214,31 +1223,80 @@ class BookingService:
             return False
         return True
 
-    def list_for_user(self, actor_user_id: uuid.UUID) -> list[BookingBundle]:
+    def list_for_user(
+        self,
+        actor_user_id: uuid.UUID,
+        *,
+        status: str | None = None,
+        starts_from: datetime | None = None,
+        starts_to: datetime | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> BookingPage:
+        conditions = [BookingParticipant.user_id == actor_user_id]
+        if status is not None:
+            conditions.append(Booking.status == status)
+        if starts_from is not None:
+            conditions.append(Booking.starts_at >= starts_from)
+        if starts_to is not None:
+            conditions.append(Booking.starts_at < starts_to)
+        base = (
+            select(Booking)
+            .join(BookingParticipant, BookingParticipant.booking_id == Booking.id)
+            .where(*conditions)
+        )
+        total = int(
+            self.session.scalar(
+                select(func.count(func.distinct(Booking.id)))
+                .select_from(Booking)
+                .join(BookingParticipant, BookingParticipant.booking_id == Booking.id)
+                .where(*conditions)
+            )
+            or 0
+        )
         rows = (
             self.session.scalars(
-                select(Booking)
-                .join(BookingParticipant, BookingParticipant.booking_id == Booking.id)
-                .where(BookingParticipant.user_id == actor_user_id)
-                .order_by(Booking.created_at.desc(), Booking.id.desc())
+                base.order_by(Booking.created_at.desc(), Booking.id.desc())
+                .offset(offset)
+                .limit(limit)
             )
             .unique()
             .all()
         )
-        return [self._bundle(row) for row in rows]
+        return BookingPage(bundles=[self._bundle(row) for row in rows], total=total)
 
     def list_for_organization(
-        self, actor_user_id: uuid.UUID, organization_id: uuid.UUID
-    ) -> list[BookingBundle]:
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        *,
+        status: str | None = None,
+        starts_from: datetime | None = None,
+        starts_to: datetime | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> BookingPage:
         self.organizations.require_capability(
             actor_user_id, organization_id, Capability.BOOKINGS_READ
         )
+        conditions = [Booking.organization_id == organization_id]
+        if status is not None:
+            conditions.append(Booking.status == status)
+        if starts_from is not None:
+            conditions.append(Booking.starts_at >= starts_from)
+        if starts_to is not None:
+            conditions.append(Booking.starts_at < starts_to)
+        total = int(
+            self.session.scalar(select(func.count()).select_from(Booking).where(*conditions)) or 0
+        )
         rows = self.session.scalars(
             select(Booking)
-            .where(Booking.organization_id == organization_id)
+            .where(*conditions)
             .order_by(Booking.created_at.desc(), Booking.id.desc())
+            .offset(offset)
+            .limit(limit)
         ).all()
-        return [self._bundle(row) for row in rows]
+        return BookingPage(bundles=[self._bundle(row) for row in rows], total=total)
 
     # -- auxiliares ---------------------------------------------------------
 
@@ -1306,6 +1364,7 @@ class BookingService:
             band_code=band.code if band is not None else None,
             band_label=band.label if band is not None else None,
             tickets_per_seat=tickets_per_seat,
+            timezone=venue.timezone if venue is not None else None,
         )
 
     def _lock_booking(self, booking_id: uuid.UUID) -> Booking:

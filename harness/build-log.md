@@ -984,7 +984,109 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **OTP:** os seis campos foram substituidos por um unico input oculto sobre as caixas visuais, com foco automatico, avanco de dígitos, apagar natural, colar código, autofill de SMS e limite de 6 dígitos.
 - **Limites de entrada:** telefone (15), nome (60), bio (280), clã (nome 40, tag 8, descrição 280), chats (2.000), buscas (60), confirmação LGPD (7) e textarea padrão (2.000).
 - **Integracao 13C/14D.16/13D/9D:** vitrine ligada a `GET /discovery/bookable-venues` e ao detalhe com espacos, formatos, faixas, cobertura e `next_slots`; reserva chama `POST /bookings`; central de notificacoes persistidas com contador de nao lidas; carteira exibe lotes com validade e consumo passe -> nivel -> comprado; `BookingView`, participantes e erros novos (`payout_not_ready`, `space_unavailable`, `insufficient_lead_time`, `tickets_not_configured`, `band_missing`) foram tratados no app.
+- **Moderacao (Fase 17A):** denuncia real via `POST /moderation/reports`, historico em `/moderation/reports/me`, medidas em `/moderation/actions/me` e recurso em `/moderation/actions/{id}/appeal`. O app mostra apenas categoria, status, data e decisao; severidade e prioridade continuam internas. Nao ha upload de midia: o contexto usa mensagens reais do lobby e texto.
+- **Tema e acessibilidade:** Claro e Escuro continuam gratuitos e sem gate de passe; o tema Alto contraste e a opcao Areia foram removidos do seletor; a preferencia de alto contraste tambem saiu da acessibilidade. Personalizacao deixou de ser marcada como PASSE.
+- **Configuracoes:** linhas inteiras de Configuracoes, Seguranca, Privacidade, Ajuda, Sobre, Termos e Recuperacao passaram a abrir a tela; antes apenas o icone era clicavel.
 - **Consistencia:** `Card` pressable passou a aplicar layout no proprio container (corrige cards 2-up que encolhiam), botoes ajustam a fonte em uma linha, cabecalho e labels de aba nao quebram, textos tem limite de escala, OTP e flexivel em 320 dp, avatar do perfil e adaptativo e insets superior/inferior do Android sao calculados.
 - **Estados:** loading, erro e vazio reais em Quadras, Partidas, Amigos, Cla, Temporada/Trilha, Carteira, Ingressos, Passe e Reservas; removidos saldo, extrato, reservas e planos fabricados nessas telas. Saldo e custo da partida agora refletem a carteira.
 - **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos; login OTP, home, perfil, configuracoes, cla, temporada/trilha, carteira, custo da partida e loja exercitados no aparelho Android com backend local.
 - **Pendencias:** telas de estados terminais (offline, erro generico, loading, recusa/expiracao de reserva, no-show, segunda rodada e disputa) continuam acessiveis apenas quando o estado de dominio ocorrer; passkey real, pagamentos reais e KYC seguem fora do escopo atual.
+
+### 2026-11-14 - Barra inferior, suspensao de conta e moderacao no app mobile
+
+- **Barra inferior:** o calculo manual de `bottomInset` foi removido e o app passou a usar `react-native-safe-area-context` (`SafeAreaProvider`/`useSafeAreaInsets`). A barra de abas tem conteudo de 54 dp, icones de 19 e rotulos de 11; o inset inferior do sistema fica em uma area separada com a cor de fundo da pagina, sem encostar na barra de navegacao Android. O `toast` tambem respeita o inset.
+- **Dependencia:** `react-native-safe-area-context@~5.11.1` instalado via Expo; `node_modules` foi reinstalado do lockfile apos falha de importacao do pnpm no Windows.
+- **Suspensao:** o refresh agora responde `401 account_suspended` quando o usuario esta suspenso (o acesso comum continua `401 invalid_token`). O app preserva a sessao, remove a barra de abas e exibe `SuspendedScreen` com motivo, inicio, fim, recurso, "Tentar novamente" e "Sair da conta". Recuperacao apos revogacao exercitada no aparelho.
+- **Contrato de moderacao:** `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao de conta suspensa para o jogador contestar a propria medida; a autorizacao continua limitada as acoes em que ele e o alvo. Severidade, prioridade e identidade do denunciante nao sao expostas.
+- **Denuncia e historico:** categoria, status, data e decisao continuam sendo o unico conteudo exibido; recurso e mensagens do lobby como contexto seguem sem upload de midia.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos. Backend: `python -m pytest -o addopts="" -q` com 473 passed e 29 skipped; `ruff check` e `mypy` limpos nos arquivos alterados. Testes novos cobrem refresh de conta suspensa e leitura/recurso da propria medida.
+- **Aparelho:** Moto G24 via Expo Go/USB; login OTP, barra inferior, suspensao, motivo/datas, envio de recurso e retorno a home apos revogacao validados. `screen_off_timeout` restaurado para 60000 ms.
+- **Limites:** iOS nao foi exercitado; a barra foi ajustada para Android com 3 botoes e inset reportado pelo sistema. O limite de OTP do ambiente local (5/hora) exigiu limpeza de desafios durante os testes.
+
+### 2026-11-15 - Backend: contratos de suspensao, reservas e listas do painel
+
+- **App:** refresh de conta suspensa rotaciona a sessao e responde `200` com `user.status=suspended`, permitindo renovar o access token durante toda a suspensao; `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` aceitam sessao suspensa para contestar a propria medida, com autoria limitada ao alvo. Demais rotas continuam `401 invalid_token`; refresh web do painel continua `401 account_suspended`.
+- **Reservas:** `GET /bookings` e `GET /organizations/{id}/bookings` aceitam `status`, `from`, `to`, `limit` e `offset`, devolvem `total` e `BookingView.timezone` (IANA). Datas sem fuso ou periodo invalido retornam `422 invalid_time_range`.
+- **Erros:** handler global de `RequestValidationError` padroniza `422` em `{detail:{code,message,fields}}`, sem ecoar o valor enviado.
+- **Painel:** sessao web passa a devolver `capabilities` (`moderation.read`/`moderation.manage`); recebiveis, extrato, disputas e auditoria devolvem `total` antes da paginacao.
+- **Notificacoes 17C:** recurso novo gera `moderation_appeal` para operadores ativos; decisao do recurso gera `moderation_appeal_result` para o jogador. A denuncia continua gerando `moderation_report`.
+- **Canais 17C:** notificacoes internas (`moderation_report`, `moderation_appeal`) usam `channel=moderation`; `GET /me/notifications` lista apenas `player` e o dispatcher nao envia push interno ao app. `GET /moderation/appeals/me` aceita conta suspensa e mostra o resultado do recurso.
+- **Verificacao:** `ruff check`, `ruff format --check` e `mypy app` limpos; backend **477 passed, 29 skipped**.
+- **Limites:** convite de membro por telefone/e-mail/QR fica para fatia propria com ADR; nenhum arquivo de `mobile/` ou `web/` alterado.
+
+### 2026-11-15 - CEP e geocodificacao de estabelecimento (Fase 1)
+
+- **Endpoint:** `GET /api/v1/geo/postal-codes/{postal_code}?number=...`, autenticado, sem alterar o `POST` de venue.
+- **Provedor:** BrasilAPI CEP v2, reaproveitado do perfil; endereco e coordenadas com `precision` (`street`/`approximate`/`unresolved`) e `source=brasilapi`.
+- **Cache:** tabela `postal_code_cache` (migracao `c5d6e7f8a9b0`), TTL de 30 dias, chave CEP+numero+versao do provedor.
+- **Protecoes:** rate limit de 30/min por usuario, timeout de 3 s e erros `invalid_postal_code`/`postal_code_not_found`/`rate_limited`/`geocoding_provider_error`/`geocoding_timeout` sem vazar o provedor.
+- **Testes:** `tests/test_geo_api.py` com resolver falso, cache hit, erros, `unresolved` e rate limit; nenhuma chamada externa.
+- **Limites:** sem mapa, sem persistencia de CEP no venue e sem provedor pago; Fase 2 pendente.
+
+### 2026-11-15 - Validacao do fluxo de suspensao no app mobile
+
+- **Escopo:** somente front-end. Nenhum arquivo de `backend/` foi alterado nesta validacao.
+- **API local:** reiniciada com o contrato de suspensao ja suportado pelo backend.
+- **Fluxo exercitado no Moto G24:** chamada autenticada recebeu `401 invalid_token`, o refresh respondeu `401 account_suspended`, a sessao local foi preservada e a tela `SuspendedScreen` apareceu no lugar das abas.
+- **Dados da medida:** `GET /moderation/actions/me` retornou `200` e a tela exibiu motivo, inicio e fim previsto.
+- **Recurso:** `POST /moderation/actions/{id}/appeal` retornou `200`; a tela limpou o campo e mostrou "Recurso enviado. A analise e interna.".
+- **Recuperacao:** com a medida revogada e a conta reativada, "Tentar novamente" voltou para a aba Partidas com a barra inferior visivel.
+- **Limpeza:** a medida de teste (`operator=test-local`) foi removida, a denuncia usada no teste voltou para `RESOLVED` e a conta `Zero Dois` voltou para `active`.
+- **Verificacao front-end:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .` e `pnpm exec prettier --check .` limpos.
+- **Observacao para o backend:** `actions/me` e `appeal` autenticam a sessao suspensa, mas `SessionService.authenticate` continua rejeitando access token expirado. Se o access token vencer durante a suspensao, o refresh nao emite novo token e essas rotas passam a `401 invalid_token`; vale validar se a contestacao precisa ficar disponivel durante toda a suspensao.
+
+### 2026-11-15 - Correcao do refresh para conta suspensa
+
+- **Backend:** o refresh mobile de conta suspensa agora rotaciona a sessao e responde `200` com `user.status = "suspended"`. O app deve tratar esse status como suspensao, preservar os tokens e usar o access token apenas em `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal`.
+- **Escopo:** as demais rotas continuam exigindo conta ativa (`401 invalid_token`); o refresh web do painel continua `401 account_suspended`.
+- **Motivo:** o access token expira em poucos minutos e o app precisa renová-lo durante toda a suspensão para manter a contestação disponível.
+- **Verificacao:** testes de auth e moderação passaram; suíte completa e contagem no fechamento desta entrada.
+
+### 2026-11-15 - App: refresh 200 de suspensao e notificacao de recurso
+
+- **Escopo:** somente `mobile/`; nenhum arquivo de backend alterado. A API local foi reiniciada antes do teste.
+- **Refresh:** ao receber `200` com `user.status = "suspended"`, o app atualiza os tokens, preserva a sessao, nao executa a carga normal e mantem a `SuspendedScreen`. O fallback para `401 account_suspended` continua existindo.
+- **Token novo:** o retry automatico do cliente HTTP usa o access token renovado. `GET /moderation/actions/me` e `POST /moderation/actions/{id}/appeal` funcionam mesmo depois da expiracao do access token anterior; as demais rotas seguem `401 invalid_token`.
+- **Recuperacao:** com a conta reativada, "Tentar novamente" autentica, recarrega os dados e volta ao app.
+- **Notificacao:** a central passou a reconhecer `moderation_appeal_result`, exibir a decisao de `data.decision` como `RECURSO ACEITO` ou `RECURSO REJEITADO` e abrir a tela de moderacao ao tocar.
+- **Erros de recurso:** mensagens especificas para `appeal_already_exists`, `action_not_active`, `not_found`, `forbidden` e `account_suspended`. O caso `action_not_active` foi exercitado no aparelho.
+- **Verificacao no aparelho:** refresh `200`, sessao preservada, motivo/datas via `actions/me` `200`, notificacao de recurso renderizada com decisao e navegacao para moderacao. O envio de recurso retornou `409 action_not_active` porque a medida foi revogada durante o teste, e o app exibiu a mensagem correta.
+- **Comandos:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos.
+- **Limpeza:** notificacao de teste e medida de teste removidas; denuncia restaurada para `RESOLVED`; conta `Zero Dois` ativa.
+- **Observacao:** a conta `Zero Dois` e operadora `ADMIN` em `moderation_operators`, por isso recebe notificacoes internas `moderation_report` com severidade/prioridade. Se a regra for que o app do jogador nunca exiba triagem interna, o backend deve separar o canal do painel ou o app deve filtrar esses kinds quando a conta nao estiver em modo operador.
+
+### 2026-11-15 - CEP e geocodificacao de estabelecimento (Fase 2)
+
+- **Persistencia:** organization_venues ganhou `postal_code` (8 digitos), `geocoding_source`, `geocoding_precision` (`street`/`venue`/`approximate`/`manual`) e `geocoded_at` na migracao `e7f8a9b0c1d2`.
+- **Contrato:** `POST`/`PATCH` de venue aceitam CEP com ou sem hifen e a proveniencia da coordenada; `GET` devolve os quatro campos. `latitude`/`longitude` continuam obrigatorias na API.
+- **Regra:** sem proveniencia a coordenada e `manual`; mudar coordenada ou CEP sem reenviar proveniencia rebaixa para `manual` e zera `geocoding_source`/`geocoded_at`. `street`/`venue`/`approximate` exigem `geocoding_source` e gravam `geocoded_at` no servidor.
+- **Backfill:** registros existentes com coordenada foram marcados como `manual`; nao houve geocodificacao retroativa.
+- **Auditoria:** `venue.created`/`venue.updated` registram CEP e mudancas de proveniencia.
+- **Testes:** novo teste em `tests/test_organizations.py` para normalizacao, persistencia, rebaixamento para manual, cadastro sem CEP e erros 422; suite completa com **485 passed, 29 skipped**, `ruff` e `mypy` limpos, Alembic no head `e7f8a9b0c1d2`.
+- **Limites:** mapa/pino ajustavel, provedor pago e backfill de endereco continuam pendentes.
+
+### 2026-11-15 - Fechamento da Fase 17C: central interna do painel
+
+- **Endpoints dedicados:** `GET /moderation/notifications`, `GET /moderation/notifications/unread-count`, `POST /moderation/notifications/{id}/read` e `POST /moderation/notifications/read-all`, todos com `get_moderator`.
+- **Isolamento:** operam sempre `channel = "moderation"`; conta comum recebe `403 moderator_required`; notificacao de outro operador ou do canal `player` responde `404 notification_not_found`.
+- **App do jogador:** `GET /me/notifications` continua listando apenas `player`, sem parametro novo e sem mudanca de contrato.
+- **Teste:** novo caso em `tests/test_moderation.py` cobre autorizacao, leitura, contagem, `read-all` e isolamento entre operadores e canal.
+- **Fase 17:** backend concluido; restam classificador local, suspensao permanente e retencao/LGPD, todos dependentes de politica/dataset.
+
+### 2026-11-15 - App: appeals/me na suspensao e revalidacao automatica
+
+- **Escopo:** somente `mobile/`; API local reiniciada para carregar o endpoint novo. Nenhum arquivo de backend alterado.
+- **Endpoint:** `GET /api/v1/moderation/appeals/me` consumido por `mobile/src/api/client.ts` e carregado junto com `actions/me`.
+- **SuspendedScreen:** exibe o recurso do jogador com status `EM ANALISE`, `ACEITO` ou `REJEITADO`, datas e `decision_reason` como justificativa. Com recurso existente, o formulario de nova contestacao e ocultado para evitar duplicidade.
+- **Atualizacao:** apos enviar, a tela recarrega `actions/me` e `appeals/me` para refletir `OPEN`; a decisao aparece ao reabrir a tela ou tocar em "Tentar novamente".
+- **Revalidacao:** a tela agora chama `recheckSuspension` ao montar. Se a conta foi reativada enquanto o app estava fechado, ela volta ao app sem exigir novo login.
+- **Notificacoes:** o backend separou os canais; `GET /me/notifications` entrega somente o canal do jogador. O app mantem o tratamento de `moderation_appeal_result` e a navegacao para moderacao.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec export --platform android` limpos. A API registrou `actions/me` e `appeals/me` com `200` durante a suspensao.
+- **Limites:** o ADB ficou sem responder no fechamento; a tela de decisao (`REJECTED` com `decision_reason`) foi validada por tipos/compilacao, mas nao teve screenshot final. A conta de teste `Zero Dois` foi reativada e a medida de teste removida.
+
+### 2026-11-15 - Contrato de conta suspensa travado por teste
+
+- **App validou:** refresh `200` com `user.status = "suspended"`, `actions/me` e `appeals/me` `200` com o token novo, recurso aceito com o token novo e `/me/notifications` `401` durante a suspensao.
+- **Backend:** o teste de suspensao temporaria agora exige `status`, `reason`, `created_at`, `decided_at` e `decision_reason` em `appeals/me`; confirma que recurso `REJECTED` mantem a conta suspensa, que `moderation_appeal_result` chega no canal `player` com `data.decision` e `data.appeal_id` e que notificacoes internas nao aparecem na central do jogador.
+- **Testes:** `tests/test_moderation.py` e `tests/test_auth_flow_api.py` com 24 passed; `ruff` limpo.
+- **Sem mudanca de contrato:** os campos e canais esperados pelo app continuam os mesmos.

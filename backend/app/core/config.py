@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         min_length=1,
     )
     cep_timeout_seconds: int = Field(default=5, ge=1, le=15)
+    geo_timeout_seconds: int = Field(default=3, ge=1, le=15)
+    geo_cache_ttl_days: int = Field(default=30, ge=1, le=365)
+    geo_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
+    geo_provider_version: str = Field(default="brasilapi_v1", min_length=1, max_length=40)
     discovery_max_radius_km: int = Field(default=100, ge=1, le=200)
     discovery_default_radius_km: int = Field(default=10, ge=1, le=100)
     discovery_page_size: int = Field(default=20, ge=1, le=50)
@@ -150,6 +154,26 @@ class Settings(BaseSettings):
     @property
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
+
+    # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
+    moderation_operators: str = ""
+    moderation_admin_user_ids: str = ""
+    moderation_max_reports_per_day: int = Field(default=5, ge=1, le=50)
+    moderation_false_report_threshold: int = Field(default=3, ge=1, le=20)
+    moderation_false_report_cooldown_days: int = Field(default=7, ge=1, le=90)
+    moderation_retention_days: int = Field(default=180, ge=30, le=3650)
+
+    @property
+    def moderation_operator_ids(self) -> frozenset[str]:
+        return frozenset(
+            item.strip() for item in self.moderation_operators.split(",") if item.strip()
+        )
+
+    @property
+    def moderation_admin_ids(self) -> frozenset[str]:
+        return frozenset(
+            item.strip() for item in self.moderation_admin_user_ids.split(",") if item.strip()
+        )
 
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.

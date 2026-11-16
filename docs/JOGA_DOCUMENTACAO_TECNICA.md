@@ -336,6 +336,8 @@ Toda consulta ou mutação deve validar organização, associação do usuário,
 
 Um operador de um estabelecimento só pode ver quadras, agenda, reservas, pagamentos e dados necessários daquela organização. Um funcionário de uma arena só pode administrar quadras e reservas autorizadas.
 
+> **Nota de implementação - CEP do estabelecimento (Fases 1 e 2).** `GET /api/v1/geo/postal-codes/{postal_code}` resolve endereço e coordenadas sugeridas via BrasilAPI CEP v2, com cache persistente de 30 dias e rate limit por usuário. O `POST /organizations/{id}/venues` continua recebendo `latitude`/`longitude` validadas e, desde a Fase 2, aceita `postal_code`, `geocoding_source` e `geocoding_precision`; `geocoded_at` é gravado pelo servidor. Coordenada sem proveniência explícita é `manual`, e ajustar coordenada/CEP sem reenviar proveniência rebaixa para `manual`. A coordenada sugerida tem precisão de logradouro/bairro e o pino ajustável do painel é a autoridade final. Mapa e provedor pago continuam pendentes.
+
 ### 5.3 Telefone e OTP
 
 O número deve ser normalizado em E.164. Aplicar rate limits por IP, dispositivo, telefone e operação. OTP de uso único, expiração curta, limite de tentativas e armazenamento como hash/HMAC protegido por segredo. Não registrar OTP ou telefone completo em logs.
@@ -725,6 +727,12 @@ A IA é camada auxiliar, com níveis de confiança e possibilidade de contestaç
 - Armazenar apenas o contexto necessário para analisar a denúncia, com política de retenção a definir (seção 26).
 - A automação prioriza o processamento eficiente; conversas não são encaminhadas continuamente para IA/revisão humana sem necessidade.
 
+> **Nota de implementação das Fases 17A/17B/17C.** A primeira fatia usa triagem determinística (`rules_v1`) por categoria, reincidência e quantidade de contexto; não usa IA paga nem envia texto a terceiros. A decisão é humana por CLI e, desde a 17C, por painel web interno separado em `/moderation`. Operadores têm identidade em `moderation_operators` (`ADMIN|MODERATOR`), com bootstrap por `JOGA_MODERATION_ADMIN_USER_IDS`; cada nova denúncia gera notificação persistida `moderation_report`, cada recurso gera `moderation_appeal` para os operadores e a decisão do recurso gera `moderation_appeal_result` para o jogador. Medidas: aviso, restrição ranqueada reversível e suspensão temporária de 1–30 dias; recurso aceito revoga a medida. A 17B acrescenta cooldown de 7 dias após 3 denúncias improcedentes em 30 dias e redação provisória de contexto após 180 dias. O classificador local/open-source e a suspensão permanente continuam pendentes.
+
+> **Nota de contrato mobile da suspensão (17C).** Acesso autenticado comum de uma conta `suspended` responde `401 invalid_token`. O refresh rotaciona a sessão e responde `200` com `user.status = "suspended"`, permitindo que o app preserve a sessão e obtenha access tokens novos durante toda a suspensão. Excepcionalmente, `GET /moderation/actions/me`, `GET /moderation/appeals/me` e `POST /moderation/actions/{action_id}/appeal` aceitam a sessão de conta suspensa, porque o jogador precisa ver o motivo, as datas, o resultado do recurso e contestar a própria medida. A autorização continua restrita às ações/recursos em que o usuário é o alvo; severidade, prioridade e identidade do denunciante não são expostas ao app. O refresh web do painel continua respondendo `401 account_suspended`.
+
+> **Nota de canais de notificação (17C).** Notificações internas de moderação usam `channel = "moderation"` e não aparecem em `GET /me/notifications` nem geram push para o app do jogador. A central do jogador lista apenas `channel = "player"`. O painel consome o canal interno por endpoints dedicados em `/moderation/notifications` (lista, contador, marcar uma e marcar todas), protegidos por `get_moderator`. Resultados de recurso (`moderation_appeal_result`) são do jogador.
+
 ### 12.5 Troféus de clã
 
 O ranking será separado por modalidade. Não somar futebol e vôlei em um único ranking inicial.
@@ -854,7 +862,7 @@ Em PostgreSQL, a proteção pode usar constraint de exclusão por intervalo (`ts
 
 **T1 — confirmação de participação.** Prazo inicial de 1 hora para os jogadores confirmarem que pretendem participar. Controlado pelo backend.
 
-**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio. A **13E** implementa expediente semanal, fechamentos excepcionais e o teto `JOGA_BOOKING_T2_MAX_MINUTES`; sem expediente cadastrado, o cálculo cai para tempo corrido.
+**T2 — resposta do estabelecimento.** Cerca de 30 minutos de funcionamento, com prazo máximo em tempo corrido. O estabelecimento aceita ou recusa e confirma o bloqueio.
 
 **T3 — bloqueio e pagamento.** 60 minutos, configurável por estabelecimento, com buffer de 5 a 10 minutos para conciliação. As cobranças são abertas depois do aceite e do bloqueio.
 

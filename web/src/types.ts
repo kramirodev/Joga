@@ -379,3 +379,62 @@ export interface Presence {
   distance_m: number | null;
   accuracy_m: number | null;
 }
+
+export interface ModeratorMe {
+  user_id: string;
+  role: "ADMIN" | "MODERATOR";
+}
+
+export interface ModerationContextMessage {
+  id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface ModerationReport {
+  id: string;
+  category: string;
+  status: string;
+  severity: string;
+  priority: number;
+  created_at: string;
+  reviewed_at: string | null;
+  decision_reason: string | null;
+  reporter_id: string;
+  target_user_id: string;
+  lobby_id: string;
+  description: string;
+  context: ModerationContextMessage[];
+  classifier_version: string;
+  classifier_signals: Record<string, unknown> | null;
+  reviewed_by: string | null;
+}
+
+export interface ModerationQueue {
+  reports: ModerationReport[];
+  stats: {
+    open: number;
+    in_review: number;
+    appealed: number;
+    high_priority: number;
+  };
+}
+
+export interface ModerationAppeal {
+  id: string;
+  action_id: string;
+  status: string;
+  reason: string;
+  created_at: string;
+  decided_at: string | null;
+  decision_reason: string | null;
+}
+
+export interface ModerationOperator {
+  user_id: string;
+  role: "ADMIN" | "MODERATOR";
+  active: boolean;
+  created_at: string;
+  deactivated_at: string | null;
+}

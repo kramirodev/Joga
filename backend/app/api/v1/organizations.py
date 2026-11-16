@@ -95,6 +95,11 @@ class VenueCreate(BaseModel):
     address_line: str | None = Field(default=None, max_length=200)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    postal_code: str | None = Field(default=None, max_length=9)
+    geocoding_source: str | None = Field(default=None, pattern="^[a-z0-9+._-]{1,40}$")
+    geocoding_precision: str | None = Field(
+        default=None, pattern="^(street|venue|approximate|manual)$"
+    )
     timezone: str | None = Field(default=None, max_length=64)
     venue_id: UUID | None = None
 
@@ -111,6 +116,11 @@ class VenueUpdate(BaseModel):
     address_line: str | None = Field(default=None, max_length=200)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    postal_code: str | None = Field(default=None, max_length=9)
+    geocoding_source: str | None = Field(default=None, pattern="^[a-z0-9+._-]{1,40}$")
+    geocoding_precision: str | None = Field(
+        default=None, pattern="^(street|venue|approximate|manual)$"
+    )
     timezone: str | None = Field(default=None, max_length=64)
     venue_id: UUID | None = None
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
@@ -131,6 +141,10 @@ class VenueView(BaseModel):
     address_line: str | None
     latitude: float | None
     longitude: float | None
+    postal_code: str | None
+    geocoding_source: str | None
+    geocoding_precision: str | None
+    geocoded_at: datetime | None
     timezone: str
     status: str
     created_at: datetime
@@ -153,6 +167,7 @@ class AuditView(BaseModel):
 
 class AuditListResponse(BaseModel):
     audit: list[AuditView]
+    total: int
     limit: int
     offset: int
 
@@ -221,6 +236,10 @@ def _venue_view(venue: OrganizationVenue) -> VenueView:
         address_line=venue.address_line,
         latitude=venue.latitude,
         longitude=venue.longitude,
+        postal_code=venue.postal_code,
+        geocoding_source=venue.geocoding_source,
+        geocoding_precision=venue.geocoding_precision,
+        geocoded_at=venue.geocoded_at,
         timezone=venue.timezone,
         status=venue.status,
         created_at=venue.created_at,
@@ -418,6 +437,9 @@ def create_venue(
             address_line=payload.address_line,
             latitude=payload.latitude,
             longitude=payload.longitude,
+            postal_code=payload.postal_code,
+            geocoding_source=payload.geocoding_source,
+            geocoding_precision=payload.geocoding_precision,
             timezone=payload.timezone,
             venue_id=payload.venue_id,
         )
@@ -496,6 +518,7 @@ def list_audit(
             limit=limit,
             offset=offset,
         )
+        total = service.count_audit(current.user_id, organization_id)
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
     return AuditListResponse(
@@ -511,6 +534,7 @@ def list_audit(
             )
             for event in events
         ],
+        total=total,
         limit=limit,
         offset=offset,
     )

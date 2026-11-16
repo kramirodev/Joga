@@ -7,9 +7,11 @@ from app.api.v1.bookings import router as bookings_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.clans import router as clans_router
 from app.api.v1.discovery import router as discovery_router
+from app.api.v1.geo import router as geo_router
 from app.api.v1.health import router as health_router
 from app.api.v1.matches import router as matches_router
 from app.api.v1.matchmaking import router as matchmaking_router
+from app.api.v1.moderation import router as moderation_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.passes import router as passes_router
@@ -40,6 +42,7 @@ api_router.include_router(organizations_router)
 api_router.include_router(venues_router)
 api_router.include_router(pricing_router)
 api_router.include_router(discovery_router)
+api_router.include_router(geo_router)
 api_router.include_router(progress_router)
 api_router.include_router(bookings_router)
 api_router.include_router(substitutions_router)
@@ -52,5 +55,6 @@ api_router.include_router(social_router)
 api_router.include_router(clans_router)
 api_router.include_router(stats_router)
 api_router.include_router(notifications_router)
+api_router.include_router(moderation_router)
 api_router.include_router(web_auth_router)
 api_router.include_router(ws_router)

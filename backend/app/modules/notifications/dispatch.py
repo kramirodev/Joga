@@ -33,6 +33,13 @@ def dispatch_notifications(
         if not isinstance(user_id, str):
             outbox.mark_failed(event, "invalid_payload")
             continue
+        if payload.get("channel") == "moderation" or payload.get("kind") in {
+            "moderation_report",
+            "moderation_appeal",
+        }:
+            # Notificação interna do painel; não usa push do app do jogador.
+            outbox.mark_dispatched(event)
+            continue
         raw_data = payload.get("data")
         data: dict[str, str] = (
             {str(key): str(value) for key, value in raw_data.items()}

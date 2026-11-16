@@ -1,7 +1,7 @@
 """Testes do fluxo completo de conta e sessão (SQLite em memória)."""
 
 from collections.abc import Iterator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -230,6 +230,40 @@ def test_logout_revokes_current_session(
     assert refresh_response.json() == {"detail": {"code": "invalid_refresh_token"}}
 
 
+def test_refresh_rotates_suspended_session_with_limited_access(
+    api: TestClient,
+    db_session: Session,
+    sms_sender: RecordingSmsSender,
+) -> None:
+    receipt = receipt_for(api, sms_sender, PHONE, "registration")
+    tokens = register(api, receipt).json()
+    user = db_session.scalar(select(User).where(User.id == UUID(tokens["user"]["id"])))
+    assert user is not None
+    user.status = "suspended"
+    db_session.commit()
+
+    response = refresh(api, tokens["refresh_token"])
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user"]["status"] == "suspended"
+    assert body["access_token"]
+    assert body["refresh_token"] != tokens["refresh_token"]
+
+    suspended_access = bearer(body["access_token"])
+    assert api.get("/api/v1/auth/me", headers=suspended_access).status_code == 401
+    actions = api.get("/api/v1/moderation/actions/me", headers=suspended_access)
+    assert actions.status_code == 200, actions.text
+    assert actions.json()["actions"] == []
+    appeal = api.post(
+        f"/api/v1/moderation/actions/{uuid4()}/appeal",
+        json={"reason": "Contestação"},
+        headers=suspended_access,
+    )
+    assert appeal.status_code == 404
+    assert appeal.json()["detail"]["code"] == "not_found"
+
+
 def test_logout_all_revokes_every_session(
     api: TestClient,
     db_session: Session,
@@ -266,3 +300,17 @@ def test_security_events_do_not_store_tokens(
     assert tokens["access_token"] not in serialized
     assert tokens["refresh_token"] not in serialized
     assert any(event.event_type == AUTH_LOGOUT for event in events)
+
+
+def test_validation_errors_have_stable_shape(api: TestClient) -> None:
+    response = api.post(
+        "/api/v1/auth/phone/challenges",
+        json={"phone": "123", "purpose": "login"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "validation_error"
+    assert detail["message"] == "Dados inválidos"
+    assert any(field["field"] == "body.phone" for field in detail["fields"])
+    assert all(set(field) == {"field", "code", "message"} for field in detail["fields"])

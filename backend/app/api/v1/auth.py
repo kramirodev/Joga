@@ -304,6 +304,17 @@ def get_current_session(
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
 
 
+def get_current_session_allow_suspended(
+    token: Annotated[str, Depends(_bearer_token)],
+    service: Annotated[SessionService, Depends(get_session_service)],
+) -> AuthenticatedSession:
+    """Autentica a sessão mesmo com a conta suspensa, para contestar a medida."""
+    try:
+        return service.authenticate(token, require_active=False)
+    except InvalidAccessToken:
+        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
+
+
 def _token_response(tokens: IssuedTokens, user: UserSummary) -> TokenResponse:
     return TokenResponse(
         access_token=tokens.access_token,
@@ -608,7 +619,7 @@ def refresh_tokens(
         ) from None
 
     user = session.get(User, tokens.user_id)
-    if user is None or user.status != "active":
+    if user is None or user.status not in {"active", "suspended"}:
         session.rollback()
         raise _error(
             status.HTTP_401_UNAUTHORIZED,
@@ -616,6 +627,10 @@ def refresh_tokens(
             www_authenticate=True,
         ) from None
 
+    # A conta suspensa precisa de access token novo para consultar a própria
+    # medida e recorrer. O token não abre as rotas comuns: elas exigem
+    # User.status == "active"; apenas as duas rotas de contestação usam
+    # get_current_session_allow_suspended.
     record_security_event(session, AUTH_REFRESH_ROTATED, user_id=user.id)
     session.commit()
 

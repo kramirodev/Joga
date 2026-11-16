@@ -13,7 +13,7 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios, expediente, fechamentos e fotos de quadra com revisão.
 - Reservas: lista por organização, aceite/recusa, cancelamento, reembolso, presença e conclusão; T1/T2/T3 controlados pelo backend.
 - Financeiro: resumo, repasses a receber, extrato e contestação.
-- Sem PSP de produção, KYC contratual, clãs, moderação ou publicidade.
+- Sem PSP de produção, KYC contratual, classificador de IA e publicidade.
 
 ## Desenvolvimento local
 

@@ -367,3 +367,73 @@ def test_booking_creation_is_idempotent_per_lobby(
     first = create_booking(api, context, context["lobbies"][0])
     second = create_booking(api, context, context["lobbies"][0])
     assert first["id"] == second["id"]
+
+
+def test_booking_lists_expose_pagination_filters_and_timezone(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = create_booking(api, context, context["lobbies"][0])
+    org_id = context["organization"].id
+    token = context["tokens"][0]
+
+    listing = api.get(
+        f"/api/v1/organizations/{org_id}/bookings?limit=1&offset=0",
+        headers=bearer(token),
+    )
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert body["total"] == 1
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+    assert len(body["bookings"]) == 1
+    assert body["bookings"][0]["id"] == booking["id"]
+    assert body["bookings"][0]["timezone"] == "UTC"
+
+    filtered = api.get(
+        f"/api/v1/organizations/{org_id}/bookings?status=PARTICIPANT_CONFIRMATION",
+        headers=bearer(token),
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()["total"] == 1
+
+    empty = api.get(
+        f"/api/v1/organizations/{org_id}/bookings?status=CONFIRMED",
+        headers=bearer(token),
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["total"] == 0
+
+    in_period = api.get(
+        f"/api/v1/organizations/{org_id}/bookings"
+        f"?from={START.isoformat().replace('+00:00', 'Z')}"
+        f"&to={END.isoformat().replace('+00:00', 'Z')}",
+        headers=bearer(token),
+    )
+    assert in_period.status_code == 200, in_period.text
+    assert in_period.json()["total"] == 1
+
+    out_of_period = api.get(
+        f"/api/v1/organizations/{org_id}/bookings"
+        f"?from={(START + timedelta(days=1)).isoformat().replace('+00:00', 'Z')}"
+        f"&to={(START + timedelta(days=2)).isoformat().replace('+00:00', 'Z')}",
+        headers=bearer(token),
+    )
+    assert out_of_period.status_code == 200, out_of_period.text
+    assert out_of_period.json()["total"] == 0
+
+    invalid_period = api.get(
+        f"/api/v1/organizations/{org_id}/bookings"
+        f"?from={START.isoformat().replace('+00:00', 'Z')}"
+        f"&to={START.isoformat().replace('+00:00', 'Z')}",
+        headers=bearer(token),
+    )
+    assert invalid_period.status_code == 422
+    assert invalid_period.json()["detail"]["code"] == "invalid_time_range"
+
+    mine = api.get("/api/v1/bookings?limit=1", headers=bearer(token))
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["total"] == 1
+    assert mine.json()["bookings"][0]["timezone"] == "UTC"

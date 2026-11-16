@@ -6,6 +6,7 @@ import { AuthProvider } from "./lib/auth";
 import { useAuth } from "./lib/auth-context";
 import { queryClient } from "./lib/query";
 import { LoginPage } from "./pages/LoginPage";
+import { ModerationPage } from "./pages/ModerationPage";
 import { OrganizationPage } from "./pages/OrganizationPage";
 import { OrganizationsPage } from "./pages/OrganizationsPage";
 import { VenuePage } from "./pages/VenuePage";
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<OrganizationsPage />} />
+              <Route path="/moderation" element={<ModerationPage />} />
               <Route path="/organizations/:organizationId" element={<OrganizationPage />} />
               <Route
                 path="/organizations/:organizationId/venues/:venueId"

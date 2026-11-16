@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_session
 from app.core.config import get_settings
 from app.infrastructure.database.dependency import get_session
-from app.modules.bookings.models import BookingRefundExclusion
+from app.modules.bookings.models import BOOKING_STATUSES, BookingRefundExclusion
 from app.modules.bookings.service import (
     BookingBundle,
     BookingConflict,
@@ -33,6 +33,7 @@ from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.service import PaymentService
 
 router = APIRouter(tags=["bookings"])
+BOOKING_STATUS_PATTERN = "^(?:" + "|".join(BOOKING_STATUSES) + ")$"
 
 
 class BookingCreate(BaseModel):
@@ -151,14 +152,31 @@ class BookingView(BaseModel):
     timers: list[TimerView]
     hold: HoldView | None
     payments: list[PaymentView]
+    timezone: str | None
 
 
 class BookingListResponse(BaseModel):
     bookings: list[BookingView]
+    total: int
+    limit: int
+    offset: int
 
 
 def _error(code: str, status_code: int) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code})
+
+
+def _validate_period(
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> tuple[datetime | None, datetime | None]:
+    if date_from is not None and date_from.tzinfo is None:
+        raise _error("invalid_time_range", status.HTTP_422_UNPROCESSABLE_CONTENT)
+    if date_to is not None and date_to.tzinfo is None:
+        raise _error("invalid_time_range", status.HTTP_422_UNPROCESSABLE_CONTENT)
+    if date_from is not None and date_to is not None and date_to <= date_from:
+        raise _error("invalid_time_range", status.HTTP_422_UNPROCESSABLE_CONTENT)
+    return date_from, date_to
 
 
 def _handle(exc: Exception) -> HTTPException:
@@ -303,6 +321,7 @@ def _view(
             for item in bundle.payments
             if include_all_payments or participant_users.get(item.participant_id) == viewer_user_id
         ],
+        timezone=bundle.timezone,
     )
 
 
@@ -354,13 +373,29 @@ def create_booking_from_lobby(
 def list_my_bookings(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    status_filter: Annotated[
+        str | None, Query(alias="status", pattern=BOOKING_STATUS_PATTERN)
+    ] = None,
+    date_from: Annotated[datetime | None, Query(alias="from")] = None,
+    date_to: Annotated[datetime | None, Query(alias="to")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> BookingListResponse:
+    date_from, date_to = _validate_period(date_from, date_to)
     service = BookingService(session)
+    page = service.list_for_user(
+        current.user_id,
+        status=status_filter,
+        starts_from=date_from,
+        starts_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
     return BookingListResponse(
-        bookings=[
-            _view(bundle, viewer_user_id=current.user_id)
-            for bundle in service.list_for_user(current.user_id)
-        ]
+        bookings=[_view(bundle, viewer_user_id=current.user_id) for bundle in page.bundles],
+        total=page.total,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -372,14 +407,33 @@ def list_organization_bookings(
     organization_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    status_filter: Annotated[
+        str | None, Query(alias="status", pattern=BOOKING_STATUS_PATTERN)
+    ] = None,
+    date_from: Annotated[datetime | None, Query(alias="from")] = None,
+    date_to: Annotated[datetime | None, Query(alias="to")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> BookingListResponse:
+    date_from, date_to = _validate_period(date_from, date_to)
     service = BookingService(session)
     try:
-        bundles = service.list_for_organization(current.user_id, organization_id)
+        page = service.list_for_organization(
+            current.user_id,
+            organization_id,
+            status=status_filter,
+            starts_from=date_from,
+            starts_to=date_to,
+            limit=limit,
+            offset=offset,
+        )
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
     return BookingListResponse(
-        bookings=[_view(bundle, include_all_payments=True) for bundle in bundles]
+        bookings=[_view(bundle, include_all_payments=True) for bundle in page.bundles],
+        total=page.total,
+        limit=limit,
+        offset=offset,
     )
 
 

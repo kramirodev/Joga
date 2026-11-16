@@ -35,6 +35,7 @@ class NotificationService:
         body: str,
         idempotency_key: str,
         data: dict[str, Any] | None = None,
+        channel: str = "player",
         now: datetime | None = None,
     ) -> tuple[Notification, bool]:
         """Cria a notificação e o evento de outbox, uma única vez por chave."""
@@ -47,6 +48,7 @@ class NotificationService:
         moment = ensure_utc(now or utcnow())
         notification = Notification(
             user_id=user_id,
+            channel=channel,
             kind=kind,
             title=title,
             body=body,
@@ -63,6 +65,7 @@ class NotificationService:
             payload={
                 "notification_id": str(notification.id),
                 "user_id": str(user_id),
+                "channel": channel,
                 "kind": kind,
                 "title": title,
                 "body": body,
@@ -81,6 +84,7 @@ class NotificationService:
         body: str,
         idempotency_key_prefix: str,
         data: dict[str, Any] | None = None,
+        channel: str = "player",
         now: datetime | None = None,
     ) -> int:
         created = 0
@@ -92,6 +96,7 @@ class NotificationService:
                 body=body,
                 idempotency_key=f"{idempotency_key_prefix}:{user_id}",
                 data=data,
+                channel=channel,
                 now=now,
             )
             created += int(is_new)
@@ -104,10 +109,14 @@ class NotificationService:
         unread_only: bool = False,
         limit: int = 30,
         offset: int = 0,
+        channel: str = "player",
     ) -> list[Notification]:
         statement = (
             select(Notification)
-            .where(Notification.user_id == user_id)
+            .where(
+                Notification.user_id == user_id,
+                Notification.channel == channel,
+            )
             .order_by(Notification.created_at.desc(), Notification.id.desc())
             .offset(offset)
             .limit(limit)
@@ -116,13 +125,14 @@ class NotificationService:
             statement = statement.where(Notification.read_at.is_(None))
         return list(self.session.scalars(statement).all())
 
-    def unread_count(self, user_id: uuid.UUID) -> int:
+    def unread_count(self, user_id: uuid.UUID, *, channel: str = "player") -> int:
         return int(
             self.session.scalar(
                 select(func.count())
                 .select_from(Notification)
                 .where(
                     Notification.user_id == user_id,
+                    Notification.channel == channel,
                     Notification.read_at.is_(None),
                 )
             )
@@ -134,22 +144,34 @@ class NotificationService:
         user_id: uuid.UUID,
         notification_id: uuid.UUID,
         *,
+        channel: str = "player",
         now: datetime | None = None,
     ) -> Notification:
         notification = self.session.get(Notification, notification_id)
-        if notification is None or notification.user_id != user_id:
+        if (
+            notification is None
+            or notification.user_id != user_id
+            or notification.channel != channel
+        ):
             raise NotificationNotFound
         if notification.read_at is None:
             notification.read_at = ensure_utc(now or utcnow())
             self.session.flush()
         return notification
 
-    def mark_all_read(self, user_id: uuid.UUID, *, now: datetime | None = None) -> int:
+    def mark_all_read(
+        self,
+        user_id: uuid.UUID,
+        *,
+        channel: str = "player",
+        now: datetime | None = None,
+    ) -> int:
         moment = ensure_utc(now or utcnow())
         rows = list(
             self.session.scalars(
                 select(Notification).where(
                     Notification.user_id == user_id,
+                    Notification.channel == channel,
                     Notification.read_at.is_(None),
                 )
             ).all()

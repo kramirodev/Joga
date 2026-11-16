@@ -43,7 +43,7 @@ class MarkAllReadResponse(BaseModel):
     unread_count: int
 
 
-def _view(item: Any) -> NotificationView:
+def notification_view(item: Any) -> NotificationView:
     return NotificationView(
         id=item.id,
         kind=item.kind,
@@ -71,7 +71,7 @@ def list_notifications(
         offset=offset,
     )
     return NotificationListResponse(
-        notifications=[_view(item) for item in rows],
+        notifications=[notification_view(item) for item in rows],
         unread_count=service.unread_count(current.user_id),
         limit=limit,
         offset=offset,
@@ -104,7 +104,7 @@ def mark_notification_read(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "notification_not_found"},
         ) from exc
-    return _view(notification)
+    return notification_view(notification)
 
 
 @router.post("/read-all", response_model=MarkAllReadResponse)

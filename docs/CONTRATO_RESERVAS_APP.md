@@ -141,31 +141,6 @@ Regras:
 - erro `409 payout_not_ready` quando falta CNPJ/chave Pix ou o status não é `active`;
 - a criação é idempotente por `lobby_id`.
 
-### 3.1 Criação automática a partir do lobby
-
-```http
-POST /api/v1/bookings/from-lobby
-Authorization: Bearer <access_token>
-Content-Type: application/json
-
-{"lobby_id": "uuid"}
-```
-
-O backend escolhe uma quadra ativa, compatível com o formato, dentro do raio do
-lobby, com `payout_ready` e sem conflito de agenda. A ordenação é por distância
-e depois por preço. Retorna `409 no_bookable_space` se não houver candidata.
-
-### 3.2 Expediente do estabelecimento
-
-O painel usa:
-
-- `GET/POST /api/v1/organizations/{org}/venues/{venue}/business-hours`
-- `DELETE /api/v1/organizations/{org}/venues/{venue}/business-hours/{id}`
-- `GET/POST /api/v1/organizations/{org}/venues/{venue}/closures`
-- `DELETE /api/v1/organizations/{org}/venues/{venue}/closures/{id}`
-
-O T2 conta minutos úteis no expediente e respeita o teto em tempo corrido.
-
 ## 4. Campos aditivos em `BookingView`
 
 ```json
@@ -177,6 +152,7 @@ O T2 conta minutos úteis no expediente e respeita o teto em tempo corrido.
   "band_code": "economica_dia",
   "band_label": "Econômica dia",
   "tickets_per_seat": 8,
+  "timezone": "America/Sao_Paulo",
   "participants": [
     {
       "user_id": "uuid",
@@ -189,18 +165,59 @@ O T2 conta minutos úteis no expediente e respeita o teto em tempo corrido.
 
 `band_code`, `tickets_per_seat` e `settled_with` são `null` quando não se aplicam. A reserva congela faixa e ingressos no momento da criação; reajuste posterior não altera a reserva.
 
+`timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
+
+### 4.1 Listas de reservas
+
+```http
+GET /api/v1/bookings?status=CONFIRMED&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z&limit=50&offset=0
+GET /api/v1/organizations/{organization_id}/bookings?status=CONFIRMED&from=...&to=...&limit=50&offset=0
+```
+
+```json
+{
+  "bookings": [],
+  "total": 123,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+- `status` é opcional e usa os estados da reserva.
+- `from` é inclusivo e `to` é exclusivo, ambos em UTC com offset ou `Z`.
+- `limit` aceita 1–100; default 50. `offset` é >= 0.
+- `total` é o total que satisfaz os filtros antes da paginação.
+- Datas sem fuso retornam `422 invalid_time_range`.
+
 ## 5. Erros relevantes
 
 | Código | HTTP | Significado |
 |---|---:|---|
 | `payout_not_ready` | 409 | Estabelecimento sem chave/CNPJ ativo para repasse |
-| `no_bookable_space` | 409 | Lobby sem quadra comercial elegível |
 | `space_unavailable` | 409 | Agenda, blackout, hold ou reserva conflita |
 | `insufficient_lead_time` | 409 | Não há tempo para T1/T2/T3 antes do início |
 | `tickets_not_configured` | 409 | Faixa não tem tabela para o formato |
 | `band_missing` | 409 | Janela sem faixa de preço |
 | `booking_not_found` | 404 | Reserva inexistente ou fora do acesso |
 | `forbidden` | 403 | Ator não participa do lobby/organização |
+| `invalid_time_range` | 422 | `from`/`to` sem fuso, invertidos ou iguais |
+| `validation_error` | 422 | Corpo/query inválido; ver `fields` abaixo |
+
+Erros de schema Pydantic usam um envelope estável:
+
+```json
+{
+  "detail": {
+    "code": "validation_error",
+    "message": "Dados inválidos",
+    "fields": [
+      { "field": "body.name", "code": "string_too_short", "message": "..." }
+    ]
+  }
+}
+```
+
+`field` usa prefixo `body.`, `query.` ou `path.`. O valor enviado não é ecoado.
 
 ## 6. Central de notificações
 
@@ -234,9 +251,181 @@ Authorization: Bearer <access_token>
 
 A notificação é persistida antes do push. O app deve tratar a lista como fonte de histórico e o push apenas como aviso.
 
-## 7. O que ainda falta no app e no painel
+## 7. Moderação (Fase 17A)
+
+```http
+POST /api/v1/moderation/reports
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "target_user_id": "uuid",
+  "lobby_id": "uuid",
+  "category": "THREAT",
+  "description": "Ameaça no chat",
+  "message_ids": ["uuid"]
+}
+```
+
+- `message_ids` aceita até 5 mensagens do alvo no mesmo lobby.
+- Categorias: `HARASSMENT`, `HATE`, `THREAT`, `SEXUAL`, `SPAM`, `OTHER`.
+- A denúncia fica `OPEN` para revisão humana; não há punição automática.
+- Histórico do denunciante: `GET /api/v1/moderation/reports/me`.
+- Medidas recebidas: `GET /api/v1/moderation/actions/me`.
+- Recurso: `POST /api/v1/moderation/actions/{action_id}/appeal`.
+- Tipos de medida: `WARNING`, `RESTRICT_RANKED` e `SUSPEND_TEMP` (1–30 dias).
+- A conta suspensa não usa a API normalmente. A reativação ocorre ao fim do prazo.
+
+Contrato de suspensão para o app:
+
+- `POST /api/v1/auth/refresh` de conta suspensa rotaciona a sessão e responde `200` com `user.status = "suspended"`. O app deve preservar a sessão, mostrar a tela de suspensão e usar esse access token apenas nas rotas de contestação abaixo. Refresh inválido/expirado continua `invalid_refresh_token`.
+- `GET /api/v1/auth/me` e as demais rotas comuns respondem `401 invalid_token` para conta suspensa.
+- Exceções: `GET /api/v1/moderation/actions/me`, `GET /api/v1/moderation/appeals/me` e `POST /api/v1/moderation/actions/{action_id}/appeal` aceitam a sessão suspensa para o jogador ver a própria medida, consultar o resultado do recurso e contestá-la. A autorização continua limitada ao alvo da medida/recurso; tentar contestar a medida de outro usuário retorna `404`.
+- `GET /api/v1/moderation/appeals/me` devolve `status` (`OPEN`, `ACCEPTED`, `REJECTED`), `decided_at` e `decision_reason`, permitindo mostrar uma rejeição sem esperar o fim da suspensão.
+- `GET /api/v1/me/notifications` continua exigindo conta ativa.
+- Severidade, prioridade e identidade do denunciante não são expostas ao app.
+
+A triagem é determinística (`rules_v1`), sem IA paga. A revisão é humana e interna.
+
+### 7.1 Painel interno de moderação (não é contrato mobile)
+
+Estas rotas exigem conta em `moderation_operators`; conta comum recebe
+`403 moderator_required`. A gestão de operadores exige papel `ADMIN`.
+
+```http
+GET  /api/v1/moderation/me
+GET  /api/v1/moderation/queue?status_filter=OPEN&limit=50&offset=0
+GET  /api/v1/moderation/reports/{report_id}
+POST /api/v1/moderation/reports/{report_id}/decision
+GET  /api/v1/moderation/appeals?status_filter=OPEN
+POST /api/v1/moderation/appeals/{appeal_id}/decision
+GET  /api/v1/moderation/operators
+POST /api/v1/moderation/operators
+DELETE /api/v1/moderation/operators/{user_id}
+```
+
+- Decisão: `DISMISS`, `WARN`, `RESTRICT_RANKED` ou `SUSPEND_TEMP`; justificativa
+  obrigatória e `days` de 1–30 para suspensão.
+- Recurso: `ACCEPTED` ou `REJECTED`, com justificativa.
+- Nova denúncia gera notificação persistida `moderation_report` para os
+  operadores ativos, no canal interno `moderation`.
+- Novo recurso gera `moderation_appeal` para os operadores ativos, no canal
+  interno `moderation`.
+- A decisão do recurso gera `moderation_appeal_result` para o jogador, no canal
+  `player`.
+- A central do jogador (`GET /me/notifications`) lista apenas o canal `player`;
+  notificações internas não aparecem no app e não geram push para o jogador.
+- O painel tem central própria no canal interno, protegida por `get_moderator`
+  (conta comum recebe `403 moderator_required`):
+
+```text
+GET  /api/v1/moderation/notifications?unread_only=false&limit=30&offset=0
+GET  /api/v1/moderation/notifications/unread-count
+POST /api/v1/moderation/notifications/{notification_id}/read
+POST /api/v1/moderation/notifications/read-all
+```
+
+- Os quatro endpoints operam sempre `channel = "moderation"` e não aceitam
+  parâmetro de canal.
+- `GET` devolve o mesmo envelope da central do jogador (`notifications`,
+  `unread_count`, `limit`, `offset`), com contagem só do canal interno.
+- `read-all` marca apenas notificações internas do próprio operador.
+- ID de outro operador ou do canal `player` responde
+  `404 notification_not_found`.
+
+### 7.2 Sessão web e capacidades
+
+`POST /api/v1/auth/web/registration`, `/login` e `/refresh` devolvem
+`capabilities` junto da sessão:
+
+```json
+{
+  "user": { "id": "uuid", "status": "active" },
+  "capabilities": ["moderation.read", "moderation.manage"]
+}
+```
+
+- Conta comum: `[]`.
+- `MODERATOR`: `["moderation.read"]`.
+- `ADMIN`: `["moderation.read", "moderation.manage"]`.
+- O painel usa isso para esconder o link; a autorização real continua no servidor.
+
+### 7.3 Totais em listas do painel
+
+Os envelopes abaixo incluem `total` (antes da paginação) além de `limit` e
+`offset`:
+
+- `GET /organizations/{id}/financial/receivables`
+- `GET /organizations/{id}/financial/statement`
+- `GET /organizations/{id}/financial/disputes`
+- `GET /organizations/{id}/audit`
+- `GET /bookings` e `GET /organizations/{id}/bookings`
+
+## 8. O que ainda falta no app e no painel
 
 - App: usar a vitrine, escolher espaço/horário e chamar `POST /bookings`.
 - App: exibir quitação por ingressos e a faixa congelada.
 - Painel: cadastrar payout, editar faixa/cobertura e mostrar o repasse a receber.
 - Ambos: notificações de prazo e nova reserva.
+
+## 9. CEP e geocodificação de estabelecimento (Fase 1)
+
+```http
+GET /api/v1/geo/postal-codes/20541-004?number=1200
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "postal_code": "20541004",
+  "street": "Rua Barão de Mesquita",
+  "neighborhood": "Tijuca",
+  "city": "Rio de Janeiro",
+  "state": "RJ",
+  "country": "BR",
+  "latitude": -22.9234,
+  "longitude": -43.2456,
+  "precision": "street",
+  "source": "brasilapi",
+  "resolved_at": "2026-11-15T12:00:00Z"
+}
+```
+
+- `postal_code` aceita 8 dígitos com ou sem hífen.
+- `number` é opcional (até 20 caracteres; `s/n` aceito) e não altera o `POST` de venue.
+- `precision`: `street`, `venue`, `approximate` ou `unresolved`.
+- `latitude`/`longitude` podem ser `null` apenas com `precision: "unresolved"`.
+- O `POST /organizations/{id}/venues` continua exigindo `latitude`/`longitude`; o painel resolve antes e envia os números.
+- Desde a Fase 2, o venue aceita `postal_code`, `geocoding_source` e `geocoding_precision`; `GET`/`PATCH` devolvem também `geocoded_at`. Ver o contrato do estabelecimento abaixo.
+- Cache persistente por CEP+número+versão do provedor, TTL de 30 dias.
+- Rate limit de 30 consultas/minuto por usuário; `429 rate_limited` com `Retry-After`.
+- Provedor desta fase: BrasilAPI CEP v2, que já devolve endereço e coordenadas. Nominatim/Google ficam como evolução atrás da mesma interface.
+
+| HTTP | `code` |
+|---:|---|
+| 400 | `invalid_postal_code` |
+| 404 | `postal_code_not_found` |
+| 422 | `postal_code_ambiguous` (reservado; não emitido nesta fase) |
+| 429 | `rate_limited` |
+| 502 | `geocoding_provider_error` |
+| 504 | `geocoding_timeout` |
+
+### Estabelecimento com CEP e proveniência (Fase 2)
+
+`POST /api/v1/organizations/{organization_id}/venues` e `PATCH .../venues/{venue_id}` aceitam, além dos campos atuais:
+
+| Campo | Regra |
+|---|---|
+| `postal_code` | opcional; 8 dígitos com ou sem hífen (`20541-004`) — o backend grava só `20541004` |
+| `geocoding_source` | opcional; minúsculas, até 40 caracteres (`brasilapi`, `viacep+nominatim`) |
+| `geocoding_precision` | opcional; `street`, `venue`, `approximate` ou `manual` |
+
+Regras:
+
+- `latitude`/`longitude` continuam obrigatórias no `POST` e validadas por faixa.
+- Sem `geocoding_precision`, a coordenada é gravada como `manual`.
+- `street`, `venue` e `approximate` exigem `geocoding_source`; o backend grava `geocoded_at` no momento da gravação.
+- `manual` descarta o `geocoding_source` e grava `geocoded_at = null`.
+- Se `latitude`, `longitude` ou `postal_code` mudarem sem proveniência no mesmo payload, a coordenada volta a `manual` — o pino ajustado é a autoridade final.
+- `postal_code` ou proveniência inválidos respondem `422 invalid_input`; precision fora do enum responde `422 validation_error` com `fields`.
+- `GET`, `POST` e `PATCH` devolvem `postal_code`, `geocoding_source`, `geocoding_precision` e `geocoded_at` (além dos campos anteriores).
