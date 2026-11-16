@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AuthContext } from "../lib/auth-context";
+import { ToastProvider } from "../components/ui/Toast";
 import type { Booking, Member, Organization, Receivable, Role, Venue } from "../types";
 import { OrganizationPage } from "./OrganizationPage";
 
@@ -28,6 +29,10 @@ const venues: Venue[] = [
     address_line: null,
     latitude: -22.9,
     longitude: -43.2,
+    postal_code: "20541004",
+    geocoding_source: "brasilapi",
+    geocoding_precision: "street",
+    geocoded_at: "2026-11-01T12:00:00Z",
     timezone: "America/Sao_Paulo",
     status: "active",
     created_at: "2026-11-01T12:00:00Z",
@@ -82,6 +87,7 @@ const booking: Booking = {
   ],
   hold: null,
   payments: [],
+  timezone: "America/Sao_Paulo",
 };
 
 const receivable: Receivable = {
@@ -122,16 +128,24 @@ function jsonResponse(body: unknown, status = 200): Response {
 function stubApi(role: Role, bookings: Booking[] = []) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/api/v1/organizations/org-1")) {
+    const path = new URL(url, "http://joga.local").pathname;
+    if (path === "/api/v1/organizations/org-1") {
       return jsonResponse(organizationFor(role));
     }
     if (url.includes("/bookings/booking-1/accept")) {
       return jsonResponse({ ...booking, status: "PAYMENT_PENDING" });
     }
-    if (url.endsWith("/members")) return jsonResponse({ members });
-    if (url.endsWith("/venues")) return jsonResponse({ venues });
-    if (url.endsWith("/bookings")) return jsonResponse({ bookings });
-    if (url.endsWith("/financial/summary")) {
+    if (path.endsWith("/members")) return jsonResponse({ members });
+    if (path.endsWith("/venues")) return jsonResponse({ venues });
+    if (path.endsWith("/bookings")) {
+      return jsonResponse({
+        bookings,
+        total: bookings.length,
+        limit: 50,
+        offset: 0,
+      });
+    }
+    if (path.endsWith("/financial/summary")) {
       return jsonResponse({
         charged_cents: 0,
         paid_cents: 0,
@@ -144,13 +158,18 @@ function stubApi(role: Role, bookings: Booking[] = []) {
         refunds: 0,
       });
     }
-    if (url.endsWith("/financial/receivables")) {
-      return jsonResponse({ receivables: [receivable], limit: 50, offset: 0 });
+    if (path.endsWith("/financial/receivables")) {
+      return jsonResponse({
+        receivables: [receivable],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      });
     }
-    if (url.endsWith("/financial/statement")) {
-      return jsonResponse({ entries: [], limit: 50, offset: 0 });
+    if (path.endsWith("/financial/statement")) {
+      return jsonResponse({ entries: [], total: 0, limit: 50, offset: 0 });
     }
-    if (url.endsWith("/financial/disputes")) {
+    if (path.endsWith("/financial/disputes")) {
       if (init?.method === "POST") {
         return jsonResponse(
           {
@@ -172,12 +191,14 @@ function stubApi(role: Role, bookings: Booking[] = []) {
           201,
         );
       }
-      return jsonResponse({ disputes: [], limit: 50, offset: 0 });
+      return jsonResponse({ disputes: [], total: 0, limit: 50, offset: 0 });
     }
-    if (url.endsWith("/payout") && init?.method === "PUT") {
+    if (path.endsWith("/payout") && init?.method === "PUT") {
       return jsonResponse(organizationFor(role));
     }
-    if (url.includes("/audit")) return jsonResponse({ audit: [], limit: 50, offset: 0 });
+    if (url.includes("/audit")) {
+      return jsonResponse({ audit: [], total: 0, limit: 50, offset: 0 });
+    }
     return jsonResponse({ detail: { code: "not_found" } }, 404);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -190,20 +211,23 @@ function renderPage() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/organizations/org-1"]}>
-        <AuthContext.Provider
-          value={{
-            user: { id: "user-1", status: "active" },
-            loading: false,
-            signIn: vi.fn(),
-            signOut: vi.fn(),
-          }}
-        >
-          <Routes>
-            <Route path="/organizations/:organizationId" element={<OrganizationPage />} />
-          </Routes>
-        </AuthContext.Provider>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/organizations/org-1"]}>
+          <AuthContext.Provider
+            value={{
+              user: { id: "user-1", status: "active" },
+              capabilities: [],
+              loading: false,
+              signIn: vi.fn(),
+              signOut: vi.fn(),
+            }}
+          >
+            <Routes>
+              <Route path="/organizations/:organizationId" element={<OrganizationPage />} />
+            </Routes>
+          </AuthContext.Provider>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -219,27 +243,29 @@ describe("OrganizationPage — permissões na interface", () => {
     expect(screen.queryByRole("tab", { name: "Auditoria" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Reservas/ })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Adicionar membro" })).not.toBeInTheDocument();
-    expect(screen.getByText("Ana")).toBeInTheDocument();
+    expect(await screen.findByText("Ana")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /Estabelecimentos/ }));
-    expect(screen.getByText("Quadra Central")).toBeInTheDocument();
+    expect(await screen.findByText("Quadra Central")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Novo estabelecimento" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(false);
 
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    expect(await screen.findByText(/previsão técnica de repasse em/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Contestar" })).not.toBeInTheDocument();
+    expect(await screen.findByText(/liberação prevista em/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Contestar repasse" })).not.toBeInTheDocument();
   });
 
   it("proprietário vê edição, gestão de membros e auditoria", async () => {
     const fetchMock = stubApi("OWNER");
+    const user = userEvent.setup();
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Editar nome" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Adicionar membro" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Auditoria" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Papel de Ana")).toHaveValue("OWNER");
+    expect(await screen.findByLabelText("Papel de Ana")).toHaveValue("OWNER");
+    await user.click(screen.getByRole("tab", { name: "Auditoria" }));
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(true),
     );
@@ -247,13 +273,14 @@ describe("OrganizationPage — permissões na interface", () => {
 
   it("proprietário contesta um recebível pendente", async () => {
     const fetchMock = stubApi("OWNER");
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Valor divergente");
     const user = userEvent.setup();
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    await user.click(await screen.findByRole("button", { name: "Contestar" }));
+    await user.click(await screen.findByRole("button", { name: "Contestar repasse" }));
+    await user.type(screen.getByLabelText("Motivo da contestação"), "Valor divergente");
+    await user.click(screen.getByRole("button", { name: "Registrar contestação" }));
 
     await waitFor(() =>
       expect(
@@ -264,7 +291,6 @@ describe("OrganizationPage — permissões na interface", () => {
         ),
       ).toBe(true),
     );
-    promptSpy.mockRestore();
   });
 
   it("operador aceita uma reserva pendente", async () => {
@@ -274,7 +300,13 @@ describe("OrganizationPage — permissões na interface", () => {
 
     expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Reservas/ }));
-    await user.click(await screen.findByRole("button", { name: "Aceitar" }));
+    await user.click(await screen.findByRole("button", { name: "Aceitar solicitação" }));
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /Confirmo que o horário já está bloqueado/,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar bloqueio" }));
 
     await waitFor(() =>
       expect(
@@ -290,8 +322,8 @@ describe("OrganizationPage — permissões na interface", () => {
 
     expect(await screen.findByRole("heading", { name: "Arena Tijuca" })).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    await user.type(await screen.findByLabelText("CNPJ"), "12345678000199");
-    await user.type(screen.getByLabelText("Chave Pix"), "12345678000199");
+    await user.type(await screen.findByLabelText("CNPJ"), "11222333000181");
+    await user.type(screen.getByLabelText("Chave Pix"), "11222333000181");
     await user.click(screen.getByRole("button", { name: /Salvar destino de repasse/ }));
 
     await waitFor(() =>

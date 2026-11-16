@@ -10,6 +10,7 @@ export interface WebSessionPayload {
   access_expires_at: string;
   csrf_token: string;
   user: WebUser;
+  capabilities: string[];
 }
 
 export interface Organization {
@@ -50,6 +51,10 @@ export interface Venue {
   address_line: string | null;
   latitude: number | null;
   longitude: number | null;
+  postal_code: string | null;
+  geocoding_source: string | null;
+  geocoding_precision: GeocodingPrecision | "manual" | null;
+  geocoded_at: string | null;
   timezone: string;
   status: "active" | "inactive";
   created_at: string;
@@ -239,10 +244,22 @@ export interface Booking {
   timers: BookingTimer[];
   hold: BookingHold | null;
   payments: BookingPayment[];
+  timezone: string | null;
 }
 
 export interface BookingListResponse {
   bookings: Booking[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface BookingListParams {
+  status?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+  offset?: number;
 }
 
 export interface OrganizationFinancialSummary {
@@ -275,6 +292,7 @@ export interface Receivable {
 
 export interface ReceivableListResponse {
   receivables: Receivable[];
+  total: number;
   limit: number;
   offset: number;
 }
@@ -291,8 +309,26 @@ export interface FinancialStatementEntry {
   created_at: string;
 }
 
+export interface BookingRefund {
+  id: string;
+  booking_payment_id: string;
+  amount_cents: number;
+  status: "PENDING" | "PROCESSED" | "FAILED" | string;
+  reason: string | null;
+  provider_reference: string | null;
+  processed_at: string | null;
+  created_at: string;
+}
+
+export interface BookingFinancialResponse {
+  booking_id: string;
+  ledger: FinancialStatementEntry[];
+  refunds: BookingRefund[];
+}
+
 export interface FinancialStatementListResponse {
   entries: FinancialStatementEntry[];
+  total: number;
   limit: number;
   offset: number;
 }
@@ -316,6 +352,7 @@ export interface FinancialDispute {
 
 export interface FinancialDisputeListResponse {
   disputes: FinancialDispute[];
+  total: number;
   limit: number;
   offset: number;
 }
@@ -343,6 +380,7 @@ export interface AuditEvent {
 
 export interface AuditListResponse {
   audit: AuditEvent[];
+  total: number;
   limit: number;
   offset: number;
 }
@@ -437,4 +475,42 @@ export interface ModerationOperator {
   active: boolean;
   created_at: string;
   deactivated_at: string | null;
+}
+
+export interface OperatorNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  data: Record<string, unknown> | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface OperatorNotificationListResponse {
+  notifications: OperatorNotification[];
+  unread_count: number;
+  limit: number;
+  offset: number;
+}
+
+export interface MarkAllReadResponse {
+  marked: number;
+  unread_count: number;
+}
+
+export type GeocodingPrecision = "street" | "venue" | "approximate" | "unresolved";
+
+export interface PostalCodeLookup {
+  postal_code: string;
+  street: string | null;
+  neighborhood: string | null;
+  city: string;
+  state: string;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  precision: GeocodingPrecision;
+  source: string;
+  resolved_at: string;
 }

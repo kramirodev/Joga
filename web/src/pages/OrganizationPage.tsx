@@ -1,199 +1,54 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
-import { AppHeader } from "../components/AppHeader";
-import { EmptyState, ErrorNotice, LoadingBlock } from "../components/Feedback";
+import { ErrorNotice, SkeletonList } from "../components/Feedback";
+import { TextField } from "../components/ui/Field";
+import { BuildingIcon } from "../components/ui/Icons";
+import { Breadcrumbs, PageHeader } from "../components/ui/PageHeader";
+import { Tabs } from "../components/ui/Tabs";
+import { tabId, tabPanelId } from "../components/ui/tab-ids";
+import { useToast } from "../components/ui/toast-context";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
-import { formatDate, formatError, requestIdOf, roleLabel } from "../lib/format";
+import {
+  formatDate,
+  formatError,
+  organizationStatusLabel,
+  requestIdOf,
+  roleLabel,
+} from "../lib/format";
 import { queryKeys } from "../lib/query";
-import type { Member, Organization, Role, Venue } from "../types";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
+import { normalizeWhitespace, textError } from "../lib/validation";
+import type { BookingListParams, Organization } from "../types";
+import { AuditPanel } from "./organization/AuditPanel";
+import { BookingsPanel } from "./organization/BookingsPanel";
+import { FinancialPanel } from "./organization/FinancialPanel";
+import { MembersPanel } from "./organization/MembersPanel";
+import { VenuesPanel } from "./organization/VenuesPanel";
 
 type Tab = "members" | "venues" | "bookings" | "financial" | "audit";
+const TABS: Tab[] = ["members", "venues", "bookings", "financial", "audit"];
 
-const BOOKING_STATUS_LABELS: Record<string, string> = {
-  PARTICIPANT_CONFIRMATION: "Confirmação dos jogadores",
-  REQUESTED: "Aguardando estabelecimento",
-  DECLINED: "Recusada",
-  EXPIRED: "Expirada",
-  HOLD_CONFIRMED: "Bloqueio confirmado",
-  PAYMENT_PENDING: "Aguardando pagamentos",
-  CONFIRMED: "Confirmada",
-  CANCELLED: "Cancelada",
-  CANCELLED_BY_VENUE: "Cancelada pelo estabelecimento",
-  CANCELLED_BY_PLAYER: "Cancelada pelo jogador",
-  SUBSTITUTING: "Em substituição",
-  COMPLETED: "Concluída",
-};
-
-function money(cents: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(cents / 100);
-}
-
-const RELEASE_STATUS_LABELS: Record<string, string> = {
-  PENDING: "A repassar",
-  RELEASED: "Repassado",
-  FAILED: "Falhou",
-  REVERSED: "Revertido",
-};
-
-const DISPUTE_STATUS_LABELS: Record<string, string> = {
-  OPEN: "Em análise",
-  ACCEPTED: "Procedente",
-  REJECTED: "Improcedente",
-  WITHDRAWN: "Retirada",
-};
-
-const LEDGER_ENTRY_LABELS: Record<string, string> = {
-  CHARGE_CREATED: "Cobrança criada",
-  PAYMENT_CONFIRMED: "Pagamento confirmado",
-  PAYMENT_REFUNDED: "Reembolso",
-  VENUE_RELEASE: "Repasse ao estabelecimento",
-};
-
-function canReadAudit(role: Role): boolean {
+function canReadAudit(role: Organization["role"]): boolean {
   return role === "OWNER" || role === "ADMIN";
-}
-
-function canManageFinancial(role: Role): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
-function assignableRoles(role: Role): Role[] {
-  return role === "OWNER" ? ["OWNER", "ADMIN", "OPERATOR"] : ["OPERATOR"];
-}
-
-function MemberRow({
-  member,
-  organizationId,
-  actorRole,
-  currentUserId,
-  onChanged,
-  onNotice,
-  onError,
-}: {
-  member: Member;
-  organizationId: string;
-  actorRole: Role;
-  currentUserId: string | null;
-  onChanged: () => Promise<void>;
-  onNotice: (message: string) => void;
-  onError: (error: unknown) => void;
-}) {
-  const [role, setRole] = useState<Role>(member.role);
-  const manageable = actorRole === "OWNER" || (actorRole === "ADMIN" && member.role === "OPERATOR");
-  const isSelf = member.user_id === currentUserId;
-
-  const changeRole = useMutation({
-    mutationFn: (nextRole: Role) => api.changeMemberRole(organizationId, member.user_id, nextRole),
-    onSuccess: async () => {
-      await onChanged();
-      onNotice("Papel atualizado.");
-    },
-    onError: (caught) => onError(caught),
-  });
-
-  const removeMember = useMutation({
-    mutationFn: () => api.removeMember(organizationId, member.user_id),
-    onSuccess: async () => {
-      await onChanged();
-      onNotice(isSelf ? "Você saiu da organização." : "Membro removido.");
-    },
-    onError: (caught) => onError(caught),
-  });
-
-  const busy = changeRole.isPending || removeMember.isPending;
-
-  function saveRole() {
-    if (role === member.role) return;
-    changeRole.mutate(role);
-  }
-
-  function confirmRemove() {
-    const label = member.display_name || member.user_id;
-    const action = isSelf ? "Sair da organização" : "Remover este membro";
-    if (!window.confirm(`${action} — ${label}?`)) return;
-    removeMember.mutate();
-  }
-
-  return (
-    <li className="member-row">
-      <div className="member-row__identity">
-        <strong>{member.display_name || "Sem nome de perfil"}</strong>
-        <small className="mono">{member.user_id}</small>
-        <small>Desde {formatDate(member.created_at)}</small>
-      </div>
-      <div className="member-row__role">
-        {manageable ? (
-          <select
-            aria-label={`Papel de ${member.display_name || member.user_id}`}
-            value={role}
-            onChange={(event) => setRole(event.target.value as Role)}
-            disabled={busy}
-          >
-            {assignableRoles(actorRole).map((option) => (
-              <option key={option} value={option}>
-                {roleLabel(option)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className={`badge badge--${member.role.toLowerCase()}`}>
-            {roleLabel(member.role)}
-          </span>
-        )}
-        {isSelf ? <span className="badge badge--muted">você</span> : null}
-      </div>
-      {manageable ? (
-        <div className="member-row__actions">
-          <button
-            type="button"
-            className="button button--small"
-            onClick={saveRole}
-            disabled={busy || role === member.role}
-          >
-            Salvar
-          </button>
-          <button
-            type="button"
-            className="button button--small button--danger"
-            onClick={confirmRemove}
-            disabled={busy}
-          >
-            {isSelf ? "Sair" : "Remover"}
-          </button>
-        </div>
-      ) : null}
-    </li>
-  );
 }
 
 export function OrganizationPage() {
   const { organizationId = "" } = useParams<{ organizationId: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("members");
+  const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<unknown>(null);
-
-  const [newMemberId, setNewMemberId] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState<Role>("OPERATOR");
-
-  const [venueName, setVenueName] = useState("");
-  const [venueCity, setVenueCity] = useState("");
-  const [venueState, setVenueState] = useState("");
-  const [venueAddress, setVenueAddress] = useState("");
-  const [venueLatitude, setVenueLatitude] = useState("");
-  const [venueLongitude, setVenueLongitude] = useState("");
-  const [payoutDocument, setPayoutDocument] = useState("");
-  const [payoutKeyType, setPayoutKeyType] = useState("cnpj");
-  const [payoutKey, setPayoutKey] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [bookingParams, setBookingParams] = useState<BookingListParams>({
+    limit: 50,
+    offset: 0,
+  });
 
   const organizationQuery = useQuery({
     queryKey: queryKeys.organization(organizationId),
@@ -205,1177 +60,259 @@ export function OrganizationPage() {
   const membersQuery = useQuery({
     queryKey: queryKeys.members(organizationId),
     queryFn: async () => (await api.listMembers(organizationId)).members,
-    enabled: organizationId.length > 0,
+    enabled: Boolean(organization),
   });
-
   const venuesQuery = useQuery({
     queryKey: queryKeys.venues(organizationId),
     queryFn: async () => (await api.listVenues(organizationId)).venues,
-    enabled: organizationId.length > 0,
+    enabled: Boolean(organization),
   });
-
   const bookingsQuery = useQuery({
-    queryKey: queryKeys.bookings(organizationId),
-    queryFn: async () => (await api.listOrganizationBookings(organizationId)).bookings,
-    enabled: organizationId.length > 0,
+    queryKey: [...queryKeys.bookings(organizationId), bookingParams],
+    queryFn: () => api.listOrganizationBookings(organizationId, bookingParams),
+    enabled: Boolean(organization),
+    placeholderData: keepPreviousData,
   });
 
-  const financialSummaryQuery = useQuery({
-    queryKey: queryKeys.financialSummary(organizationId),
-    queryFn: () => api.getOrganizationFinancialSummary(organizationId),
-    enabled: organizationId.length > 0,
-  });
-
-  const receivablesQuery = useQuery({
-    queryKey: queryKeys.receivables(organizationId),
-    queryFn: async () => (await api.listReceivables(organizationId)).receivables,
-    enabled: organizationId.length > 0,
-  });
-
-  const statementQuery = useQuery({
-    queryKey: queryKeys.statement(organizationId),
-    queryFn: async () => (await api.getFinancialStatement(organizationId)).entries,
-    enabled: organizationId.length > 0,
-  });
-
-  const disputesQuery = useQuery({
-    queryKey: queryKeys.disputes(organizationId),
-    queryFn: async () => (await api.listFinancialDisputes(organizationId)).disputes,
-    enabled: organizationId.length > 0,
-  });
-
+  const members = membersQuery.data ?? [];
+  const venues = venuesQuery.data ?? [];
+  const bookingsPage = bookingsQuery.data;
+  const bookings = bookingsPage?.bookings ?? [];
+  const bookingsTotal = bookingsPage?.total ?? 0;
+  const bookingsLimit = bookingsPage?.limit ?? bookingParams.limit ?? 50;
+  const bookingsOffset = bookingsPage?.offset ?? bookingParams.offset ?? 0;
   const showAudit = organization ? canReadAudit(organization.role) : false;
-  const canManageFinances = organization ? canManageFinancial(organization.role) : false;
 
-  const auditQuery = useQuery({
-    queryKey: queryKeys.audit(organizationId),
-    queryFn: async () => (await api.listAudit(organizationId)).audit,
-    enabled: organizationId.length > 0 && showAudit,
-  });
+  const requestedTab = searchParams.get("tab") as Tab | null;
+  const activeTab: Tab =
+    requestedTab && TABS.includes(requestedTab) && (requestedTab !== "audit" || showAudit)
+      ? requestedTab
+      : "members";
 
-  const invalidateMembers = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.members(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
-    ]);
-  };
-
-  const invalidateVenues = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.venues(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
-    ]);
-  };
-
-  const invalidateFinancial = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.receivables(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.statement(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.disputes(organizationId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) }),
-    ]);
-  };
-
-  const invalidateBookings = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.bookings(organizationId) }),
-      invalidateFinancial(),
-    ]);
-  };
+  useDocumentTitle(organization?.name ?? "Organização");
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => api.updateOrganization(organizationId, name),
     onSuccess: (updated: Organization) => {
       queryClient.setQueryData(queryKeys.organization(organizationId), updated);
       setEditingName(false);
-      setNotice("Nome atualizado.");
+      setNameError(null);
+      toast.push({
+        title: "Nome atualizado",
+        description: "A alteração foi registrada na auditoria.",
+      });
       void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
     },
+    onError: (caught) => setNameError(formatError(caught)),
   });
 
-  const addMemberMutation = useMutation({
-    mutationFn: (payload: { userId: string; role: Role }) =>
-      api.addMember(organizationId, payload.userId, payload.role),
-    onSuccess: async () => {
-      setNewMemberId("");
-      setNewMemberRole("OPERATOR");
-      setNotice("Membro adicionado.");
-      await invalidateMembers();
-    },
-  });
+  function setTab(next: Tab) {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next);
+    setSearchParams(params);
+  }
 
-  const addVenueMutation = useMutation({
-    mutationFn: () =>
-      api.createVenue(organizationId, {
-        name: venueName,
-        city: venueCity.trim() || null,
-        state: venueState.trim() || null,
-        address_line: venueAddress.trim() || null,
-        latitude: Number(venueLatitude),
-        longitude: Number(venueLongitude),
-      }),
-    onSuccess: async () => {
-      setVenueName("");
-      setVenueCity("");
-      setVenueState("");
-      setVenueAddress("");
-      setVenueLatitude("");
-      setVenueLongitude("");
-      setNotice("Estabelecimento cadastrado.");
-      await invalidateVenues();
-    },
-  });
+  function changeBookingParams(next: BookingListParams) {
+    setBookingParams({
+      status: next.status ?? null,
+      from: next.from ?? null,
+      to: next.to ?? null,
+      limit: next.limit ?? 50,
+      offset: next.offset ?? 0,
+    });
+  }
 
-  const toggleVenueMutation = useMutation({
-    mutationFn: (venue: Venue) =>
-      api.updateVenue(organizationId, venue.id, {
-        status: venue.status === "active" ? "inactive" : "active",
-      }),
-    onSuccess: async () => {
-      setNotice("Status do estabelecimento atualizado.");
-      await invalidateVenues();
-    },
-  });
-
-  const acceptBookingMutation = useMutation({
-    mutationFn: (bookingId: string) => api.acceptBooking(organizationId, bookingId),
-    onSuccess: async () => {
-      setNotice("Reserva aceita e bloqueio confirmado.");
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const declineBookingMutation = useMutation({
-    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
-      api.declineBooking(organizationId, bookingId, reason),
-    onSuccess: async () => {
-      setNotice("Reserva recusada.");
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const completeBookingMutation = useMutation({
-    mutationFn: (bookingId: string) => api.completeBooking(organizationId, bookingId),
-    onSuccess: async () => {
-      setNotice("Reserva concluída.");
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const cancelVenueBookingMutation = useMutation({
-    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
-      api.cancelBookingByVenue(organizationId, bookingId, reason),
-    onSuccess: async () => {
-      setNotice("Reserva cancelada pelo estabelecimento.");
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const refundBookingMutation = useMutation({
-    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) =>
-      api.refundBooking(organizationId, bookingId, reason),
-    onSuccess: async (result) => {
-      setNotice(`${result.refunded} cobrança(s) reembolsada(s).`);
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const presenceMutation = useMutation({
-    mutationFn: ({ bookingId, userId }: { bookingId: string; userId: string }) =>
-      api.confirmPresence(bookingId, userId, "VENUE"),
-    onSuccess: async () => {
-      setNotice("Presença confirmada pelo estabelecimento.");
-      await invalidateBookings();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const payoutMutation = useMutation({
-    mutationFn: () =>
-      api.updatePayout(organizationId, {
-        legal_document: payoutDocument,
-        pix_key_type: payoutKeyType,
-        pix_key: payoutKey,
-      }),
-    onSuccess: (updated: Organization) => {
-      queryClient.setQueryData(queryKeys.organization(organizationId), updated);
-      setPayoutDocument("");
-      setPayoutKey("");
-      setActionError(null);
-      setNotice("Destino de repasse atualizado.");
-      void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const openDisputeMutation = useMutation({
-    mutationFn: (payload: { bookingId: string; reason: string }) =>
-      api.openFinancialDispute(organizationId, {
-        booking_id: payload.bookingId,
-        reason: payload.reason,
-      }),
-    onSuccess: async () => {
-      setActionError(null);
-      setNotice("Contestação registrada e repasse suspenso até a análise.");
-      await invalidateFinancial();
-    },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
-  });
-
-  const loading = organizationQuery.isPending || membersQuery.isPending || venuesQuery.isPending;
-  const queryError =
-    organizationQuery.error ??
-    membersQuery.error ??
-    venuesQuery.error ??
-    bookingsQuery.error ??
-    financialSummaryQuery.error ??
-    receivablesQuery.error ??
-    statementQuery.error ??
-    disputesQuery.error;
-  const mutationError =
-    renameMutation.error ??
-    addMemberMutation.error ??
-    addVenueMutation.error ??
-    toggleVenueMutation.error ??
-    acceptBookingMutation.error ??
-    declineBookingMutation.error ??
-    completeBookingMutation.error ??
-    cancelVenueBookingMutation.error ??
-    refundBookingMutation.error ??
-    presenceMutation.error ??
-    payoutMutation.error ??
-    openDisputeMutation.error;
-  const busy =
-    renameMutation.isPending ||
-    addMemberMutation.isPending ||
-    addVenueMutation.isPending ||
-    toggleVenueMutation.isPending ||
-    acceptBookingMutation.isPending ||
-    declineBookingMutation.isPending ||
-    completeBookingMutation.isPending ||
-    cancelVenueBookingMutation.isPending ||
-    refundBookingMutation.isPending ||
-    presenceMutation.isPending ||
-    payoutMutation.isPending ||
-    openDisputeMutation.isPending;
-
-  const members = membersQuery.data ?? [];
-  const venues = venuesQuery.data ?? [];
-  const bookings = bookingsQuery.data ?? [];
-  const financialSummary = financialSummaryQuery.data;
-  const receivables = receivablesQuery.data ?? [];
-  const statement = statementQuery.data ?? [];
-  const disputes = disputesQuery.data ?? [];
-  const audit = auditQuery.data ?? [];
-  const activeTab: Tab = tab === "audit" && !showAudit ? "members" : tab;
-
-  function refetchAll() {
-    void organizationQuery.refetch();
-    void membersQuery.refetch();
-    void venuesQuery.refetch();
-    if (showAudit) void auditQuery.refetch();
+  function beginRename() {
+    if (!organization) return;
+    setNameDraft(organization.name);
+    setNameError(null);
+    setEditingName(true);
+    window.setTimeout(() => document.getElementById("organization-name")?.focus(), 0);
   }
 
   function saveName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    renameMutation.mutate(nameDraft);
+    const validation = textError(nameDraft, {
+      label: "o nome da organização",
+      min: 2,
+      max: 120,
+    });
+    if (validation) {
+      setNameError(validation);
+      document.getElementById("organization-name")?.focus();
+      return;
+    }
+    renameMutation.mutate(normalizeWhitespace(nameDraft));
   }
 
-  function addMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    addMemberMutation.mutate({ userId: newMemberId.trim(), role: newMemberRole });
+  if (organizationQuery.isPending) {
+    return <SkeletonList rows={4} label="Carregando organização..." />;
   }
 
-  function addVenue(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    addVenueMutation.mutate();
-  }
-
-  if (loading) {
+  if (organizationQuery.error || !organization) {
     return (
-      <div className="app-shell">
-        <AppHeader />
-        <main className="page">
-          <LoadingBlock label="Carregando organização..." />
-        </main>
-      </div>
-    );
-  }
-
-  if (queryError || !organization) {
-    return (
-      <div className="app-shell">
-        <AppHeader />
-        <main className="page">
-          <ErrorNotice
-            message={queryError ? formatError(queryError) : "Organização não encontrada."}
-            requestId={requestIdOf(queryError)}
-            onRetry={refetchAll}
-          />
-          <Link className="button button--link" to="/">
-            Voltar para organizações
-          </Link>
-        </main>
-      </div>
+      <>
+        <ErrorNotice
+          message={
+            organizationQuery.error
+              ? formatError(organizationQuery.error)
+              : "Organização não encontrada."
+          }
+          requestId={requestIdOf(organizationQuery.error)}
+          onRetry={() => void organizationQuery.refetch()}
+        />
+        <Link className="button button--link" to="/">
+          Voltar para organizações
+        </Link>
+      </>
     );
   }
 
   const canUpdateOrganization = organization.role !== "OPERATOR";
-  const canManageMembers = organization.role !== "OPERATOR";
-  const roles = assignableRoles(organization.role);
+  const hasBookingFilters = Boolean(bookingParams.status || bookingParams.from || bookingParams.to);
+  const tabItems = [
+    { id: "members", label: "Membros", count: members.length },
+    { id: "venues", label: "Estabelecimentos", count: venues.length },
+    { id: "bookings", label: "Reservas", count: hasBookingFilters ? undefined : bookingsTotal },
+    { id: "financial", label: "Financeiro" },
+    ...(showAudit ? [{ id: "audit", label: "Auditoria" }] : []),
+  ];
 
   return (
-    <div className="app-shell">
-      <AppHeader subtitle={organization.name} />
-      <main className="page">
-        <nav className="breadcrumb" aria-label="Navegação">
-          <Link to="/">Organizações</Link>
-          <span aria-hidden="true">/</span>
-          <span>{organization.name}</span>
-        </nav>
+    <>
+      <Breadcrumbs items={[{ label: "Organizações", to: "/" }, { label: organization.name }]} />
 
-        <section className="page-heading">
-          <div>
-            <p className="eyebrow">{roleLabel(organization.role)}</p>
-            <h1>{organization.name}</h1>
-            <p className="muted">
-              Status {organization.status} · criada em {formatDate(organization.created_at)}
-            </p>
-          </div>
-          {canUpdateOrganization ? (
+      <PageHeader
+        eyebrow={roleLabel(organization.role)}
+        title={organization.name}
+        description={
+          <>
+            <span
+              className={
+                organization.status === "active" ? "badge badge--success" : "badge badge--muted"
+              }
+            >
+              {organizationStatusLabel(organization.status)}
+            </span>{" "}
+            Organização criada em {formatDate(organization.created_at)}.
+          </>
+        }
+        actions={
+          canUpdateOrganization ? (
             <button
               type="button"
-              className="button button--ghost"
+              className={editingName ? "button button--ghost" : "button"}
               onClick={() => {
-                setNameDraft(organization.name);
-                setEditingName((current) => !current);
+                if (editingName) {
+                  setEditingName(false);
+                  setNameError(null);
+                } else {
+                  beginRename();
+                }
               }}
             >
               {editingName ? "Cancelar edição" : "Editar nome"}
             </button>
-          ) : null}
-        </section>
+          ) : null
+        }
+      />
 
-        {editingName ? (
-          <form className="inline-form" onSubmit={saveName}>
-            <label className="field field--inline">
-              <span>Nome da organização</span>
-              <input
-                type="text"
-                value={nameDraft}
-                onChange={(event) => setNameDraft(event.target.value)}
-                minLength={2}
-                maxLength={120}
-                required
-              />
-            </label>
-            <button type="submit" className="button button--primary" disabled={busy}>
-              Salvar nome
+      {editingName ? (
+        <div className="card card--form">
+          <form className="inline-form" onSubmit={saveName} noValidate>
+            <TextField
+              id="organization-name"
+              label="Nome da organização"
+              className="field--inline"
+              value={nameDraft}
+              onChange={(event) => {
+                setNameDraft(event.target.value);
+                if (nameError) setNameError(null);
+              }}
+              error={nameError}
+              hint="De 2 a 120 caracteres."
+              minLength={2}
+              maxLength={120}
+              required
+            />
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={renameMutation.isPending}
+              aria-busy={renameMutation.isPending || undefined}
+            >
+              {renameMutation.isPending ? "Salvando..." : "Salvar nome"}
             </button>
           </form>
-        ) : null}
+        </div>
+      ) : null}
 
-        {notice ? (
-          <div className="notice notice--success" role="status" aria-live="polite">
-            {notice}
-          </div>
-        ) : null}
-        {actionError ? (
-          <ErrorNotice message={formatError(actionError)} requestId={requestIdOf(actionError)} />
-        ) : null}
-        {mutationError ? (
-          <ErrorNotice
-            message={formatError(mutationError)}
-            requestId={requestIdOf(mutationError)}
+      <div className="context-note">
+        <BuildingIcon size={17} />
+        <span>
+          Você está vendo apenas os dados desta organização. O acesso a outra organização exige um
+          vínculo próprio.
+        </span>
+      </div>
+
+      <Tabs
+        items={tabItems}
+        active={activeTab}
+        onChange={(id) => setTab(id as Tab)}
+        idBase="organization"
+        ariaLabel="Seções da organização"
+      />
+
+      <div
+        role="tabpanel"
+        id={tabPanelId("organization", activeTab)}
+        aria-labelledby={tabId("organization", activeTab)}
+        tabIndex={0}
+        className="tab-panel"
+      >
+        {activeTab === "members" ? (
+          <MembersPanel
+            organization={organization}
+            members={members}
+            currentUserId={user?.id ?? null}
+            loading={membersQuery.isPending}
+            error={membersQuery.error}
+            onRetry={() => void membersQuery.refetch()}
           />
         ) : null}
 
-        <div className="tabs" role="tablist" aria-label="Seções da organização">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "members"}
-            className={activeTab === "members" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("members")}
-          >
-            Membros <span className="tab__count">{members.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "venues"}
-            className={activeTab === "venues" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("venues")}
-          >
-            Estabelecimentos <span className="tab__count">{venues.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "bookings"}
-            className={activeTab === "bookings" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("bookings")}
-          >
-            Reservas <span className="tab__count">{bookings.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "financial"}
-            className={activeTab === "financial" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("financial")}
-          >
-            Financeiro
-            {receivables.length > 0 ? (
-              <span className="tab__count">{receivables.length}</span>
-            ) : null}
-          </button>
-          {showAudit ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "audit"}
-              className={activeTab === "audit" ? "tab tab--active" : "tab"}
-              onClick={() => setTab("audit")}
-            >
-              Auditoria
-            </button>
-          ) : null}
-        </div>
-
-        {activeTab === "members" ? (
-          <section className="card">
-            <div className="section-heading">
-              <div>
-                <h2>Membros e permissões</h2>
-                <p className="muted">
-                  {organization.role === "OWNER"
-                    ? "Você pode gerenciar proprietários, administradores e operadores."
-                    : organization.role === "ADMIN"
-                      ? "Você pode gerenciar operadores."
-                      : "Você pode consultar os membros, mas não alterá-los."}
-                </p>
-              </div>
-            </div>
-
-            {members.length === 0 ? (
-              <EmptyState title="Nenhum membro">A organização ainda não tem vínculos.</EmptyState>
-            ) : (
-              <ul className="member-list">
-                {members.map((member) => (
-                  <MemberRow
-                    key={`${member.user_id}:${member.role}`}
-                    member={member}
-                    organizationId={organization.id}
-                    actorRole={organization.role}
-                    currentUserId={user?.id ?? null}
-                    onChanged={invalidateMembers}
-                    onNotice={setNotice}
-                    onError={(error) => {
-                      setNotice(null);
-                      setActionError(error);
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-
-            {canManageMembers ? (
-              <form className="form form--inline" onSubmit={addMember}>
-                <h3>Adicionar membro</h3>
-                <p className="muted">
-                  Informe o UUID da conta JOGA. O usuário pode ser jogador e também administrar o
-                  estabelecimento.
-                </p>
-                <div className="form-row">
-                  <label className="field">
-                    <span>UUID do usuário</span>
-                    <input
-                      type="text"
-                      value={newMemberId}
-                      onChange={(event) => setNewMemberId(event.target.value)}
-                      placeholder="00000000-0000-0000-0000-000000000000"
-                      required
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Papel</span>
-                    <select
-                      value={newMemberRole}
-                      onChange={(event) => setNewMemberRole(event.target.value as Role)}
-                    >
-                      {roles.map((role) => (
-                        <option key={role} value={role}>
-                          {roleLabel(role)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <button type="submit" className="button button--primary" disabled={busy}>
-                  Adicionar
-                </button>
-              </form>
-            ) : null}
-          </section>
-        ) : null}
-
         {activeTab === "venues" ? (
-          <section className="stack">
-            <div className="card">
-              <div className="section-heading">
-                <div>
-                  <h2>Estabelecimentos</h2>
-                  <p className="muted">
-                    Perfil comercial vinculado a esta organização. Quadras, agenda, preços e
-                    cobertura são geridos na página de cada estabelecimento.
-                  </p>
-                </div>
-              </div>
-              {venues.length === 0 ? (
-                <EmptyState title="Nenhum estabelecimento">
-                  Cadastre o primeiro perfil comercial abaixo.
-                </EmptyState>
-              ) : (
-                <ul className="venue-list">
-                  {venues.map((venue) => (
-                    <li key={venue.id} className="venue-row">
-                      <div>
-                        <strong>{venue.name}</strong>
-                        <small>
-                          {[venue.city, venue.state].filter(Boolean).join(" · ") ||
-                            "Local não informado"}
-                        </small>
-                        {venue.address_line ? <small>{venue.address_line}</small> : null}
-                      </div>
-                      <div className="venue-row__actions">
-                        <span
-                          className={
-                            venue.status === "active" ? "badge badge--active" : "badge badge--muted"
-                          }
-                        >
-                          {venue.status === "active" ? "Ativo" : "Inativo"}
-                        </span>
-                        <Link
-                          className="button button--small"
-                          to={`/organizations/${organization.id}/venues/${venue.id}`}
-                        >
-                          Quadras e fotos
-                        </Link>
-                        <button
-                          type="button"
-                          className="button button--small"
-                          onClick={() => toggleVenueMutation.mutate(venue)}
-                          disabled={busy}
-                        >
-                          {venue.status === "active" ? "Desativar" : "Ativar"}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="card">
-              <h2>Novo estabelecimento</h2>
-              <form className="form" onSubmit={addVenue}>
-                <label className="field">
-                  <span>Nome</span>
-                  <input
-                    type="text"
-                    value={venueName}
-                    onChange={(event) => setVenueName(event.target.value)}
-                    minLength={2}
-                    maxLength={120}
-                    placeholder="Ex.: Arena Tijuca"
-                    required
-                  />
-                </label>
-                <div className="form-row">
-                  <label className="field">
-                    <span>Cidade</span>
-                    <input
-                      type="text"
-                      value={venueCity}
-                      onChange={(event) => setVenueCity(event.target.value)}
-                      maxLength={120}
-                      placeholder="Rio de Janeiro"
-                    />
-                  </label>
-                  <label className="field field--short">
-                    <span>UF</span>
-                    <input
-                      type="text"
-                      value={venueState}
-                      onChange={(event) =>
-                        setVenueState(event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
-                      }
-                      minLength={2}
-                      maxLength={2}
-                      placeholder="RJ"
-                    />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Endereço</span>
-                  <input
-                    type="text"
-                    value={venueAddress}
-                    onChange={(event) => setVenueAddress(event.target.value)}
-                    maxLength={200}
-                    placeholder="Rua, número e complemento"
-                  />
-                </label>
-                <div className="form-row">
-                  <label className="field">
-                    <span>Latitude</span>
-                    <input
-                      type="number"
-                      value={venueLatitude}
-                      onChange={(event) => setVenueLatitude(event.target.value)}
-                      min={-90}
-                      max={90}
-                      step="any"
-                      placeholder="-22.9"
-                      required
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Longitude</span>
-                    <input
-                      type="number"
-                      value={venueLongitude}
-                      onChange={(event) => setVenueLongitude(event.target.value)}
-                      min={-180}
-                      max={180}
-                      step="any"
-                      placeholder="-43.2"
-                      required
-                    />
-                  </label>
-                </div>
-                <button type="submit" className="button button--primary" disabled={busy}>
-                  Cadastrar estabelecimento
-                </button>
-              </form>
-            </div>
-          </section>
+          <VenuesPanel
+            organization={organization}
+            venues={venues}
+            loading={venuesQuery.isPending}
+            error={venuesQuery.error}
+            onRetry={() => void venuesQuery.refetch()}
+          />
         ) : null}
 
         {activeTab === "bookings" ? (
-          <section className="card">
-            <div className="section-heading">
-              <div>
-                <h2>Reservas</h2>
-                <p className="muted">
-                  Solicitações de reserva originadas no JOGA, com prazos e bloqueios controlados
-                  pelo servidor.
-                </p>
-              </div>
-            </div>
-            {financialSummary ? (
-              <div className="financial-summary">
-                <div>
-                  <span>Cobrado</span>
-                  <strong>{money(financialSummary.charged_cents)}</strong>
-                </div>
-                <div>
-                  <span>Pago</span>
-                  <strong>{money(financialSummary.paid_cents)}</strong>
-                </div>
-                <div>
-                  <span>Reembolsado</span>
-                  <strong>{money(financialSummary.refunded_cents)}</strong>
-                </div>
-                <div>
-                  <span>Pendente</span>
-                  <strong>{money(financialSummary.pending_cents)}</strong>
-                </div>
-                <div>
-                  <span>Repassado</span>
-                  <strong>{money(financialSummary.released_cents)}</strong>
-                </div>
-              </div>
-            ) : null}
-            {bookingsQuery.isPending ? (
-              <LoadingBlock label="Carregando reservas..." />
-            ) : bookings.length === 0 ? (
-              <EmptyState title="Nenhuma reserva">
-                As solicitações aparecem aqui quando um lobby pedir uma quadra.
-              </EmptyState>
-            ) : (
-              <ul className="booking-list">
-                {bookings.map((booking) => {
-                  const activeParticipants = booking.participants.filter(
-                    (participant) => participant.active,
-                  ).length;
-                  return (
-                    <li key={booking.id} className="booking-card">
-                      <div className="booking-card__main">
-                        <strong>
-                          {formatDate(booking.starts_at)} — {formatDate(booking.ends_at)}
-                        </strong>
-                        <span className="badge badge--muted">
-                          {BOOKING_STATUS_LABELS[booking.status] ?? booking.status}
-                        </span>
-                        <small>
-                          {activeParticipants} vagas · {money(booking.price_cents)}
-                        </small>
-                        <small>
-                          {booking.format_name ?? "Formato não informado"} ·{" "}
-                          {booking.venue_space_name ?? "Quadra"} ·{" "}
-                          {booking.band_label ?? "Faixa não informada"}
-                          {booking.tickets_per_seat
-                            ? ` · ${booking.tickets_per_seat} ingressos/vaga`
-                            : ""}
-                        </small>
-                        <small>
-                          {booking.timers
-                            .map(
-                              (timer) =>
-                                `${timer.timer_type} ${timer.status.toLowerCase()} até ${formatDate(
-                                  timer.deadline_at,
-                                )}`,
-                            )
-                            .join(" · ")}
-                        </small>
-                        {booking.cancellation_reason ? (
-                          <small>Motivo: {booking.cancellation_reason}</small>
-                        ) : null}
-                        <details className="booking-details">
-                          <summary>Participantes, pagamento e presença</summary>
-                          <ul className="booking-participants">
-                            {booking.participants.map((participant) => (
-                              <li key={participant.id}>
-                                <span>
-                                  Vaga {participant.seat} · {participant.user_id.slice(0, 8)} ·{" "}
-                                  {participant.payment_status}
-                                  {participant.settled_with
-                                    ? ` (${participant.settled_with})`
-                                    : ""}{" "}
-                                  · {participant.presence_status}
-                                </span>
-                                {booking.status === "CONFIRMED" &&
-                                ["PENDING", "UNVERIFIED"].includes(participant.presence_status) ? (
-                                  <button
-                                    type="button"
-                                    className="button button--small"
-                                    disabled={busy}
-                                    onClick={() =>
-                                      presenceMutation.mutate({
-                                        bookingId: booking.id,
-                                        userId: participant.user_id,
-                                      })
-                                    }
-                                  >
-                                    Confirmar presença
-                                  </button>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      </div>
-                      <div className="booking-card__actions">
-                        {booking.status === "REQUESTED" ? (
-                          <>
-                            <button
-                              type="button"
-                              className="button button--small"
-                              disabled={busy}
-                              onClick={() => acceptBookingMutation.mutate(booking.id)}
-                            >
-                              Aceitar
-                            </button>
-                            <button
-                              type="button"
-                              className="button button--small button--danger"
-                              disabled={busy}
-                              onClick={() => {
-                                const reason = window.prompt("Motivo da recusa (obrigatório):");
-                                if (reason) {
-                                  declineBookingMutation.mutate({
-                                    bookingId: booking.id,
-                                    reason,
-                                  });
-                                }
-                              }}
-                            >
-                              Recusar
-                            </button>
-                          </>
-                        ) : null}
-                        {booking.status === "CONFIRMED" ? (
-                          <button
-                            type="button"
-                            className="button button--small"
-                            disabled={busy}
-                            onClick={() => completeBookingMutation.mutate(booking.id)}
-                          >
-                            Concluir
-                          </button>
-                        ) : null}
-                        {["HOLD_CONFIRMED", "PAYMENT_PENDING", "CONFIRMED"].includes(
-                          booking.status,
-                        ) ? (
-                          <button
-                            type="button"
-                            className="button button--small button--danger"
-                            disabled={busy}
-                            onClick={() => {
-                              const reason = window.prompt(
-                                "Motivo do cancelamento pelo estabelecimento (obrigatório):",
-                              );
-                              if (reason) {
-                                cancelVenueBookingMutation.mutate({
-                                  bookingId: booking.id,
-                                  reason,
-                                });
-                              }
-                            }}
-                          >
-                            Cancelar pela quadra
-                          </button>
-                        ) : null}
-                        {canManageFinances &&
-                        booking.payments.some((payment) => payment.status === "PAID") ? (
-                          <button
-                            type="button"
-                            className="button button--small button--danger"
-                            disabled={busy}
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  "Reembolsar as cobranças pagas desta reserva? A ação é auditada.",
-                                )
-                              ) {
-                                return;
-                              }
-                              const reason = window.prompt("Motivo do reembolso (obrigatório):");
-                              if (reason) {
-                                refundBookingMutation.mutate({
-                                  bookingId: booking.id,
-                                  reason,
-                                });
-                              }
-                            }}
-                          >
-                            Reembolsar
-                          </button>
-                        ) : null}
-                        {booking.status === "PAYMENT_PENDING" ? (
-                          <small className="muted">Aguardando pagamentos</small>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
+          <BookingsPanel
+            organization={organization}
+            bookings={bookings}
+            total={bookingsTotal}
+            limit={bookingsLimit}
+            offset={bookingsOffset}
+            filters={bookingParams}
+            onParamsChange={changeBookingParams}
+            loading={bookingsQuery.isPending}
+            fetching={bookingsQuery.isFetching}
+            error={bookingsQuery.error}
+            onRetry={() => void bookingsQuery.refetch()}
+          />
         ) : null}
 
-        {activeTab === "financial" ? (
-          <section className="card">
-            <div className="section-heading">
-              <div>
-                <h2>Financeiro</h2>
-                <p className="muted">
-                  Extrato, agenda de repasses e contestações das reservas originadas no JOGA.
-                  Configuração técnica local: prazos e política de liberação ainda não aprovados.
-                </p>
-              </div>
-            </div>
-
-            <h3>Repasse ao fornecedor</h3>
-            {organization ? (
-              <div className="payout-status">
-                <span
-                  className={
-                    organization.payout_ready ? "badge badge--active" : "badge badge--muted"
-                  }
-                >
-                  {organization.payout_ready ? "Apto a receber" : "Repasse pendente"}
-                </span>
-                <small>
-                  {organization.payout_status} ·{" "}
-                  {organization.pix_key_masked ?? "chave Pix não cadastrada"}
-                </small>
-                <p className="muted">
-                  O JOGA paga o estabelecimento por Pix. A reserva paga só é aberta com CNPJ e chave
-                  de repasse ativos.
-                </p>
-              </div>
-            ) : null}
-            {canManageFinances ? (
-              <form
-                className="form form--inline"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  payoutMutation.mutate();
-                }}
-              >
-                <h3>Configurar repasse</h3>
-                <div className="form-row">
-                  <label className="field">
-                    <span>CNPJ</span>
-                    <input
-                      type="text"
-                      value={payoutDocument}
-                      onChange={(event) => setPayoutDocument(event.target.value)}
-                      placeholder="00.000.000/0000-00"
-                      required
-                    />
-                  </label>
-                  <label className="field field--short">
-                    <span>Tipo de chave</span>
-                    <select
-                      value={payoutKeyType}
-                      onChange={(event) => setPayoutKeyType(event.target.value)}
-                    >
-                      <option value="cnpj">CNPJ</option>
-                      <option value="email">E-mail</option>
-                      <option value="phone">Telefone</option>
-                      <option value="random">Aleatória</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Chave Pix</span>
-                  <input
-                    type="text"
-                    value={payoutKey}
-                    onChange={(event) => setPayoutKey(event.target.value)}
-                    placeholder="Chave de titularidade do CNPJ"
-                    required
-                  />
-                </label>
-                <button className="button button--primary" type="submit" disabled={busy}>
-                  {payoutMutation.isPending ? "Salvando..." : "Salvar destino de repasse"}
-                </button>
-              </form>
-            ) : (
-              <p className="muted">Somente proprietário ou administrador altera o repasse.</p>
-            )}
-
-            {financialSummary ? (
-              <div className="financial-summary">
-                <div>
-                  <span>Cobrado</span>
-                  <strong>{money(financialSummary.charged_cents)}</strong>
-                </div>
-                <div>
-                  <span>Pago</span>
-                  <strong>{money(financialSummary.paid_cents)}</strong>
-                </div>
-                <div>
-                  <span>A repassar</span>
-                  <strong>{money(financialSummary.pending_release_cents)}</strong>
-                </div>
-                <div>
-                  <span>Repassado</span>
-                  <strong>{money(financialSummary.released_cents)}</strong>
-                </div>
-                <div>
-                  <span>Em contestação</span>
-                  <strong>{money(financialSummary.disputed_cents)}</strong>
-                </div>
-                <div>
-                  <span>Reembolsado</span>
-                  <strong>{money(financialSummary.refunded_cents)}</strong>
-                </div>
-                <div>
-                  <span>Pendente</span>
-                  <strong>{money(financialSummary.pending_cents)}</strong>
-                </div>
-              </div>
-            ) : null}
-
-            <h3>Repasses a receber</h3>
-            {receivablesQuery.isPending ? (
-              <LoadingBlock label="Carregando repasses..." />
-            ) : receivables.length === 0 ? (
-              <EmptyState title="Nenhum repasse">
-                Reservas confirmadas aparecem aqui com o prazo de repasse.
-              </EmptyState>
-            ) : (
-              <ul className="booking-list">
-                {receivables.map((item) => (
-                  <li key={item.release_id} className="booking-card">
-                    <div className="booking-card__main">
-                      <strong>
-                        {formatDate(item.starts_at)} — {formatDate(item.ends_at)}
-                      </strong>
-                      <span className="badge badge--muted">
-                        {RELEASE_STATUS_LABELS[item.status] ?? item.status}
-                      </span>
-                      <small>
-                        {money(item.amount_cents)} · previsão técnica de repasse em{" "}
-                        {formatDate(item.eligible_at)}
-                      </small>
-                      {item.released_at ? (
-                        <small>Repasse técnico registrado em {formatDate(item.released_at)}</small>
-                      ) : null}
-                      {item.has_open_dispute ? (
-                        <small>
-                          Contestação em análise — repasse suspenso nesta proposta técnica.
-                        </small>
-                      ) : null}
-                    </div>
-                    {canManageFinances && item.status === "PENDING" && !item.has_open_dispute ? (
-                      <div className="booking-card__actions">
-                        <button
-                          type="button"
-                          className="button button--small"
-                          disabled={busy}
-                          onClick={() => {
-                            const reason = window.prompt("Motivo da contestação (obrigatório):");
-                            if (reason && reason.trim()) {
-                              openDisputeMutation.mutate({
-                                bookingId: item.booking_id,
-                                reason: reason.trim(),
-                              });
-                            }
-                          }}
-                        >
-                          Contestar
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <h3>Contestações</h3>
-            {disputes.length === 0 ? (
-              <EmptyState title="Nenhuma contestação">
-                Contestações abertas pelo estabelecimento aparecem aqui com a decisão.
-              </EmptyState>
-            ) : (
-              <ul className="booking-list">
-                {disputes.map((item) => (
-                  <li key={item.id} className="booking-card">
-                    <div className="booking-card__main">
-                      <strong>{money(item.amount_cents)}</strong>
-                      <span className="badge badge--muted">
-                        {DISPUTE_STATUS_LABELS[item.status] ?? item.status}
-                      </span>
-                      <small>Motivo: {item.reason}</small>
-                      {item.decision_reason ? <small>Decisão: {item.decision_reason}</small> : null}
-                      <small>Aberta em {formatDate(item.created_at)}</small>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <h3>Extrato</h3>
-            {statementQuery.isPending ? (
-              <LoadingBlock label="Carregando extrato..." />
-            ) : statement.length === 0 ? (
-              <EmptyState title="Extrato vazio">
-                Cobranças, pagamentos, reembolsos e repasses aparecem aqui.
-              </EmptyState>
-            ) : (
-              <ul className="booking-list">
-                {statement.map((entry) => (
-                  <li key={entry.id} className="booking-card">
-                    <div className="booking-card__main">
-                      <strong>{LEDGER_ENTRY_LABELS[entry.entry_type] ?? entry.entry_type}</strong>
-                      <span className="badge badge--muted">
-                        {entry.direction === "CREDIT" ? "crédito" : "débito"}
-                      </span>
-                      <small>
-                        {money(entry.amount_cents)} · {formatDate(entry.created_at)}
-                      </small>
-                      <small className="mono">Reserva {entry.booking_id.slice(0, 8)}</small>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ) : null}
+        {activeTab === "financial" ? <FinancialPanel organization={organization} /> : null}
 
         {activeTab === "audit" && showAudit ? (
-          <section className="card">
-            <div className="section-heading">
-              <div>
-                <h2>Auditoria</h2>
-                <p className="muted">
-                  Trilha append-only das ações administrativas desta organização.
-                </p>
-              </div>
-            </div>
-            {auditQuery.error ? (
-              <ErrorNotice
-                message={formatError(auditQuery.error)}
-                requestId={requestIdOf(auditQuery.error)}
-                onRetry={() => void auditQuery.refetch()}
-              />
-            ) : auditQuery.isPending ? (
-              <LoadingBlock label="Carregando auditoria..." />
-            ) : audit.length === 0 ? (
-              <EmptyState title="Nenhum evento">Ainda não há ações registradas.</EmptyState>
-            ) : (
-              <ul className="audit-list">
-                {audit.map((event) => (
-                  <li key={event.id} className="audit-row">
-                    <div>
-                      <strong>{event.action}</strong>
-                      <small>
-                        {event.resource_type}
-                        {event.resource_id ? ` · ${event.resource_id}` : ""}
-                      </small>
-                      <small>
-                        Ator: {event.actor_user_id ?? "sistema"} · {formatDate(event.created_at)}
-                      </small>
-                    </div>
-                    {event.details ? (
-                      <details>
-                        <summary>Detalhes</summary>
-                        <pre>{JSON.stringify(event.details, null, 2)}</pre>
-                      </details>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <AuditPanel organizationId={organization.id} />
         ) : null}
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
