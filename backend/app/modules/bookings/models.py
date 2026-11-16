@@ -165,7 +165,9 @@ class BookingParticipant(Base):
         CheckConstraint("seat > 0", name="seat_positive"),
         CheckConstraint("contribution_cents >= 0", name="contribution_non_negative"),
         CheckConstraint(
-            "payment_status IN ('PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED')",
+            "payment_status IN ("
+            "'PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED', 'EXPIRED', 'CANCELLED'"
+            ")",
             name="payment_status_valid",
         ),
         CheckConstraint(

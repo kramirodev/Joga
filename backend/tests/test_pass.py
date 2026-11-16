@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
@@ -13,6 +14,7 @@ from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import SessionService
+from app.modules.passes.models import PassSubscription
 from app.modules.passes.service import (
     activate_subscription,
     active_subscription,
@@ -24,6 +26,9 @@ from app.modules.passes.service import (
     expire_due,
     get_subscription,
 )
+from app.modules.payments.adapter import ProviderStatus
+from app.modules.payments.models import PurchasePayment
+from app.modules.payments.purchase import apply_status
 from app.modules.season.service import active_season, award_xp
 from app.modules.tickets.models import TicketLot
 from app.modules.tickets.service import expire_due as expire_tickets
@@ -94,6 +99,74 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
     )
     assert confirm.status_code == 403
     assert confirm.json() == {"detail": {"code": "confirmation_requires_psp"}}
+
+
+def test_pass_purchase_is_idempotent_while_pending(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    first = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=bearer(token),
+        json={"plan_code": "craque"},
+    )
+    second = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=bearer(token),
+        json={"plan_code": "craque"},
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+
+def test_pass_refund_cancels_subscription(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=bearer(token),
+        json={"plan_code": "craque"},
+    )
+    assert created.status_code == 201, created.text
+    subscription_id = uuid.UUID(created.json()["id"])
+    confirmed = api.post(
+        f"/api/v1/me/pass/subscriptions/{subscription_id}/confirm",
+        headers=bearer(token),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+    payment = db_session.scalar(
+        select(PurchasePayment).where(
+            PurchasePayment.kind == "pass",
+            PurchasePayment.reference_id == subscription_id,
+        )
+    )
+    assert payment is not None
+    apply_status(
+        db_session,
+        payment,
+        ProviderStatus(
+            provider="simulator",
+            provider_order_id=payment.provider_order_id,
+            provider_payment_id=payment.provider_payment_id,
+            status="refunded",
+            status_detail=None,
+            amount_cents=payment.amount_cents,
+            external_reference=f"pass:{subscription_id}",
+            raw={},
+        ),
+    )
+    db_session.commit()
+    subscription = db_session.get(PassSubscription, subscription_id)
+    assert subscription is not None
+    assert subscription.status == "cancelled"
 
 
 def test_subscribe_opens_pix_and_only_payment_activates(

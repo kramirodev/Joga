@@ -101,18 +101,86 @@ def get_pack(session: Session, code: str) -> TicketPack:
 
 
 def create_purchase(session: Session, user_id: uuid.UUID, pack_code: str) -> TicketPurchase:
-    """Registra a intenção de compra. A cobrança real entra na Fase 14B."""
+    """Registra a intenção de compra. Idempotente enquanto houver pendência."""
 
     pack = get_pack(session, pack_code)
+    existing = session.scalars(
+        select(TicketPurchase)
+        .where(
+            TicketPurchase.user_id == user_id,
+            TicketPurchase.pack_id == pack.id,
+            TicketPurchase.status == "pending",
+        )
+        .order_by(TicketPurchase.created_at.desc(), TicketPurchase.id.desc())
+    ).first()
+    if existing is not None:
+        return existing
+
     purchase = TicketPurchase(
         user_id=user_id,
         pack_id=pack.id,
         tickets=pack.tickets,
         amount_cents=pack.amount_cents,
     )
-    session.add(purchase)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(purchase)
+            session.flush()
+    except IntegrityError:
+        concurrent = session.scalars(
+            select(TicketPurchase)
+            .where(
+                TicketPurchase.user_id == user_id,
+                TicketPurchase.pack_id == pack.id,
+                TicketPurchase.status == "pending",
+            )
+            .order_by(TicketPurchase.created_at.desc(), TicketPurchase.id.desc())
+        ).first()
+        if concurrent is not None:
+            return concurrent
+        raise
     return purchase
+
+
+def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID) -> int:
+    """Revoga o crédito ainda não consumido de uma compra reembolsada."""
+
+    purchase = session.get(TicketPurchase, purchase_id)
+    if purchase is None or purchase.user_id != user_id:
+        raise PurchaseNotFound
+    balance = _lock_balance(session, user_id)
+    lot = session.scalars(
+        select(TicketLot)
+        .where(
+            TicketLot.user_id == user_id,
+            TicketLot.source == "purchase",
+            TicketLot.ref_type == "purchase",
+            TicketLot.ref_id == purchase.id,
+        )
+        .with_for_update()
+    ).first()
+    amount = lot.remaining if lot is not None else 0
+    key = f"purchase_refund:{purchase.id}"
+    existing = session.scalars(
+        select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
+    ).first()
+    if amount > 0 and existing is None:
+        assert lot is not None
+        ledger = TicketLedgerEntry(
+            user_id=user_id,
+            amount=-amount,
+            source="refund",
+            ref_type="purchase_refund",
+            ref_id=purchase.id,
+            idempotency_key=key,
+        )
+        session.add(ledger)
+        session.flush()
+        lot.remaining = 0
+        balance.balance -= amount
+    purchase.status = "cancelled"
+    session.flush()
+    return balance.balance
 
 
 def confirm_purchase(

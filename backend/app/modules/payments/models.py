@@ -107,6 +107,7 @@ class PspWebhookEvent(Base):
     provider_event_id: Mapped[str] = mapped_column(String(160), nullable=False)
     event_type: Mapped[str | None] = mapped_column(String(60), nullable=True)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )

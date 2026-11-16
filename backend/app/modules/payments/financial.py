@@ -111,6 +111,41 @@ class FinancialService:
                 created += 1
         return created
 
+    def reverse_for_refund(
+        self,
+        booking_id: uuid.UUID,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> VenueRelease | None:
+        """Reverte a obrigação de repasse quando a reserva é reembolsada.
+
+        Se o valor já foi liberado, o status vira REVERSED como registro
+        contábil; a recuperação efetiva continua manual e auditada.
+        """
+
+        release = self.session.scalar(
+            select(VenueRelease).where(VenueRelease.booking_id == booking_id).with_for_update()
+        )
+        if release is None or release.status in {"REVERSED", "FAILED"}:
+            return release
+        previous = release.status
+        moment = _as_utc(now or utcnow())
+        release.status = "REVERSED"
+        release.reversed_at = moment
+        release.reason = reason[:200]
+        record_audit(
+            self.session,
+            actor_user_id=None,
+            organization_id=release.organization_id,
+            action="financial.release_reversed",
+            resource_type="venue_release",
+            resource_id=release.id,
+            details={"reason": reason, "previous_status": previous},
+        )
+        self.session.flush()
+        return release
+
     def release_due(self, now: datetime | None = None) -> int:
         """Libera valores vencidos que não estejam em contestação aberta."""
 

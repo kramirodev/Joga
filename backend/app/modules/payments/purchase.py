@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import User
-from app.modules.passes.service import PassNotFound, activate_subscription
+from app.modules.passes.service import (
+    PassNotFound,
+    activate_subscription,
+    revoke_subscription,
+)
 from app.modules.payments.adapter import (
     PixChargeRequest,
     ProviderStatus,
@@ -22,7 +26,11 @@ from app.modules.payments.adapter import (
 )
 from app.modules.payments.models import PurchasePayment
 from app.modules.payments.status import map_provider_status
-from app.modules.tickets.service import PurchaseNotFound, confirm_purchase
+from app.modules.tickets.service import (
+    PurchaseNotFound,
+    confirm_purchase,
+    revoke_purchase,
+)
 
 
 class PurchasePaymentError(Exception):
@@ -174,8 +182,30 @@ def apply_status(
     if internal == "PAID":
         payment.paid_at = payment.paid_at or moment
         _settle(session, payment, moment)
+    elif internal == "REFUNDED":
+        _revoke(session, payment, moment)
     session.flush()
     return internal
+
+
+def _revoke(
+    session: Session,
+    payment: PurchasePayment,
+    moment: datetime,
+) -> None:
+    if payment.kind == "ticket_pack":
+        try:
+            revoke_purchase(session, payment.user_id, payment.reference_id)
+        except PurchaseNotFound as exc:
+            raise PurchasePaymentNotFound from exc
+        return
+    if payment.kind == "pass":
+        try:
+            revoke_subscription(session, payment.reference_id, now=moment)
+        except PassNotFound as exc:
+            raise PurchasePaymentNotFound from exc
+        return
+    raise PurchasePaymentError("kind_invalid")
 
 
 def _settle(session: Session, payment: PurchasePayment, moment: datetime) -> None:

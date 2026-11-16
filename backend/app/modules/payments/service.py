@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -42,11 +44,23 @@ from app.modules.payments.purchase import (
 )
 from app.modules.payments.status import map_provider_status
 
+
+def _payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 __all__ = [
     "PaymentError",
     "PaymentMismatch",
     "PaymentNotFound",
     "PaymentService",
+    "WebhookPayloadMismatch",
     "WebhookRejected",
     "map_provider_status",
 ]
@@ -66,6 +80,10 @@ class PaymentMismatch(PaymentError):
 
 class WebhookRejected(PaymentError):
     """Webhook inválido ou não autenticado."""
+
+
+class WebhookPayloadMismatch(WebhookRejected):
+    """Mesmo ID de evento com corpo diferente; replay não é confiável."""
 
 
 class PaymentService:
@@ -207,13 +225,20 @@ class PaymentService:
                 PspWebhookEvent.provider_event_id == event_id,
             )
         )
+        digest = _payload_hash(payload)
         if existing is not None:
+            if existing.payload_hash and existing.payload_hash != digest:
+                raise WebhookPayloadMismatch(f"evento {event_id} repetido com payload diferente")
+            if not existing.payload_hash:
+                existing.payload_hash = digest
+                self.session.flush()
             return existing, False
         webhook = PspWebhookEvent(
             provider=provider,
             provider_event_id=event_id,
             event_type=event_type,
             payload=payload,
+            payload_hash=digest,
         )
         self.session.add(webhook)
         self.session.flush()
@@ -284,6 +309,7 @@ class PaymentService:
         """Guarda a falha e agenda nova tentativa com backoff exponencial."""
 
         moment = now or utcnow()
+        webhook.attempts = (webhook.attempts or 0) + 1
         webhook.last_error = error[:200]
         exponent = min(webhook.attempts or 1, 6)
         webhook.next_attempt_at = moment + timedelta(minutes=min(60, 2**exponent))
@@ -368,6 +394,9 @@ class PaymentService:
         )
         if existing is not None and existing.status == "PROCESSED":
             return existing
+        if existing is not None and existing.status == "PENDING" and existing.provider_reference:
+            # O PSP já aceitou o estorno; não dispara um segundo refund.
+            return existing
         if payment.status == "REFUNDED":
             if existing is not None:
                 return existing
@@ -392,11 +421,17 @@ class PaymentService:
             provider_payment_id=payment.provider_payment_id,
             amount_cents=payment.amount_cents,
         )
-        processed = result.status.lower() in {"processed", "approved", "refunded"}
-        existing.status = "PROCESSED" if processed else "FAILED"
+        normalized = result.status.lower()
+        if normalized in {"processed", "approved", "refunded", "succeeded"}:
+            refund_status = "PROCESSED"
+        elif normalized in {"processing", "in_process", "pending", "queued"}:
+            refund_status = "PENDING"
+        else:
+            refund_status = "FAILED"
+        existing.status = refund_status
         existing.provider_reference = result.refund_id
-        existing.processed_at = utcnow() if processed else None
-        if processed:
+        existing.processed_at = utcnow() if refund_status == "PROCESSED" else None
+        if refund_status == "PROCESSED":
             self.bookings.register_payment_result(
                 booking.id,
                 payment.id,
@@ -450,6 +485,9 @@ class PaymentService:
                 reason=reason,
                 requested_by=requested_by,
             )
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).reverse_for_refund(booking_id, reason=reason)
         return len(payments)
 
     def refund_participant(

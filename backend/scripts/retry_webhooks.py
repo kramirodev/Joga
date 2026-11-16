@@ -71,7 +71,6 @@ def retry_pending(
             if failed is None:
                 results.append(f"{event_id}:missing")
                 continue
-            failed.attempts = (failed.attempts or 0) + 1
             service.fail_webhook(failed, type(exc).__name__)
             session.commit()
             results.append(f"{event_id}:failed")

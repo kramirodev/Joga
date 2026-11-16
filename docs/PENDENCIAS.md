@@ -203,13 +203,15 @@ Itens descobertos na auditoria integral e ainda não implementados. São bloquea
 |---|---|---|---|
 | Ledger de dupla entrada não integrado | P0 | `LedgerService` só é usado em testes; fluxos usam ledgers legados | 14E |
 | Taxa calculada e não aplicada | P0 | `compute_fee_cents` sem chamador; reserva divide `price_cents` | 14E |
-| T3 expirado não devolve ingressos | P0 | `bookings/service.py:1065-1073` | Correção P0 |
-| Pix pago + quitação por ingressos | P0 | `bookings/service.py:670-695` | Correção P0 |
-| Reembolso não reverte repasse | P0 | `payments/service.py:422-453`; `REVERSED` sem uso | Correção P0 |
+| T3 expirado não devolve ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: `expire_due` devolve ingressos; teste `test_t3_expiry_returns_tickets` |
+| Pix pago + quitação por ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: vaga paga por Pix não consome ingresso; teste `test_pix_paid_seat_cannot_be_settled_with_tickets` |
+| Reembolso não reverte repasse | P0 | `payments/service.py`; `REVERSED` sem uso | **Corrigido (onda 1)**: `refund_booking` marca release como `REVERSED`; teste `test_refund_reverses_venue_release` |
 | Reembolso parcial impossível | P1 | unique por pagamento e valor integral | 14E/14B |
-| Reembolso de compra não revoga crédito | P1 | `purchase.apply_status` ignora `REFUNDED` | Correção P0/P1 |
-| Compra de pacote sem idempotência de requisição | P1 | `api/v1/tickets.py:194-219` | Correção P1 |
-| `EXPIRED` viola constraint de participante | P1 | `bookings/service.py:652-653` vs. model | Correção P1 |
+| Reembolso de compra não revoga crédito | P1 | `purchase.apply_status` ignorava `REFUNDED` | **Corrigido (onda 1)**: revoga crédito/assinatura; testes de pacote e passe |
+| Estorno em `processing` marcado como falha/refunded | P0 | `payments/service.py` | **Corrigido (onda 1)**: fica `PENDING`, sem marcar jogador como `REFUNDED`; teste `test_refund_processing_does_not_mark_refunded` |
+| Compra de pacote sem idempotência de requisição | P1 | `api/v1/tickets.py` | **Corrigido (onda 1)**: pendência única por jogador/pacote e teste de concorrência PostgreSQL |
+| `EXPIRED` viola constraint de participante | P1 | `bookings/service.py` vs. model | **Corrigido (onda 1)**: constraint inclui `EXPIRED`/`CANCELLED`; teste de modelo |
+| Webhook sem hash/rollback parcial | P0 | `payments/service.py`, `api/v1/payments.py` | **Corrigido (onda 1)**: hash do payload, conflito 409 e rollback antes de marcar falha; testes próprios |
 | Migração `a6b7` e `env.py` com risco | P0 | nomes de constraint divergentes; imports ausentes | S0 |
 | CI vermelha e teste com data fixa | P0 | 524/2/29; `ruff format` falha; `test_trust` | S0 |
 | Payer da reserva errado no app | P1 | `venues.tsx:2075-2078` | Correção mobile |

@@ -10,7 +10,12 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.bookings.models import Booking, BookingHold, BookingPayment
+from app.modules.bookings.models import (
+    Booking,
+    BookingHold,
+    BookingParticipant,
+    BookingPayment,
+)
 from app.modules.bookings.service import BookingNotFound, BookingService
 from app.modules.identity.clock import utcnow
 from app.modules.payments.adapter import (
@@ -28,6 +33,10 @@ from app.modules.payments.models import (
     VenueRelease,
 )
 from app.modules.payments.service import PaymentMismatch, PaymentNotFound, PaymentService
+from app.modules.pricing.models import PricingBandTicket
+from app.modules.pricing.service import resolve_band
+from app.modules.tickets.service import get_balance, grant
+from app.modules.venues.models import VenueAvailability
 from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import (
     api_client,
@@ -41,8 +50,14 @@ from tests.test_bookings_api import (
 class FakeAdapter:
     provider_name = "mercadopago"
 
-    def __init__(self, orders: dict[str, ProviderStatus]) -> None:
+    def __init__(
+        self,
+        orders: dict[str, ProviderStatus],
+        *,
+        refund_status: str = "processed",
+    ) -> None:
         self.orders = orders
+        self.refund_status = refund_status
 
     def create_pix_charge(self, request: PixChargeRequest):  # noqa: ANN201
         raise AssertionError("não deve criar cobrança neste teste")
@@ -66,7 +81,7 @@ class FakeAdapter:
         return RefundResult(
             provider="mercadopago",
             refund_id=f"REF-{provider_order_id}",
-            status="processed",
+            status=self.refund_status,
             amount_cents=amount_cents,
             raw={"test": True},
         )
@@ -81,6 +96,24 @@ def accepted_booking(api, context) -> dict:
     )
     assert accepted.status_code == 200, accepted.text
     return accepted.json()
+
+
+def enable_ticket_settlement(session: Session, context: dict) -> None:
+    availability = session.scalar(
+        select(VenueAvailability).where(VenueAvailability.venue_space_id == context["space"].id)
+    )
+    assert availability is not None
+    band = resolve_band(session, 30_000)
+    availability.band_id = band.id
+    configured = session.scalar(
+        select(PricingBandTicket).where(
+            PricingBandTicket.band_id == band.id,
+            PricingBandTicket.team_size == 2,
+        )
+    )
+    if configured is None:
+        session.add(PricingBandTicket(band_id=band.id, team_size=2, tickets=6))
+    session.commit()
 
 
 def test_accept_without_payer_email_returns_422(client, db_session: Session) -> None:
@@ -493,3 +526,144 @@ def test_refund_endpoint_rejects_other_organization(
         json={"reason": "Tentativa externa"},
     )
     assert response.status_code == 404
+
+
+def test_t3_expiry_returns_tickets(client, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    enable_ticket_settlement(db_session, context)
+    accepted = accepted_booking(api, context)
+    token = bearer(context["tokens"][1])
+    user_id = context["users"][1]
+    grant(
+        db_session,
+        user_id,
+        20,
+        source="admin",
+        idempotency_key=f"test-grant:{user_id}",
+    )
+    db_session.commit()
+    before = get_balance(db_session, user_id)
+
+    settled = api.post(
+        f"/api/v1/bookings/{accepted['id']}/settle-with-tickets",
+        headers=token,
+    )
+    assert settled.status_code == 200, settled.text
+    assert get_balance(db_session, user_id) < before
+
+    BookingService(db_session).expire_due(now=utcnow() + timedelta(hours=2))
+    db_session.commit()
+    booking = db_session.get(Booking, uuid.UUID(accepted["id"]))
+    assert booking is not None and booking.status == "CANCELLED"
+    assert get_balance(db_session, user_id) == before
+
+
+def test_pix_paid_seat_cannot_be_settled_with_tickets(client, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    enable_ticket_settlement(db_session, context)
+    accepted = accepted_booking(api, context)
+    token = bearer(context["tokens"][1])
+    user_id = context["users"][1]
+    grant(
+        db_session,
+        user_id,
+        20,
+        source="admin",
+        idempotency_key=f"test-grant:{user_id}",
+    )
+    db_session.commit()
+    before = get_balance(db_session, user_id)
+
+    paid = api.post(
+        f"/api/v1/bookings/{accepted['id']}/payments/simulate",
+        headers=token,
+    )
+    assert paid.status_code == 200, paid.text
+
+    settled = api.post(
+        f"/api/v1/bookings/{accepted['id']}/settle-with-tickets",
+        headers=token,
+    )
+    assert settled.status_code == 200, settled.text
+    assert get_balance(db_session, user_id) == before
+
+    participant = next(
+        item for item in settled.json()["participants"] if item["user_id"] == str(user_id)
+    )
+    assert participant["payment_status"] == "PAID"
+    assert participant["tickets_consumed"] == 0
+
+
+def test_refund_processing_does_not_mark_refunded(client, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    pay_all(api, context, accepted["id"])
+
+    adapter = FakeAdapter(fake_orders(accepted), refund_status="processing")
+    service = PaymentService(db_session, adapter)
+    refunded = service.refund_booking(uuid.UUID(accepted["id"]), reason="teste")
+    db_session.commit()
+
+    assert refunded == 4
+    refunds = db_session.scalars(
+        select(PaymentRefund).where(PaymentRefund.booking_id == uuid.UUID(accepted["id"]))
+    ).all()
+    assert len(refunds) == 4
+    assert {item.status for item in refunds} == {"PENDING"}
+    payments = db_session.scalars(
+        select(BookingPayment).where(BookingPayment.booking_id == uuid.UUID(accepted["id"]))
+    ).all()
+    assert {item.status for item in payments} == {"PAID"}
+    participants = db_session.scalars(
+        select(BookingParticipant).where(BookingParticipant.booking_id == uuid.UUID(accepted["id"]))
+    ).all()
+    assert {item.payment_status for item in participants} == {"PAID"}
+
+
+def test_refund_reverses_venue_release(client, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    accepted = accepted_booking(api, context)
+    pay_all(api, context, accepted["id"])
+    completed = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/complete",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert completed.status_code == 200, completed.text
+
+    release = db_session.scalar(
+        select(VenueRelease).where(VenueRelease.booking_id == uuid.UUID(accepted["id"]))
+    )
+    assert release is not None and release.status == "PENDING"
+
+    PaymentService(db_session, SimulatorPspAdapter()).refund_booking(
+        uuid.UUID(accepted["id"]),
+        reason="teste de reversão",
+    )
+    db_session.commit()
+    db_session.refresh(release)
+    assert release.status == "REVERSED"
+    assert release.reversed_at is not None
+
+
+def test_participant_accepts_expired_payment_status(
+    client,
+    db_session: Session,
+) -> None:
+    context = setup_booking(db_session)
+    booking = create_booking(
+        api_client(client, db_session),
+        context,
+        context["lobbies"][0],
+    )
+    participant = db_session.scalar(
+        select(BookingParticipant).where(BookingParticipant.booking_id == uuid.UUID(booking["id"]))
+    )
+    assert participant is not None
+    participant.payment_status = "EXPIRED"
+    db_session.commit()
+    db_session.refresh(participant)
+    assert participant.payment_status == "EXPIRED"
