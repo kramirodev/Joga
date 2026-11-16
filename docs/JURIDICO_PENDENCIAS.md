@@ -118,6 +118,9 @@ com titularidade confirmada e comprovante.
 
 ## 8. Decisões já registradas
 
+- Modelo tributário: intermediação por mandato, base de cálculo na comissão,
+  saldo em reais, preço em duas linhas (espaço + taxa) (ADR 0049). Bloqueado por
+  parecer fiscal e jurídico.
 - Mercado Pago é o PSP do protótipo com jogadores reais (ADR 0048).
 - Sem split/recebedor; repasse centralizado e manual/ledger.
 - Inter/Pagar.me ficam para o futuro.
