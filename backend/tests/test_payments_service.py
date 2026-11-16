@@ -19,6 +19,7 @@ from app.modules.payments.adapter import (
     RefundResult,
     SimulatorPspAdapter,
 )
+from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import (
     LedgerEntry,
     PaymentEvent,
@@ -80,6 +81,28 @@ def accepted_booking(api, context) -> dict:
     )
     assert accepted.status_code == 200, accepted.text
     return accepted.json()
+
+
+def test_accept_without_payer_email_returns_422(client, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = create_booking(api, context, context["lobbies"][0])
+    confirm_all(api, context, booking["id"])
+    client.app.dependency_overrides[get_psp_adapter] = lambda: FakeAdapter({})
+
+    accepted = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{booking['id']}/accept",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert accepted.status_code == 422, accepted.text
+    assert accepted.json() == {"detail": {"code": "payer_email_required"}}
+
+    stored = api.get(
+        f"/api/v1/bookings/{booking['id']}",
+        headers=bearer(context["tokens"][1]),
+    )
+    assert stored.status_code == 200
+    assert stored.json()["status"] != "CONFIRMED"
 
 
 def fake_orders(accepted: dict) -> dict[str, ProviderStatus]:
