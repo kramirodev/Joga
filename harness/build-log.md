@@ -1140,3 +1140,41 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Documentos atualizados:** `PLANS.md` (14E, 14B, 15, 19A/19B, precedencia 0049), conceito 3.17, tecnica 2.3, `DATA_MODEL.md` 2.0, `PENDENCIAS.md`, `RUNBOOK.md`, `THREAT_MODEL.md`, `JURIDICO_PENDENCIAS.md`, `ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`, `CONTRATO_RESERVAS_APP.md`, `README.md`, `GOALS.md`, `web/README.md`, `mobile/AGENTS.md`, ADRs 0021/0042/0043/0044/0045/0048, fichas 13D/17C e novas fichas 14E/14B.
 - **Nao alterado:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md` (decisao vigente, sem alteracao), codigo de aplicacao, migrations, banco e configuracoes.
 - **Pendente:** estabilizacao (merge em fatias, CI verde, migrations validadas) antes da 14E.
+
+### 2026-11-16 - Mobile M1 (sem contrato novo)
+
+- **Estado restaurado:** o working tree de `mobile/` estava no `stash@{0}` ("wip frontends e telas antes do merge da onda 0"). O stash foi reaplicado; conflito de `package.json`/`pnpm-lock.yaml` resolvido mantendo Expo 58.0.25 e adicionando `expo-clipboard@~58.0.4`; `pnpm install` e `expo install --check` limpos. Nada foi descartado.
+- **Pagamento da reserva:** a cobranca era procurada por `payment.participant_id == session.userId`; o campo e o id da vaga. Agora o app localiza `BookingParticipant` por `user_id` e usa o `id` da vaga para achar a cobranca. O botao "Pagar minha vaga" tambem usa a cobranca da propria vaga.
+- **Retry do checkout:** `retry` limpava o estado, mas o efeito de criacao nao dependia de nenhum valor alterado. Foi adicionado um contador `attempt` nas dependencias; pacote e passe voltam a gerar nova cobranca Pix.
+- **Polling da fila:** a cada 5 s o app empilhava `lobby-found` com `nav.go`. Agora usa `nav.replace` com guarda local; a tela de busca e substituida uma unica vez.
+- **Cold start offline:** a sessao era apagada em qualquer falha de refresh. Agora so `401` encerra a sessao; falha de rede preserva os tokens e abre o app.
+- **Dados ficticios removidos (decisao do usuario: manter telas):** fallbacks de passkeys, dispositivos e membros de cla; lista fake de substitutos; mensagens fake do chat de lobby; `2026-Q4` fixo no perfil; toasts de "no prototipo" nessas telas. `security` passou a usar a cerimonia WebAuthn real; `devices` usa apenas `GET /auth/devices`.
+- **Acessibilidade global:** `Text` passou a aplicar a escala A/AA/AAA em todos os textos com `fontSize`; `Btn`, `TextBtn`, `IconBtn`, `Chip`, `SegBtn`, `Input`, `ListRow` e a tab bar aumentam quando "alvos ampliados" esta ativo. Preferencias seguem persistidas em SecureStore.
+- **Reserva:** confirmacao/recusa de participacao, cancelamento com motivo, pre-check-in e confirmacao de presenca por GPS usam os endpoints existentes. As acoes ficam em `BookingActions`, compartilhado por `booking-t1t2` e `booking-confirmed`.
+- **Check-in de partida:** telas deixaram de exibir timer/endereco/distancia fake; usam `check_in_opens_at`, `check_in_deadline` e `POST /matches/{id}/check-in`. "Ativar localizacao" abre as configuracoes do aparelho.
+- **Passkey:** o app usa `modules/passkey-proof` com `POST /auth/passkeys/registration/options`, `.../registration/verify` e `.../authentication/options|verify`. Em Expo Go o modulo nativo e `null` e o app informa a limitacao; a cerimonia exige development build Android (iOS segue sem modulo).
+- **WebSocket:** cliente `src/api/realtime.ts` conecta em `/api/v1/ws` com `Authorization`, faz ping/pong, reassina lobbies e reconecta. O chat do lobby recarrega em `lobby.message.created`; convites disparam recarga de notificacoes.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos. O app abriu no Moto G (Expo Go), com OTP de 6 digitos preenchendo e avancando automaticamente; login E2E nao concluiu porque o backend em execucao recusou `123456` como expirado, entao os fluxos autenticados de reserva/pagamento nao tiveram screenshot.
+- **Fora do escopo:** credito em reais, preco em duas linhas, NFS-e, busca de usuario para "adicionar amigo", administracao completa de cla e push real (sem provedor/development build).
+- **Nao iniciado:** Fase 18 (Publicidade).
+
+### 2026-11-16 - Onda 1: P0 financeiro
+
+- **T3 expirado:** devolve ingressos consumidos antes de cancelar a reserva; teste cobre saldo antes/depois.
+- **Pix + ingressos:** vaga paga por Pix nao aceita quitacao por ingressos; teste garante que o saldo nao e consumido.
+- **Reembolso:** status `processing` fica `PENDING` e nao marca jogador como `REFUNDED`; release da quadra vira `REVERSED` ao reembolsar a reserva.
+- **Compra:** pacote pendente e unico por jogador/pacote (indice parcial + `IntegrityError`), com teste de concorrencia PostgreSQL; passe ja era idempotente e ganhou teste.
+- **Reembolso de compra:** `purchase.apply_status` trata `REFUNDED`, revoga credito nao usado do pacote e cancela a assinatura.
+- **Constraint:** `booking_participants.payment_status` aceita `EXPIRED` e `CANCELLED`.
+- **Webhook:** payload ganhou hash; mesmo evento com corpo diferente responde `409 webhook_payload_mismatch`; falha de processamento faz rollback antes de gravar `last_error` e `next_attempt_at`.
+- **Migracao:** `k5b6c7d8e9f0`; ciclo upgrade/downgrade/upgrade e `alembic check` validados no PostgreSQL.
+- **Testes:** `ruff` e `mypy` limpos; suite completa e resultado no fechamento.
+- **Proximo:** 14E (ledger em reais, preco em duas linhas) e MP-03/05 live.
+
+### 2026-11-16 - 14E.0: plano de contas do ledger
+
+- **Contas:** modulo `app/modules/ledger/accounts.py` com as 14 contas, prefixos por dono e helpers de codigo.
+- **Seed:** migracao `l6c7d8e9f0a1` cria as 10 contas singleton (`psp_clearing`, `bank`, `fee_revenue`, `pass_deferred_revenue`, `pass_revenue`, `tax_payable`, `tax_expense`, `psp_fee_expense`, `writeoff_expense`, `opening_equity`); contas por usuario/quadra continuam sob demanda.
+- **Testes:** seed idempotente e compra de credito lancada contra `player_credit`.
+- **Migracao:** ciclo downgrade/upgrade e `alembic check` validados no PostgreSQL.
+- **Proximo (14E.1):** sombra de escrita no ledger para compra/consumo/estorno, com reconciliador por usuario e sem trocar a leitura.
