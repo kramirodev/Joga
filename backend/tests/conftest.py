@@ -13,10 +13,12 @@ from app.main import create_app
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.clans import models as clans_models  # noqa: F401
+from app.modules.fiscal import models as fiscal_models  # noqa: F401
 from app.modules.geo import models as geo_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.identity.sms import RecordingSmsSender
+from app.modules.legal import models as legal_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.moderation import models as moderation_models  # noqa: F401
 from app.modules.notifications import models as notifications_models  # noqa: F401
