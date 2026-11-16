@@ -1208,3 +1208,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Concorrencia (2):** `settle_with_tickets` e `register_payment_result` adquirem `SELECT ... FOR UPDATE` na reserva antes de ler o estado da vaga; a checagem de cobranca paga acontece depois do lock.
 - **Item (5):** e uma constraint de schema validada pela migracao aditiva `k5b6c7d8e9f0` e pelo teste de modelo `test_participant_accepts_expired_payment_status`; nao ha cenario concorrente aplicavel.
 - **Verificacao:** `ruff`, `ruff format --check`, `mypy app` limpos; suite **545 passed, 30 skipped**.
+
+### 2026-11-16 - 14E.0c: sanidade do plano de contas e invariante do credito
+
+- **Plano:** `app/modules/ledger/accounts.py` contem as 14 contas (10 singleton + 4 prefixos por dono) e a migracao `l6c7d8e9f0a1` semeia as 10 globais. Contas por usuario/quadra sao criadas sob demanda por `LedgerService.account`, com `owner_kind`/`owner_id`.
+- **Sanidade:** novo teste carrega a migracao de seed por caminho e compara `ACCOUNTS` com `SINGLETON_ACCOUNTS`; outro teste garante que todo prefixo por dono tem tipo declarado e nao colide com contas globais.
+- **Balanceamento:** `LedgerService.post` ja rejeita transacao desbalanceada, valor nao positivo, partida duplicada na mesma conta/direcao e chave vazia; testes existentes cobrem inclusive 100 transacoes aleatorias.
+- **Invariante:** `tests/test_ledger_invariant.py` define `assert_credit_invariant` (saldo de `player_credit:<user>` == lotes de compra pelo preco pago). O teste esta **explicitamente ignorado** com motivo `14E.1` porque nenhum fluxo escreve no ledger ainda; sera habilitado na Etapa 6.
+- **Leitura:** nenhuma leitura publica mudou.
+- **Verificacao:** `9 passed, 1 skipped` nos testes do ledger; `ruff` e formatacao limpos.
