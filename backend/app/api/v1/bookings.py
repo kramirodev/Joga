@@ -30,6 +30,7 @@ from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.service import Forbidden, OrganizationNotFound
 from app.modules.payments.adapter import PspAdapter, PspError
 from app.modules.payments.dependency import get_psp_adapter
+from app.modules.payments.purchase import PayerEmailRequired
 from app.modules.payments.service import PaymentService
 
 router = APIRouter(tags=["bookings"])
@@ -105,6 +106,8 @@ class PaymentView(BaseModel):
     provider_order_id: str | None
     provider_payment_id: str | None
     provider_status: str | None
+    status_detail: str | None
+    external_reference: str | None
     qr_code: str | None
     qr_code_base64: str | None
     ticket_url: str | None
@@ -188,6 +191,7 @@ def _handle(exc: Exception) -> HTTPException:
         BookingInvalid: ("invalid_input", status.HTTP_422_UNPROCESSABLE_CONTENT),
         BookingTransitionError: ("invalid_transition", status.HTTP_409_CONFLICT),
         BookingConflict: (getattr(exc, "code", "booking_conflict"), status.HTTP_409_CONFLICT),
+        PayerEmailRequired: ("payer_email_required", status.HTTP_422_UNPROCESSABLE_CONTENT),
         PspError: ("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE),
         BookingError: ("booking_error", status.HTTP_409_CONFLICT),
     }
@@ -296,6 +300,8 @@ def _view(
                 provider_order_id=item.provider_order_id,
                 provider_payment_id=item.provider_payment_id,
                 provider_status=item.provider_status,
+                status_detail=item.provider_status_detail,
+                external_reference=str(item.id),
                 qr_code=(
                     item.qr_code
                     if not include_all_payments

@@ -1,5 +1,6 @@
 """Configuração da API, lida de variáveis de ambiente com prefixo JOGA_."""
 
+from datetime import date
 from functools import lru_cache
 from typing import Self
 
@@ -117,8 +118,9 @@ class Settings(BaseSettings):
     presence_radius_m: int = Field(default=200, ge=50, le=1000)
     presence_max_accuracy_m: int = Field(default=100, ge=10, le=500)
 
-    # PSP (Fase 14A). O simulador é o padrão local/CI; o Mercado Pago exige
-    # credenciais sandbox e nunca deve ser usado com dinheiro real neste estágio.
+    # PSP. O simulador é o padrão local/CI. Fora do ambiente local, o Mercado
+    # Pago é obrigatório com credenciais de produção; não há fallback silencioso
+    # para simulador nem e-mail de pagador fixo.
     psp_provider: str = Field(default="simulator", pattern="^(simulator|mercadopago)$")
     mercado_pago_access_token: SecretStr | None = None
     mercado_pago_webhook_secret: SecretStr | None = None
@@ -127,13 +129,32 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=200,
     )
-    mercado_pago_payer_email: str = Field(
-        default="test_user_br@testuser.com",
-        min_length=3,
-        max_length=120,
-    )
+    # O e-mail do pagador vem do usuário (`users.email`); não existe e-mail
+    # global fixo para cobrança.
     mercado_pago_notification_url: str | None = Field(default=None, max_length=500)
     psp_timeout_seconds: int = Field(default=10, ge=1, le=60)
+
+    # Modelo tributário e custódia (ADR 0049). Nada aqui liga operação real por
+    # acidente: `real` exige referência do parecer, e os modos sem implementação
+    # falham no boot em vez de degradar em silêncio.
+    money_mode: str = Field(default="simulated", pattern="^(simulated|real)$")
+    legal_approval_ref: str | None = Field(default=None, max_length=120)
+    legal_approval_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    legal_approval_date: date | None = None
+    fiscal_mode: str = Field(default="disabled", pattern="^(disabled|placeholder|provider)$")
+    custody_model: str = Field(default="B", pattern="^(B|C)$")
+    # Taxa de intermediação (ADR 0049 §2.4) e alíquota usada apenas em relatório
+    # de margem. Nenhum lançamento histórico depende da alíquota.
+    tax_rate_bps: int = Field(default=1550, ge=0, le=10_000)
+    fee_percent_bps: int = Field(default=2_000, ge=0, le=10_000)
+    fee_min_cents: int = Field(default=800, ge=0)
+    cancellation_provision_cents: int = Field(default=20, ge=0)
+    payout_requires_fiscal_document: bool = True
+    fiscal_document_grace_days: int = Field(default=5, ge=0, le=60)
+    venue_receivable_offset_days: int = Field(default=90, ge=1, le=365)
+    credit_refund_days: int = Field(default=30, ge=1, le=180)
+    cpf_key: SecretStr | None = None
+    cpf_key_id: str | None = Field(default=None, max_length=20)
 
     # Push: transporte externo. O webhook é um adaptador operacional; a
     # central de notificações continua sendo a fonte de verdade.
@@ -185,10 +206,32 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def reject_default_secret_outside_local(self) -> Self:
-        if self.psp_provider == "mercadopago" and self.mercado_pago_access_token is None:
+        token = (
+            self.mercado_pago_access_token.get_secret_value().strip()
+            if self.mercado_pago_access_token is not None
+            else ""
+        )
+        if self.psp_provider == "mercadopago" and not token:
             raise ValueError("JOGA_MERCADO_PAGO_ACCESS_TOKEN é obrigatório com psp=mercadopago")
         if self.environment.lower() in LOCAL_ENVIRONMENTS:
             return self
+        if self.psp_provider != "mercadopago":
+            raise ValueError("JOGA_PSP_PROVIDER=mercadopago é obrigatório fora do ambiente local")
+        webhook_secret = (
+            self.mercado_pago_webhook_secret.get_secret_value().strip()
+            if self.mercado_pago_webhook_secret is not None
+            else ""
+        )
+        if not webhook_secret:
+            raise ValueError(
+                "JOGA_MERCADO_PAGO_WEBHOOK_SECRET é obrigatório fora do ambiente local"
+            )
+        notification_url = (self.mercado_pago_notification_url or "").strip()
+        if not notification_url.startswith("https://"):
+            raise ValueError(
+                "JOGA_MERCADO_PAGO_NOTIFICATION_URL deve ser uma URL HTTPS pública "
+                "fora do ambiente local"
+            )
         secrets = {
             "JOGA_PHONE_HASH_SECRET": (
                 self.phone_hash_secret.get_secret_value(),
@@ -204,6 +247,34 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} deve ser definido fora do ambiente local")
         if self.dev_fixed_otp is not None:
             raise ValueError("JOGA_DEV_FIXED_OTP só pode ser usado em ambiente local")
+        return self
+
+    @model_validator(mode="after")
+    def reject_unimplemented_financial_modes(self) -> Self:
+        """Falha cedo nos modos que ainda dependem de terceiro (ADR 0049 §5)."""
+        if self.money_mode == "real":
+            if not (self.legal_approval_ref or "").strip():
+                raise ValueError(
+                    "JOGA_MONEY_MODE=real exige JOGA_LEGAL_APPROVAL_REF com a referência do "
+                    "parecer fiscal e jurídico aprovados"
+                )
+            if self.legal_approval_sha256 is None:
+                raise ValueError(
+                    "JOGA_MONEY_MODE=real exige JOGA_LEGAL_APPROVAL_SHA256 do PDF do parecer"
+                )
+            if self.legal_approval_date is None:
+                raise ValueError("JOGA_MONEY_MODE=real exige JOGA_LEGAL_APPROVAL_DATE do parecer")
+            if self.legal_approval_date > date.today():
+                raise ValueError("JOGA_LEGAL_APPROVAL_DATE não pode estar no futuro")
+        if self.custody_model == "C":
+            raise ValueError(
+                "JOGA_CUSTODY_MODEL=C não está implementado: exige conta de escrow com "
+                "titular diferente do JOGA"
+            )
+        if self.fiscal_mode == "provider":
+            raise ValueError(
+                "JOGA_FISCAL_MODE=provider não está implementado: falta integração de NFS-e"
+            )
         return self
 
 

@@ -12,8 +12,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.modules.identity.clock import utcnow
+from app.modules.identity.models import User
 from app.modules.passes.service import PassNotFound, activate_subscription
 from app.modules.payments.adapter import (
     PixChargeRequest,
@@ -27,6 +27,10 @@ from app.modules.tickets.service import PurchaseNotFound, confirm_purchase
 
 class PurchasePaymentError(Exception):
     """Erro de cobrança de compra."""
+
+
+class PayerEmailRequired(PurchasePaymentError):
+    """O Mercado Pago exige e-mail do pagador e o usuário não informou."""
 
 
 class PurchasePaymentNotFound(PurchasePaymentError):
@@ -95,13 +99,17 @@ def open_charge(
     session.add(payment)
     session.flush()
 
-    settings = get_settings()
+    payer_email: str | None = None
+    if adapter.provider_name == "mercadopago":
+        payer_email = session.scalar(select(User.email).where(User.id == user_id))
+        if not payer_email:
+            raise PayerEmailRequired
     result = adapter.create_pix_charge(
         PixChargeRequest(
             external_reference=f"{kind}:{reference_id}",
             amount_cents=amount_cents,
             description=description,
-            payer_email=settings.mercado_pago_payer_email,
+            payer_email=payer_email or f"user-{user_id}@simulator.invalid",
             expiration_minutes=30,
             metadata={
                 "kind": kind,
@@ -117,6 +125,8 @@ def open_charge(
     payment.provider_order_id = result.provider_order_id
     payment.provider_payment_id = result.provider_payment_id
     payment.provider_status = result.status
+    payment.provider_status_detail = result.status_detail
+    payment.payer_email = payer_email
     payment.qr_code = result.qr_code
     payment.qr_code_base64 = result.qr_code_base64
     payment.ticket_url = result.ticket_url
@@ -157,6 +167,7 @@ def apply_status(
     payment.provider_order_id = status.provider_order_id or payment.provider_order_id
     payment.provider_payment_id = status.provider_payment_id or payment.provider_payment_id
     payment.provider_status = status.status
+    payment.provider_status_detail = status.status_detail
     payment.last_synced_at = moment
 
     internal = map_provider_status(status.status)

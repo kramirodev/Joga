@@ -12,6 +12,9 @@ from app.modules.payments.models import PurchasePayment
 class PurchasePaymentView(BaseModel):
     provider: str | None
     provider_status: str | None
+    status_detail: str | None
+    external_reference: str | None
+    amount_cents: int | None
     qr_code: str | None
     qr_code_base64: str | None
     ticket_url: str | None
@@ -25,6 +28,9 @@ def purchase_payment_view(payment: PurchasePayment | None) -> PurchasePaymentVie
     return PurchasePaymentView(
         provider=payment.provider,
         provider_status=payment.provider_status,
+        status_detail=payment.provider_status_detail,
+        external_reference=f"{payment.kind}:{payment.reference_id}",
+        amount_cents=payment.amount_cents,
         qr_code=payment.qr_code,
         qr_code_base64=payment.qr_code_base64,
         ticket_url=payment.ticket_url,

@@ -5,6 +5,8 @@
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0034 (Mercado Pago no beta); ADR 0021 (Pagar.me na produção); `docs/JOGA_DOCUMENTACAO_TECNICA.md` §15; `PLANS.md` Fase 14.
 
+> **Nota de escopo (ADR 0048):** o Mercado Pago opera com jogadores reais; o e-mail fixo de sandbox do item 3 é substituído pelo e-mail do pagador e pelas guardas de configuração de produção. Split/retenção continuam fora do escopo.
+
 > **Nota de escopo (ADR 0042):** o fluxo de ingresso cobra por compra de pacote ou passe, não por participante. Esta ADR descreve a 14A e permanece válida para a reserva avulsa.
 
 ## Contexto

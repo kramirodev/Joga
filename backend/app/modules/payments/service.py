@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.modules.bookings.models import (
     Booking,
     BookingParticipant,
@@ -19,6 +18,7 @@ from app.modules.bookings.models import (
 )
 from app.modules.bookings.service import BookingBundle, BookingNotFound, BookingService
 from app.modules.identity.clock import utcnow
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbySubstitute
 from app.modules.payments.adapter import (
     PixChargeRequest,
@@ -30,6 +30,9 @@ from app.modules.payments.models import (
     PaymentEvent,
     PaymentRefund,
     PspWebhookEvent,
+)
+from app.modules.payments.purchase import (
+    PayerEmailRequired,
 )
 from app.modules.payments.purchase import (
     apply_status as apply_purchase_status,
@@ -97,13 +100,22 @@ class PaymentService:
                 BookingPayment.version == booking.payment_version,
             )
         ).all()
-        settings = get_settings()
+        emails: dict[uuid.UUID, str | None] = {}
         for payment in payments:
             if payment.provider_order_id is not None:
                 continue
             participant = participants.get(payment.participant_id)
             if participant is None:
                 continue
+            payer_email: str | None = None
+            if self.adapter.provider_name == "mercadopago":
+                if participant.user_id not in emails:
+                    emails[participant.user_id] = self.session.scalar(
+                        select(User.email).where(User.id == participant.user_id)
+                    )
+                payer_email = emails[participant.user_id]
+                if not payer_email:
+                    raise PayerEmailRequired
             due = booking.payment_due_at
             if due is not None and due.tzinfo is None:
                 due = due.replace(tzinfo=UTC)
@@ -113,9 +125,7 @@ class PaymentService:
                     external_reference=str(payment.id),
                     amount_cents=payment.amount_cents,
                     description=f"JOGA reserva {booking.id} vaga {participant.seat}",
-                    payer_email=settings.mercado_pago_payer_email
-                    if self.adapter.provider_name == "mercadopago"
-                    else f"user-{participant.user_id}@testuser.com",
+                    payer_email=payer_email or f"user-{participant.user_id}@simulator.invalid",
                     expiration_minutes=minutes,
                     metadata={
                         "booking_id": str(booking.id),
@@ -124,10 +134,12 @@ class PaymentService:
                     },
                 )
             )
+            payment.payer_email = payer_email
             payment.provider = result.provider
             payment.provider_order_id = result.provider_order_id
             payment.provider_payment_id = result.provider_payment_id
             payment.provider_status = result.status
+            payment.provider_status_detail = result.status_detail
             payment.qr_code = result.qr_code
             payment.qr_code_base64 = result.qr_code_base64
             payment.ticket_url = result.ticket_url
@@ -179,15 +191,16 @@ class PaymentService:
         self.session.flush()
         return self.bookings.get(actor_user_id, booking_id)
 
-    def handle_webhook(
+    def record_webhook(
         self,
         *,
         provider: str,
         event_id: str,
         event_type: str | None,
-        data_id: str,
         payload: dict[str, Any],
-    ) -> None:
+    ) -> tuple[PspWebhookEvent, bool]:
+        """Persiste o evento bruto antes de processar; idempotente por evento."""
+
         existing = self.session.scalar(
             select(PspWebhookEvent).where(
                 PspWebhookEvent.provider == provider,
@@ -195,7 +208,7 @@ class PaymentService:
             )
         )
         if existing is not None:
-            return
+            return existing, False
         webhook = PspWebhookEvent(
             provider=provider,
             provider_event_id=event_id,
@@ -204,15 +217,29 @@ class PaymentService:
         )
         self.session.add(webhook)
         self.session.flush()
+        return webhook, True
 
-        try:
-            if event_type and "payment" in event_type.lower():
-                status = self.adapter.get_payment(data_id)
-            else:
-                status = self.adapter.get_order(data_id)
-        except Exception:
-            self.session.flush()
-            raise
+    def process_webhook(
+        self,
+        webhook: PspWebhookEvent,
+        *,
+        data_id: str | None = None,
+    ) -> None:
+        """Consulta o PSP e aplica o status; incrementa a tentativa."""
+
+        payload = webhook.payload or {}
+        if data_id is None:
+            data = payload.get("data")
+            data_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else ""
+        if not data_id:
+            webhook.attempts = (webhook.attempts or 0) + 1
+            raise PaymentError("webhook sem data.id")
+        event_type = webhook.event_type
+        webhook.attempts = (webhook.attempts or 0) + 1
+        if event_type and "payment" in event_type.lower():
+            status = self.adapter.get_payment(data_id)
+        else:
+            status = self.adapter.get_order(data_id)
 
         payment = self.session.scalar(
             select(BookingPayment).where(
@@ -234,6 +261,8 @@ class PaymentService:
             if purchase_payment is not None:
                 apply_purchase_status(self.session, purchase_payment, status)
             webhook.processed_at = utcnow()
+            webhook.last_error = None
+            webhook.next_attempt_at = None
             self.session.flush()
             return
         booking = self.session.get(Booking, payment.booking_id)
@@ -241,7 +270,43 @@ class PaymentService:
             raise PaymentNotFound
         self._apply_status(booking, payment, status)
         webhook.processed_at = utcnow()
+        webhook.last_error = None
+        webhook.next_attempt_at = None
         self.session.flush()
+
+    def fail_webhook(
+        self,
+        webhook: PspWebhookEvent,
+        error: str,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        """Guarda a falha e agenda nova tentativa com backoff exponencial."""
+
+        moment = now or utcnow()
+        webhook.last_error = error[:200]
+        exponent = min(webhook.attempts or 1, 6)
+        webhook.next_attempt_at = moment + timedelta(minutes=min(60, 2**exponent))
+        self.session.flush()
+
+    def handle_webhook(
+        self,
+        *,
+        provider: str,
+        event_id: str,
+        event_type: str | None,
+        data_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Atalho legado: persiste e processa na mesma transação."""
+
+        webhook, _created = self.record_webhook(
+            provider=provider,
+            event_id=event_id,
+            event_type=event_type,
+            payload=payload,
+        )
+        self.process_webhook(webhook, data_id=data_id)
 
     def simulate_payment(self, actor_user_id: uuid.UUID, booking_id: uuid.UUID) -> BookingBundle:
         """Registra pagamento simulado e mantém o ledger consistente."""
@@ -533,6 +598,7 @@ class PaymentService:
         payment.provider_order_id = status.provider_order_id or payment.provider_order_id
         payment.provider_payment_id = status.provider_payment_id or payment.provider_payment_id
         payment.provider_status = status.status
+        payment.provider_status_detail = status.status_detail
         payment.last_synced_at = utcnow()
         if internal == "PAID" and payment.status != "PAID":
             self._ledger(

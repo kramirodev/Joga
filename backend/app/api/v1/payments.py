@@ -32,6 +32,7 @@ from app.modules.payments.financial import (
     ReleaseNotFound,
 )
 from app.modules.payments.models import FinancialDispute, PaymentRefund
+from app.modules.payments.purchase import PayerEmailRequired
 from app.modules.payments.service import PaymentError, PaymentNotFound, PaymentService
 
 router = APIRouter(tags=["payments"])
@@ -241,20 +242,26 @@ async def mercadopago_webhook(
     event_type = payload.get("type") or payload.get("topic") or payload.get("action")
     event_id = str(payload.get("id") or f"{event_type}:{data_id}")
     service = PaymentService(session, adapter)
+    webhook, _created = service.record_webhook(
+        provider="mercadopago",
+        event_id=event_id,
+        event_type=str(event_type) if event_type is not None else None,
+        payload=payload,
+    )
+    # O evento bruto fica persistido mesmo se o processamento falhar.
+    session.commit()
+    if webhook.processed_at is not None:
+        return {"status": "ok"}
     try:
-        service.handle_webhook(
-            provider="mercadopago",
-            event_id=event_id,
-            event_type=str(event_type) if event_type is not None else None,
-            data_id=data_id,
-            payload=payload,
-        )
+        service.process_webhook(webhook)
         session.commit()
     except PspError as exc:
-        session.rollback()
+        service.fail_webhook(webhook, type(exc).__name__)
+        session.commit()
         raise _error("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE) from exc
     except (PaymentError, Exception) as exc:  # noqa: BLE001
-        session.rollback()
+        service.fail_webhook(webhook, type(exc).__name__)
+        session.commit()
         raise _error("webhook_processing_failed", status.HTTP_500_INTERNAL_SERVER_ERROR) from exc
     return {"status": "ok"}
 
@@ -311,6 +318,9 @@ def open_charges(
     try:
         bundle = service.open_charges(booking_id)
         session.commit()
+    except PayerEmailRequired as exc:
+        session.rollback()
+        raise _error("payer_email_required", status.HTTP_422_UNPROCESSABLE_CONTENT) from exc
     except PspError as exc:
         session.rollback()
         raise _error("psp_unavailable", status.HTTP_503_SERVICE_UNAVAILABLE) from exc

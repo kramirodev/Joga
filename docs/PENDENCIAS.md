@@ -2,13 +2,16 @@
 
 **Atualizado em:** 15 de novembro de 2026
 
+Backlog detalhado do Mercado Pago e dos contratos: `docs/BACKLOG_MERCADO_PAGO_E_CONTRATOS.md`.
+Pendências jurídicas, fiscais e regulatórias: `docs/JURIDICO_PENDENCIAS.md`.
+
 Este arquivo consolida o que ficou aberto após as Fases 11–15 (sendo a 15 uma proposta técnica local, não política aprovada). Não substitui `PLANS.md`, os ADRs nem os arquivos de fase; serve como painel de acompanhamento.
 
 ## Bloqueios externos
 
 | Pendência | Fase | Impacto | Próximo passo |
 |---|---|---|---|
-| PSP de produção (Inter PJ) | 14B | Sem Pix real, estorno, repasse e conciliação | Contratar conta PJ, validar taxa de 0,90% e perfil transacional |
+| Mercado Pago em produção | 14 | PSP do protótipo com jogadores reais (ADR 0048); credenciais, webhook e validação real pendentes | Configurar conta, token, segredo e URL pública; validar Orders API |
 | KYC contratual do fornecedor | 12B/14B | Reserva paga não pode abrir sem chave de repasse validada | Decidir PSP/KYC e onboarding |
 | SMS real | 10/19 | Login real depende de OTP | Escolher provedor, custo, antiabuso e LGPD |
 | Push real | 10/19 | Notificações de prazo e resultado | Configurar APNs/FCM e credenciais |
@@ -173,10 +176,10 @@ A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2
 
 ## Dívidas técnicas conhecidas
 
-- `MercadoPagoAdapter` usa sandbox e não deve operar dinheiro real.
+- `MercadoPagoAdapter` usa credenciais do ambiente; testes continuam em simulador. Validação com credenciais reais pendente (MP-03).
 - O webhook real depende de URL pública/túnel e segredo configurado no painel.
-- O adaptador de produção (**Inter**) ainda não existe; o código só tem `simulator` e `mercadopago` em sandbox.
-- O e-mail do pagador é obrigatório na Orders API do Mercado Pago; o cadastro atual é por telefone. Falta decidir de onde o e-mail vem.
+- O Mercado Pago (Orders API) é o PSP do protótipo com jogadores reais; Inter/Pagar.me ficam para o futuro (ADR 0048).
+- O e-mail do pagador é obrigatório na Orders API; MP-04 adiciona e-mail ao usuário e remove o e-mail global fixo.
 - O repasse ao estabelecimento é um lançamento simulado no ledger; não há transferência real.
 - O worker de reservas reembolsa com o adaptador configurado; se o PSP real falhar, a operação precisa de retry e conciliação.
 - A interface financeira ainda não tem comprovantes, exportação nem contestação de MED/chargeback.

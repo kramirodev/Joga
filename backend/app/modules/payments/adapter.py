@@ -165,10 +165,11 @@ class SimulatorPspAdapter:
 
 
 class MercadoPagoAdapter:
-    """Mercado Pago Checkout Transparente via Orders API (Pix).
+    """Mercado Pago Orders API (Pix) para o protótipo com jogadores reais.
 
-    Sem split nesta fase. O token deve ser de sandbox; nenhuma cobrança real
-    deve ser acionada no protótipo/beta sem autorização.
+    Sem split nesta fase. O token é o da conta do ambiente (produção ou teste);
+    cobrança real exige configuração completa, CNPJ/MEI e revisão jurídica
+    (ADR 0048). O ledger interno continua sendo a fonte de direitos.
     """
 
     provider_name = "mercadopago"
@@ -295,6 +296,12 @@ def _parse_order(raw: dict[str, Any], request: PixChargeRequest) -> PixChargeRes
     status_detail = raw.get("status_detail") or payment.get("status_detail")
     order_id = str(raw["id"])
     provider_payment_id = str(payment["id"]) if payment.get("id") else None
+    total = raw.get("total_amount") or payment.get("amount")
+    expires_at = _parse_expiration(
+        payment.get("date_of_expiration") or raw.get("date_of_expiration")
+    )
+    if expires_at is None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=request.expiration_minutes)
     return PixChargeResult(
         provider="mercadopago",
         provider_order_id=order_id,
@@ -304,9 +311,9 @@ def _parse_order(raw: dict[str, Any], request: PixChargeRequest) -> PixChargeRes
         qr_code=payment_method.get("qr_code"),
         qr_code_base64=payment_method.get("qr_code_base64"),
         ticket_url=payment_method.get("ticket_url"),
-        expires_at=datetime.now(UTC) + timedelta(minutes=request.expiration_minutes),
-        amount_cents=request.amount_cents,
-        external_reference=request.external_reference,
+        expires_at=expires_at,
+        amount_cents=_amount_cents(total) if total is not None else request.amount_cents,
+        external_reference=str(raw.get("external_reference") or request.external_reference),
         raw=raw,
     )
 
@@ -343,6 +350,18 @@ def _parse_payment_status(raw: dict[str, Any]) -> ProviderStatus:
 
 def _amount_string(cents: int) -> str:
     return f"{cents / 100:.2f}"
+
+
+def _parse_expiration(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _amount_cents(value: Any) -> int:

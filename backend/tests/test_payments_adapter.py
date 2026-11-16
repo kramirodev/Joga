@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
 
 import httpx
 
@@ -99,6 +100,65 @@ def test_mercadopago_create_order_payload_and_response() -> None:
     assert result.provider_payment_id == "PAY01"
     assert result.qr_code == "000201PIX"
     assert result.ticket_url == "https://example.test/ticket"
+
+
+def test_mercadopago_parses_real_order_expiration_and_reference() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            201,
+            json={
+                "id": "ORD-REAL",
+                "status": "action_required",
+                "status_detail": "waiting_transfer",
+                "total_amount": "34.00",
+                "external_reference": "ticket_pack:abc",
+                "transactions": {
+                    "payments": [
+                        {
+                            "id": "PAY-REAL",
+                            "status": "action_required",
+                            "status_detail": "waiting_transfer",
+                            "amount": "34.00",
+                            "date_of_expiration": "2026-11-15T18:30:00.000-03:00",
+                            "payment_method": {
+                                "id": "pix",
+                                "type": "bank_transfer",
+                                "qr_code": "000201REAL",
+                                "qr_code_base64": "cmVhbA==",
+                                "ticket_url": "https://mp.example/real",
+                            },
+                        }
+                    ]
+                },
+            },
+        )
+
+    client = httpx.Client(
+        base_url="https://api.mercadopago.test",
+        transport=httpx.MockTransport(handler),
+    )
+    adapter = MercadoPagoAdapter(
+        "TEST-TOKEN",
+        base_url="https://api.mercadopago.test",
+        notification_url=None,
+        timeout_seconds=5,
+        client=client,
+    )
+    result = adapter.create_pix_charge(
+        PixChargeRequest(
+            external_reference="ticket_pack:abc",
+            amount_cents=3400,
+            description="Pacote",
+            payer_email="pagador@example.com",
+        )
+    )
+
+    assert result.provider_order_id == "ORD-REAL"
+    assert result.external_reference == "ticket_pack:abc"
+    assert result.amount_cents == 3400
+    assert result.status_detail == "waiting_transfer"
+    assert result.expires_at == datetime(2026, 11, 15, 21, 30, tzinfo=UTC)
+    assert result.qr_code_base64 == "cmVhbA=="
 
 
 def test_mercadopago_get_order_maps_processed_status() -> None:

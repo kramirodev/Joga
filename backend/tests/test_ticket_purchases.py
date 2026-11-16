@@ -3,12 +3,85 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.models import User
+from app.modules.identity.sessions import SessionService
+from app.modules.payments.adapter import (
+    PixChargeRequest,
+    PixChargeResult,
+    ProviderStatus,
+    RefundResult,
+)
+from app.modules.payments.dependency import get_psp_adapter
+from app.modules.payments.models import PurchasePayment
 from tests.helpers_results import make_token, make_user
+
+
+def production_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        environment="production",
+        phone_hash_secret="phone-secret",
+        token_hash_secret="token-secret",
+        psp_provider="mercadopago",
+        mercado_pago_access_token="mp-access-token",
+        mercado_pago_webhook_secret="mp-webhook-secret",
+        mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+    )
+
+
+def production_token(session: Session, user_id: UUID) -> str:
+    settings = production_settings()
+    tokens = SessionService(
+        session,
+        settings.token_hash_secret.get_secret_value(),
+        access_ttl_seconds=600,
+        refresh_absolute_ttl_days=30,
+        refresh_idle_ttl_days=7,
+    ).issue(user_id)
+    session.commit()
+    return tokens.access_token
+
+
+class RecordingMercadoPagoAdapter:
+    provider_name = "mercadopago"
+
+    def __init__(self) -> None:
+        self.requests: list[PixChargeRequest] = []
+
+    def create_pix_charge(self, request: PixChargeRequest) -> PixChargeResult:
+        self.requests.append(request)
+        return PixChargeResult(
+            provider=self.provider_name,
+            provider_order_id="MP-ORDER-1",
+            provider_payment_id="MP-PAY-1",
+            status="action_required",
+            status_detail="waiting_transfer",
+            qr_code="000201MP",
+            qr_code_base64="bXAx",
+            ticket_url="https://mp.example/ticket",
+            expires_at=datetime.now(UTC) + timedelta(minutes=30),
+            amount_cents=request.amount_cents,
+            external_reference=request.external_reference,
+            raw={},
+        )
+
+    def get_order(self, provider_order_id: str) -> ProviderStatus:
+        raise AssertionError("get_order não deve ser chamado")
+
+    def get_payment(self, provider_payment_id: str) -> ProviderStatus:
+        raise AssertionError("get_payment não deve ser chamado")
+
+    def refund(self, **_kwargs: object) -> RefundResult:
+        raise AssertionError("refund não deve ser chamado")
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
@@ -38,6 +111,27 @@ def test_packs_follow_the_price_ladder(client: TestClient, db_session: Session) 
     assert packs[-1]["unit_price_cents"] == 310
 
 
+def test_confirm_purchase_is_dev_only(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "avulso"},
+    )
+    assert created.status_code == 201, created.text
+
+    client.app.dependency_overrides[get_settings] = production_settings
+    confirm = api.post(
+        f"/api/v1/me/tickets/purchases/{created.json()['id']}/confirm",
+        headers=bearer(production_token(db_session, user_id)),
+    )
+    assert confirm.status_code == 403
+    assert confirm.json() == {"detail": {"code": "confirmation_requires_psp"}}
+
+
 def test_purchase_then_confirm_credits_the_wallet(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
@@ -53,6 +147,13 @@ def test_purchase_then_confirm_credits_the_wallet(client: TestClient, db_session
     assert purchase["tickets"] == 10
     assert purchase["amount_cents"] == 3_400
     assert purchase["status"] == "pending"
+    payment = purchase["payment"]
+    assert payment["provider"] == "simulator"
+    assert payment["provider_status"] == "action_required"
+    assert payment["status_detail"] == "waiting_transfer"
+    assert payment["amount_cents"] == 3_400
+    assert payment["external_reference"] == f"ticket_pack:{purchase['id']}"
+    assert payment["qr_code"]
 
     confirmed = api.post(
         f"/api/v1/me/tickets/purchases/{purchase['id']}/confirm", headers=bearer(token)
@@ -116,3 +217,42 @@ def test_purchase_is_not_readable_by_another_user(client: TestClient, db_session
         f"/api/v1/me/tickets/purchases/{purchase['id']}", headers=bearer(other_token)
     )
     assert response.status_code == 404, response.text
+
+
+def test_mercadopago_requires_payer_email_and_snapshots_it(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+    adapter = RecordingMercadoPagoAdapter()
+    client.app.dependency_overrides[get_psp_adapter] = lambda: adapter
+
+    missing = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "avulso"},
+    )
+    assert missing.status_code == 422, missing.text
+    assert missing.json() == {"detail": {"code": "payer_email_required"}}
+    assert adapter.requests == []
+
+    user = db_session.get(User, user_id)
+    assert user is not None
+    user.email = "pagador@example.com"
+    db_session.commit()
+
+    created = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=bearer(token),
+        json={"pack_code": "avulso"},
+    )
+    assert created.status_code == 201, created.text
+    assert adapter.requests[0].payer_email == "pagador@example.com"
+    purchase_id = UUID(created.json()["id"])
+    stored = db_session.scalar(
+        select(PurchasePayment).where(PurchasePayment.reference_id == purchase_id)
+    )
+    assert stored is not None
+    assert stored.payer_email == "pagador@example.com"

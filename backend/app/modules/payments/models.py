@@ -99,6 +99,7 @@ class PspWebhookEvent(Base):
             name="uq_psp_webhook_events_provider_event",
         ),
         Index("ix_psp_webhook_events_created", "created_at"),
+        Index("ix_psp_webhook_events_retry", "processed_at", "next_attempt_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -106,6 +107,11 @@ class PspWebhookEvent(Base):
     provider_event_id: Mapped[str] = mapped_column(String(160), nullable=False)
     event_type: Mapped[str | None] = mapped_column(String(60), nullable=True)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
@@ -151,6 +157,8 @@ class PurchasePayment(Base):
     provider_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     provider_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    provider_status_detail: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    payer_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     qr_code: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     qr_code_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
     ticket_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -172,7 +180,7 @@ class PurchasePayment(Base):
 class LedgerEntry(Base):
     """Registro append-only de direitos e obrigações financeiras internas."""
 
-    __tablename__ = "ledger_entries"
+    __tablename__ = "booking_ledger_entries"
     __table_args__ = (
         CheckConstraint(
             "entry_type IN ("
@@ -182,11 +190,11 @@ class LedgerEntry(Base):
         ),
         CheckConstraint("direction IN ('DEBIT', 'CREDIT')", name="direction_valid"),
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        Index("ix_ledger_entries_booking_created", "booking_id", "created_at"),
+        Index("ix_booking_ledger_entries_booking_created", "booking_id", "created_at"),
         UniqueConstraint(
             "booking_payment_id",
             "entry_type",
-            name="uq_ledger_entries_payment_type",
+            name="uq_booking_ledger_entries_payment_type",
         ),
     )
 

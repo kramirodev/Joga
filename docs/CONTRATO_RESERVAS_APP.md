@@ -429,3 +429,27 @@ Regras:
 - Se `latitude`, `longitude` ou `postal_code` mudarem sem proveniência no mesmo payload, a coordenada volta a `manual` — o pino ajustado é a autoridade final.
 - `postal_code` ou proveniência inválidos respondem `422 invalid_input`; precision fora do enum responde `422 validation_error` com `fields`.
 - `GET`, `POST` e `PATCH` devolvem `postal_code`, `geocoding_source`, `geocoding_precision` e `geocoded_at` (além dos campos anteriores).
+
+## E-mail do pagador e cobrança Pix (Bloco A)
+
+O Mercado Pago exige e-mail do pagador. O app consulta e atualiza o e-mail da conta:
+
+```http
+GET /api/v1/me/email
+PUT /api/v1/me/email
+Authorization: Bearer <access_token>
+```
+
+Resposta: `{"email": "pagador@example.com"}` ou `{"email": null}`.
+
+- O backend normaliza para minúsculas e remove espaços; `null` limpa o e-mail.
+- E-mail inválido responde `422 validation_error` com `fields`.
+- Antes de abrir cobrança Pix, o app deve garantir e-mail preenchido.
+- Sem e-mail com o Mercado Pago, a abertura responde `422 payer_email_required`.
+- O e-mail é copiado para `booking_payments.payer_email` e
+  `purchase_payments.payer_email` como snapshot auditável.
+- A visão de pagamento (reserva e compra/passe) expõe `provider`,
+  `provider_status`, `status_detail`, `qr_code`, `qr_code_base64`,
+  `ticket_url`, `expires_at`, `amount_cents` e `external_reference`.
+- `external_reference` é o ID interno da cobrança na reserva e
+  `kind:reference_id` na compra/passe; é o mesmo valor enviado ao PSP.
