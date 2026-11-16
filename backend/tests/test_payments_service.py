@@ -1,4 +1,4 @@
-"""Testes de serviço/API de pagamentos Pix e webhook (Fase 14A)."""
+"""Testes de serviÃ§o/API de pagamentos Pix e webhook (Fase 14A)."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class FakeAdapter:
         self.refund_status = refund_status
 
     def create_pix_charge(self, request: PixChargeRequest):  # noqa: ANN201
-        raise AssertionError("não deve criar cobrança neste teste")
+        raise AssertionError("nÃ£o deve criar cobranÃ§a neste teste")
 
     def get_order(self, provider_order_id: str) -> ProviderStatus:
         return self.orders[provider_order_id]
@@ -392,7 +392,7 @@ def test_venue_cancel_refunds_all_paid_participants(
     again = api.post(
         f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/refund",
         headers=bearer(context["tokens"][0]),
-        json={"reason": "Repetição idempotente"},
+        json={"reason": "RepetiÃ§Ã£o idempotente"},
     )
     assert again.status_code == 200, again.text
     assert again.json()["refunded"] == 0
@@ -478,15 +478,15 @@ def test_financial_summary_and_booking_ledger(
         headers=bearer(context["tokens"][0]),
     )
     assert summary.status_code == 200, summary.text
-    assert summary.json()["charged_cents"] == 40_000
-    assert summary.json()["pending_cents"] == 40_000
+    assert summary.json()["charged_cents"] == 48_000
+    assert summary.json()["pending_cents"] == 48_000
 
     pay_all(api, context, accepted["id"])
     summary = api.get(
         f"/api/v1/organizations/{context['organization'].id}/financial/summary",
         headers=bearer(context["tokens"][0]),
     )
-    assert summary.json()["paid_cents"] == 40_000
+    assert summary.json()["paid_cents"] == 48_000
     assert summary.json()["pending_cents"] == 0
 
     complete = api.post(
@@ -641,7 +641,7 @@ def test_refund_reverses_venue_release(client, db_session: Session) -> None:
 
     PaymentService(db_session, SimulatorPspAdapter()).refund_booking(
         uuid.UUID(accepted["id"]),
-        reason="teste de reversão",
+        reason="teste de reversÃ£o",
     )
     db_session.commit()
     db_session.refresh(release)

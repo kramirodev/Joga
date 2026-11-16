@@ -102,7 +102,7 @@
 
 **Constraints relevantes:** uma reserva por lobby; vaga ativa única por assento/usuário; timers por tipo; hold ativo único por espaço/intervalo (lógica de serviço); preço não negativo.
 
-**Lacunas conhecidas:** não há `ExclusionConstraint`/`tstzrange` para sobreposição; a proteção é feita no serviço. `booking_participants.payment_status` não aceita `EXPIRED`/`CANCELLED`, mas o serviço escreve `EXPIRED` em `register_payment_result`. `bookings` não tem `venue_price_cents`, `fee_cents` ou `fee_percent_applied` (Fase 14E).
+**Lacunas conhecidas:** não há `ExclusionConstraint`/`tstzrange` para sobreposição; a proteção é feita no serviço. `booking_participants.payment_status` aceita `EXPIRED`/`CANCELLED` desde `k5b6c7d8e9f0`. `bookings` guarda `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version` desde `m7d8e9f0a1b2`; reservas antigas ficam em `legacy_v0` com taxa zero.
 
 ---
 
@@ -249,15 +249,15 @@
 
 ## 12. Lacunas que a Fase 14E deve fechar
 
-- `bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`.
+- ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
 - Integração do `ledger_*` como fonte da verdade, aposentando o uso de `booking_ledger_entries`/`ticket_ledger` como ledger principal.
 - Migração de `ticket_lots.remaining` para saldo em reais, 1:1, pelo preço unitário pago.
-- `credit` sem expiração; passe com `period`, não `expires_at`.
+- ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
 - CPF cifrado e documento fiscal por reserva.
 - Reembolso parcial.
 - Constraint de exclusão para sobreposição de reservas.
 - Unicidade de item de temporada por temporada.
-- Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço.
+- ~~Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço~~ — **feito em `k5b6c7d8e9f0`**.
 
 ---
 

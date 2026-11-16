@@ -245,7 +245,7 @@ def deliver_due(
             idempotency_key=f"pass:{subscription.id}:{month_index}",
             ref_type="pass_delivery",
             ref_id=delivery.id,
-            expires_at=add_months(starts_at, month_index),
+            period=add_months(starts_at, month_index - 1).strftime("%Y-%m"),
         )
         created.append(delivery)
     return created

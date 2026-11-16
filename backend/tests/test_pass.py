@@ -280,7 +280,8 @@ def test_delivery_is_monthly_idempotent_and_expires(db_session: Session) -> None
         select(TicketLot).where(TicketLot.user_id == user_id, TicketLot.source == "pass")
     )
     assert first_lot is not None
-    assert first_lot.expires_at is not None
+    assert first_lot.period == "2026-11"
+    assert first_lot.expires_at is None
 
     deliver_due(db_session, subscription, now=START + timedelta(days=3))
     assert get_balance(db_session, user_id) == 30
@@ -288,6 +289,8 @@ def test_delivery_is_monthly_idempotent_and_expires(db_session: Session) -> None
     deliver_due(db_session, subscription, now=add_months(START, 1))
     expire_tickets(db_session, now=add_months(START, 1))
     assert get_balance(db_session, user_id) == 30
+    db_session.refresh(first_lot)
+    assert first_lot.remaining == 0
 
     deliver_due(db_session, subscription, now=add_months(START, 2))
     expire_tickets(db_session, now=add_months(START, 2))

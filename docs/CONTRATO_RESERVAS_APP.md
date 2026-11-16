@@ -1,6 +1,6 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
-**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; os campos de `fee` abaixo entram na Fase 14E.
+**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
 
 ## 0. Preço, tickets e NFS-e (ADR 0049)
@@ -9,7 +9,8 @@
 - O saldo em reais não é exibido como carteira.
 - Antes da confirmação, o app mostra o valor do espaço, a taxa de intermediação e a tabela de conversão tickets ↔ faixa/valor.
 - A NFS-e materializa o valor: locação/uso pelo fornecedor e intermediação pelo JOGA.
-- `price_cents` é hoje o valor do espaço. A 14E adicionará `venue_price_cents`, `fee_cents`, `fee_percent_applied` e `total_cents`.
+- `price_cents` continua sendo o valor do espaço (compatibilidade). A reserva nova grava também `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version`, congelados na criação; `venue_price_cents + fee_cents == total_cents`.
+- Reservas anteriores à 14E têm `pricing_version = "legacy_v0"`, `fee_cents = 0` e `total_cents = venue_price_cents`. Elas não são relançadas no ledger.
 - `band_code`/`tickets_per_seat` são exibição/conversão, não preço jurídico.
 - **Atenção:** em `BookingView.payments[]`, `participant_id` é o id da **vaga** (`booking_participants`), não o `user_id`. O app deve localizar o pagamento pelo participante correspondente, não comparar com `session.userId`.
 
@@ -162,6 +163,12 @@ Regras:
   "band_code": "economica_dia",
   "band_label": "Econômica dia",
   "tickets_per_seat": 8,
+  "price_cents": 15000,
+  "venue_price_cents": 15000,
+  "fee_cents": 3000,
+  "fee_percent_applied": 2000,
+  "total_cents": 18000,
+  "pricing_version": "adr0049_v1",
   "timezone": "America/Sao_Paulo",
   "participants": [
     {
@@ -174,6 +181,16 @@ Regras:
 ```
 
 `band_code`, `tickets_per_seat` e `settled_with` são `null` quando não se aplicam. A reserva congela faixa e ingressos no momento da criação; reajuste posterior não altera a reserva.
+
+`fee_percent_applied` está em **basis points** (`2000` = 20%). A taxa é calculada no servidor com percentual uniforme e piso configuráveis; o cliente nunca envia preço nem taxa. O rateio entre participantes usa `total_cents` (espaço + taxa), e o repasse ao fornecedor usa `venue_price_cents`.
+
+### 4.1 Crédito e franquia
+
+- Crédito comprado (`ticket_lots.source = "purchase"`) **não expira** e não é afetado pelo job de expiração.
+- `ticket_lots.source = "pass"` é franquia mensal: usa `period` (`YYYY-MM`), não `expires_at`, não acumula e não vira crédito.
+- `free_level`/`admin` usam `expires_at` quando existir; ingresso grátis de nível expira com a temporada.
+- A ordem de consumo é `pass → free_level → admin → purchase → refund`.
+- `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição.
 
 `timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
 

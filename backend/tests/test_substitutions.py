@@ -195,7 +195,7 @@ def test_expiry_cancels_lobby_and_refunds_others_not_canceller(
     assert {item.payment_status for item in others} == {"REFUNDED"}
     assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 3
 
-    # Worker também respeita a exclusão.
+    # Worker tambÃ©m respeita a exclusÃ£o.
     again = PaymentService(db_session, SimulatorPspAdapter()).refund_cancelled_bookings()
     db_session.commit()
     assert again == 0
@@ -206,8 +206,8 @@ def test_expiry_cancels_lobby_and_refunds_others_not_canceller(
         headers=bearer(context["tokens"][0]),
     )
     assert summary.status_code == 200
-    assert summary.json()["refunded_cents"] == 30_000
-    assert summary.json()["paid_cents"] == 10_000
+    assert summary.json()["refunded_cents"] == 36_000
+    assert summary.json()["paid_cents"] == 12_000
 
 
 def test_assign_substitute_opens_payment_and_refunds_outgoing(
@@ -488,7 +488,7 @@ def test_paid_seat_no_show_substitute_plays_without_new_charge(
         context["users"][0],
         booking_id,
         context["users"][1],
-        reason="Não chegou",
+        reason="NÃ£o chegou",
         now=no_show_at,
     )
     db_session.commit()
@@ -625,7 +625,7 @@ def test_player_whole_booking_cancel_does_not_refund_initiator(
     response = api.post(
         f"/api/v1/bookings/{booking_id}/cancel",
         headers=bearer(context["tokens"][0]),
-        json={"reason": "Não vamos jogar"},
+        json={"reason": "NÃ£o vamos jogar"},
     )
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "CANCELLED_BY_PLAYER"

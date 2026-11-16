@@ -41,6 +41,7 @@ from app.modules.organizations.service import (
     OrganizationService,
     payout_ready,
 )
+from app.modules.payments.money import compute_fee_cents
 from app.modules.pricing.models import PricingBand
 from app.modules.pricing.service import PricingBandError as PricingError
 from app.modules.pricing.service import tickets_for
@@ -204,6 +205,11 @@ class BookingService:
         if now + t1 + t2_reserve + t3 + buffer >= starts_at:
             raise BookingConflict("insufficient_lead_time")
 
+        fee_cents = compute_fee_cents(
+            price_cents,
+            settings.fee_percent_bps,
+            settings.fee_min_cents,
+        )
         booking = Booking(
             lobby_id=lobby.id,
             organization_id=venue.organization_id,
@@ -214,6 +220,11 @@ class BookingService:
             starts_at=starts_at,
             ends_at=ends_at,
             price_cents=price_cents,
+            venue_price_cents=price_cents,
+            fee_cents=fee_cents,
+            fee_percent_applied=settings.fee_percent_bps,
+            total_cents=price_cents + fee_cents,
+            pricing_version="adr0049_v1",
             seats=seats,
             policy_version="v1",
             cancellation_policy="full_refund_until_confirmed",
@@ -237,7 +248,7 @@ class BookingService:
                 return self._bundle(existing)
             raise BookingConflict("booking_conflict") from exc
 
-        contributions = _split_price(price_cents, seats)
+        contributions = _split_price(price_cents + fee_cents, seats)
         for seat, lobby_participant in enumerate(lobby_participants, start=1):
             self.session.add(
                 BookingParticipant(

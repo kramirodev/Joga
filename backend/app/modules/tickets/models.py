@@ -170,6 +170,11 @@ class TicketLot(Base):
         ),
         Index("ix_ticket_lots_user_expiry", "user_id", "expires_at"),
         Index("ix_ticket_lots_user_source", "user_id", "source"),
+        Index("ix_ticket_lots_user_period", "user_id", "period"),
+        CheckConstraint(
+            "source <> 'pass' OR period IS NOT NULL",
+            name="pass_period_required",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -179,6 +184,8 @@ class TicketLot(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     original_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Franquia do passe: 'YYYY-MM'. Não é validade de crédito comprado.
+    period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ref_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

@@ -133,6 +133,11 @@ class BookingView(BaseModel):
     starts_at: datetime
     ends_at: datetime
     price_cents: int
+    venue_price_cents: int
+    fee_cents: int
+    fee_percent_applied: int
+    total_cents: int
+    pricing_version: str
     currency: str
     seats: int
     policy_version: str
@@ -226,6 +231,11 @@ def _view(
         starts_at=booking.starts_at,
         ends_at=booking.ends_at,
         price_cents=booking.price_cents,
+        venue_price_cents=booking.venue_price_cents,
+        fee_cents=booking.fee_cents,
+        fee_percent_applied=booking.fee_percent_applied,
+        total_cents=booking.total_cents,
+        pricing_version=booking.pricing_version,
         currency=booking.currency,
         seats=booking.seats,
         policy_version=booking.policy_version,

@@ -74,6 +74,16 @@ class Booking(Base):
         ),
         CheckConstraint("ends_at > starts_at", name="time_order_valid"),
         CheckConstraint("price_cents >= 0", name="price_non_negative"),
+        CheckConstraint("venue_price_cents >= 0", name="venue_price_non_negative"),
+        CheckConstraint("fee_cents >= 0", name="fee_non_negative"),
+        CheckConstraint(
+            "fee_percent_applied BETWEEN 0 AND 10000",
+            name="fee_percent_valid",
+        ),
+        CheckConstraint(
+            "total_cents = venue_price_cents + fee_cents",
+            name="total_matches_lines",
+        ),
         CheckConstraint("seats > 0", name="seats_positive"),
         CheckConstraint(
             "tickets_per_seat IS NULL OR tickets_per_seat >= 0",
@@ -111,6 +121,23 @@ class Booking(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Preço em duas linhas (ADR 0049 §3.3): valor do espaço definido pelo
+    # fornecedor + taxa de intermediação, congelados na criação da reserva.
+    venue_price_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    fee_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    fee_percent_applied: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    total_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    pricing_version: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="legacy_v0", server_default=text("'legacy_v0'")
+    )
     band_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pricing_bands.id", ondelete="RESTRICT"), nullable=True
     )

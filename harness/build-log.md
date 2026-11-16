@@ -1217,3 +1217,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Invariante:** `tests/test_ledger_invariant.py` define `assert_credit_invariant` (saldo de `player_credit:<user>` == lotes de compra pelo preco pago). O teste esta **explicitamente ignorado** com motivo `14E.1` porque nenhum fluxo escreve no ledger ainda; sera habilitado na Etapa 6.
 - **Leitura:** nenhuma leitura publica mudou.
 - **Verificacao:** `9 passed, 1 skipped` nos testes do ledger; `ruff` e formatacao limpos.
+
+### 2026-11-16 - 14E.1: preco em duas linhas e semantica do credito
+
+- **Preco congelado:** a reserva nova grava `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version="adr0049_v1"`. `compute_fee_cents` e a unica fonte do calculo, com `fee_percent_bps` e `fee_min_cents` vindos da configuracao (sem aliquota no codigo).
+- **Rateio e repasse:** a soma dos `contribution_cents` usa `total_cents` (espaco + taxa); o repasse da quadra continua sobre `venue_price_cents` (o valor do espaco nunca e receita do JOGA).
+- **Migracao `m7d8e9f0a1b2`:** colunas aditivas em `bookings`, backfill `legacy_v0` (`fee=0`, `total=price`), `ticket_lots.period` e backfill de passe por `expires_at - 1 mes`; constraint `total_cents = venue_price_cents + fee_cents` e `source <> 'pass' OR period IS NOT NULL`. Downgrade funcional.
+- **Credito:** comprado e devolucao nunca expiram; `expire_due` so encerra passe por competencia vencida e `free_level`/`admin` por `expires_at`; passe entrega `period` (`YYYY-MM`) e nao grava mais `expires_at`; franquia nao acumula.
+- **Ordem de consumo:** `pass -> free_level -> admin -> purchase -> refund` (ADR 0049 §9.1), com teste proprio.
+- **Contrato:** `BookingView` ganhou os cinco campos (aditivo); `GET /me/tickets` ganhou `period` no lote. `CONTRATO_RESERVAS_APP.md`, `DATA_MODEL.md` e `PENDENCIAS.md` atualizados.
+- **Testes:** reserva grava as quatro colunas com piso/soma; credito comprado sobrevive a `expire_due`; passe nao acumula e expira por periodo; ordem de consumo; suite **548 passed, 31 skipped**; `ruff`, formatacao e `mypy` limpos.
+- **Migracao validada:** `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL local.
+- **Fora do escopo desta etapa:** escrita no ledger e inversao da leitura (14E.2/14E.3).

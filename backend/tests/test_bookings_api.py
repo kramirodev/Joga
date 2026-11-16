@@ -161,7 +161,12 @@ def test_happy_path_t1_t2_t3(
     context = setup_booking(db_session)
     booking = create_booking(api, context, context["lobbies"][0])
     assert booking["status"] == "PARTICIPANT_CONFIRMATION"
-    assert sum(item["contribution_cents"] for item in booking["participants"]) == 40_000
+    assert booking["venue_price_cents"] == 40_000
+    assert booking["fee_cents"] == 8_000
+    assert booking["fee_percent_applied"] == 2_000
+    assert booking["pricing_version"] == "adr0049_v1"
+    assert booking["venue_price_cents"] + booking["fee_cents"] == booking["total_cents"]
+    assert sum(item["contribution_cents"] for item in booking["participants"]) == 48_000
     assert booking["timers"][0]["timer_type"] == "T1"
 
     requested = confirm_all(api, context, booking["id"])

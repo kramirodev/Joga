@@ -61,6 +61,7 @@ class TicketLotView(BaseModel):
     source: str
     original_amount: int
     remaining: int
+    period: str | None
     expires_at: datetime | None
     ref_type: str | None
     ref_id: UUID | None
@@ -101,6 +102,7 @@ def read_wallet(
                 source=item.source,
                 original_amount=item.original_amount,
                 remaining=item.remaining,
+                period=item.period,
                 expires_at=item.expires_at,
                 ref_type=item.ref_type,
                 ref_id=item.ref_id,

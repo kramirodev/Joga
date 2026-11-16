@@ -15,9 +15,10 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.tickets.models import (
@@ -32,9 +33,9 @@ from app.modules.tickets.models import (
 SOURCE_PRIORITY = {
     "pass": 0,
     "free_level": 1,
-    "purchase": 2,
-    "refund": 3,
-    "admin": 4,
+    "admin": 2,
+    "purchase": 3,
+    "refund": 4,
 }
 GRANT_SOURCES = frozenset({"purchase", "pass", "free_level", "admin", "refund"})
 
@@ -233,14 +234,49 @@ def list_lots(
 
     statement = select(TicketLot).where(TicketLot.user_id == user_id)
     if not include_expired:
-        now = utcnow()
         statement = statement.where(
             TicketLot.remaining > 0,
-            or_(TicketLot.expires_at.is_(None), TicketLot.expires_at > now),
+            _usable_lot_condition(utcnow()),
         )
     return session.scalars(
         statement.order_by(TicketLot.expires_at.asc().nulls_last(), TicketLot.created_at)
     ).all()
+
+
+def current_period(now: datetime) -> str:
+    """Competência mensal da franquia do passe (`YYYY-MM`, UTC)."""
+
+    return ensure_utc(now).strftime("%Y-%m")
+
+
+def _usable_lot_condition(now: datetime) -> ColumnElement[bool]:
+    """Condição de lote utilizável (ADR 0049 §9.1).
+
+    - passe: só a competência corrente;
+    - comprado/devolução: nunca expira;
+    - nível/admin: expira apenas se houver `expires_at`.
+    """
+
+    period = current_period(now)
+    return or_(
+        and_(TicketLot.source == "pass", TicketLot.period == period),
+        and_(
+            TicketLot.source.in_(("purchase", "refund")),
+            TicketLot.expires_at.is_(None),
+        ),
+        and_(
+            TicketLot.source.in_(("free_level", "admin")),
+            or_(TicketLot.expires_at.is_(None), TicketLot.expires_at > now),
+        ),
+    )
+
+
+def _lot_is_usable(lot: TicketLot, now: datetime) -> bool:
+    if lot.source == "pass":
+        return lot.period == current_period(now)
+    if lot.source in {"purchase", "refund"}:
+        return True
+    return lot.expires_at is None or ensure_utc(lot.expires_at) > now
 
 
 def _lock_balance(session: Session, user_id: uuid.UUID) -> TicketBalance:
@@ -261,7 +297,7 @@ def _active_lots(session: Session, user_id: uuid.UUID, now: datetime) -> list[Ti
             .where(
                 TicketLot.user_id == user_id,
                 TicketLot.remaining > 0,
-                or_(TicketLot.expires_at.is_(None), TicketLot.expires_at > now),
+                _usable_lot_condition(now),
             )
             .with_for_update()
         ).all()
@@ -314,6 +350,7 @@ def apply_entry(
     ref_type: str | None = None,
     ref_id: uuid.UUID | None = None,
     expires_at: datetime | None = None,
+    period: str | None = None,
 ) -> int:
     """Aplica um movimento e devolve o saldo resultante.
 
@@ -337,6 +374,10 @@ def apply_entry(
     if amount > 0:
         if source not in GRANT_SOURCES:
             raise TicketError("invalid_grant_source")
+        if source == "pass" and not period:
+            raise TicketError("pass_period_required")
+        if source != "pass" and period is not None:
+            raise TicketError("period_only_for_pass")
         ledger = TicketLedgerEntry(
             user_id=user_id,
             amount=amount,
@@ -353,6 +394,7 @@ def apply_entry(
                 source=source,
                 original_amount=amount,
                 remaining=amount,
+                period=period,
                 expires_at=expires_at,
                 ref_type=ref_type,
                 ref_id=ref_id,
@@ -417,6 +459,7 @@ def grant(
     ref_type: str | None = None,
     ref_id: uuid.UUID | None = None,
     expires_at: datetime | None = None,
+    period: str | None = None,
 ) -> int:
     if amount <= 0:
         raise TicketError("grant_amount_invalid")
@@ -429,6 +472,7 @@ def grant(
         ref_type=ref_type,
         ref_id=ref_id,
         expires_at=expires_at,
+        period=period,
     )
 
 
@@ -501,7 +545,7 @@ def refund(
             lot = session.scalars(
                 select(TicketLot).where(TicketLot.id == consumption.lot_id).with_for_update()
             ).first()
-            if lot is None or (lot.expires_at is not None and ensure_utc(lot.expires_at) <= now):
+            if lot is None or not _lot_is_usable(lot, now):
                 continue
             capacity = lot.original_amount - lot.remaining
             quantity = min(consumption.amount, requested, capacity)
@@ -543,16 +587,30 @@ def refund(
 
 
 def expire_due(session: Session, *, now: datetime | None = None) -> int:
-    """Expira lotes vencidos e reduz o saldo. Idempotente por lote."""
+    """Expira lotes vencidos e reduz o saldo. Idempotente por lote.
+
+    Passe vence por competência (`period`), não por `expires_at`. Crédito
+    comprado e devolução nunca expiram; nível/admin seguem `expires_at`.
+    """
 
     moment = ensure_utc(now or utcnow())
+    period = current_period(moment)
     lots = list(
         session.scalars(
             select(TicketLot)
             .where(
                 TicketLot.remaining > 0,
-                TicketLot.expires_at.is_not(None),
-                TicketLot.expires_at <= moment,
+                or_(
+                    and_(
+                        TicketLot.source == "pass",
+                        or_(TicketLot.period.is_(None), TicketLot.period < period),
+                    ),
+                    and_(
+                        TicketLot.source.in_(("free_level", "admin")),
+                        TicketLot.expires_at.is_not(None),
+                        TicketLot.expires_at <= moment,
+                    ),
+                ),
             )
             .with_for_update()
         ).all()

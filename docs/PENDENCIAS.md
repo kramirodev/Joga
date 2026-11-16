@@ -61,7 +61,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Testes de UI mobile | 19 | Ainda manuais |
 | LGPD e retenção definitiva | 19 | Revisão jurídica pendente |
 | Ledger de dupla entrada integrado | 14E | Módulo existe, mas não é usado pelos fluxos; P0 |
-| Taxa/preço em duas linhas | 14E | `compute_fee_cents` existe sem chamador; reserva não persiste taxa |
+| Taxa/preço em duas linhas | 14E | `compute_fee_cents` calcula e a reserva persiste `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents` desde `m7d8e9f0a1b2`; o rateio usa `total_cents` e o repasse usa `venue_price_cents`. |
 | CPF e NFS-e | 14E/19A | Placeholders; sem fluxo operacional |
 
 ## Crédito JOGA, 14E e NFS-e (ADR 0042/0049)
@@ -84,7 +84,7 @@ O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, m
 | Nível da temporada e streak | Passe | **Definido na ADR 0043**: bronze/prata/ouro por nível, reseta; streak persiste |
 | Venda do passe no meio da temporada e pro-rata | 14D.12 | **Implementado como três meses a partir do pagamento**; decidir restrição de janela |
 | Conciliação de `purchase_payments` com o extrato do PSP | 14D.13/14B | Rotina interna implementada; falta comparação com PSP real |
-| Lotes e validade | 14D.16/14E | Passe mensal e grátis de temporada; comprado sem validade; falta backfill |
+| Lotes e validade | 14D.16/14E | Passe mensal e grátis de temporada; comprado sem validade. `ticket_lots.period` existe e o backfill de passe está em `m7d8e9f0a1b2`. |
 | Recibo e comprovante do passe | 14D.12/19A | Depende de revisão fiscal |
 
 ## Estatísticas e inteligência de rede (ADR 0045)
