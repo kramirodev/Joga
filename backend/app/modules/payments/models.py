@@ -180,7 +180,7 @@ class PurchasePayment(Base):
 class LedgerEntry(Base):
     """Registro append-only de direitos e obrigações financeiras internas."""
 
-    __tablename__ = "ledger_entries"
+    __tablename__ = "booking_ledger_entries"
     __table_args__ = (
         CheckConstraint(
             "entry_type IN ("
@@ -190,11 +190,11 @@ class LedgerEntry(Base):
         ),
         CheckConstraint("direction IN ('DEBIT', 'CREDIT')", name="direction_valid"),
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        Index("ix_ledger_entries_booking_created", "booking_id", "created_at"),
+        Index("ix_booking_ledger_entries_booking_created", "booking_id", "created_at"),
         UniqueConstraint(
             "booking_payment_id",
             "entry_type",
-            name="uq_ledger_entries_payment_type",
+            name="uq_booking_ledger_entries_payment_type",
         ),
     )
 
