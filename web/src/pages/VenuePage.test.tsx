@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AuthContext } from "../lib/auth-context";
+import { ToastProvider } from "../components/ui/Toast";
 import type { Organization, Role, Venue, VenuePhoto, VenueSpace } from "../types";
 import { VenuePage } from "./VenuePage";
 
@@ -31,6 +32,10 @@ const venue: Venue = {
   address_line: null,
   latitude: -22.9,
   longitude: -43.2,
+  postal_code: null,
+  geocoding_source: null,
+  geocoding_precision: "manual",
+  geocoded_at: null,
   timezone: "America/Sao_Paulo",
   status: "active",
   created_at: "2026-11-01T12:00:00Z",
@@ -124,20 +129,26 @@ function renderPage() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/organizations/org-1/venues/venue-1"]}>
-        <AuthContext.Provider
-          value={{
-            user: { id: "user-1", status: "active" },
-            loading: false,
-            signIn: vi.fn(),
-            signOut: vi.fn(),
-          }}
-        >
-          <Routes>
-            <Route path="/organizations/:organizationId/venues/:venueId" element={<VenuePage />} />
-          </Routes>
-        </AuthContext.Provider>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/organizations/org-1/venues/venue-1"]}>
+          <AuthContext.Provider
+            value={{
+              user: { id: "user-1", status: "active" },
+              capabilities: [],
+              loading: false,
+              signIn: vi.fn(),
+              signOut: vi.fn(),
+            }}
+          >
+            <Routes>
+              <Route
+                path="/organizations/:organizationId/venues/:venueId"
+                element={<VenuePage />}
+              />
+            </Routes>
+          </AuthContext.Provider>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -154,7 +165,7 @@ describe("VenuePage — quadras, agenda e fotos", () => {
     expect(screen.getByRole("heading", { name: "Agenda semanal" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /Fotos/ }));
-    expect(await screen.findByText("Em revisão")).toBeInTheDocument();
+    expect((await screen.findAllByText("Em revisão")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Aprovar" })).not.toBeInTheDocument();
   });
 

@@ -6,6 +6,7 @@ import type { WebSessionPayload, WebUser } from "../types";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<WebUser | null>(null);
+  const [capabilities, setCapabilities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -13,9 +14,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const session = await refreshSession();
-        if (!cancelled) setUser(session?.user ?? null);
+        if (!cancelled) {
+          setUser(session?.user ?? null);
+          setCapabilities(session?.capabilities ?? []);
+        }
       } catch {
-        if (!cancelled) setUser(null);
+        if (!cancelled) {
+          setUser(null);
+          setCapabilities([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -27,16 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback((payload: WebSessionPayload) => {
     setUser(payload.user);
+    setCapabilities(payload.capabilities);
   }, []);
 
   const signOut = useCallback(async () => {
     await webLogout();
     setUser(null);
+    setCapabilities([]);
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, signIn, signOut }),
-    [user, loading, signIn, signOut],
+    () => ({ user, capabilities, loading, signIn, signOut }),
+    [user, capabilities, loading, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

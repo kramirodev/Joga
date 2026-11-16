@@ -1,6 +1,8 @@
 import type {
   AuditListResponse,
   Booking,
+  BookingFinancialResponse,
+  BookingListParams,
   BookingListResponse,
   BusinessHour,
   BusinessHourListResponse,
@@ -8,6 +10,8 @@ import type {
   FinancialDispute,
   FinancialDisputeListResponse,
   FinancialStatementListResponse,
+  GeocodingPrecision,
+  MarkAllReadResponse,
   Member,
   MemberListResponse,
   ModerationAppeal,
@@ -15,9 +19,12 @@ import type {
   ModerationQueue,
   ModerationReport,
   ModeratorMe,
+  OperatorNotification,
+  OperatorNotificationListResponse,
   Organization,
   OrganizationFinancialSummary,
   OrganizationListResponse,
+  PostalCodeLookup,
   Presence,
   PricingBand,
   ReceivableListResponse,
@@ -46,18 +53,42 @@ let accessToken: string | null = null;
 let csrfToken: string | null = null;
 let refreshInFlight: Promise<WebSessionPayload | null> | null = null;
 
+export interface ValidationField {
+  field: string;
+  code: string;
+  message: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | null;
+  readonly fields: ValidationField[];
+  readonly retryAfterSeconds: number | null;
 
-  constructor(status: number, code: string, message?: string, requestId?: string | null) {
+  constructor(
+    status: number,
+    code: string,
+    message?: string,
+    requestId?: string | null,
+    fields?: ValidationField[],
+    retryAfterSeconds?: number | null,
+  ) {
     super(message ?? code);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.requestId = requestId ?? null;
+    this.fields = fields ?? [];
+    this.retryAfterSeconds = retryAfterSeconds ?? null;
   }
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value.trim());
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.ceil(seconds);
 }
 
 export function setAuthTokens(tokens: { accessToken: string; csrfToken: string }): void {
@@ -91,16 +122,39 @@ async function parseResponse<T>(response: Response): Promise<T> {
   }
 
   const requestId = response.headers.get("x-request-id");
+  const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
   const text = await response.text();
   if (!response.ok) {
     let code = "request_failed";
     let message = `Falha na requisição (${response.status}).`;
+    let fields: ValidationField[] = [];
     if (text) {
       try {
         const body = JSON.parse(text) as { detail?: unknown };
         if (typeof body.detail === "object" && body.detail !== null) {
-          const detail = body.detail as { code?: unknown };
+          const detail = body.detail as {
+            code?: unknown;
+            message?: unknown;
+            fields?: unknown;
+          };
           if (typeof detail.code === "string") code = detail.code;
+          if (typeof detail.message === "string") message = detail.message;
+          if (Array.isArray(detail.fields)) {
+            fields = detail.fields
+              .filter(
+                (field): field is ValidationField =>
+                  typeof field === "object" &&
+                  field !== null &&
+                  typeof (field as ValidationField).field === "string" &&
+                  typeof (field as ValidationField).code === "string" &&
+                  typeof (field as ValidationField).message === "string",
+              )
+              .map((field) => ({
+                field: field.field,
+                code: field.code,
+                message: field.message,
+              }));
+          }
         } else if (typeof body.detail === "string") {
           message = body.detail;
         }
@@ -108,7 +162,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
         // Resposta não JSON: mantém a mensagem genérica.
       }
     }
-    throw new ApiError(response.status, code, message, requestId);
+    throw new ApiError(response.status, code, message, requestId, fields, retryAfterSeconds);
   }
 
   if (!text) return undefined as T;
@@ -334,6 +388,13 @@ export const api = {
     return request<Venue>(venuePath(organizationId, venueId));
   },
 
+  lookupPostalCode(postalCode: string, number?: string | null): Promise<PostalCodeLookup> {
+    const cep = postalCode.replace(/\D/g, "");
+    const trimmed = number?.trim();
+    const query = trimmed ? `?number=${encodeURIComponent(trimmed)}` : "";
+    return request<PostalCodeLookup>(`/geo/postal-codes/${encodeURIComponent(cep)}${query}`);
+  },
+
   createVenue(
     organizationId: string,
     payload: {
@@ -343,6 +404,10 @@ export const api = {
       address_line: string | null;
       latitude: number;
       longitude: number;
+      postal_code?: string | null;
+      geocoding_source?: string | null;
+      geocoding_precision?: GeocodingPrecision | "manual" | null;
+      timezone?: string | null;
     },
   ): Promise<Venue> {
     return request<Venue>(venuePath(organizationId), {
@@ -363,6 +428,9 @@ export const api = {
         | "address_line"
         | "latitude"
         | "longitude"
+        | "postal_code"
+        | "geocoding_source"
+        | "geocoding_precision"
         | "timezone"
         | "status"
       >
@@ -374,15 +442,25 @@ export const api = {
     });
   },
 
-  listAudit(organizationId: string): Promise<AuditListResponse> {
+  listAudit(organizationId: string, limit = 50, offset = 0): Promise<AuditListResponse> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return request<AuditListResponse>(
-      `/organizations/${encodeURIComponent(organizationId)}/audit?limit=50`,
+      `/organizations/${encodeURIComponent(organizationId)}/audit?${params.toString()}`,
     );
   },
 
-  listOrganizationBookings(organizationId: string): Promise<BookingListResponse> {
+  listOrganizationBookings(
+    organizationId: string,
+    params: BookingListParams = {},
+  ): Promise<BookingListResponse> {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.from) query.set("from", params.from);
+    if (params.to) query.set("to", params.to);
+    query.set("limit", String(params.limit ?? 50));
+    query.set("offset", String(params.offset ?? 0));
     return request<BookingListResponse>(
-      `/organizations/${encodeURIComponent(organizationId)}/bookings`,
+      `/organizations/${encodeURIComponent(organizationId)}/bookings?${query.toString()}`,
     );
   },
 
@@ -392,21 +470,32 @@ export const api = {
     );
   },
 
-  listReceivables(organizationId: string): Promise<ReceivableListResponse> {
+  listReceivables(organizationId: string, limit = 50, offset = 0): Promise<ReceivableListResponse> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return request<ReceivableListResponse>(
-      `/organizations/${encodeURIComponent(organizationId)}/financial/receivables`,
+      `/organizations/${encodeURIComponent(organizationId)}/financial/receivables?${params.toString()}`,
     );
   },
 
-  getFinancialStatement(organizationId: string): Promise<FinancialStatementListResponse> {
+  getFinancialStatement(
+    organizationId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<FinancialStatementListResponse> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return request<FinancialStatementListResponse>(
-      `/organizations/${encodeURIComponent(organizationId)}/financial/statement`,
+      `/organizations/${encodeURIComponent(organizationId)}/financial/statement?${params.toString()}`,
     );
   },
 
-  listFinancialDisputes(organizationId: string): Promise<FinancialDisputeListResponse> {
+  listFinancialDisputes(
+    organizationId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<FinancialDisputeListResponse> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return request<FinancialDisputeListResponse>(
-      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes`,
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes?${params.toString()}`,
     );
   },
 
@@ -482,6 +571,17 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ reason }),
       },
+    );
+  },
+
+  getBookingFinancial(
+    organizationId: string,
+    bookingId: string,
+  ): Promise<BookingFinancialResponse> {
+    return request<BookingFinancialResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/bookings/${encodeURIComponent(
+        bookingId,
+      )}/financial`,
     );
   },
 
@@ -835,5 +935,32 @@ export const api = {
     return request<void>(`/moderation/operators/${encodeURIComponent(userId)}`, {
       method: "DELETE",
     });
+  },
+
+  listModerationNotifications(
+    params: { unreadOnly?: boolean; limit?: number; offset?: number } = {},
+  ): Promise<OperatorNotificationListResponse> {
+    const query = new URLSearchParams();
+    if (params.unreadOnly) query.set("unread_only", "true");
+    query.set("limit", String(params.limit ?? 30));
+    query.set("offset", String(params.offset ?? 0));
+    return request<OperatorNotificationListResponse>(
+      `/moderation/notifications?${query.toString()}`,
+    );
+  },
+
+  getModerationNotificationsUnreadCount(): Promise<{ unread_count: number }> {
+    return request<{ unread_count: number }>("/moderation/notifications/unread-count");
+  },
+
+  markModerationNotificationRead(notificationId: string): Promise<OperatorNotification> {
+    return request<OperatorNotification>(
+      `/moderation/notifications/${encodeURIComponent(notificationId)}/read`,
+      { method: "POST" },
+    );
+  },
+
+  markAllModerationNotificationsRead(): Promise<MarkAllReadResponse> {
+    return request<MarkAllReadResponse>("/moderation/notifications/read-all", { method: "POST" });
   },
 };

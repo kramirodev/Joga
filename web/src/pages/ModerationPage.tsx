@@ -1,15 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 
-import { AppHeader } from "../components/AppHeader";
-import { EmptyState, ErrorNotice, LoadingBlock } from "../components/Feedback";
+import { EmptyState, ErrorNotice, InfoNotice, SkeletonList } from "../components/Feedback";
+import { SelectField, TextareaField, TextField } from "../components/ui/Field";
+import { RefreshIcon, ShieldIcon } from "../components/ui/Icons";
+import { ConfirmDialog, ReasonDialog } from "../components/ui/Modal";
+import { PageHeader, SectionHeading } from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/toast-context";
 import { ApiError, api } from "../lib/api";
 import { formatDate, formatError, requestIdOf } from "../lib/format";
 import { queryKeys } from "../lib/query";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
+import { positiveIntegerError, textError, uuidError } from "../lib/validation";
+import type { ModerationAppeal } from "../types";
 
 const CATEGORY_LABELS: Record<string, string> = {
   HARASSMENT: "Assédio",
-  HATE: "Ódio/discriminação",
+  HATE: "Ódio ou discriminação",
   THREAT: "Ameaça",
   SEXUAL: "Conteúdo sexual",
   SPAM: "Spam",
@@ -31,17 +39,146 @@ const DECISION_LABELS: Record<string, string> = {
   SUSPEND_TEMP: "Suspender temporariamente",
 };
 
-export function ModerationPage() {
-  const queryClient = useQueryClient();
-  const [status, setStatus] = useState("OPEN");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+const SEVERITY_LABELS: Record<string, string> = {
+  HIGH: "Alta",
+  MEDIUM: "Média",
+  LOW: "Baixa",
+};
+
+const ROLE_LABELS = { ADMIN: "Administrador", MODERATOR: "Moderador" } as const;
+
+function severityTone(severity: string): string {
+  if (severity === "HIGH") return "danger";
+  if (severity === "MEDIUM") return "warning";
+  return "muted";
+}
+
+function DecisionForm({
+  onDecision,
+  busy,
+  error,
+}: {
+  onDecision: (payload: { decision: string; reason: string; days: number }) => void;
+  busy: boolean;
+  error: unknown;
+}) {
   const [decision, setDecision] = useState("WARN");
   const [reason, setReason] = useState("");
-  const [days, setDays] = useState(7);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [days, setDays] = useState("7");
+  const [daysError, setDaysError] = useState<string | null>(null);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    const reasonValidation = textError(reason, { label: "a justificativa", max: 1000 });
+    if (reasonValidation) next.reason = reasonValidation;
+    if (["RESTRICT_RANKED", "SUSPEND_TEMP"].includes(decision)) {
+      const dayError = positiveIntegerError(
+        Number(days),
+        1,
+        decision === "SUSPEND_TEMP" ? 30 : 90,
+        "o número de dias",
+      );
+      if (dayError) next.days = dayError;
+    }
+    if (Object.keys(next).length > 0) {
+      if (next.reason) setReasonError(next.reason);
+      if (next.days) setDaysError(next.days);
+      document.getElementById(next.reason ? "moderation-reason" : "moderation-days")?.focus();
+      return;
+    }
+    setReasonError(null);
+    setDaysError(null);
+    onDecision({ decision, reason: reason.trim(), days: Number(days) });
+  }
+
+  return (
+    <form className="form form--inline" onSubmit={submit} noValidate>
+      <h3>Decisão</h3>
+      <div className="form-row">
+        <SelectField
+          id="moderation-decision"
+          label="Medida"
+          value={decision}
+          onChange={(event) => setDecision(event.target.value)}
+        >
+          {Object.entries(DECISION_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SelectField>
+        {["RESTRICT_RANKED", "SUSPEND_TEMP"].includes(decision) ? (
+          <TextField
+            id="moderation-days"
+            label="Dias"
+            type="number"
+            min={1}
+            max={decision === "SUSPEND_TEMP" ? 30 : 90}
+            value={days}
+            onChange={(event) => {
+              setDays(event.target.value);
+              if (daysError) setDaysError(null);
+            }}
+            error={daysError}
+            hint={
+              decision === "SUSPEND_TEMP"
+                ? "Suspensão temporária: 1 a 30 dias."
+                : "Restrição ranqueada: 1 a 90 dias."
+            }
+            required
+          />
+        ) : null}
+      </div>
+      <TextareaField
+        id="moderation-reason"
+        label="Justificativa"
+        value={reason}
+        onChange={(event) => {
+          setReason(event.target.value);
+          if (reasonError) setReasonError(null);
+        }}
+        error={reasonError}
+        hint="Obrigatória. Fica registrada na auditoria e fundamenta a medida."
+        maxLength={1000}
+        rows={4}
+        required
+      />
+      {error ? <ErrorNotice message={formatError(error)} requestId={requestIdOf(error)} /> : null}
+      <button
+        type="submit"
+        className="button button--primary"
+        disabled={busy}
+        aria-busy={busy || undefined}
+      >
+        {busy ? "Registrando..." : "Registrar decisão"}
+      </button>
+    </form>
+  );
+}
+
+export function ModerationPage() {
+  useDocumentTitle("Moderação");
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const reportParam = searchParams.get("report");
+  const appealParam = searchParams.get("appeal");
+  const [status, setStatus] = useState("OPEN");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
+  const [appealTarget, setAppealTarget] = useState<{
+    appeal: ModerationAppeal;
+    result: "ACCEPTED" | "REJECTED";
+  } | null>(null);
+  const [appealReason, setAppealReason] = useState("");
+  const [appealError, setAppealError] = useState<string | null>(null);
   const [operatorId, setOperatorId] = useState("");
+  const [operatorIdError, setOperatorIdError] = useState<string | null>(null);
   const [operatorRole, setOperatorRole] = useState<"MODERATOR" | "ADMIN">("MODERATOR");
+  const [removeOperatorTarget, setRemoveOperatorTarget] = useState<string | null>(null);
 
   const meQuery = useQuery({
     queryKey: queryKeys.moderatorMe,
@@ -69,56 +206,95 @@ export function ModerationPage() {
   });
 
   const reports = queueQuery.data?.reports ?? [];
-  const selected = reports.find((item) => item.id === selectedId) ?? reports[0] ?? null;
+  const queueHasReport = Boolean(reportParam && reports.some((item) => item.id === reportParam));
+  const reportDetailQuery = useQuery({
+    queryKey: queryKeys.moderationReport(reportParam ?? ""),
+    queryFn: () => api.getModerationReport(reportParam ?? ""),
+    enabled: isModerator && Boolean(reportParam) && !queueHasReport,
+    retry: false,
+  });
+  const pinnedReport =
+    reportDetailQuery.data && reportDetailQuery.data.id === reportParam
+      ? reportDetailQuery.data
+      : null;
+  const selected =
+    reports.find((item) => item.id === (selectedId ?? reportParam)) ??
+    pinnedReport ??
+    reports[0] ??
+    null;
+  const stats = queueQuery.data?.stats;
+
+  useEffect(() => {
+    const targetId = appealParam
+      ? `appeal-${appealParam}`
+      : location.hash === "#appeals"
+        ? "appeals"
+        : reportParam
+          ? `report-${reportParam}`
+          : null;
+    if (!targetId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(targetId)?.scrollIntoView?.({ block: "start" });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [appealParam, location.hash, reportParam, queueQuery.data, appealsQuery.data]);
 
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["moderation", "queue"] }),
       queryClient.invalidateQueries({ queryKey: queryKeys.moderationAppeals }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.moderationOperators }),
+      ...(reportParam
+        ? [queryClient.invalidateQueries({ queryKey: queryKeys.moderationReport(reportParam) })]
+        : []),
     ]);
   };
 
   const decisionMutation = useMutation({
-    mutationFn: () =>
-      api.decideModerationReport(selected?.id ?? "", {
-        decision,
-        reason,
-        days,
-      }),
+    mutationFn: (payload: { decision: string; reason: string; days: number }) =>
+      api.decideModerationReport(selected?.id ?? "", payload),
     onSuccess: async (updated) => {
-      setNotice(`Denúncia decidida: ${STATUS_LABELS[updated.status] ?? updated.status}.`);
-      setReason("");
-      setSelectedId(null);
+      toast.push({
+        title: `Denúncia decidida: ${STATUS_LABELS[updated.status] ?? updated.status}.`,
+      });
       setActionError(null);
+      setSelectedId(null);
       await invalidate();
     },
-    onError: (caught) => {
-      setNotice(null);
-      setActionError(caught);
-    },
+    onError: (caught) => setActionError(caught),
   });
 
   const appealMutation = useMutation({
-    mutationFn: ({ appealId, result }: { appealId: string; result: "ACCEPTED" | "REJECTED" }) => {
-      const text = window.prompt("Justificativa da decisão do recurso (obrigatória):");
-      if (!text) return Promise.reject(new Error("cancelled"));
-      return api.decideModerationAppeal(appealId, { decision: result, reason: text });
-    },
-    onSuccess: async () => {
-      setNotice("Recurso decidido.");
+    mutationFn: ({
+      appealId,
+      result,
+      justification,
+    }: {
+      appealId: string;
+      result: "ACCEPTED" | "REJECTED";
+      justification: string;
+    }) => api.decideModerationAppeal(appealId, { decision: result, reason: justification }),
+    onSuccess: async (_item, variables) => {
+      setAppealTarget(null);
+      setAppealReason("");
+      setAppealError(null);
+      setActionError(null);
+      toast.push({
+        title: variables.result === "ACCEPTED" ? "Recurso aceito" : "Recurso rejeitado",
+        description: "A decisão foi registrada na auditoria.",
+      });
       await invalidate();
     },
-    onError: (caught) => {
-      if (caught instanceof Error && caught.message === "cancelled") return;
-      setActionError(caught);
-    },
+    onError: (caught) => setActionError(caught),
   });
 
   const addOperatorMutation = useMutation({
-    mutationFn: () => api.upsertModerationOperator(operatorId, operatorRole),
+    mutationFn: () => api.upsertModerationOperator(operatorId.trim(), operatorRole),
     onSuccess: async () => {
       setOperatorId("");
-      setNotice("Moderador atualizado.");
+      setOperatorIdError(null);
+      setActionError(null);
+      toast.push({ title: "Moderador atualizado" });
       await queryClient.invalidateQueries({ queryKey: queryKeys.moderationOperators });
     },
     onError: (caught) => setActionError(caught),
@@ -127,360 +303,443 @@ export function ModerationPage() {
   const removeOperatorMutation = useMutation({
     mutationFn: (userId: string) => api.removeModerationOperator(userId),
     onSuccess: async () => {
-      setNotice("Moderador desativado.");
+      setRemoveOperatorTarget(null);
+      setActionError(null);
+      toast.push({ title: "Moderador desativado" });
       await queryClient.invalidateQueries({ queryKey: queryKeys.moderationOperators });
     },
     onError: (caught) => setActionError(caught),
   });
 
+  function openAppeal(appeal: ModerationAppeal, result: "ACCEPTED" | "REJECTED") {
+    setActionError(null);
+    setAppealTarget({ appeal, result });
+    setAppealReason("");
+    setAppealError(null);
+  }
+
+  function confirmAppeal() {
+    if (!appealTarget) return;
+    if (!appealReason.trim()) {
+      setAppealError("Informe a justificativa da decisão.");
+      return;
+    }
+    if (appealReason.trim().length > 1000) {
+      setAppealError("A justificativa deve ter no máximo 1.000 caracteres.");
+      return;
+    }
+    appealMutation.mutate({
+      appealId: appealTarget.appeal.id,
+      result: appealTarget.result,
+      justification: appealReason.trim(),
+    });
+  }
+
+  function submitOperator(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validation = uuidError(operatorId, "o UUID da conta");
+    if (validation) {
+      setOperatorIdError(validation);
+      document.getElementById("operator-id")?.focus();
+      return;
+    }
+    addOperatorMutation.mutate();
+  }
+
+  const filteredReports = reports;
+
   if (meQuery.error instanceof ApiError && meQuery.error.status === 403) {
     return (
-      <div className="app-shell">
-        <AppHeader moderation subtitle="Acesso interno" />
-        <main className="page">
-          <EmptyState title="Acesso restrito">
-            Sua conta não tem permissão de moderação. Peça a um administrador para incluí-la.
-          </EmptyState>
-        </main>
-      </div>
+      <>
+        <PageHeader eyebrow="JOGA y MODERAÇÃO" title="Moderação" />
+        <EmptyState title="Acesso restrito" icon={<ShieldIcon size={30} />}>
+          Sua conta não tem permissão de moderação. Peça a um administrador para incluí-la.
+        </EmptyState>
+      </>
     );
   }
 
   if (meQuery.isPending) {
-    return (
-      <div className="app-shell">
-        <AppHeader moderation subtitle="Acesso interno" />
-        <main className="page">
-          <LoadingBlock label="Verificando permissão..." />
-        </main>
-      </div>
-    );
+    return <SkeletonList rows={3} label="Verificando permissão de moderação..." />;
   }
 
   if (meQuery.error) {
     return (
-      <div className="app-shell">
-        <AppHeader moderation subtitle="Acesso interno" />
-        <main className="page">
-          <ErrorNotice
-            message={formatError(meQuery.error)}
-            requestId={requestIdOf(meQuery.error)}
-            onRetry={() => void meQuery.refetch()}
-          />
-        </main>
-      </div>
+      <ErrorNotice
+        message={formatError(meQuery.error)}
+        requestId={requestIdOf(meQuery.error)}
+        onRetry={() => void meQuery.refetch()}
+      />
     );
   }
 
-  const stats = queueQuery.data?.stats;
-  const error = queueQuery.error ?? appealsQuery.error ?? operatorsQuery.error ?? actionError;
+  const displayError =
+    queueQuery.error ?? appealsQuery.error ?? operatorsQuery.error ?? actionError;
 
   return (
-    <div className="app-shell">
-      <AppHeader moderation subtitle="Fila interna de denúncias" />
-      <main className="page">
-        <section className="page-heading">
+    <>
+      <PageHeader
+        eyebrow="JOGA y MODERAÇÃO"
+        title="Denúncias e recursos"
+        description="Área interna separada do painel de gestão. A triagem é determinística e a decisão é sempre humana."
+        actions={
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() => void queueQuery.refetch()}
+            disabled={queueQuery.isFetching}
+          >
+            <RefreshIcon size={16} />
+            {queueQuery.isFetching ? "Atualizando..." : "Atualizar fila"}
+          </button>
+        }
+      />
+
+      <InfoNotice>
+        <p>
+          O acesso é restrito a operadores autorizados e cada decisão exige justificativa. Medidas
+          preventivas precisam ser reversíveis e cabe recurso.
+        </p>
+      </InfoNotice>
+
+      {displayError ? (
+        <ErrorNotice
+          message={formatError(displayError)}
+          requestId={requestIdOf(displayError)}
+          onRetry={() => void queueQuery.refetch()}
+        />
+      ) : null}
+
+      <section className="moderation-stats" aria-label="Resumo da fila">
+        <div className="stat-card">
+          <span className="stat-card__icon stat-card__icon--warning" aria-hidden="true">
+            <ShieldIcon size={18} />
+          </span>
           <div>
-            <p className="eyebrow">JOGA y MODERAÇÃO</p>
-            <h1>Denúncias e recursos</h1>
-            <p className="muted">
-              Área interna separada do painel de gestão. A triagem é determinística e a decisão é
-              sempre humana.
-            </p>
-          </div>
-        </section>
-
-        {notice ? (
-          <div className="notice notice--success" role="status">
-            {notice}
-          </div>
-        ) : null}
-        {error ? (
-          <ErrorNotice
-            message={formatError(error)}
-            requestId={requestIdOf(error)}
-            onRetry={() => void queueQuery.refetch()}
-          />
-        ) : null}
-
-        <section className="moderation-stats">
-          <div className="card">
-            <span>Abertas</span>
             <strong>{stats?.open ?? 0}</strong>
+            <span>Abertas</span>
           </div>
-          <div className="card">
-            <span>Alta prioridade</span>
-            <strong>{stats?.high_priority ?? 0}</strong>
-          </div>
-          <div className="card">
-            <span>Em recurso</span>
-            <strong>{stats?.appealed ?? 0}</strong>
-          </div>
-        </section>
-
-        <div className="moderation-layout">
-          <section className="card moderation-queue">
-            <div className="section-heading">
-              <div>
-                <h2>Fila</h2>
-                <p className="muted">Atualiza a cada 30 segundos.</p>
-              </div>
-              <select value={status} onChange={(event) => setStatus(event.target.value)}>
-                <option value="OPEN">Abertas</option>
-                <option value="APPEALED">Em recurso</option>
-                <option value="RESOLVED">Resolvidas</option>
-                <option value="DISMISSED">Improcedentes</option>
-              </select>
-            </div>
-            {queueQuery.isPending ? (
-              <LoadingBlock label="Carregando denúncias..." />
-            ) : reports.length === 0 ? (
-              <EmptyState title="Fila vazia">Nenhuma denúncia neste status.</EmptyState>
-            ) : (
-              <ul className="moderation-list">
-                {reports.map((report) => (
-                  <li key={report.id}>
-                    <button
-                      type="button"
-                      className={
-                        selected?.id === report.id
-                          ? "moderation-item moderation-item--active"
-                          : "moderation-item"
-                      }
-                      onClick={() => setSelectedId(report.id)}
-                    >
-                      <span>
-                        <strong>{CATEGORY_LABELS[report.category] ?? report.category}</strong>
-                        <small>
-                          {report.severity} · prioridade {report.priority} ·{" "}
-                          {formatDate(report.created_at)}
-                        </small>
-                      </span>
-                      <span className={`badge badge--${report.severity.toLowerCase()}`}>
-                        {STATUS_LABELS[report.status] ?? report.status}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="card moderation-detail">
-            {selected ? (
-              <>
-                <div className="section-heading">
-                  <div>
-                    <h2>{CATEGORY_LABELS[selected.category] ?? selected.category}</h2>
-                    <p className="muted">
-                      {selected.severity} · prioridade {selected.priority} ·{" "}
-                      {selected.classifier_version}
-                    </p>
-                  </div>
-                  <span className="badge badge--muted">
-                    {STATUS_LABELS[selected.status] ?? selected.status}
-                  </span>
-                </div>
-                <p>{selected.description}</p>
-                <dl className="moderation-meta">
-                  <div>
-                    <dt>Denunciante</dt>
-                    <dd className="mono">{selected.reporter_id}</dd>
-                  </div>
-                  <div>
-                    <dt>Alvo</dt>
-                    <dd className="mono">{selected.target_user_id}</dd>
-                  </div>
-                  <div>
-                    <dt>Lobby</dt>
-                    <dd className="mono">{selected.lobby_id}</dd>
-                  </div>
-                </dl>
-
-                <h3>Contexto anexado</h3>
-                {selected.context.length === 0 ? (
-                  <p className="muted">Nenhuma mensagem anexada.</p>
-                ) : (
-                  <ul className="moderation-context">
-                    {selected.context.map((message) => (
-                      <li key={message.id}>
-                        <small>{formatDate(message.created_at)}</small>
-                        <p>{message.body}</p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {["OPEN", "IN_REVIEW"].includes(selected.status) ? (
-                  <form
-                    className="form form--inline"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      decisionMutation.mutate();
-                    }}
-                  >
-                    <h3>Decisão</h3>
-                    <div className="form-row">
-                      <label className="field">
-                        <span>Medida</span>
-                        <select
-                          value={decision}
-                          onChange={(event) => setDecision(event.target.value)}
-                        >
-                          {Object.entries(DECISION_LABELS).map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {["RESTRICT_RANKED", "SUSPEND_TEMP"].includes(decision) ? (
-                        <label className="field field--short">
-                          <span>Dias</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={decision === "SUSPEND_TEMP" ? 30 : 90}
-                            value={days}
-                            onChange={(event) => setDays(Number(event.target.value))}
-                            required
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                    <label className="field">
-                      <span>Justificativa</span>
-                      <textarea
-                        value={reason}
-                        onChange={(event) => setReason(event.target.value)}
-                        maxLength={1000}
-                        required
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="button button--primary"
-                      disabled={decisionMutation.isPending}
-                    >
-                      Registrar decisão
-                    </button>
-                  </form>
-                ) : null}
-              </>
-            ) : (
-              <EmptyState title="Selecione uma denúncia">
-                A fila e o detalhe aparecem aqui.
-              </EmptyState>
-            )}
-          </section>
         </div>
+        <div className="stat-card">
+          <span className="stat-card__icon stat-card__icon--danger" aria-hidden="true">
+            <ShieldIcon size={18} />
+          </span>
+          <div>
+            <strong>{stats?.high_priority ?? 0}</strong>
+            <span>Alta prioridade</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <span className="stat-card__icon stat-card__icon--info" aria-hidden="true">
+            <ShieldIcon size={18} />
+          </span>
+          <div>
+            <strong>{stats?.appealed ?? 0}</strong>
+            <span>Em recurso</span>
+          </div>
+        </div>
+      </section>
 
-        <section className="card">
-          <h2>Recursos pendentes</h2>
-          {appealsQuery.isPending ? (
-            <LoadingBlock label="Carregando recursos..." />
-          ) : (appealsQuery.data ?? []).length === 0 ? (
-            <EmptyState title="Nenhum recurso">Não há recurso aguardando decisão.</EmptyState>
+      <div className="moderation-layout">
+        <section className="card moderation-queue">
+          <SectionHeading title="Fila" description="Atualiza automaticamente a cada 30 segundos." />
+          <div className="segmented segmented--wrap" role="group" aria-label="Filtrar denúncias">
+            {(
+              [
+                ["OPEN", "Abertas"],
+                ["APPEALED", "Em recurso"],
+                ["RESOLVED", "Resolvidas"],
+                ["DISMISSED", "Improcedentes"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={status === value ? "segmented__item is-active" : "segmented__item"}
+                aria-pressed={status === value}
+                onClick={() => {
+                  setStatus(value);
+                  setSelectedId(null);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {queueQuery.isPending ? (
+            <SkeletonList rows={3} label="Carregando denúncias..." />
+          ) : filteredReports.length === 0 ? (
+            <EmptyState title="Fila vazia" icon={<ShieldIcon size={26} />}>
+              Nenhuma denúncia neste status.
+            </EmptyState>
           ) : (
             <ul className="moderation-list">
-              {(appealsQuery.data ?? []).map((appeal) => (
-                <li key={appeal.id} className="moderation-appeal">
-                  <span>
-                    <strong>{appeal.reason}</strong>
-                    <small>{formatDate(appeal.created_at)}</small>
-                  </span>
-                  <div className="booking-card__actions">
-                    <button
-                      type="button"
-                      className="button button--small"
-                      onClick={() =>
-                        appealMutation.mutate({ appealId: appeal.id, result: "ACCEPTED" })
-                      }
-                    >
-                      Aceitar
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--small button--danger"
-                      onClick={() =>
-                        appealMutation.mutate({ appealId: appeal.id, result: "REJECTED" })
-                      }
-                    >
-                      Rejeitar
-                    </button>
-                  </div>
+              {filteredReports.map((report) => (
+                <li key={report.id} id={`report-${report.id}`}>
+                  <button
+                    type="button"
+                    className={
+                      selected?.id === report.id
+                        ? "moderation-item moderation-item--active"
+                        : "moderation-item"
+                    }
+                    onClick={() => setSelectedId(report.id)}
+                    aria-pressed={selected?.id === report.id}
+                  >
+                    <span>
+                      <strong>{CATEGORY_LABELS[report.category] ?? report.category}</strong>
+                      <small>
+                        {SEVERITY_LABELS[report.severity] ?? report.severity} · prioridade{" "}
+                        {report.priority} · {formatDate(report.created_at)}
+                      </small>
+                    </span>
+                    <span className={`badge badge--${severityTone(report.severity)}`}>
+                      {STATUS_LABELS[report.status] ?? report.status}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </section>
 
-        {isAdmin ? (
-          <section className="card">
-            <h2>Moderadores</h2>
-            {operatorsQuery.isPending ? (
-              <LoadingBlock label="Carregando moderadores..." />
-            ) : (
-              <ul className="moderation-list">
-                {(operatorsQuery.data ?? []).map((operator) => (
-                  <li key={operator.user_id} className="moderation-appeal">
-                    <span>
-                      <strong className="mono">{operator.user_id}</strong>
+        <section className="card moderation-detail">
+          {selected ? (
+            <>
+              <SectionHeading
+                title={CATEGORY_LABELS[selected.category] ?? selected.category}
+                description={`${SEVERITY_LABELS[selected.severity] ?? selected.severity} · prioridade ${
+                  selected.priority
+                } · ${selected.classifier_version}`}
+                actions={
+                  <span className="badge badge--muted">
+                    {STATUS_LABELS[selected.status] ?? selected.status}
+                  </span>
+                }
+              />
+              <p className="moderation-description">{selected.description}</p>
+              <dl className="moderation-meta">
+                <div>
+                  <dt>Denunciante</dt>
+                  <dd className="mono">{selected.reporter_id}</dd>
+                </div>
+                <div>
+                  <dt>Alvo</dt>
+                  <dd className="mono">{selected.target_user_id}</dd>
+                </div>
+                <div>
+                  <dt>Lobby</dt>
+                  <dd className="mono">{selected.lobby_id}</dd>
+                </div>
+              </dl>
+
+              <h3>Contexto anexado</h3>
+              {selected.context.length === 0 ? (
+                <p className="muted">Nenhuma mensagem anexada.</p>
+              ) : (
+                <ul className="moderation-context">
+                  {selected.context.map((message) => (
+                    <li key={message.id}>
                       <small>
-                        {operator.role} · {operator.active ? "ativo" : "inativo"}
+                        {message.sender_id === selected.target_user_id ? "Alvo" : "Participante"} ·{" "}
+                        {formatDate(message.created_at)}
                       </small>
-                    </span>
-                    {operator.active ? (
-                      <button
-                        type="button"
-                        className="button button--small button--danger"
-                        onClick={() => removeOperatorMutation.mutate(operator.user_id)}
-                      >
-                        Desativar
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              className="form form--inline"
-              onSubmit={(event) => {
-                event.preventDefault();
-                addOperatorMutation.mutate();
-              }}
-            >
-              <h3>Adicionar moderador</h3>
-              <div className="form-row">
-                <label className="field">
-                  <span>UUID da conta</span>
-                  <input
-                    value={operatorId}
-                    onChange={(event) => setOperatorId(event.target.value)}
-                    placeholder="00000000-0000-0000-0000-000000000000"
-                    required
-                  />
-                </label>
-                <label className="field field--short">
-                  <span>Papel</span>
-                  <select
-                    value={operatorRole}
-                    onChange={(event) =>
-                      setOperatorRole(event.target.value as "MODERATOR" | "ADMIN")
-                    }
+                      <p>{message.body}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {["OPEN", "IN_REVIEW"].includes(selected.status) ? (
+                <DecisionForm
+                  key={selected.id}
+                  onDecision={(payload) => decisionMutation.mutate(payload)}
+                  busy={decisionMutation.isPending}
+                  error={actionError}
+                />
+              ) : null}
+            </>
+          ) : (
+            <EmptyState title="Selecione uma denúncia" icon={<ShieldIcon size={28} />}>
+              A fila e o detalhe aparecem aqui.
+            </EmptyState>
+          )}
+        </section>
+      </div>
+
+      <section className="card anchor-target" id="appeals">
+        <SectionHeading
+          title="Recursos pendentes"
+          description="Decisões de recurso exigem justificativa."
+        />
+        {appealsQuery.isPending ? (
+          <SkeletonList rows={2} label="Carregando recursos..." />
+        ) : (appealsQuery.data ?? []).length === 0 ? (
+          <EmptyState title="Nenhum recurso">Não há recurso aguardando decisão.</EmptyState>
+        ) : (
+          <ul className="moderation-list">
+            {(appealsQuery.data ?? []).map((appeal) => (
+              <li
+                key={appeal.id}
+                id={`appeal-${appeal.id}`}
+                className={
+                  appealParam === appeal.id
+                    ? "moderation-appeal is-highlighted"
+                    : "moderation-appeal"
+                }
+              >
+                <span>
+                  <strong>{appeal.reason}</strong>
+                  <small>{formatDate(appeal.created_at)}</small>
+                </span>
+                <div className="booking-card__actions">
+                  <button
+                    type="button"
+                    className="button button--small button--primary"
+                    onClick={() => openAppeal(appeal, "ACCEPTED")}
                   >
-                    <option value="MODERATOR">Moderador</option>
-                    <option value="ADMIN">Administrador</option>
-                  </select>
-                </label>
-              </div>
-              <button type="submit" className="button button--primary">
-                Salvar moderador
-              </button>
-            </form>
-          </section>
+                    Aceitar recurso
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--small button--danger"
+                    onClick={() => openAppeal(appeal, "REJECTED")}
+                  >
+                    Rejeitar recurso
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {isAdmin ? (
+        <section className="card">
+          <SectionHeading
+            title="Moderadores"
+            description="Administradores gerenciam quem pode acessar a fila interna."
+          />
+          {operatorsQuery.isPending ? (
+            <SkeletonList rows={2} label="Carregando moderadores..." />
+          ) : (operatorsQuery.data ?? []).length === 0 ? (
+            <EmptyState title="Nenhum moderador cadastrado">
+              Adicione a primeira conta autorizada abaixo.
+            </EmptyState>
+          ) : (
+            <ul className="moderation-list">
+              {(operatorsQuery.data ?? []).map((operator) => (
+                <li key={operator.user_id} className="moderation-appeal">
+                  <span>
+                    <strong className="mono">{operator.user_id}</strong>
+                    <small>
+                      {ROLE_LABELS[operator.role]} · {operator.active ? "ativo" : "inativo"}
+                    </small>
+                  </span>
+                  {operator.active ? (
+                    <button
+                      type="button"
+                      className="button button--small button--danger"
+                      onClick={() => {
+                        setActionError(null);
+                        setRemoveOperatorTarget(operator.user_id);
+                      }}
+                    >
+                      Desativar
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          <form className="form form--inline" onSubmit={submitOperator} noValidate>
+            <h3>Adicionar moderador</h3>
+            <div className="form-row">
+              <TextField
+                id="operator-id"
+                label="UUID da conta"
+                value={operatorId}
+                onChange={(event) => {
+                  setOperatorId(event.target.value);
+                  if (operatorIdError) setOperatorIdError(null);
+                }}
+                error={operatorIdError}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                hint="A conta já precisa existir no JOGA."
+                maxLength={36}
+                autoComplete="off"
+                required
+              />
+              <SelectField
+                id="operator-role"
+                label="Papel"
+                value={operatorRole}
+                onChange={(event) => setOperatorRole(event.target.value as "MODERATOR" | "ADMIN")}
+              >
+                <option value="MODERATOR">Moderador</option>
+                <option value="ADMIN">Administrador</option>
+              </SelectField>
+            </div>
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={addOperatorMutation.isPending}
+              aria-busy={addOperatorMutation.isPending || undefined}
+            >
+              {addOperatorMutation.isPending ? "Salvando..." : "Salvar moderador"}
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      <ReasonDialog
+        open={Boolean(appealTarget)}
+        title={appealTarget?.result === "ACCEPTED" ? "Aceitar recurso" : "Rejeitar recurso"}
+        description="A justificativa é obrigatória e fica registrada na auditoria."
+        label="Justificativa da decisão"
+        value={appealReason}
+        onChange={(value) => {
+          setAppealReason(value);
+          if (appealError) setAppealError(null);
+        }}
+        error={appealError}
+        maxLength={1000}
+        confirmLabel={appealTarget?.result === "ACCEPTED" ? "Aceitar recurso" : "Rejeitar recurso"}
+        tone={appealTarget?.result === "REJECTED" ? "danger" : "default"}
+        busy={appealMutation.isPending}
+        onConfirm={confirmAppeal}
+        onClose={() => {
+          setAppealTarget(null);
+          setAppealReason("");
+          setAppealError(null);
+          setActionError(null);
+        }}
+      >
+        {actionError ? (
+          <ErrorNotice message={formatError(actionError)} requestId={requestIdOf(actionError)} />
         ) : null}
-      </main>
-    </div>
+      </ReasonDialog>
+
+      <ConfirmDialog
+        open={Boolean(removeOperatorTarget)}
+        title="Desativar moderador?"
+        description="A conta perde o acesso à fila interna. O histórico de decisões permanece preservado."
+        tone="danger"
+        confirmLabel="Desativar moderador"
+        busy={removeOperatorMutation.isPending}
+        onConfirm={() => {
+          if (removeOperatorTarget) removeOperatorMutation.mutate(removeOperatorTarget);
+        }}
+        onClose={() => {
+          setRemoveOperatorTarget(null);
+          setActionError(null);
+        }}
+      >
+        {actionError ? (
+          <ErrorNotice message={formatError(actionError)} requestId={requestIdOf(actionError)} />
+        ) : null}
+      </ConfirmDialog>
+    </>
   );
 }

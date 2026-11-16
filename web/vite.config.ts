@@ -19,6 +19,10 @@ const PANEL_CSP = [
   "manifest-src 'self'",
 ].join("; ");
 
+const apiTarget =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.JOGA_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+
 function cspPlugin(): Plugin {
   return {
     name: "joga-panel-csp",
@@ -42,7 +46,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000",
+        target: apiTarget,
         changeOrigin: false,
       },
     },

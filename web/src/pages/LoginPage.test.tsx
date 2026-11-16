@@ -30,13 +30,16 @@ const session: WebSessionPayload = {
   access_expires_at: "2026-11-07T13:00:00Z",
   csrf_token: "csrf-1",
   user: { id: "user-1", status: "active" },
+  capabilities: [],
 };
 
 function renderLogin() {
   const signIn = vi.fn();
   render(
     <MemoryRouter initialEntries={["/login"]}>
-      <AuthContext.Provider value={{ user: null, loading: false, signIn, signOut: vi.fn() }}>
+      <AuthContext.Provider
+        value={{ user: null, capabilities: [], loading: false, signIn, signOut: vi.fn() }}
+      >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<div>Painel autenticado</div>} />
@@ -48,7 +51,7 @@ function renderLogin() {
 }
 
 async function requestCode(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Telefone com DDD"), "+55 11 98765-4321");
+  await user.type(screen.getByLabelText("Telefone"), "11987654321");
   await user.click(screen.getByRole("button", { name: "Receber código" }));
   await screen.findByText(/Enviamos um código/);
   await user.type(screen.getByLabelText("Código de verificação"), "123456");
@@ -84,7 +87,7 @@ describe("LoginPage", () => {
     await user.click(within(form!).getByRole("button", { name: "Entrar" }));
 
     await waitFor(() => expect(webLogin).toHaveBeenCalledWith("receipt-1"));
-    expect(requestPhoneChallenge).toHaveBeenCalledWith("+55 11 98765-4321", "login");
+    expect(requestPhoneChallenge).toHaveBeenCalledWith("+5511987654321", "login");
     expect(signIn).toHaveBeenCalledWith(session);
     expect(await screen.findByText("Painel autenticado")).toBeInTheDocument();
   });
@@ -111,7 +114,7 @@ describe("LoginPage", () => {
     await user.click(within(form!).getByRole("button", { name: "Criar conta" }));
 
     await waitFor(() => expect(webRegister).toHaveBeenCalledWith("receipt-2"));
-    expect(requestPhoneChallenge).toHaveBeenCalledWith("+55 11 98765-4321", "registration");
+    expect(requestPhoneChallenge).toHaveBeenCalledWith("+5511987654321", "registration");
     expect(webLogin).not.toHaveBeenCalled();
     expect(signIn).toHaveBeenCalledWith(session);
   });
@@ -147,6 +150,6 @@ describe("LoginPage", () => {
         "Não encontramos uma conta com esse telefone. Crie uma conta para continuar.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Telefone com DDD")).toBeInTheDocument();
+    expect(screen.getByLabelText("Telefone")).toBeInTheDocument();
   });
 });

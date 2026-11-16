@@ -52,6 +52,10 @@ export const queryKeys = {
   moderatorMe: ["moderator", "me"] as const,
   moderationQueue: (status: string) => ["moderation", "queue", status] as const,
   moderationAppeals: ["moderation", "appeals"] as const,
+  moderationReport: (reportId: string) => ["moderation", "report", reportId] as const,
   moderationOperators: ["moderation", "operators"] as const,
+  moderationNotifications: (unreadOnly: boolean) =>
+    ["moderation", "notifications", unreadOnly ? "unread" : "all"] as const,
+  moderationNotificationsUnread: ["moderation", "notifications", "unread-count"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
 };

@@ -32,6 +32,15 @@ pnpm dev
 
 Abra `http://localhost:5173`. O Vite faz proxy de `/api` para a API local.
 
+O alvo do proxy pode ser trocado para outro ambiente local sem editar o arquivo:
+
+```bash
+export JOGA_API_PROXY_TARGET=http://127.0.0.1:8001
+pnpm dev
+```
+
+Em PowerShell: `$env:JOGA_API_PROXY_TARGET = "http://127.0.0.1:8001"`.
+
 Para testar o OTP sem provedor real, configure no backend:
 
 ```bash
@@ -52,6 +61,16 @@ pnpm build
 ```
 
 `pnpm build` também valida a CSP gerada em `dist/index.html`.
+
+## Design system e formulários
+
+- Tokens de cor, espaçamento, raio, sombra e movimento ficam em `src/styles.css`.
+- Componentes reutilizáveis de campo, modal, confirmação, motivo, toast, abas e cabeçalho ficam em `src/components/ui/`.
+- A navegação principal, a trilha de navegação e o estado ativo das seções usam URLs reais (`?tab=...`, `?space=...`), preservando voltar/avançar.
+- Telefones usam seletor de país, máscara local e envio em E.164; o `+55` não precisa ser digitado.
+- Limites, CNPJ, chave Pix, valores monetários, datas, horários e arquivos são validados no cliente com mensagens específicas antes do envio. O backend continua sendo a autoridade.
+- Estados de carregamento, vazio, erro e sucesso são explícitos; ações destrutivas usam confirmação e motivo quando necessário.
+- `prefers-reduced-motion` desliga animações e transições.
 
 ## Segurança
 
@@ -96,7 +115,13 @@ cabeçalhos da hospedagem.
 
 - A sessão web usa cookies `SameSite=Strict`; o painel deve ser servido no mesmo
   site da API.
-- A direção visual é uma base funcional (dark, Urban Sports/Soft Utility); assets,
-  tipografia própria e testes com usuários continuam pendentes.
+- A direção visual é um design system dark alinhado à marca JOGA (lime/coral), com
+  tipografia de sistema. Assets próprios, fontes licenciadas e testes com usuários
+  continuam pendentes.
+- Datas e horários são formatados no fuso do navegador. A agenda do estabelecimento
+  tem `timezone`, mas a exibição por fuso do local ainda não foi propagada em todas
+  as telas; isso precisa ser resolvido junto da expansão para múltiplos fusos.
+- A tela de moderação continua sendo uma ferramenta interna separada; não há central
+  de notificações no painel.
 - A CSP depende de a hospedagem enviar `frame-ancestors` e os demais cabeçalhos;
   o `<meta>` sozinho não cobre enquadramento.

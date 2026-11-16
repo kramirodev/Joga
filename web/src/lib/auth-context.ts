@@ -4,6 +4,7 @@ import type { WebSessionPayload, WebUser } from "../types";
 
 export interface AuthContextValue {
   user: WebUser | null;
+  capabilities: string[];
   loading: boolean;
   signIn: (payload: WebSessionPayload) => void;
   signOut: () => Promise<void>;

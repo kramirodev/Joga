@@ -5,7 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AuthContext } from "../lib/auth-context";
-import type { ModerationReport } from "../types";
+import { ToastProvider } from "../components/ui/Toast";
+import type { ModerationAppeal, ModerationReport } from "../types";
 import { ModerationPage } from "./ModerationPage";
 
 const report: ModerationReport = {
@@ -41,9 +42,22 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function stubApi(role: "ADMIN" | "MODERATOR" | null) {
+function stubApi(
+  role: "ADMIN" | "MODERATOR" | null,
+  options: {
+    reports?: ModerationReport[];
+    appeals?: ModerationAppeal[];
+    details?: Record<string, ModerationReport>;
+  } = {},
+) {
+  const reports = options.reports ?? [report];
+  const appeals = options.appeals ?? [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    const detailMatch = url.match(/\/moderation\/reports\/([^/]+)$/);
+    if (detailMatch && options.details?.[detailMatch[1]]) {
+      return jsonResponse(options.details[detailMatch[1]]);
+    }
     if (url.endsWith("/api/v1/moderation/me")) {
       return role
         ? jsonResponse({ user_id: "user-admin", role })
@@ -51,7 +65,7 @@ function stubApi(role: "ADMIN" | "MODERATOR" | null) {
     }
     if (url.includes("/moderation/queue")) {
       return jsonResponse({
-        reports: [report],
+        reports,
         stats: { open: 1, in_review: 0, appealed: 0, high_priority: 1 },
       });
     }
@@ -59,7 +73,7 @@ function stubApi(role: "ADMIN" | "MODERATOR" | null) {
       expect(init?.method).toBe("POST");
       return jsonResponse({ ...report, status: "RESOLVED" });
     }
-    if (url.includes("/moderation/appeals")) return jsonResponse([]);
+    if (url.includes("/moderation/appeals")) return jsonResponse(appeals);
     if (url.includes("/moderation/operators")) {
       return jsonResponse([
         {
@@ -77,24 +91,27 @@ function stubApi(role: "ADMIN" | "MODERATOR" | null) {
   return fetchMock;
 }
 
-function renderPage() {
+function renderPage(entry = "/moderation") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/moderation"]}>
-        <AuthContext.Provider
-          value={{
-            user: { id: "user-admin", status: "active" },
-            loading: false,
-            signIn: vi.fn(),
-            signOut: vi.fn(),
-          }}
-        >
-          <ModerationPage />
-        </AuthContext.Provider>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <AuthContext.Provider
+            value={{
+              user: { id: "user-admin", status: "active" },
+              capabilities: ["moderation.read", "moderation.manage"],
+              loading: false,
+              signIn: vi.fn(),
+              signOut: vi.fn(),
+            }}
+          >
+            <ModerationPage />
+          </AuthContext.Provider>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -122,5 +139,48 @@ describe("ModerationPage — fila interna", () => {
     await user.click(screen.getByRole("button", { name: "Registrar decisão" }));
 
     expect(await screen.findByText("Denúncia decidida: Resolvida.")).toBeInTheDocument();
+  });
+
+  it("abre a denúncia indicada por report na URL", async () => {
+    const otherReport: ModerationReport = {
+      ...report,
+      id: "report-2",
+      priority: 40,
+      description: "Spam repetido no lobby",
+    };
+    stubApi("ADMIN", { reports: [report, otherReport] });
+    renderPage("/moderation?report=report-2");
+
+    expect(await screen.findByText("Spam repetido no lobby")).toBeInTheDocument();
+  });
+
+  it("carrega a denúncia por GET quando ela está fora da fila atual", async () => {
+    const outsideReport: ModerationReport = {
+      ...report,
+      id: "report-2",
+      status: "RESOLVED",
+      description: "Denúncia resolvida fora do filtro",
+    };
+    stubApi("ADMIN", { details: { "report-2": outsideReport } });
+    renderPage("/moderation?report=report-2");
+
+    expect(await screen.findByText("Denúncia resolvida fora do filtro")).toBeInTheDocument();
+  });
+
+  it("destaca o recurso indicado por appeal na URL", async () => {
+    const appeal: ModerationAppeal = {
+      id: "appeal-1",
+      action_id: "action-1",
+      status: "OPEN",
+      reason: "Medida desproporcional",
+      created_at: "2026-11-14T12:00:00Z",
+      decided_at: null,
+      decision_reason: null,
+    };
+    stubApi("ADMIN", { appeals: [appeal] });
+    renderPage("/moderation?appeal=appeal-1#appeals");
+
+    const reason = await screen.findByText("Medida desproporcional");
+    expect(reason.closest("li")).toHaveClass("is-highlighted");
   });
 });

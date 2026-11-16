@@ -1,16 +1,16 @@
-import { Link, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth-context";
+import { MODERATION_NOTIFICATIONS_ENABLED } from "../lib/features";
+import { NotificationCenter } from "./NotificationCenter";
+import { LogoutIcon, ShieldIcon } from "./ui/Icons";
 
-export function AppHeader({
-  subtitle,
-  moderation = false,
-}: {
-  subtitle?: string;
-  moderation?: boolean;
-}) {
-  const { signOut } = useAuth();
+export function AppHeader() {
+  const { signOut, capabilities } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const moderationArea = location.pathname.startsWith("/moderation");
+  const canModerate = capabilities.includes("moderation.read");
 
   async function handleSignOut() {
     await signOut();
@@ -19,29 +19,46 @@ export function AppHeader({
 
   return (
     <header className="app-header">
-      <div className="app-header__brand">
-        <Link
-          to={moderation ? "/moderation" : "/"}
-          className="brand"
-          aria-label={moderation ? "JOGA y MODERAÇÃO — início" : "JOGA y GESTÃO — início"}
-        >
-          JOGA <span>{moderation ? "y MODERAÇÃO" : "y GESTÃO"}</span>
-        </Link>
-        {subtitle ? <p className="app-header__subtitle">{subtitle}</p> : null}
-      </div>
-      <div className="app-header__actions">
-        {moderation ? (
-          <Link to="/" className="button button--ghost">
-            Gestão
-          </Link>
-        ) : (
-          <Link to="/moderation" className="button button--ghost">
-            Moderação
-          </Link>
-        )}
-        <button type="button" className="button button--ghost" onClick={handleSignOut}>
-          Sair
-        </button>
+      <div className="app-header__inner">
+        <NavLink to={moderationArea ? "/moderation" : "/"} className="brand">
+          <span className="brand__mark" aria-hidden="true">
+            J
+          </span>
+          <span className="brand__text">
+            JOGA <span>{moderationArea ? "y MODERAÇÃO" : "y GESTÃO"}</span>
+          </span>
+          <span className="sr-only"> — início</span>
+        </NavLink>
+
+        <nav className="app-nav" aria-label="Navegação principal">
+          <NavLink
+            to="/"
+            className={({ isActive }) => (isActive ? "app-nav__link is-active" : "app-nav__link")}
+          >
+            Organizações
+          </NavLink>
+          {canModerate ? (
+            <NavLink
+              to="/moderation"
+              className={({ isActive }) => (isActive ? "app-nav__link is-active" : "app-nav__link")}
+            >
+              <ShieldIcon size={16} />
+              Moderação
+            </NavLink>
+          ) : null}
+        </nav>
+
+        <div className="app-header__actions">
+          {canModerate && MODERATION_NOTIFICATIONS_ENABLED ? <NotificationCenter /> : null}
+          <button
+            type="button"
+            className="button button--ghost button--compact"
+            onClick={handleSignOut}
+          >
+            <LogoutIcon size={16} />
+            <span>Sair</span>
+          </button>
+        </div>
       </div>
     </header>
   );
