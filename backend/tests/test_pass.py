@@ -121,6 +121,38 @@ def test_pass_purchase_is_idempotent_while_pending(client: TestClient, db_sessio
     assert first.json()["id"] == second.json()["id"]
 
 
+def test_pass_idempotency_key_replays_and_rejects_different_plan(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+    headers = {**bearer(token), "Idempotency-Key": "passe-1"}
+
+    first = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "craque"},
+    )
+    second = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "craque"},
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+    conflict = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "time"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+
+
 def test_pass_refund_cancels_subscription(
     client: TestClient,
     db_session: Session,

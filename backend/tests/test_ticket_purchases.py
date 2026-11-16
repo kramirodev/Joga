@@ -299,6 +299,47 @@ def test_ticket_purchase_is_idempotent_while_pending(
     assert len(payments) == 1
 
 
+def test_purchase_idempotency_key_replays_without_second_charge(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+    headers = {**bearer(token), "Idempotency-Key": "compra-1"}
+
+    first = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=headers,
+        json={"pack_code": "pequeno"},
+    )
+    second = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=headers,
+        json={"pack_code": "pequeno"},
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+    purchases = db_session.scalars(
+        select(TicketPurchase).where(TicketPurchase.user_id == user_id)
+    ).all()
+    assert len(purchases) == 1
+    payments = db_session.scalars(
+        select(PurchasePayment).where(PurchasePayment.reference_id == purchases[0].id)
+    ).all()
+    assert len(payments) == 1
+
+    conflict = api.post(
+        "/api/v1/me/tickets/purchases",
+        headers=headers,
+        json={"pack_code": "medio"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+
+
 def test_purchase_refund_revokes_unused_credit(
     client: TestClient,
     db_session: Session,

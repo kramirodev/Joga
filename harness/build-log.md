@@ -1199,3 +1199,12 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **T2:** confirmado no codigo que `booking_timers`/`response_due_at` sao gravados apenas em `_start_t2`; editar expediente nao recalcula prazos ja gravados.
 - **Testes:** 5 novos testes (atualizacao feliz, duplicidade, sobreposicao/encostar, janela invalida e autorizacao negativa) em `tests/test_business_hours.py`; suite completa **543 passed, 30 skipped**.
 - **Contrato:** `docs/CONTRATO_RESERVAS_APP.md` e `docs/JOGA_DOCUMENTACAO_TECNICA.md` atualizados.
+
+### 2026-11-16 - 14E.0b: verificacao e fechamento dos P0 financeiros
+
+- **Itens ja fechados em `ed61c1e` e confirmados no codigo:** T3 devolve ingressos (`bookings/service.py:1083-1092`); Pix pago bloqueia quitacao por ingresso (`settle_with_tickets`, linhas 674-679); `REFUNDED` so e gravado quando o estorno retorna `processed` (`payments/service.py:424-447`); reembolso reverte `venue_releases` para `REVERSED` (`financial.py:114-147`); `EXPIRED`/`CANCELLED` aceitos pela constraint (`k5b6c7d8e9f0`); reembolso de compra revoga credito (`purchase.apply_status`); webhook grava hash e responde `409 webhook_payload_mismatch`.
+- **Idempotencia de compra:** `POST /me/tickets/purchases` e `POST /me/pass/subscriptions` passaram a aceitar `Idempotency-Key` opcional. Replay do mesmo corpo devolve a resposta gravada; a mesma chave com outro pacote/plano responde `409 idempotency_conflict`. Sem o cabecalho, a regra de pendencia unica continua igual.
+- **Testes:** `test_purchase_idempotency_key_replays_without_second_charge` e `test_pass_idempotency_key_replays_and_rejects_different_plan`, alem dos testes existentes de T3, Pix + ingressos, refund `processing`, reversao de release, compra concorrente (PostgreSQL) e replay de webhook.
+- **Concorrencia (2):** `settle_with_tickets` e `register_payment_result` adquirem `SELECT ... FOR UPDATE` na reserva antes de ler o estado da vaga; a checagem de cobranca paga acontece depois do lock.
+- **Item (5):** e uma constraint de schema validada pela migracao aditiva `k5b6c7d8e9f0` e pelo teste de modelo `test_participant_accepts_expired_payment_status`; nao ha cenario concorrente aplicavel.
+- **Verificacao:** `ruff`, `ruff format --check`, `mypy app` limpos; suite **545 passed, 30 skipped**.

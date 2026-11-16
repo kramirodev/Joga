@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.api.v1.auth import get_current_session
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.idempotency import service as idempotency
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.payments.adapter import PspAdapter, PspError
 from app.modules.payments.dependency import get_psp_adapter
@@ -161,6 +163,14 @@ def _pack_view(pack: TicketPack) -> PackView:
 def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, (PackNotFound, PurchaseNotFound, PurchasePaymentNotFound)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "not_found"})
+    if isinstance(exc, idempotency.IdempotencyConflict):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_conflict"}
+        )
+    if isinstance(exc, idempotency.IdempotencyInProgress):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_in_progress"}
+        )
     if isinstance(exc, PurchasePaymentMismatch):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "payment_mismatch"}
@@ -197,10 +207,31 @@ def create_ticket_purchase(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
-) -> PurchaseView:
-    """Cria a compra e abre a cobrança Pix. Os ingressos só entram quando pagos."""
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> PurchaseView | JSONResponse:
+    """Cria a compra e abre a cobrança Pix. Os ingressos só entram quando pagos.
 
+    Com ``Idempotency-Key``, o replay devolve a mesma resposta sem abrir uma
+    segunda cobrança; a mesma chave com outro pacote responde
+    ``409 idempotency_conflict``.
+    """
+
+    key = idempotency_key.strip() if idempotency_key is not None else None
+    if idempotency_key is not None and (not key or len(key) > 120):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_idempotency_key"},
+        )
+    scope = f"me.tickets.purchases:{current.user_id}"
+    request_hash = idempotency.payload_hash({"pack_code": payload.pack_code})
     try:
+        stored = (
+            idempotency.begin(session, scope=scope, key=key, request_hash=request_hash)
+            if key is not None
+            else None
+        )
+        if stored is not None:
+            return JSONResponse(status_code=stored.status_code, content=stored.body)
         purchase = create_purchase(session, current.user_id, payload.pack_code)
         pack = session.get(TicketPack, purchase.pack_id)
         payment = open_charge(
@@ -212,11 +243,20 @@ def create_ticket_purchase(
             amount_cents=purchase.amount_cents,
             description=f"JOGA · Pacote {pack.label if pack else purchase.tickets}",
         )
+        view = _purchase_view(purchase, payment)
+        if key is not None:
+            idempotency.finish(
+                session,
+                scope=scope,
+                key=key,
+                status_code=status.HTTP_201_CREATED,
+                body=view.model_dump(mode="json"),
+            )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _purchase_view(purchase, payment)
+    return view
 
 
 @router.get("/purchases/{purchase_id}", response_model=PurchaseView)

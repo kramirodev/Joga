@@ -975,6 +975,8 @@ Não construir processador próprio, carteira custodial ou custódia informal.
 
 **Fluxo de crédito:** uma compra de pacote ou passe gera um `purchase` e uma cobrança Pix; o crédito entra no ledger em reais e é exibido em tickets 1:1. O consumo é idempotente por reserva. Não há uma cobrança por participante na reserva.
 
+`POST /api/v1/me/tickets/purchases` e `POST /api/v1/me/pass/subscriptions` aceitam o cabeçalho opcional `Idempotency-Key` (até 120 caracteres). O replay com o mesmo corpo devolve a resposta original sem abrir uma segunda cobrança; a mesma chave com outro pacote/plano responde `409 idempotency_conflict`. Sem o cabeçalho, a proteção existente continua valendo: uma única compra pendente por jogador/pacote e uma assinatura pendente por jogador.
+
 **Fluxo avulso:** um `order` por reserva, uma cobrança Pix por participante, todas abertas simultaneamente após o bloqueio, com o mesmo prazo. O valor individual é calculado pelo backend e congelado.
 
 O `external_reference` do PSP associa a cobrança à compra ou reserva. O ledger registra a associação; `booking_payments` e `purchase_payments` não são o ledger.
