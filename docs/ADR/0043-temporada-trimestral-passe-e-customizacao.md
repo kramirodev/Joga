@@ -1,6 +1,6 @@
 # ADR 0043 — Temporada trimestral, passe, trilha e customização
 
-- **Status:** Aprovado como direção de produto; não implementado.
+- **Status:** Aprovado como direção de produto; implementado no backend nas fatias 14D.7–14D.16. A unidade de conta e o preço foram realinhados pela **ADR 0049**; temporada, trilha, XP, passe e catálogo permanecem.
 - **Data:** 2026-11-11
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0025 (MMR, rankings e cosméticos), ADR 0029 (sem fotos de pessoas), ADR 0042 (ingresso e passe), ADR 0044 (clãs no MVP).

@@ -1,6 +1,6 @@
 # RUNBOOK — ambiente local do JOGA
 
-Instruções reproduzíveis para subir o backend, o PostgreSQL/PostGIS local, rodar as verificações e abrir o aplicativo no Android. Reflete o que foi executado nas Fases 1–6; não descreve ambientes que ainda não existem (staging, produção, iOS).
+Instruções reproduzíveis para subir o backend, o PostgreSQL/PostGIS local, rodar as verificações e abrir o aplicativo no Android. Reflete o ambiente local das Fases 0–17; não descreve staging, produção ou iOS. A ADR 0049 é a referência para crédito, preço e custódia; dinheiro real permanece bloqueado até os pareceres.
 
 ## 1. Pré-requisitos
 
@@ -425,13 +425,13 @@ Abra `http://localhost:5173` com a API em `http://127.0.0.1:8000` e as migraçõ
 
 Para testar o login sem SMS real, defina `JOGA_DEV_FIXED_OTP` no ambiente do backend. O refresh token fica em cookie `HttpOnly` com `Path=/api/v1/auth/web`; o access token fica em memória. Refresh e logout exigem `X-CSRF-Token` de duplo envio. Em produção, use HTTPS, `JOGA_WEB_COOKIE_SECURE=true` e painel/API no mesmo site.
 
-O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel; a 13C acrescentou a vitrine reservável e a criação ponta a ponta; a 13D alinhou o painel ao fornecedor com payout, cobertura, reajuste, cancelamento, reembolso e presença. A Fase 15 acrescentou a aba Financeiro com extrato, repasses, liberação simulada e contestação. A Fase 17A acrescentou denúncias, triagem determinística, moderação por CLI e recursos. Pagamentos reais, KYC, classificador de IA e publicidade não estão implementados.
+O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A Fase 12A acrescentou quadras/espaços, modalidades, agenda semanal, preços, bloqueios, reservas externas e fotos de quadra com revisão. A Fase 13A acrescentou reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel; a 13C acrescentou a vitrine reservável e a criação ponta a ponta; a 13D alinhou o painel ao fornecedor com payout, cobertura, reajuste, cancelamento, reembolso e presença; a 13E acrescentou T2 em horário comercial e dispatcher. A Fase 15 acrescentou a aba Financeiro com extrato, repasses, liberação simulada e contestação. A Fase 17A acrescentou denúncias, triagem determinística, moderação por CLI e recursos; a 17C acrescentou o painel de moderação e a central interna. Pagamentos reais, escrow, NFS-e, classificador de IA e publicidade não estão implementados.
 
 ### Reservas e temporizadores (Fase 13A)
 
 - Endpoints: `POST/GET /api/v1/bookings`, `GET /api/v1/bookings/{id}`, confirmação de participante, substituição, cancelamento e pagamento simulado; no painel, `GET /api/v1/organizations/{org}/bookings` e ações de aceite/recusa/conclusão.
 - T1 começa na criação; T2 começa quando todas as vagas confirmam; T3 começa no aceite com hold ativo. Os prazos são independentes e controlados pelo backend.
-- T2 usa tempo corrido nesta fase; horário comercial e feriados ficam pendentes.
+- T2 usa horário comercial com expediente, feriados e fechamentos (13E); validar casos de borda.
 - O pagamento é simulado apenas em ambiente `local`/`test`/`development`/`ci`; nenhum PSP real é acionado.
 - Worker de expiração:
 
@@ -530,7 +530,7 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
 ```
 
 - O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação.
-- Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, KYC e a política de repasse continuam pendentes.
+- Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, NFS-e e a política de repasse continuam pendentes; a 14E deve integrar o ledger em reais.
 
 ### Quadras, agenda e fotos (Fase 12A)
 
@@ -562,21 +562,38 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 | `expo install --check` falha | dependência fora da faixa esperada pelo SDK | `pnpm exec expo install <pacote>` e revisar o lockfile |
 | `adb reverse` indisponível | adb antigo (1.0.31) | usar Platform-Tools recente ou Expo Go via `--lan` |
 | App não carrega o bundle | Metro parado ou `adb reverse` ausente | subir Metro em 8081 e repetir `adb reverse tcp:8081 tcp:8081` |
-| `401 invalid_token` após ~10 min | access token vence e o app ainda não renova sozinho | entrar novamente; melhoria prevista para o hardening |
-| Log da API cheio de `GET /health 404` | o app consulta `/health` em vez de `/api/v1/health/live` | pendência de hardening registrada no build log |
+| `401 invalid_token` após ~10 min | access token vence; o app tenta renovar pelo refresh | se o refresh falhar, entrar novamente; investigar revogação/suspensão |
+| Log da API cheio de `GET /health 404` | cliente antigo consulta `/health` em vez de `/api/v1/health/live` | corrigir o cliente; o backend expõe `/api/v1/health/ready` |
 | Expo Go não abre o app | módulo nativo `passkey-proof` e `expo-secure-store` | usar development build (`expo run:android` ou APK de debug) |
 
 ## 8. Limites atuais
 
 - Redis não está configurado; o `PLANS.md` permite mantê-lo desligado até existir uso real.
-- Não há staging, produção, domínio, passkeys, iOS ou provedor de SMS.
+- Não há staging, produção, domínio, passkeys de produção, iOS ou provedor de SMS.
 - O PostgreSQL local é descartável e não contém dados reais.
-- O app mobile cobre identidade e perfil/descoberta; ainda não tem tela de fila/partida.
+- O app mobile cobre identidade, perfil/descoberta, fila/partidas, reservas, carteira, temporada, clãs e moderação; passkey WebAuthn, push e WebSocket ainda não estão integrados no app.
 - Passkey criada em um aparelho não é transferida automaticamente; no aparelho novo, entre por OTP e cadastre uma nova.
-- Fases 5, 6, 7 e 8 estão implementadas no backend e no mobile; a Fase 9 está em implementação (9A backend). O worker precisa estar rodando para formar partidas, avançar estados, apurar rodadas e aplicar MMR.
-- Split, retenção, repasse real, MED/chargeback, KYC de recebedor, comprovantes fiscais, clãs, moderação e publicidade **não estão implementados**. A interface financeira da Fase 15 opera apenas com o ledger simulado; não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
-- Resultados, disputas, segunda rodada e revisão humana da Fase 7 estão implementados no backend, sem MMR e sem painel administrativo. A CLI de revisão exige `JOGA_REVIEW_OPERATORS` configurado; os POSTs de resultado têm rate limit por usuário (`JOGA_RESULTS_RATE_LIMIT_PER_MINUTE`, padrão 30). A retenção provisória está no ADR 0024 e é aplicada manualmente por `scripts.cleanup_results.py`; a política definitiva depende da revisão LGPD das Fases 10/19.
-- O modelo de dados atual não contém tabelas de agenda, reserva, cobrança, ledger, reembolso ou liberação; elas pertencem às Fases 12–15.
+- Fases 5–9 estão implementadas no backend; a Fase 9 tem chat HTTP, mas o app ainda não tem cliente WebSocket. A Fase 10 está em hardening local; o piloto real depende de SMS, passkey, push, backup/restore e LGPD.
+- As Fases 11–17 têm implementação local parcial ou completa; parte da 13C–13E, 14D.10–16, 16 e 17 está na branch de trabalho, sem merge. A 14D/15 estão congeladas até a 14E (ADR 0049).
+- O ledger de dupla entrada existe, mas não está integrado aos fluxos; a receita, a taxa e o repasse ainda usam registros legados. Não configurar PSP, chaves de produção ou credenciais reais sem autorização explícita.
+- Resultados, disputas, segunda rodada e revisão humana estão implementados no backend. A CLI de revisão exige `JOGA_REVIEW_OPERATORS`; a retenção provisória está no ADR 0024 e é aplicada por `scripts.cleanup_results.py`.
+- O modelo de dados atual contém agenda, reservas, cobranças, ledgers, reembolsos, repasses, crédito, temporada, clãs e moderação; consulte `docs/DATA_MODEL.md`.
+
+### 8.1 Workers operacionais
+
+Além de `run_matchmaking`, `advance_matches` e `apply_ratings`, o ambiente local usa:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.advance_bookings --loop --interval 30
+.venv\Scripts\python.exe -m scripts.release_payments --loop --interval 300
+.venv\Scripts\python.exe -m scripts.retry_webhooks --loop --interval 60
+.venv\Scripts\python.exe -m scripts.dispatch_notifications --loop --interval 30
+.venv\Scripts\python.exe -m scripts.close_seasons --loop --interval 3600
+.venv\Scripts\python.exe -m scripts.deliver_pass_months --loop --interval 3600
+.venv\Scripts\python.exe -m scripts.reactivate_suspensions --loop --interval 300
+```
+
+Não há supervisor único; em produção, esses processos precisam de agendamento, health check e alertas. `scripts.reconcile_financials.py` e `scripts.reconcile_purchases.py` são operações de conciliação, não workers contínuos.
 
 ## 8.1 Revisão humana de resultado (Fase 7)
 

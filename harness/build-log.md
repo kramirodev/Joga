@@ -1113,3 +1113,30 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **A49-02:** ledger de dupla entrada com `ledger_accounts`, `ledger_transactions`, `ledger_entries`, ids idempotentes, validacao de balanceamento no servico, view `v_ledger_balances` e triggers Postgres (saldo diferido e append-only). A tabela antiga `ledger_entries` foi renomeada para `booking_ledger_entries` (migracao `j3f4a5b6c7d8`).
 - **Testes:** suite completa com **525 passed, 29 skipped, 1 failed**; a falha e ambiental (`test_access_log_does_not_include_query_string` consulta PostgreSQL e o banco em 127.0.0.1:5434 esta fora do ar). `ruff` e `mypy app` limpos. Alembic nao foi validado enquanto o Postgres estiver parado.
 - **Proximo:** A49-03 (migracao de saldos em dry-run) exige PostgreSQL de pe.
+
+### 2026-11-16 - App: pagamento Pix real, e-mail e acessibilidade
+
+- **A3:** alteracoes pendentes de `mobile/` commitadas em `1440751`; depois disso, a entrega abaixo ficou no working tree, sem novo commit.
+- **A-EMAIL-01:** `GET/PUT /me/email` consumidos; tela `payment-email`; o checkout de pacote/passe e a solicitacao de reserva exigem e-mail antes da cobranca. `payer_email_required` tambem redireciona para a tela de e-mail.
+- **A-PAY-01:** checkout de pacote usa QR/codigo reais, `expires_at`, `status_detail`, `external_reference` e `amount_cents`; polling de 7 s via `/purchases/{id}/sync`; `confirmPurchase` removido. Compra pendente e reaproveitada por `SecureStore` para evitar cobrancas duplicadas.
+- **A-PAY-02:** checkout de passe usa QR real e `/subscriptions/{id}/sync`; `passes.confirm` removido; estados pago/expirado/falhou e cancelamento de pendente ao gerar novo Pix.
+- **A-PAY-03:** nova tela `booking-payment` le `booking.payments`, mostra QR/status e usa `POST /bookings/{booking}/payments/{payment}/sync`.
+- **A-PAY-04:** polling de 7 s, contagem regressiva por `expires_at` e estados pago/expirado/nao concluido nas tres telas.
+- **A-PAY-05:** tipos ganharam `status_detail`, `external_reference` e `amount_cents`.
+- **A-PAY-06:** `simulatePayment` e os caminhos de confirmacao local foram removidos do app.
+- **A-ENV-01:** `EXPO_PUBLIC_API_URL` com fallback local; `mobile/.env.example` adicionado.
+- **A-A11Y-01:** preferencias de acessibilidade persistidas em SecureStore; reducao de movimento aplicada as transicoes. Fonte e alvos ampliados ainda nao alteram o layout global.
+- **A1/E1:** E2E do backend exercitado com login, suspensao, appeal `200`, `appeals/me` `OPEN`, decisao `REJECTED` com `decision_reason`, `appeals/me` refletindo a decisao e rota normal `401 invalid_token`. Dados de teste limpos. Screenshot final do app bloqueado por ausencia de dispositivo ADB.
+- **Verificacao:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android` limpos. Nenhum arquivo de backend alterado.
+- **Pendente:** A-AUTH-01 (passkey WebAuthn real), A-PUSH-01 (token/push exige development build e provedor), A-BUILD-01 (EAS/prebuild/iOS) e A-SCREENS-01 (inventario de telas sem endpoint).
+
+### 2026-11-16 - Auditoria integral e revisao documental (ADR 0049)
+
+- **Escopo:** revisao somente leitura de documentacao, planos, pendencias e codigo; nenhuma alteracao de codigo, banco ou servico. Em seguida, atualizacao documental autorizada pelo usuario.
+- **Verificacao backend:** `pytest` com **524 passed, 2 failed, 29 skipped**. Falhas: `test_observability` (PostgreSQL local em 127.0.0.1:5434 parado) e `test_trust` (data fixa; a restricao de 7 dias expirou em 16/11 12:00 UTC). `ruff check` e `mypy` limpos; `ruff format --check` falha em `app/modules/fiscal/service.py:50`.
+- **Verificacao mobile:** `tsc --noEmit`, ESLint e Prettier limpos.
+- **Verificacao web:** 73 testes passando; typecheck, ESLint, Prettier, build e CSP limpos.
+- **Achados P0:** ledger de dupla entrada sem chamador; `compute_fee_cents` sem chamador; T3 expirado sem devolver ingressos; Pix pago + quitacao por ingressos; reembolso sem reversao de repasse; `EXPIRED` viola constraint; migracao `a6b7` dropa constraint com nome divergente; `migrations/env.py` omite fiscal/legal/ledger; `main` 54 commits atras da branch.
+- **Documentos atualizados:** `PLANS.md` (14E, 14B, 15, 19A/19B, precedencia 0049), conceito 3.17, tecnica 2.3, `DATA_MODEL.md` 2.0, `PENDENCIAS.md`, `RUNBOOK.md`, `THREAT_MODEL.md`, `JURIDICO_PENDENCIAS.md`, `ESPECIFICACAO_TEMPORADA_E_CATALOGO.md`, `CONTRATO_RESERVAS_APP.md`, `README.md`, `GOALS.md`, `web/README.md`, `mobile/AGENTS.md`, ADRs 0021/0042/0043/0044/0045/0048, fichas 13D/17C e novas fichas 14E/14B.
+- **Nao alterado:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md` (decisao vigente, sem alteracao), codigo de aplicacao, migrations, banco e configuracoes.
+- **Pendente:** estabilizacao (merge em fatias, CI verde, migrations validadas) antes da 14E.

@@ -1,6 +1,6 @@
 # ADR 0045 — Estatísticas, leitura competitiva e inteligência de rede
 
-- **Status:** Aprovado como direção de produto; não implementado.
+- **Status:** Aprovado como direção de produto; implementado no backend na fatia 14D.15; camada visual e calibração pendentes.
 - **Data:** 2026-11-12
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0025 (MMR, rankings e Trust Factor), ADR 0042 (ingresso e passe), ADR 0043 (temporada, passe e customização), ADR 0044 (clãs no MVP).

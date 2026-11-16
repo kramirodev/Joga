@@ -1,6 +1,6 @@
 # JOGA
 
-JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por região, formação de partidas, resultados competitivos auditáveis, descoberta de espaços e reserva de quadras com pagamento individual. É um projeto independente, desenvolvido do zero.
+JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por região, formação de partidas, resultados competitivos auditáveis, descoberta de espaços e reserva de quadras com crédito e pagamento avulso. É um projeto independente, desenvolvido do zero.
 
 ## Arquitetura em alto nível
 
@@ -10,16 +10,17 @@ JOGA conecta jogadores para partidas esportivas presenciais, com descoberta por 
 - PostgreSQL com PostGIS como fonte oficial da verdade; Redis somente para funções auxiliares e efêmeras.
 - Comunicação do aplicativo com o backend por contratos HTTP/WebSocket versionados.
 
-As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile. A Fase 10 está em hardening local (10A/10B concluídos); o piloto real depende de provedores, orçamento, infraestrutura e revisão LGPD. A Fase 11 tem a fundação de organizações (11A), o painel web (11B) e o endurecimento do painel (11C) implementados localmente. A Fase 12A tem quadras, modalidades, agenda, preços, bloqueios e fotos implementados localmente; a 12B (KYC/recebedor) depende de PSP. A Fase 13A tem reservas, holds e T1/T2/T3 no backend e uma aba de reservas no painel; a 13B tem o painel mobile de acompanhamento. A Fase 14A tem adaptador de PSP, Mercado Pago Orders API em sandbox, cobrança Pix por participante, webhook e ledger interno; a 14C tem reembolsos, extrato e conciliação com PSP simulado. A Fase 15A tem liberações, contestações, recebíveis, extrato e conciliação interna como **proposta técnica local**; a 15B tem a aba Financeiro do painel. A política consolidada de cancelamento, substituição e presença está na **ADR 0039**; as fatias 1–6 (fila, chamada automática, cancelamento individual, T4/T5, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação) estão implementadas; a ADR 0040 define o repasse 2 h após o início da partida e a ADR 0041 implementa o Trust Factor interno. UI de presença/suporte ainda está pendente. Prazos de liberação e contestação, repasse real, moderação financeira e tratamento de divergência **não estão aprovados**. Produção com PSP real, estorno, repasse ao fornecedor, MED/chargeback, comprovantes e definição comercial do prazo de repasse **não estão implementados** e pertencem às Fases 14B–19. O protótipo/beta fechado usará Mercado Pago Checkout Transparente com custódia centralizada de teste; produção segue no **Inter PJ** (ADR 0042 §8). O comércio de produtos está fora do escopo inicial (ADR 0022).
+As Fases 0–9 do núcleo esportivo estão implementadas no backend e no mobile. A Fase 10 está em hardening local (10A/10B concluídos); o piloto real depende de provedores, orçamento, infraestrutura, revisão LGPD e das correções de autenticação/pagamento. As Fases 11–17 têm implementação local parcial ou completa; parte da 13C–13E, da 14D.10–16, da 16 e da 17 está na branch de trabalho, ainda sem merge. A ADR 0049 é a decisão vigente sobre crédito em reais, ticket como unidade de exibição, preço em duas linhas, NFS-e e custódia B→C; a Fase 14E concentra essa transição e a 14D/15 ficam congeladas até ela. O Mercado Pago é o PSP do protótipo com jogadores reais (ADR 0048); Inter PJ e Pagar.me ficam para o futuro. Dinheiro real permanece bloqueado até os pareceres da ADR 0049. O comércio de produtos está fora do escopo (ADR 0022).
 
 ## Por onde começar
 
 1. Leia [`AGENTS.md`](AGENTS.md), [`docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`](docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md), [`GOALS.md`](GOALS.md) e [`PLANS.md`](PLANS.md) para instruções, a visão de produto (referência máxima), objetivos e sequência normativa das fases.
 2. Consulte [`docs/JOGA_DOCUMENTACAO_TECNICA.md`](docs/JOGA_DOCUMENTACAO_TECNICA.md) para arquitetura e contratos-alvo; decisões ainda abertas estão identificadas por fase.
-3. Siga [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para subir backend, banco local, verificações, painel web e aplicativo Android.
-4. Consulte [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md) para bloqueios externos, dívidas técnicas e itens ainda abertos.
-4. Use [`PROMPTS.md`](PROMPTS.md) para preparar uma tarefa e [`harness/build/`](harness/build/) para revisar o escopo de cada fase.
-5. Consulte [`harness/build-log.md`](harness/build-log.md) para status e evidências observadas.
-6. [`README_INICIO.md`](README_INICIO.md) continua como guia complementar para organizar o início do trabalho.
+3. Leia a [`ADR 0049`](docs/ADR/0049-modelo-tributario-da-intermediacao.md) antes de mexer em crédito, preço, pagamento ou custódia.
+4. Siga [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para subir backend, banco local, verificações, painel web e aplicativo Android.
+5. Consulte [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md) para bloqueios externos, dívidas técnicas e itens ainda abertos.
+6. Use [`PROMPTS.md`](PROMPTS.md) para preparar uma tarefa e [`harness/build/`](harness/build/) para revisar o escopo de cada fase.
+7. Consulte [`harness/build-log.md`](harness/build-log.md) para status e evidências observadas.
+8. [`README_INICIO.md`](README_INICIO.md) continua como guia complementar para organizar o início do trabalho.
 
 Repositório: [github.com/kramirodev/Joga](https://github.com/kramirodev/Joga).

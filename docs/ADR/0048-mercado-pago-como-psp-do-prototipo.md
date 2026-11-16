@@ -1,6 +1,6 @@
 # ADR 0048 — Mercado Pago como PSP do protótipo com jogadores reais
 
-- **Status:** Aprovado em 2026-11-15. Supera em parte a ADR 0034 e a nota de escopo da ADR 0035.
+- **Status:** Aprovado em 2026-11-15. Supera em parte a ADR 0034 e a nota de escopo da ADR 0035. A centralização do valor na conta da JOGA é condicionada pela **ADR 0049 §2.8** (modelo B no protótipo, C na fase comercial).
 - **Data:** 2026-11-15
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0034 (Mercado Pago no protótipo/beta), ADR 0035 (Orders API, webhook e ledger), ADR 0040 (repasse), ADR 0042 (ingresso), `PLANS.md` Fase 14, `docs/PENDENCIAS.md`.

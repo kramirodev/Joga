@@ -7,7 +7,7 @@
 
 > **Nota de escopo (ADR 0034):** esta decisão permanece válida para **produção**. No protótipo e beta fechado, a ADR 0034 adota Mercado Pago Checkout Transparente com custódia centralizada de teste e repasse após a partida declarada. As duas decisões são complementares, não concorrentes.
 
-> **Nota de escopo (ADR 0042):** no **fluxo de ingresso pré-pago**, esta ADR é substituída pela ADR 0042 — tabela 2D, margem como saída, piso líquido de 10% e produção no Inter PJ. A fórmula e a regra de elegibilidade daqui continuam valendo para **reserva avulsa**.
+> **Nota de escopo (ADR 0042):** no **fluxo de crédito pré-pago**, esta ADR é substituída pela ADR 0042 e pela **ADR 0049** — preço em duas linhas em reais, taxa uniforme, ledger de dupla entrada e custódia B→C. A fórmula e a regra de elegibilidade daqui continuam valendo como cálculo interno e para **reserva avulsa**.
 
 ## Contexto
 

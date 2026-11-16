@@ -13,7 +13,8 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios, expediente, fechamentos e fotos de quadra com revisão.
 - Reservas: lista por organização, aceite/recusa, cancelamento, reembolso, presença e conclusão; T1/T2/T3 controlados pelo backend.
 - Financeiro: resumo, repasses a receber, extrato e contestação.
-- Sem PSP de produção, KYC contratual, classificador de IA e publicidade.
+- Moderação: fila, decisão, recursos, operadores e **central de notificações internas**.
+- Sem PSP de produção, escrow, KYC contratual, NFS-e operacional, classificador de IA e publicidade.
 
 ## Desenvolvimento local
 
@@ -121,7 +122,6 @@ cabeçalhos da hospedagem.
 - Datas e horários são formatados no fuso do navegador. A agenda do estabelecimento
   tem `timezone`, mas a exibição por fuso do local ainda não foi propagada em todas
   as telas; isso precisa ser resolvido junto da expansão para múltiplos fusos.
-- A tela de moderação continua sendo uma ferramenta interna separada; não há central
-  de notificações no painel.
+- A tela de moderação continua sendo uma ferramenta interna separada; a **central de notificações internas está implementada** (`NotificationCenter`) e consome `/moderation/notifications`.
 - A CSP depende de a hospedagem enviar `frame-ancestors` e os demais cabeçalhos;
   o `<meta>` sozinho não cobre enquadramento.
