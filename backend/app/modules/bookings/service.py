@@ -982,7 +982,10 @@ class BookingService:
                 user_id=participant.user_id,
                 kind="booking_confirmed",
                 title="Reserva confirmada",
-                body="Todos os participantes quitaram a vaga. A reserva está confirmada.",
+                body=(
+                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
+                    f"JOGA: R$ {participant.fee_charge_cents / 100:.2f}"
+                ),
                 idempotency_key=f"booking_confirmed:{booking.id}:{participant.user_id}",
                 data={
                     "booking_id": str(booking.id),
