@@ -2,7 +2,7 @@
 
 ## Conexão com a governança do projeto
 
-Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre a prova da **Fase 1** e a reconstrução da UI de produto a partir de `telas/jogo/prototipo-v3.html`, com cerca de 133 telas registradas, navegação por abas/pilha, tema claro/escuro e integração com os endpoints disponíveis. Telas sem endpoint correspondente permanecem visuais. A ADR 0049 define crédito em reais e ticket como unidade de exibição; pagamentos reais, escrow, KYC e NFS-e continuam fora do escopo até a fase correspondente.
+Leia primeiro `AGENTS.md` (raiz), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md`, `docs/JOGA_DOCUMENTACAO_TECNICA.md`, `PLANS.md`, `harness/build-log.md` e `harness/build/phase-01-prova-tecnica-mobile-nativa.md`. O conteúdo atual de `mobile/` cobre a prova da **Fase 1** e a reconstrução da UI de produto a partir de `telas/jogo/prototipo-v3.html`, com 134 definições de tela: 117 registradas na navegação e 17 sem caminho real marcadas como `hidden`, navegação por abas/pilha, tema claro/escuro e integração com os endpoints disponíveis. Telas sem endpoint correspondente permanecem visuais. A ADR 0049 e a 14E definem crédito em reais, ticket como unidade de consumo/exibição e preço em duas linhas; o app mobile consome `venue_price_cents`/`fee_cents`/`space_charge_cents`/`fee_charge_cents`, exibe tickets em vez de saldo em reais e trata `503 balance_unavailable` como indisponibilidade. Pagamentos reais, escrow, KYC e NFS-e operacional continuam fora do escopo até a fase correspondente.
 
 - `mobile/app.json` tem `"name": "JOGA"` (slug `joga`); o package `com.anonymous.joga` é provisório e depende de decisão (pendência 15 da técnica).
 - `android/` foi gerado por `expo prebuild`, é **git-ignorado** (`mobile/.gitignore`) e não comprova build nativo. `App.tsx` monta o app real da nova UI (`src/screens/`), com componentes em `src/ui/`, cliente HTTP em `src/api/`, estado global em `src/state/` e sessão em `src/session.ts`. Os antigos painéis técnicos (`IdentityPanel`, `ProfilePanel`, `CompetitivePanel`, `CommunicationPanel`) e a UI de demonstração em `src/joga/` foram removidos por decisão do produto.
@@ -19,6 +19,9 @@ O projeto usa **pnpm** (não existe `bun.lock`; não usar bunx/npm diretamente).
 ```text
 pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit
+pnpm exec eslint .
+pnpm exec prettier --check .
+pnpm exec expo export --platform android
 pnpm exec expo config --type public --json
 pnpm exec expo install --check
 pnpm exec expo start --localhost --go --clear
