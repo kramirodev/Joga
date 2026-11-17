@@ -209,7 +209,7 @@ class TicketLotConsumption(Base):
 
     __tablename__ = "ticket_lot_consumptions"
     __table_args__ = (
-        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("amount >= 0", name="amount_non_negative"),
         CheckConstraint(
             "amount_cents IS NULL OR amount_cents > 0",
             name="amount_cents_positive",

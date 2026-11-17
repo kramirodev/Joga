@@ -1241,3 +1241,9 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Invariante sem skip:** `tests/test_ledger_invariant.py` valida compra, quitação (ledger == contribution == consumo, tickets == k) e ausência de saldo negativo. `tests/test_ledger_shadow.py` cobre regra 4 crédito/Pix, regra 5, regras 6/7, 8/9, 10/11, abertura idempotente e reconciliação limpa.
 - **Verificação:** `559 passed, 30 skipped`; `ruff`, `ruff format --check` e `mypy app` limpos; `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL.
 - **Fora do escopo:** leitura pública (Etapa 7), vagas por passe/grátis/admin (Etapa 6b) e classificação contábil do prêmio.
+
+### 2026-11-16 - 14E.2b: ajuste de arredondamento em lotes multiplos
+
+- **Consumo multi-lote:** quando a cota e dividida entre lotes, a soma de `ticket_lot_consumptions.amount` e ajustada para ser exatamente `k = ceil(contribution/310)`; um lote pode receber `amount = 0` e manter apenas `amount_cents`, por isso a constraint passou de `amount > 0` para `amount >= 0`.
+- **Teste:** `test_consumption_across_lots_keeps_k_exact` cobre dois lotes com sobra de centavos e confirma `Σ amount_cents == cota` e `Σ amount == k`.
+- **Migracoes validadas do zero:** schema local recriado, `upgrade head`, `downgrade base`, `upgrade head` e `alembic check` sem diff.

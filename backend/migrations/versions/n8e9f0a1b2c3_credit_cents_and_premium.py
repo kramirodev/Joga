@@ -34,6 +34,8 @@ def upgrade() -> None:
         "ticket_lot_consumptions",
         sa.Column("amount_cents", sa.Integer(), nullable=True),
     )
+    op.drop_constraint("amount_positive", "ticket_lot_consumptions", type_="check")
+    op.create_check_constraint("amount_non_negative", "ticket_lot_consumptions", "amount >= 0")
     op.add_column(
         "booking_participants",
         sa.Column("space_charge_cents", sa.Integer(), server_default="0", nullable=False),
@@ -223,6 +225,8 @@ def downgrade() -> None:
     op.drop_constraint("fee_charge_non_negative", "booking_participants", type_="check")
     op.drop_constraint("space_charge_non_negative", "booking_participants", type_="check")
     op.drop_constraint("amount_cents_positive", "ticket_lot_consumptions", type_="check")
+    op.drop_constraint("amount_non_negative", "ticket_lot_consumptions", type_="check")
+    op.create_check_constraint("amount_positive", "ticket_lot_consumptions", "amount > 0")
     op.drop_constraint("remaining_cents_valid", "ticket_lots", type_="check")
     op.drop_column("booking_participants", "funding_source")
     op.drop_column("booking_participants", "fee_charge_cents")

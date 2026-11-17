@@ -36,6 +36,7 @@ from app.modules.tickets.models import TicketLot, TicketLotConsumption
 from app.modules.tickets.service import (
     TICKET_VALUE_CENTS,
     confirm_purchase,
+    consume_credit,
     create_purchase,
     credit_balance_cents,
     grant,
@@ -306,6 +307,36 @@ def test_reconciler_lists_non_credit_seat_as_excluded(
     assert participant is not None
     assert participant.funding_source == "pass"
     assert participant.id in excluded
+
+
+def test_consumption_across_lots_keeps_k_exact(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    grant(db_session, user_id, 1, source="purchase", idempotency_key="lot:1")
+    grant(db_session, user_id, 1, source="purchase", idempotency_key="lot:2")
+    consume_credit(
+        db_session,
+        user_id,
+        240,
+        1,
+        ref_type="booking",
+        ref_id=uuid.uuid4(),
+    )
+    ref = uuid.uuid4()
+    consume_credit(
+        db_session,
+        user_id,
+        100,
+        1,
+        ref_type="booking",
+        ref_id=ref,
+    )
+    rows = db_session.execute(
+        select(TicketLotConsumption.amount_cents, TicketLotConsumption.amount).where(
+            TicketLotConsumption.ref_id == ref
+        )
+    ).all()
+    assert sum(int(row[0] or 0) for row in rows) == 100
+    assert sum(int(row[1]) for row in rows) == 1
 
 
 def test_opening_is_idempotent(db_session: Session) -> None:

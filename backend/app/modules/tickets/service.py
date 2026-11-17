@@ -702,28 +702,46 @@ def consume_credit(
     session.flush()
 
     remaining = amount_cents
+    allocations: list[tuple[TicketLot, int, int]] = []
     for lot in lots:
         take = min(lot.remaining_cents or 0, remaining)
         if take <= 0:
             continue
         lot.remaining_cents = (lot.remaining_cents or 0) - take
         _refresh_display(lot)
+        allocations.append((lot, take, tickets_for_cents(take)))
+        remaining -= take
+        if remaining == 0:
+            break
+    if remaining != 0:
+        raise InsufficientTickets
+
+    # A soma das contagens por lote precisa ser exatamente k_i. O excedente
+    # aparece quando a cota é dividida em lotes com sobra de arredondamento.
+    excess = sum(item[2] for item in allocations) - tickets
+    index = len(allocations) - 1
+    while excess > 0 and index >= 0:
+        lot, take, amount = allocations[index]
+        reduction = min(amount, excess)
+        if reduction > 0:
+            allocations[index] = (lot, take, amount - reduction)
+            excess -= reduction
+        index -= 1
+    if excess != 0:
+        raise TicketError("ticket_count_mismatch")
+
+    for lot, take, amount in allocations:
         session.add(
             TicketLotConsumption(
                 lot_id=lot.id,
                 user_id=user_id,
-                amount=tickets_for_cents(take),
+                amount=amount,
                 amount_cents=take,
                 ref_type=ref_type,
                 ref_id=ref_id,
                 ledger_entry_id=ledger.id,
             )
         )
-        remaining -= take
-        if remaining == 0:
-            break
-    if remaining != 0:
-        raise InsufficientTickets
 
     balance.balance -= tickets
     if balance.balance < 0:
