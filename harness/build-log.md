@@ -1229,3 +1229,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** reserva grava as quatro colunas com piso/soma; credito comprado sobrevive a `expire_due`; passe nao acumula e expira por periodo; ordem de consumo; suite **548 passed, 31 skipped**; `ruff`, formatacao e `mypy` limpos.
 - **Migracao validada:** `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL local.
 - **Fora do escopo desta etapa:** escrita no ledger e inversao da leitura (14E.2/14E.3).
+
+### 2026-11-16 - 14E.2: sombra de escrita do ledger e consumo em reais
+
+- **Decisão aplicada (adendo §11):** a vaga consome `contribution_cents`; `k = ceil(contribution / 310)` é exibição e baixa de lote; o ticket vale R$ 3,10.
+- **Schema (`n8e9f0a1b2c3`):** `ticket_lots.remaining_cents`, `ticket_lot_consumptions.amount_cents`, `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source`, conta `purchase_premium_deferred`. Backfill de `remaining_cents = remaining × 310`, rateio retroativo em duas linhas e origem de quitação. Downgrade funcional.
+- **Rateio:** `venue_price_cents` e `fee_cents` são divididos separadamente; `Σ espaço = venue_price`, `Σ taxa = fee` e `space + fee = contribution`.
+- **Consumo:** `settle_with_tickets` usa `contribution_cents`; `ticket_lot_consumptions.amount_cents` fecha a cota e `booking_participants.tickets_consumed` guarda `k`. Vaga coberta por passe/grátis/admin não debita `player_credit` e é marcada como excluída (Etapa 6b).
+- **Ledger:** compra (`purchase:{id}`) com prêmio em `purchase_premium_deferred`; confirmação (`booking:{id}:confirm`) debita `player_credit` ou `psp_clearing` e credita `venue_payable` + `fee_revenue`; devolução (`booking:{id}:refund`) usa payable/receivable conforme o repasse; liberação (`release:{id}`); passe (`pass:{id}:sale`, `pass:{id}:month:{n}`); reembolso Pix (`payment_refund:{id}`); reversão de compra/chargeback (`purchase_refund:{id}`) com receivable do jogador.
+- **Abertura e reconciliação:** `ledger/opening.py` (dry-run e `opening:{user}` contra `opening_equity`, lendo `remaining_cents`) e `ledger/reconciliation.py` (ledger × lotes, lista vagas excluídas). CLIs: `scripts/ledger_opening.py` e `scripts/reconcile_ledger.py`.
+- **Invariante sem skip:** `tests/test_ledger_invariant.py` valida compra, quitação (ledger == contribution == consumo, tickets == k) e ausência de saldo negativo. `tests/test_ledger_shadow.py` cobre regra 4 crédito/Pix, regra 5, regras 6/7, 8/9, 10/11, abertura idempotente e reconciliação limpa.
+- **Verificação:** `559 passed, 30 skipped`; `ruff`, `ruff format --check` e `mypy app` limpos; `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL.
+- **Fora do escopo:** leitura pública (Etapa 7), vagas por passe/grátis/admin (Etapa 6b) e classificação contábil do prêmio.

@@ -1248,3 +1248,206 @@ existirem, `JOGA_MONEY_MODE=real` não sobe, e isso é intencional.
 
 **O que continua bloqueado de verdade:** emitir NFS-e, mover dinheiro real,
 operar custódia C, publicar Termos, fixar alíquota.
+
+---
+
+## 11. Decisão da Etapa 6 — consumo em reais e ticket de R$ 3,10
+
+**Resposta à seção 4 do relatório do backend (16/11/2026).**
+**Decisão: opção 1.** A vaga é consumida pelo valor em reais
+(`contribution_cents`). A tabela 2D deixa de ser preço e passa a ser contagem de
+exibição. As opções 2 e 3 ficam rejeitadas. O invariante não é ignorado: muda de
+definição e entra sem `skip`.
+
+Esta seção **substitui** a §3.1, o uso de `unit_price_cents` como valor de
+crédito e a parte da §9.1 que converte lote pelo preço pago. O que ela não
+substitui: preço em duas linhas (§3.3), rateio da §9.10, regras 1 a 18 do §9.2 e
+a proibição de converter passe, grátis e admin em centavos (§10).
+
+### 11.1 O modelo
+
+- `TICKET_VALUE_CENTS = 310`. O ticket tem valor fixo de **R$ 3,10**, que é o
+  menor preço da escada. Não é 1:1 com o real e não tem valor por lote.
+- A escada 3/10/30/50 a R$ 3,70 / 3,40 / 3,20 / 3,10 **fica como está**. A
+  leitura correta: R$ 3,10 é o valor do ticket; 3,20, 3,40 e 3,70 são **prêmio
+  de compra** do avulso, não valores diferentes de crédito. O pacote grande fica
+  no par; os menores pagam o prêmio.
+- **Por que não 3,70:** com valor 3,70, o pacote de 3,10 vende R$ 3,70 de
+  crédito por R$ 3,10 de caixa. O jogador que comprou a 3,10 não cobre a
+  quadra + taxa quando a contagem é feita sobre 3,70. Exemplo: cota de R$ 24,00
+  → 7 tickets (7 × 3,70 = 25,90); 7 × 3,10 = 21,70 < 24,00. A conta não fecha.
+- O passe a R$ 3,25 é assinatura, não crédito. A cota mensal vale 3,10 por
+  ticket para fins de exibição, mas não entra em `player_credit`.
+
+### 11.2 A conta da vaga
+
+```text
+k_i = ceil(contribution_cents_i / 310)
+k_i × 310 ≥ contribution_cents_i
+```
+
+- `contribution_cents_i` é a cota congelada do participante
+  (`space_charge_cents_i + fee_charge_cents_i`).
+- `k_i` é a contagem de exibição e de baixa de lote. **Nunca** é o valor
+  debitado.
+- A reserva congela `k_i` na criação. A tabela 2D continua o cache dessa conta,
+  calibrada a 310 (os números atuais não mudam). `tickets_for` deixa de ser
+  fonte de preço.
+
+### 11.3 O rateio em duas linhas
+
+Antes de lançar, `booking_participants` precisa de `space_charge_cents` e
+`fee_charge_cents` (migração aditiva), com:
+
+```text
+Σ space_charge_cents = venue_price_cents
+Σ fee_charge_cents   = fee_cents
+space_charge_cents_i + fee_charge_cents_i = contribution_cents_i
+Σ contribution_cents_i = total_cents
+```
+
+O rateio segue a §9.10: dividir `venue_price_cents` e `fee_cents` **separadamente**,
+distribuir o resto por ordem de assento e somar. `_split_price(total_cents)`
+sozinho não serve, porque não garante as duas somas parciais. Isso substitui
+`bookings/service.py:251`.
+
+### 11.4 O consumo
+
+`settle_with_tickets` deixa de consumir `_tickets_per_seat(booking)` como valor.
+Passa a:
+
+1. debitar do crédito do jogador `contribution_cents_i` (o valor congelado);
+2. baixar `k_i = ceil(contribution_cents_i / 310)` tickets da alocação, na ordem
+   `pass → free_level → admin → purchase → refund`;
+3. gravar, na mesma transação, o lançamento do ledger e o consumo do lote.
+
+`_tickets_per_seat` (`bookings/service.py:834-856`) e `tickets_for`
+(`pricing/service.py:102`) continuam existindo, mas só para exibição e para o
+congelamento da contagem. Nenhum caminho de débito usa o valor deles.
+
+### 11.5 O ledger (regra 4)
+
+Por participante:
+
+```text
+D player_credit:<user>   contribution_cents_i
+C venue_payable:<venue>  space_charge_cents_i
+C fee_revenue            fee_charge_cents_i
+```
+
+- A soma fecha por participante e no total.
+- Se o participante pagou por Pix, o débito é `psp_clearing` (agregado) em vez
+  de `player_credit`. A regra é a mesma; muda só a fonte.
+- Vários participantes no mesmo `psp_clearing` entram como uma partida agregada
+  (a chave única é `(transaction, account, direction)`); `player_credit` é uma
+  conta por usuário.
+- A confirmação da reserva é o evento (transição para `CONFIRMED`), não
+  `COMPLETED`.
+
+### 11.6 O invariante (sem skip)
+
+Substituir `tests/test_ledger_invariant.py` por:
+
+1. `player_credit:<user>` no ledger == Σ `ticket_lots.remaining_cents` dos lotes
+   `source in ('purchase', 'refund')`.
+2. Em cada quitação, na mesma transação:
+   - débito no ledger == `booking_participants.contribution_cents`;
+   - `ticket_lot_consumptions.amount_cents` == o mesmo valor;
+   - `ticket_lot_consumptions.tickets` == `ceil(contribution / 310)`;
+   - `booking_participants.tickets_consumed` == o mesmo `k_i`.
+3. Σ `space_charge_cents` == `venue_price_cents`; Σ `fee_charge_cents` ==
+   `fee_cents`.
+4. Nenhum saldo negativo.
+
+O invariante antigo (`ledger == remaining × preço pago`) **não vale** e deve
+sair. Ele pressupõe valor por lote, que o ticket fixo elimina. O novo invariante
+é em centavos e fecha por evento.
+
+Schema necessário:
+
+- `ticket_lots.remaining_cents` (nullable; só `purchase`/`refund`) e `remaining`
+  (tickets) derivado para exibição.
+- `ticket_lot_consumptions.amount_cents` (o valor exato) e `tickets` (a contagem
+  de exibição).
+- `booking_participants.space_charge_cents`, `fee_charge_cents`.
+
+Não converter `pass`, `free_level` nem `admin` para centavos (§10). Esses lotes
+continuam em tickets e fora de `player_credit`.
+
+**Devolução.** Reserva cancelada credita `player_credit` por
+`contribution_cents` (regras 6 e 7), restaura `remaining_cents` e os `k_i`
+tickets no lote de origem. Devolução de compra (7 dias ou encerramento) usa o
+saldo em centavos de `player_credit`, nunca o preço do lote.
+
+### 11.7 Migração
+
+- Lote `purchase`/`refund`: `remaining_cents = remaining × 310`. O preço pago
+  (3,10 / 3,20 / 3,40 / 3,70) **não** vira valor de crédito; o que exceder 3,10
+  é prêmio de compra, não crédito. Quem comprou a 3,70 não perde saldo: o
+  excedente nunca foi crédito.
+- Abertura: `opening:{user}` credita `player_credit` pelo total e debita
+  `opening_equity`, idempotente.
+- `pass`/`free_level`/`admin`: ficam em tickets, sem conversão.
+- Dry-run e relatório por usuário antes de gravar; abortar se
+  `Σ remaining_cents` não fechar com os lotes.
+
+Isso substitui a regra de §3.1. O campo `unit_price_cents` pode continuar
+existindo como rastro da compra, mas não é usado para valor.
+
+### 11.8 Compra de pacote e prêmio
+
+- Compra de N tickets a preço P, com P ≥ 310:
+
+```text
+D psp_clearing               N × P
+C player_credit              N × 310
+C purchase_premium_deferred  N × (P − 310)   (só se P > 310)
+```
+
+- O excedente acima de 3,10 é **prêmio de compra** (avulso), não crédito. A
+  classificação contábil do prêmio — receita de serviço no ato ou receita
+  diferida até o consumo — é decisão pendente; o que não pode é virar saldo.
+- Não há desconto abaixo de 3,10: isso faria o caixa não cobrir o crédito, que é
+  exatamente o erro do modelo de 3,70.
+- O passe continua separado: D `psp_clearing`, C `pass_deferred_revenue`; a
+  disponibilização mensal D `pass_deferred_revenue`, C `pass_revenue`; a cota
+  não entra em `player_credit`.
+
+### 11.9 Margem e taxa
+
+- Com `V = 3,10` e taxa de 20%, o pacote de 3,10 fica no par: a quadra recebe
+  `3,10 / 1,20 = 2,583` e a taxa `0,517`, margem de 20% sobre a quadra — acima
+  do piso de 10%. Não é preciso recalibrar a taxa.
+- O avulso a 3,70 gera um prêmio de R$ 0,60 por ticket, que não é valor de
+  crédito.
+- O backend não fixa 20% no código: `fee_percent_bps` é configuração. A Etapa 6
+  lança o valor congelado, qualquer que seja a taxa.
+
+### 11.10 Limite da Etapa 6
+
+- A Etapa 6 fecha o caminho **crédito comprado** (o conflito da seção 4) e os
+  fluxos inequívocos: compra, passe, abertura, devolução e repasse.
+- Vaga paga por `pass`/`free_level`/`admin` não debita `player_credit`; o
+  lançamento da quadra e da taxa para essas fontes é a **Etapa 6b**, com regra
+  própria (`pass_revenue`/`promo_expense`). Não pode ser ignorado em silêncio: o
+  reconciliador precisa listar essas quinas como excluídas e testá-las.
+- O portão "invariante sem skip" vale para o caminho coberto; a Etapa 6b tem o
+  próprio teste antes da Etapa 7.
+
+### 11.11 Não fazer
+
+- Não lançar pelo valor dos lotes consumidos.
+- Não usar `unit_price_cents` do lote como valor de crédito.
+- Não manter `tickets_per_seat` como preço.
+- Não converter passe, grátis ou admin em centavos.
+- Não criar coluna de desconto na linha do espaço; o preço do pacote é decisão
+  da compra, não da quadra.
+- Não fixar a taxa em 20% no código.
+
+### 11.12 Resposta curta
+
+Opção 1. Consumo em `contribution_cents`; `k = ceil(contribution / 310)` é
+exibição e baixa de lote; o ledger debita o valor congelado e credita quadra +
+taxa; o invariante passa a comparar centavos por evento, não valor de lote. O
+ticket vale R$ 3,10; 3,20/3,40/3,70 são prêmio de compra, não desconto; o legado
+converte a 3,10. A Etapa 6 pode seguir.

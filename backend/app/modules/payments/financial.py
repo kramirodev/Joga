@@ -452,6 +452,9 @@ class FinancialService:
         release.released_at = now
         release.reason = reason
         release.provider_reference = f"simulated:{release.id}"
+        from app.modules.ledger.flow import post_release
+
+        post_release(self.session, release, now=now)
         record_audit(
             self.session,
             actor_user_id=None,

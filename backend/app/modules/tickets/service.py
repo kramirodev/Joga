@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -38,6 +38,16 @@ SOURCE_PRIORITY = {
     "refund": 4,
 }
 GRANT_SOURCES = frozenset({"purchase", "pass", "free_level", "admin", "refund"})
+PAID_SOURCES = frozenset({"purchase", "refund"})
+TICKET_VALUE_CENTS = 310
+
+
+def tickets_for_cents(amount_cents: int) -> int:
+    """Contagem de exibição de uma cota em reais, a R$ 3,10 por ticket."""
+
+    if amount_cents < 0:
+        raise TicketError("amount_negative")
+    return (amount_cents + TICKET_VALUE_CENTS - 1) // TICKET_VALUE_CENTS
 
 
 class TicketError(Exception):
@@ -161,6 +171,7 @@ def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
         .with_for_update()
     ).first()
     amount = lot.remaining if lot is not None else 0
+    remaining_cents = (lot.remaining_cents or 0) if lot is not None else 0
     key = f"purchase_refund:{purchase.id}"
     existing = session.scalars(
         select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
@@ -177,10 +188,16 @@ def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
         )
         session.add(ledger)
         session.flush()
-        lot.remaining = 0
         balance.balance -= amount
+    if existing is None and lot is not None:
+        lot.remaining = 0
+        lot.remaining_cents = 0
     purchase.status = "cancelled"
     session.flush()
+    if remaining_cents > 0:
+        from app.modules.ledger.flow import post_purchase_refund
+
+        post_purchase_refund(session, purchase, remaining_cents=remaining_cents)
     return balance.balance
 
 
@@ -205,6 +222,9 @@ def confirm_purchase(
         ref_type="purchase",
         ref_id=purchase.id,
     )
+    from app.modules.ledger.flow import post_credit_purchase
+
+    post_credit_purchase(session, purchase, now=purchase.paid_at)
     return purchase, balance
 
 
@@ -394,6 +414,7 @@ def apply_entry(
                 source=source,
                 original_amount=amount,
                 remaining=amount,
+                remaining_cents=(amount * TICKET_VALUE_CENTS if source in PAID_SOURCES else None),
                 period=period,
                 expires_at=expires_at,
                 ref_type=ref_type,
@@ -427,11 +448,16 @@ def apply_entry(
             if take <= 0:
                 continue
             lot.remaining -= take
+            cents_taken = 0
+            if lot.source in PAID_SOURCES and lot.remaining_cents is not None:
+                cents_taken = min(lot.remaining_cents, take * TICKET_VALUE_CENTS)
+                lot.remaining_cents -= cents_taken
             session.add(
                 TicketLotConsumption(
                     lot_id=lot.id,
                     user_id=user_id,
                     amount=take,
+                    amount_cents=cents_taken if cents_taken > 0 else None,
                     ref_type=ref_type or source,
                     ref_id=ref_id or ledger.id,
                     ledger_entry_id=ledger.id,
@@ -552,6 +578,12 @@ def refund(
             if quantity <= 0:
                 continue
             lot.remaining += quantity
+            if lot.source in PAID_SOURCES and lot.remaining_cents is not None:
+                max_cents = lot.original_amount * TICKET_VALUE_CENTS
+                lot.remaining_cents = min(
+                    max_cents,
+                    lot.remaining_cents + quantity * TICKET_VALUE_CENTS,
+                )
             requested -= quantity
             restored += quantity
         if restored == 0:
@@ -576,6 +608,7 @@ def refund(
                 source="refund",
                 original_amount=restored,
                 remaining=restored,
+                remaining_cents=restored * TICKET_VALUE_CENTS,
                 ref_type=ref_type,
                 ref_id=ref_id,
                 ledger_entry_id=ledger.id,
@@ -584,6 +617,214 @@ def refund(
     balance.balance += restored
     session.flush()
     return balance.balance
+
+
+def credit_balance_cents(session: Session, user_id: uuid.UUID) -> int:
+    """Saldo real de crédito comprado, em centavos (ADR 0049 §11.6)."""
+
+    total = session.scalar(
+        select(func.coalesce(func.sum(TicketLot.remaining_cents), 0)).where(
+            TicketLot.user_id == user_id,
+            TicketLot.source.in_(PAID_SOURCES),
+            TicketLot.remaining_cents.is_not(None),
+        )
+    )
+    return int(total or 0)
+
+
+def _paid_lots(session: Session, user_id: uuid.UUID) -> list[TicketLot]:
+    """Lotes comprados/devolução com saldo em centavos, na ordem de consumo."""
+
+    return list(
+        session.scalars(
+            select(TicketLot)
+            .where(
+                TicketLot.user_id == user_id,
+                TicketLot.source.in_(PAID_SOURCES),
+                TicketLot.remaining_cents.is_not(None),
+                TicketLot.remaining_cents > 0,
+            )
+            .order_by(TicketLot.created_at, TicketLot.id)
+            .with_for_update()
+        ).all()
+    )
+
+
+def _refresh_display(lot: TicketLot) -> None:
+    """`remaining` é a contagem de exibição do saldo em centavos."""
+
+    cents = lot.remaining_cents or 0
+    lot.remaining = min(lot.original_amount, tickets_for_cents(cents))
+
+
+def consume_credit(
+    session: Session,
+    user_id: uuid.UUID,
+    amount_cents: int,
+    tickets: int,
+    *,
+    ref_type: str,
+    ref_id: uuid.UUID,
+) -> int:
+    """Debita o valor em reais da vaga e baixa os tickets de exibição.
+
+    O valor debitado é sempre `amount_cents`; `tickets` (`k_i`) é apenas a
+    contagem de exibição/baixa. Só lotes comprados ou de devolução entram aqui.
+    """
+
+    if amount_cents <= 0 or tickets <= 0:
+        raise TicketError("consume_amount_invalid")
+    if tickets != tickets_for_cents(amount_cents):
+        raise TicketError("ticket_count_mismatch")
+
+    key = f"consume:{ref_type}:{ref_id}:{user_id}"
+    existing = session.scalars(
+        select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
+    ).first()
+    if existing is not None:
+        return get_balance(session, user_id)
+
+    balance = _lock_balance(session, user_id)
+    lots = _paid_lots(session, user_id)
+    available = sum(lot.remaining_cents or 0 for lot in lots)
+    if available < amount_cents:
+        raise InsufficientTickets
+
+    ledger = TicketLedgerEntry(
+        user_id=user_id,
+        amount=-tickets,
+        source="consumption",
+        ref_type=ref_type,
+        ref_id=ref_id,
+        idempotency_key=key,
+    )
+    session.add(ledger)
+    session.flush()
+
+    remaining = amount_cents
+    for lot in lots:
+        take = min(lot.remaining_cents or 0, remaining)
+        if take <= 0:
+            continue
+        lot.remaining_cents = (lot.remaining_cents or 0) - take
+        _refresh_display(lot)
+        session.add(
+            TicketLotConsumption(
+                lot_id=lot.id,
+                user_id=user_id,
+                amount=tickets_for_cents(take),
+                amount_cents=take,
+                ref_type=ref_type,
+                ref_id=ref_id,
+                ledger_entry_id=ledger.id,
+            )
+        )
+        remaining -= take
+        if remaining == 0:
+            break
+    if remaining != 0:
+        raise InsufficientTickets
+
+    balance.balance -= tickets
+    if balance.balance < 0:
+        raise TicketError("balance_inconsistent")
+    session.flush()
+    return balance.balance
+
+
+def refund_credit(
+    session: Session,
+    user_id: uuid.UUID,
+    amount_cents: int,
+    tickets: int,
+    *,
+    ref_type: str,
+    ref_id: uuid.UUID,
+) -> int:
+    """Devolve o valor em reais e a contagem de exibição ao lote de origem."""
+
+    if amount_cents <= 0 or tickets <= 0:
+        raise TicketError("refund_amount_invalid")
+    if tickets != tickets_for_cents(amount_cents):
+        raise TicketError("ticket_count_mismatch")
+
+    key = f"refund:{ref_type}:{ref_id}:{user_id}"
+    existing = session.scalars(
+        select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
+    ).first()
+    if existing is not None:
+        return get_balance(session, user_id)
+
+    balance = _lock_balance(session, user_id)
+    lookup_type = "booking" if ref_type == "booking_cancel" else ref_type
+    consumptions = list(
+        session.scalars(
+            select(TicketLotConsumption)
+            .where(
+                TicketLotConsumption.user_id == user_id,
+                TicketLotConsumption.ref_type.in_({lookup_type, ref_type}),
+                TicketLotConsumption.ref_id == ref_id,
+            )
+            .with_for_update()
+        ).all()
+    )
+
+    restored = 0
+    if consumptions:
+        for consumption in consumptions:
+            lot = session.scalars(
+                select(TicketLot).where(TicketLot.id == consumption.lot_id).with_for_update()
+            ).first()
+            if lot is None or lot.remaining_cents is None:
+                continue
+            take = consumption.amount_cents or 0
+            capacity = lot.original_amount * TICKET_VALUE_CENTS
+            take = min(take, capacity - lot.remaining_cents)
+            if take <= 0:
+                continue
+            lot.remaining_cents += take
+            _refresh_display(lot)
+            restored += take
+    else:
+        restored = amount_cents
+        lot = TicketLot(
+            user_id=user_id,
+            source="refund",
+            original_amount=tickets,
+            remaining=tickets,
+            remaining_cents=amount_cents,
+            ref_type=ref_type,
+            ref_id=ref_id,
+        )
+        session.add(lot)
+        session.flush()
+
+    ledger = TicketLedgerEntry(
+        user_id=user_id,
+        amount=tickets,
+        source="refund",
+        ref_type=ref_type,
+        ref_id=ref_id,
+        idempotency_key=key,
+    )
+    session.add(ledger)
+    balance.balance += tickets
+    session.flush()
+    return balance.balance
+
+
+def non_paid_tickets_available(session: Session, user_id: uuid.UUID) -> tuple[int, str | None]:
+    """Tickets de passe/grátis/admin disponíveis e a primeira origem."""
+
+    total = 0
+    source: str | None = None
+    for lot in _active_lots(session, user_id, utcnow()):
+        if lot.source in PAID_SOURCES:
+            continue
+        total += lot.remaining
+        if source is None:
+            source = lot.source
+    return total, source
 
 
 def expire_due(session: Session, *, now: datetime | None = None) -> int:

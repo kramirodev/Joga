@@ -474,7 +474,10 @@ class BookingSubstitutionService:
                 seat=substitution.seat,
                 active=True,
                 contribution_cents=outgoing.contribution_cents,
+                space_charge_cents=outgoing.space_charge_cents,
+                fee_charge_cents=outgoing.fee_charge_cents,
                 payment_status="WAIVED",
+                funding_source="pix",
             )
             self.session.add(participant)
             self.session.flush()
@@ -488,6 +491,8 @@ class BookingSubstitutionService:
                 seat=substitution.seat,
                 active=True,
                 contribution_cents=outgoing.contribution_cents,
+                space_charge_cents=outgoing.space_charge_cents,
+                fee_charge_cents=outgoing.fee_charge_cents,
                 payment_status="PENDING",
             )
             self.session.add(participant)

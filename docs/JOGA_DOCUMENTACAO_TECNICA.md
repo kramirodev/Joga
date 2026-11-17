@@ -981,6 +981,8 @@ Não construir processador próprio, carteira custodial ou custódia informal.
 
 O `external_reference` do PSP associa a cobrança à compra ou reserva. O ledger registra a associação; `booking_payments` e `purchase_payments` não são o ledger.
 
+**Etapa 6 (sombra de escrita):** os fluxos cobertos lançam no `ledger_*` na mesma transação do evento: compra de crédito com prêmio (`purchase:{id}`), confirmação da reserva (`booking:{id}:confirm`), devolução de crédito (`booking:{id}:refund`), repasse (`release:{id}`), venda do passe (`pass:{id}:sale`) e mês disponibilizado (`pass:{id}:month:{n}`). O ticket vale R$ 3,10; a vaga debita `contribution_cents` e baixa `ceil(contribution/310)` tickets. A abertura do cutover (`opening:{user}`, contra `opening_equity`) e o reconciliador de `player_credit` × `ticket_lots.remaining_cents` existem em `ledger/opening.py`, `ledger/reconciliation.py` e `scripts/`. A leitura pública continua em `ticket_balances` até a Etapa 7; vagas pagas por passe/grátis/admin são a Etapa 6b e aparecem como excluídas no reconciliador.
+
 ### 15.3 Custódia e repasse
 
 **Modelo B (protótipo):** conta separada do caixa operacional, ledger por jogador e reconhecimento como passivo. O risco fiscal é declarado.

@@ -1,4 +1,4 @@
-"""Testes de serviÃ§o/API de pagamentos Pix e webhook (Fase 14A)."""
+"""Testes de serviço/API de pagamentos Pix e webhook (Fase 14A)."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class FakeAdapter:
         self.refund_status = refund_status
 
     def create_pix_charge(self, request: PixChargeRequest):  # noqa: ANN201
-        raise AssertionError("nÃ£o deve criar cobranÃ§a neste teste")
+        raise AssertionError("não deve criar cobrança neste teste")
 
     def get_order(self, provider_order_id: str) -> ProviderStatus:
         return self.orders[provider_order_id]
@@ -392,7 +392,7 @@ def test_venue_cancel_refunds_all_paid_participants(
     again = api.post(
         f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/refund",
         headers=bearer(context["tokens"][0]),
-        json={"reason": "RepetiÃ§Ã£o idempotente"},
+        json={"reason": "Repetição idempotente"},
     )
     assert again.status_code == 200, again.text
     assert again.json()["refunded"] == 0
@@ -538,7 +538,7 @@ def test_t3_expiry_returns_tickets(client, db_session: Session) -> None:
     grant(
         db_session,
         user_id,
-        20,
+        40,
         source="admin",
         idempotency_key=f"test-grant:{user_id}",
     )
@@ -641,7 +641,7 @@ def test_refund_reverses_venue_release(client, db_session: Session) -> None:
 
     PaymentService(db_session, SimulatorPspAdapter()).refund_booking(
         uuid.UUID(accepted["id"]),
-        reason="teste de reversÃ£o",
+        reason="teste de reversão",
     )
     db_session.commit()
     db_session.refresh(release)

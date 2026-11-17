@@ -230,14 +230,9 @@ def test_chart_of_accounts_seed_is_idempotent(db_session: Session) -> None:
     assert service.balance_cents(credit) == 1_000
 
 
-def _load_seed_migration():
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "migrations"
-        / "versions"
-        / "l6c7d8e9f0a1_seed_ledger_accounts.py"
-    )
-    spec = importlib.util.spec_from_file_location("ledger_seed_migration", path)
+def _load_migration(filename: str):
+    path = Path(__file__).resolve().parents[1] / "migrations" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(f"migration_{filename}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -245,10 +240,14 @@ def _load_seed_migration():
 
 
 def test_seed_migration_matches_chart_of_accounts() -> None:
-    """A migracao e o modulo de contas nao podem divergir."""
+    """As migrações de seed e o módulo de contas não podem divergir."""
 
-    migration = _load_seed_migration()
-    assert dict(migration.ACCOUNTS) == SINGLETON_ACCOUNTS
+    seed = _load_migration("l6c7d8e9f0a1_seed_ledger_accounts.py")
+    premium = _load_migration("n8e9f0a1b2c3_credit_cents_and_premium.py")
+    accounts = dict(seed.ACCOUNTS)
+    code, kind = premium.PREMIUM_ACCOUNT
+    accounts[code] = kind
+    assert accounts == SINGLETON_ACCOUNTS
 
 
 def test_every_owner_prefix_has_a_declared_kind() -> None:

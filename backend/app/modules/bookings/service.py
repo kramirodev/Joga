@@ -55,7 +55,15 @@ from app.modules.season.service import (
     record_mission,
     week_start,
 )
-from app.modules.tickets.service import InsufficientTickets, consume, refund
+from app.modules.tickets.service import (
+    InsufficientTickets,
+    consume,
+    consume_credit,
+    non_paid_tickets_available,
+    refund,
+    refund_credit,
+    tickets_for_cents,
+)
 from app.modules.venues.business_hours import business_deadline
 from app.modules.venues.models import (
     VenueAvailability,
@@ -248,14 +256,19 @@ class BookingService:
                 return self._bundle(existing)
             raise BookingConflict("booking_conflict") from exc
 
-        contributions = _split_price(price_cents + fee_cents, seats)
+        space_charges = _split_price(price_cents, seats)
+        fee_charges = _split_price(fee_cents, seats)
         for seat, lobby_participant in enumerate(lobby_participants, start=1):
+            space_charge = space_charges[seat - 1]
+            fee_charge = fee_charges[seat - 1]
             self.session.add(
                 BookingParticipant(
                     booking_id=booking.id,
                     user_id=lobby_participant.user_id,
                     seat=seat,
-                    contribution_cents=contributions[seat - 1],
+                    contribution_cents=space_charge + fee_charge,
+                    space_charge_cents=space_charge,
+                    fee_charge_cents=fee_charge,
                 )
             )
         self.session.add(
@@ -393,6 +406,8 @@ class BookingService:
             user_id=new_user_id,
             seat=seat,
             contribution_cents=contribution,
+            space_charge_cents=outgoing.space_charge_cents,
+            fee_charge_cents=outgoing.fee_charge_cents,
         )
         self.session.add(new_participant)
         self.session.flush()
@@ -616,6 +631,7 @@ class BookingService:
         payment.status = "PAID"
         payment.paid_at = now
         participant.payment_status = "PAID"
+        participant.funding_source = "pix"
         self._event(booking, actor_user_id, "payment.simulated", booking.status, booking.status)
         self._confirm_if_all_paid(booking, actor_user_id, now)
         self.session.flush()
@@ -655,6 +671,7 @@ class BookingService:
         if status == "PAID":
             payment.paid_at = now
             participant.payment_status = "PAID"
+            participant.funding_source = "pix"
             self._event(booking, None, "payment.confirmed", booking.status, booking.status)
             self._confirm_if_all_paid(booking, None, now)
         elif status == "REFUNDED":
@@ -691,20 +708,38 @@ class BookingService:
         if booking.status != "PAYMENT_PENDING":
             raise BookingTransitionError
 
-        count = self._tickets_per_seat(booking)
+        amount_cents = participant.contribution_cents
+        if amount_cents <= 0:
+            raise BookingInvalid
+        tickets = tickets_for_cents(amount_cents)
+        non_paid_tickets, non_paid_source = non_paid_tickets_available(self.session, actor_user_id)
         try:
-            consume(
-                self.session,
-                actor_user_id,
-                count,
-                ref_type="booking",
-                ref_id=booking.id,
-            )
+            if non_paid_tickets >= tickets:
+                # Vaga coberta por passe/grátis/admin: não debita player_credit.
+                # O lançamento da quadra/taxa para essas fontes é a Etapa 6b.
+                consume(
+                    self.session,
+                    actor_user_id,
+                    tickets,
+                    ref_type="booking",
+                    ref_id=booking.id,
+                )
+                participant.funding_source = non_paid_source
+            else:
+                consume_credit(
+                    self.session,
+                    actor_user_id,
+                    amount_cents,
+                    tickets,
+                    ref_type="booking",
+                    ref_id=booking.id,
+                )
+                participant.funding_source = "credit"
         except InsufficientTickets as exc:
             raise BookingConflict("insufficient_tickets") from exc
 
         now = utcnow()
-        participant.tickets_consumed = count
+        participant.tickets_consumed = tickets
         participant.settled_with = "tickets"
         participant.payment_status = "PAID"
         self._cancel_pending_payments(booking, participant)
@@ -822,14 +857,36 @@ class BookingService:
                 continue
             if exclude_user_id is not None and participant.user_id == exclude_user_id:
                 continue
-            refund(
-                self.session,
-                participant.user_id,
-                participant.tickets_consumed,
-                ref_type="booking_cancel",
-                ref_id=booking.id,
-            )
+            if participant.funding_source in {None, "credit"}:
+                refund_credit(
+                    self.session,
+                    participant.user_id,
+                    participant.contribution_cents,
+                    participant.tickets_consumed,
+                    ref_type="booking_cancel",
+                    ref_id=booking.id,
+                )
+            else:
+                refund(
+                    self.session,
+                    participant.user_id,
+                    participant.tickets_consumed,
+                    ref_type="booking_cancel",
+                    ref_id=booking.id,
+                )
             participant.payment_status = "REFUNDED"
+
+        credit_participants = [
+            participant
+            for participant in self._active_participants(booking.id)
+            if participant.funding_source in {None, "credit"}
+            and participant.tickets_consumed > 0
+            and (exclude_user_id is None or participant.user_id != exclude_user_id)
+        ]
+        if credit_participants:
+            from app.modules.ledger.flow import post_booking_refund
+
+            post_booking_refund(self.session, booking, credit_participants)
 
     def _tickets_per_seat(self, booking: Booking) -> int:
         """Resolve a tabela 2D: snapshot da criação ou fallback pela agenda."""
@@ -907,6 +964,9 @@ class BookingService:
         from app.modules.payments.financial import FinancialService
 
         FinancialService(self.session).ensure_release(booking.id)
+        from app.modules.ledger.flow import post_booking_confirmed
+
+        post_booking_confirmed(self.session, booking, active, now=now)
         self._notify_participants(
             booking,
             "booking_confirmed",

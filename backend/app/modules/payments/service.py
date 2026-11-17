@@ -438,6 +438,11 @@ class PaymentService:
                 status="REFUNDED",
                 provider_reference=result.refund_id,
             )
+            from app.modules.ledger.flow import post_payment_refund
+
+            participant = self.session.get(BookingParticipant, payment.participant_id)
+            if participant is not None:
+                post_payment_refund(self.session, payment, participant)
             self._ledger(
                 payment,
                 "PAYMENT_REFUNDED",

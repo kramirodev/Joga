@@ -60,7 +60,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Integração da conclusão com o ciclo da partida | 15 | Hoje é ação operacional do estabelecimento |
 | Testes de UI mobile | 19 | Ainda manuais |
 | LGPD e retenção definitiva | 19 | Revisão jurídica pendente |
-| Ledger de dupla entrada integrado | 14E | Módulo existe, mas não é usado pelos fluxos; P0 |
+| Ledger de dupla entrada integrado | 14E | **Sombra de escrita feita na Etapa 6**: compra, confirmação, devolução, repasse e passe lançam na mesma transação. Leitura ainda em `ticket_balances` (Etapa 7); vagas por passe/grátis/admin ficam na 6b. |
 | Taxa/preço em duas linhas | 14E | `compute_fee_cents` calcula e a reserva persiste `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents` desde `m7d8e9f0a1b2`; o rateio usa `total_cents` e o repasse usa `venue_price_cents`. |
 | CPF e NFS-e | 14E/19A | Placeholders; sem fluxo operacional |
 
@@ -72,9 +72,9 @@ O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, m
 |---|---|---|
 | Parecer fiscal: base de cálculo da comissão, ISS por município, retenção pelo tomador, IBS/CBS na transição | Produção com dinheiro real | Contador e advogado tributário |
 | Parecer jurídico: intermediação, escrow, insolvência, 7 dias do CDC | Contrato e termos de uso | Advogado |
-| Ledger de dupla entrada integrado | 14E | Usar `LedgerService` em reserva, compra, passe e repasse |
+| Ledger de dupla entrada integrado | 14E | **Feito na Etapa 6** para os fluxos cobertos; falta a leitura (Etapa 7) e as vagas por passe/grátis/admin (Etapa 6b) |
 | Preço em duas linhas e taxa persistida | 14E | `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` |
-| Migração de lotes para saldo em reais | 14E | Converter pelo preço unitário pago, 1:1, com idempotência |
+| Migração de lotes para saldo em reais | 14E | **Feita na Etapa 6**: `remaining_cents = remaining × 310` para compra/devolução, com `opening:{user}` contra `opening_equity`; passe/grátis/admin continuam em tickets |
 | CPF e NFS-e | 14E/19A | Placeholders; definir fluxo e município |
 | Custódia B→C e escrow | 19A | Contratar fornecedor de C |
 | Reembolso parcial e política de passe/pacote | 14E/14B | Schema e regra pendentes |
@@ -141,7 +141,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 
 | **13** | T3 = bloqueio **e pagamento** | T3 é janela de confirmação; no crédito não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por crédito |
 | **14A** | Uma cobrança Pix **por participante** | Compra de crédito/passe; `purchase_payments` | **Implementado (14D.13)** como protótipo; migrar para ledger em reais na 14E |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em crédito; dinheiro só nos 7 dias do CDC | **Parcial (14D.6)**: devolução em crédito; reembolso de passe/pacote pendente |
-| **14E** | Unidade e preço ainda em tickets/2D; ledger/fee desconectados | Saldo em reais, duas linhas, ledger de dupla entrada, CPF/NFS-e | **Não iniciada** |
+| **14E** | Unidade e preço ainda em tickets/2D; leitura do saldo ainda em `ticket_balances` | Saldo em reais, duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0–6 entregues; falta leitura (7), conformidade (8) e aposentadoria (9) |
 | **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Proposta local (15A/15B); refazer após 14E/14B |
 | **10** | Threat model cita PSP/reservas antigos | Atualizar para MP, custódia B/C, crédito e NFS-e | **Atualizado em 16/11** |
 
@@ -201,7 +201,7 @@ Itens descobertos na auditoria integral e ainda não implementados. São bloquea
 
 | Item | Severidade | Evidência | Ação |
 |---|---|---|---|
-| Ledger de dupla entrada não integrado | P0 | `LedgerService` só é usado em testes; fluxos usam ledgers legados | 14E |
+| Ledger de dupla entrada não integrado | P0 | `LedgerService` só era usado em testes | **Corrigido na Etapa 6**: fluxos cobertos lançam na mesma transação; restam leitura (7) e 6b |
 | Taxa calculada e não aplicada | P0 | `compute_fee_cents` sem chamador; reserva divide `price_cents` | 14E |
 | T3 expirado não devolve ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: `expire_due` devolve ingressos; teste `test_t3_expiry_returns_tickets` |
 | Pix pago + quitação por ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: vaga paga por Pix não consome ingresso; teste `test_pix_paid_seat_cannot_be_settled_with_tickets` |

@@ -250,9 +250,10 @@
 ## 12. Lacunas que a Fase 14E deve fechar
 
 - ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
-- Integração do `ledger_*` como fonte da verdade, aposentando o uso de `booking_ledger_entries`/`ticket_ledger` como ledger principal.
-- Migração de `ticket_lots.remaining` para saldo em reais, 1:1, pelo preço unitário pago.
+- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse e passe — **feita na Etapa 6** (`n8e9f0a1b2c3` + `ledger/flow.py`). A leitura pública ainda usa `ticket_balances`; a inversão é a Etapa 7. Vagas pagas por passe/grátis/admin ficam na Etapa 6b e o reconciliador as lista como excluídas.
+- Migração de `ticket_lots.remaining` para saldo em reais 1:1 — **parcial**: `remaining_cents = remaining × 310` para lotes comprados/devolução, com abertura contra `opening_equity`. Passe, grátis e admin continuam em tickets.
 - ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
+- `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots.remaining_cents` é a verdade do crédito comprado.
 - CPF cifrado e documento fiscal por reserva.
 - Reembolso parcial.
 - Constraint de exclusão para sobreposição de reservas.

@@ -10,6 +10,9 @@
 - Antes da confirmação, o app mostra o valor do espaço, a taxa de intermediação e a tabela de conversão tickets ↔ faixa/valor.
 - A NFS-e materializa o valor: locação/uso pelo fornecedor e intermediação pelo JOGA.
 - `price_cents` continua sendo o valor do espaço (compatibilidade). A reserva nova grava também `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version`, congelados na criação; `venue_price_cents + fee_cents == total_cents`.
+- O rateio é feito em duas linhas por participante: `space_charge_cents` + `fee_charge_cents`, com `Σ space_charge_cents == venue_price_cents` e `Σ fee_charge_cents == fee_cents`. Esses campos existem no banco; `BookingView` expõe `contribution_cents` (a soma) e os campos de preço da reserva.
+- O ticket vale **R$ 3,10** (`TICKET_VALUE_CENTS = 310`). A contagem da vaga é `k = ceil(contribution_cents / 310)`; ela é exibição e baixa de lote, nunca o valor debitado. O valor debitado é `contribution_cents`.
+- Na compra de pacote, o preço pago acima de R$ 3,10 por ticket é **prêmio de compra**, não crédito. Pacote de 3,10 fica no par; 3,20/3,40/3,70 pagam prêmio. Não há desconto abaixo de 3,10.
 - Reservas anteriores à 14E têm `pricing_version = "legacy_v0"`, `fee_cents = 0` e `total_cents = venue_price_cents`. Elas não são relançadas no ledger.
 - `band_code`/`tickets_per_seat` são exibição/conversão, não preço jurídico.
 - **Atenção:** em `BookingView.payments[]`, `participant_id` é o id da **vaga** (`booking_participants`), não o `user_id`. O app deve localizar o pagamento pelo participante correspondente, não comparar com `session.userId`.
@@ -187,10 +190,11 @@ Regras:
 ### 4.1 Crédito e franquia
 
 - Crédito comprado (`ticket_lots.source = "purchase"`) **não expira** e não é afetado pelo job de expiração.
+- O crédito comprado vale R$ 3,10 por ticket (`remaining_cents`). O que o jogador pagou acima disso na compra é prêmio, não saldo.
 - `ticket_lots.source = "pass"` é franquia mensal: usa `period` (`YYYY-MM`), não `expires_at`, não acumula e não vira crédito.
 - `free_level`/`admin` usam `expires_at` quando existir; ingresso grátis de nível expira com a temporada.
 - A ordem de consumo é `pass → free_level → admin → purchase → refund`.
-- `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição.
+- `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição; o saldo real em centavos do crédito comprado não é exibido como carteira.
 
 `timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
 
