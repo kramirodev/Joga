@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { ErrorNotice } from "../components/Feedback";
 import { PhoneField } from "../components/ui/PhoneField";
@@ -22,6 +22,7 @@ import {
 import { useAuth } from "../lib/auth-context";
 import { formatError, requestIdOf } from "../lib/format";
 import { DEFAULT_COUNTRY, findCountry, formatNational, phoneError, toE164 } from "../lib/phone";
+import { safeReturnPath } from "../lib/redirect";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 type Mode = "login" | "register";
@@ -35,6 +36,10 @@ export function LoginPage() {
   useDocumentTitle("Entrar");
   const { user, signIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationState = location.state as { from?: unknown; expired?: unknown } | null;
+  const returnTo = safeReturnPath(navigationState?.from);
+  const reasonExpired = navigationState?.expired === true;
   const [mode, setMode] = useState<Mode>("login");
   const [step, setStep] = useState<Step>("phone");
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY.code);
@@ -61,7 +66,7 @@ export function LoginPage() {
   }, [resendSeconds]);
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   function switchMode(next: Mode) {
@@ -158,7 +163,7 @@ export function LoginPage() {
           ? await webLogin(receipt.challenge_id)
           : await webRegister(receipt.challenge_id);
       signIn(session);
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "account_not_found") {
         switchMode("register");
@@ -252,6 +257,11 @@ export function LoginPage() {
           </button>
         </div>
 
+        {reasonExpired ? (
+          <div className="notice notice--info" role="status" aria-live="polite">
+            Sua sessão expirou. Entre novamente para continuar de onde parou.
+          </div>
+        ) : null}
         {error ? <ErrorNotice message={formatError(error)} requestId={requestIdOf(error)} /> : null}
         {info ? (
           <div className="notice notice--success" role="status" aria-live="polite">

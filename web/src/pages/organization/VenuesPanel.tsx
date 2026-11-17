@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { EmptyState, ErrorNotice, InfoNotice, SkeletonList } from "../../components/Feedback";
 import { SelectField, TextField } from "../../components/ui/Field";
 import { BuildingIcon, MapPinIcon, PlusIcon, SearchIcon } from "../../components/ui/Icons";
-import { ConfirmDialog } from "../../components/ui/Modal";
+import { ConfirmDialog, Modal } from "../../components/ui/Modal";
 import { SectionHeading } from "../../components/ui/PageHeader";
 import { useToast } from "../../components/ui/toast-context";
 import { api } from "../../lib/api";
@@ -59,6 +59,17 @@ export function VenuesPanel({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<unknown>(null);
   const [statusTarget, setStatusTarget] = useState<Venue | null>(null);
+  const [editTarget, setEditTarget] = useState<Venue | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    city: "",
+    state: "",
+    address: "",
+    latitude: "",
+    longitude: "",
+    timezone: "America/Sao_Paulo",
+  });
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [appliedLookup, setAppliedLookup] = useState<{
     postalCode: string;
     latitude: string;
@@ -109,6 +120,29 @@ export function VenuesPanel({
         title: "Estabelecimento cadastrado",
         description: "Agora cadastre quadras, modalidades, preços e expediente.",
       });
+      await invalidate();
+    },
+    onError: (caught) => setActionError(caught),
+  });
+
+  const updateVenueMutation = useMutation({
+    mutationFn: () => {
+      if (!editTarget) throw new Error("Estabelecimento não selecionado");
+      return api.updateVenue(organization.id, editTarget.id, {
+        name: normalizeWhitespace(editForm.name),
+        city: editForm.city.trim() ? normalizeWhitespace(editForm.city) : null,
+        state: editForm.state.trim() ? editForm.state.trim().toUpperCase() : null,
+        address_line: editForm.address.trim() ? normalizeWhitespace(editForm.address) : null,
+        latitude: Number(editForm.latitude.replace(",", ".")),
+        longitude: Number(editForm.longitude.replace(",", ".")),
+        timezone: editForm.timezone,
+      });
+    },
+    onSuccess: async () => {
+      setEditTarget(null);
+      setEditErrors({});
+      setActionError(null);
+      toast.push({ title: "Estabelecimento atualizado" });
       await invalidate();
     },
     onError: (caught) => setActionError(caught),
@@ -192,6 +226,58 @@ export function VenuesPanel({
       return;
     }
     lookupCepMutation.mutate();
+  }
+
+  function updateEdit(field: keyof typeof editForm, value: string) {
+    setEditForm((current) => ({ ...current, [field]: value }));
+    if (editErrors[field]) setEditErrors((current) => ({ ...current, [field]: "" }));
+  }
+
+  function openEdit(venue: Venue) {
+    setEditTarget(venue);
+    setEditForm({
+      name: venue.name,
+      city: venue.city ?? "",
+      state: venue.state ?? "",
+      address: venue.address_line ?? "",
+      latitude: venue.latitude === null ? "" : String(venue.latitude),
+      longitude: venue.longitude === null ? "" : String(venue.longitude),
+      timezone: venue.timezone,
+    });
+    setEditErrors({});
+    setActionError(null);
+  }
+
+  function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    const name = textError(editForm.name, {
+      label: "o nome do estabelecimento",
+      min: 2,
+      max: 120,
+    });
+    if (name) next.name = name;
+    if (editForm.city.trim().length > 120) {
+      next.city = "A cidade deve ter no máximo 120 caracteres.";
+    }
+    if (editForm.state.trim() && !/^[A-Za-z]{2}$/.test(editForm.state.trim())) {
+      next.state = "Informe a UF com duas letras. Ex.: RJ.";
+    }
+    if (editForm.address.trim().length > 200) {
+      next.address = "O endereço deve ter no máximo 200 caracteres.";
+    }
+    const coordinates = coordinateError(editForm.latitude, editForm.longitude);
+    if (coordinates.latitude) next.latitude = coordinates.latitude;
+    if (coordinates.longitude) next.longitude = coordinates.longitude;
+    if (Object.keys(next).length > 0) {
+      setEditErrors(next);
+      const first = ["name", "city", "state", "address", "latitude", "longitude"].find(
+        (field) => next[field],
+      );
+      if (first) document.getElementById(`venue-edit-${first}`)?.focus();
+      return;
+    }
+    updateVenueMutation.mutate();
   }
 
   function createVenue(event: FormEvent<HTMLFormElement>) {
@@ -310,6 +396,13 @@ export function VenuesPanel({
                   >
                     {venue.status === "active" ? "Ativo" : "Inativo"}
                   </span>
+                  <button
+                    type="button"
+                    className="button button--small"
+                    onClick={() => openEdit(venue)}
+                  >
+                    Editar
+                  </button>
                   <Link
                     className="button button--small button--primary"
                     to={`/organizations/${organization.id}/venues/${venue.id}`}
@@ -528,6 +621,122 @@ export function VenuesPanel({
           />
         ) : null}
       </ConfirmDialog>
+
+      <Modal
+        open={Boolean(editTarget)}
+        title="Editar estabelecimento"
+        description="As alterações refletem na descoberta de quadras do aplicativo."
+        onClose={() => {
+          if (!updateVenueMutation.isPending) {
+            setEditTarget(null);
+            setEditErrors({});
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setEditTarget(null);
+                setEditErrors({});
+              }}
+              disabled={updateVenueMutation.isPending}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="venue-edit-form"
+              className="button button--primary"
+              disabled={updateVenueMutation.isPending}
+              aria-busy={updateVenueMutation.isPending || undefined}
+            >
+              {updateVenueMutation.isPending ? "Salvando..." : "Salvar alterações"}
+            </button>
+          </>
+        }
+      >
+        <form id="venue-edit-form" className="form" onSubmit={saveEdit} noValidate>
+          <TextField
+            id="venue-edit-name"
+            label="Nome"
+            value={editForm.name}
+            onChange={(event) => updateEdit("name", event.target.value)}
+            error={editErrors.name}
+            hint="De 2 a 120 caracteres."
+            maxLength={120}
+            required
+          />
+          <div className="form-row">
+            <TextField
+              id="venue-edit-city"
+              label="Cidade"
+              value={editForm.city}
+              onChange={(event) => updateEdit("city", event.target.value)}
+              error={editErrors.city}
+              hint="Opcional."
+              maxLength={120}
+            />
+            <TextField
+              id="venue-edit-state"
+              label="UF"
+              value={editForm.state}
+              onChange={(event) =>
+                updateEdit("state", event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
+              }
+              error={editErrors.state}
+              hint="Opcional. Duas letras."
+              maxLength={2}
+              inputClassName="input--short"
+            />
+          </div>
+          <TextField
+            id="venue-edit-address"
+            label="Endereço"
+            value={editForm.address}
+            onChange={(event) => updateEdit("address", event.target.value)}
+            error={editErrors.address}
+            hint="Rua, número e complemento."
+            maxLength={200}
+          />
+          <div className="form-row">
+            <TextField
+              id="venue-edit-latitude"
+              label="Latitude"
+              value={editForm.latitude}
+              onChange={(event) => updateEdit("latitude", event.target.value)}
+              error={editErrors.latitude}
+              hint="Preenchida pelo CEP. Ajuste se necessário."
+              inputMode="decimal"
+              required
+            />
+            <TextField
+              id="venue-edit-longitude"
+              label="Longitude"
+              value={editForm.longitude}
+              onChange={(event) => updateEdit("longitude", event.target.value)}
+              error={editErrors.longitude}
+              hint="Preenchida pelo CEP. Ajuste se necessário."
+              inputMode="decimal"
+              required
+            />
+          </div>
+          <SelectField
+            id="venue-edit-timezone"
+            label="Fuso horário"
+            value={editForm.timezone}
+            onChange={(event) => updateEdit("timezone", event.target.value)}
+            hint="Usado para prazos, agenda e horários exibidos aos jogadores."
+          >
+            {TIMEZONES.map((timezone) => (
+              <option key={timezone.value} value={timezone.value}>
+                {timezone.label}
+              </option>
+            ))}
+          </SelectField>
+        </form>
+      </Modal>
     </section>
   );
 }

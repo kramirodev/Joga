@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  SESSION_EXPIRED_EVENT,
   api,
   clearAuthTokens,
   refreshSession,
@@ -347,6 +348,26 @@ describe("cliente HTTP do painel", () => {
     const parsed = new URL(url, "http://joga.local");
     expect(parsed.pathname).toBe("/api/v1/geo/postal-codes/20541004");
     expect(parsed.search).toBe("");
+  });
+
+  it("dispara sessão expirada quando o refresh falha com 401", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/web/refresh")) {
+        return jsonResponse({ detail: { code: "invalid_refresh_token" } }, 401);
+      }
+      return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "expired", csrfToken: "csrf-1" });
+
+    const listener = vi.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+
+    await expect(api.getOrganization("org-1")).rejects.toMatchObject({ status: 401 });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 
   it("captura o X-Request-ID para referência de suporte", async () => {

@@ -49,6 +49,8 @@ import type {
 const API_BASE = "/api/v1";
 const CSRF_COOKIE = "joga_web_csrf";
 
+export const SESSION_EXPIRED_EVENT = "joga:session-expired";
+
 let accessToken: string | null = null;
 let csrfToken: string | null = null;
 let refreshInFlight: Promise<WebSessionPayload | null> | null = null;
@@ -206,6 +208,10 @@ async function requestRaw(path: string, init: RequestInit = {}, retry = true): P
     const refreshed = await refreshSession();
     if (refreshed) {
       return requestRaw(path, init, false);
+    }
+    clearAuthTokens();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
   }
 
@@ -788,6 +794,21 @@ export const api = {
     });
   },
 
+  updateBusinessHour(
+    organizationId: string,
+    venueId: string,
+    businessHourId: string,
+    payload: Partial<{ weekday: number; opens_at: string; closes_at: string }>,
+  ): Promise<BusinessHour> {
+    return request<BusinessHour>(
+      `${venueBase(organizationId, venueId)}/business-hours/${encodeURIComponent(businessHourId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
   deleteBusinessHour(
     organizationId: string,
     venueId: string,
@@ -877,10 +898,13 @@ export const api = {
     return request<ModeratorMe>("/moderation/me");
   },
 
-  getModerationQueue(statusFilter = "OPEN"): Promise<ModerationQueue> {
-    return request<ModerationQueue>(
-      `/moderation/queue?status_filter=${encodeURIComponent(statusFilter)}`,
-    );
+  getModerationQueue(statusFilter = "OPEN", limit = 30, offset = 0): Promise<ModerationQueue> {
+    const query = new URLSearchParams({
+      status_filter: statusFilter,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return request<ModerationQueue>(`/moderation/queue?${query.toString()}`);
   },
 
   getModerationReport(reportId: string): Promise<ModerationReport> {

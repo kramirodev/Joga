@@ -6,6 +6,8 @@ export interface AuthContextValue {
   user: WebUser | null;
   capabilities: string[];
   loading: boolean;
+  /** true quando a sessão foi encerrada por 401/refresh inválido. */
+  sessionExpired: boolean;
   signIn: (payload: WebSessionPayload) => void;
   signOut: () => Promise<void>;
 }

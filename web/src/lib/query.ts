@@ -50,7 +50,8 @@ export const queryKeys = {
   bands: ["pricing-bands"] as const,
   presence: (bookingId: string) => ["bookings", bookingId, "presence"] as const,
   moderatorMe: ["moderator", "me"] as const,
-  moderationQueue: (status: string) => ["moderation", "queue", status] as const,
+  moderationQueue: (status: string, limit = 30, offset = 0) =>
+    ["moderation", "queue", status, limit, offset] as const,
   moderationAppeals: ["moderation", "appeals"] as const,
   moderationReport: (reportId: string) => ["moderation", "report", reportId] as const,
   moderationOperators: ["moderation", "operators"] as const,

@@ -33,16 +33,24 @@ const session: WebSessionPayload = {
   capabilities: [],
 };
 
-function renderLogin() {
+function renderLogin(state?: { from?: unknown; expired?: unknown }) {
   const signIn = vi.fn();
   render(
-    <MemoryRouter initialEntries={["/login"]}>
+    <MemoryRouter initialEntries={[{ pathname: "/login", state }]}>
       <AuthContext.Provider
-        value={{ user: null, capabilities: [], loading: false, signIn, signOut: vi.fn() }}
+        value={{
+          user: null,
+          capabilities: [],
+          loading: false,
+          sessionExpired: false,
+          signIn,
+          signOut: vi.fn(),
+        }}
       >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<div>Painel autenticado</div>} />
+          <Route path="*" element={<div>Destino preservado</div>} />
         </Routes>
       </AuthContext.Provider>
     </MemoryRouter>,
@@ -151,5 +159,30 @@ describe("LoginPage", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Telefone")).toBeInTheDocument();
+  });
+
+  it("avisa sessão expirada e retorna ao destino original", async () => {
+    vi.mocked(requestPhoneChallenge).mockResolvedValue({
+      challenge_id: "challenge-4",
+      expires_at: "2026-11-07T12:10:00Z",
+      resend_after_seconds: 60,
+    });
+    vi.mocked(verifyPhoneChallenge).mockResolvedValue({
+      challenge_id: "receipt-4",
+      purpose: "login",
+      verified_at: "2026-11-07T12:01:00Z",
+      receipt_expires_at: "2026-11-07T12:11:00Z",
+    });
+    vi.mocked(webLogin).mockResolvedValue(session);
+    const user = userEvent.setup();
+    renderLogin({ from: "/organizations/org-1?tab=bookings", expired: true });
+
+    expect(await screen.findByText(/Sua sessão expirou/)).toBeInTheDocument();
+
+    await requestCode(user);
+    const form = document.querySelector("form");
+    await user.click(within(form!).getByRole("button", { name: "Entrar" }));
+
+    expect(await screen.findByText("Destino preservado")).toBeInTheDocument();
   });
 });

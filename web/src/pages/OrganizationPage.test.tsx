@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -136,6 +136,9 @@ function stubApi(role: Role, bookings: Booking[] = []) {
       return jsonResponse({ ...booking, status: "PAYMENT_PENDING" });
     }
     if (path.endsWith("/members")) return jsonResponse({ members });
+    if (path === "/api/v1/organizations/org-1/venues/venue-1" && init?.method === "PATCH") {
+      return jsonResponse({ ...venues[0], name: "Quadra Central Editada" });
+    }
     if (path.endsWith("/venues")) return jsonResponse({ venues });
     if (path.endsWith("/bookings")) {
       return jsonResponse({
@@ -218,6 +221,7 @@ function renderPage() {
               user: { id: "user-1", status: "active" },
               capabilities: [],
               loading: false,
+              sessionExpired: false,
               signIn: vi.fn(),
               signOut: vi.fn(),
             }}
@@ -331,6 +335,32 @@ describe("OrganizationPage — permissões na interface", () => {
         fetchMock.mock.calls.some(
           ([url, init]) =>
             String(url).includes("/payout") && (init as RequestInit | undefined)?.method === "PUT",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("edita o estabelecimento pelo modal", async () => {
+    const fetchMock = stubApi("OWNER");
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("tab", { name: /Estabelecimentos/ }));
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const name = within(dialog).getByLabelText("Nome");
+    await user.clear(name);
+    await user.type(name, "Quadra Central Editada");
+    await user.click(within(dialog).getByRole("button", { name: "Salvar alterações" }));
+
+    expect(await screen.findByText("Estabelecimento atualizado")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/venues/venue-1") &&
+            (init as RequestInit | undefined)?.method === "PATCH",
         ),
       ).toBe(true),
     );

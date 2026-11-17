@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppShell } from "./components/AppShell";
 import { LoadingBlock } from "./components/Feedback";
@@ -22,7 +22,8 @@ const VenuePage = lazy(() =>
 );
 
 function ProtectedRoute() {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionExpired } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -34,7 +35,18 @@ function ProtectedRoute() {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: `${location.pathname}${location.search}${location.hash}`,
+          expired: sessionExpired,
+        }}
+      />
+    );
+  }
 
   return (
     <AppShell>

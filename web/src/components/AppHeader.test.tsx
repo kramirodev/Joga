@@ -28,6 +28,7 @@ function renderHeader(capabilities: string[]) {
             user: { id: "user-1", status: "active" },
             capabilities,
             loading: false,
+            sessionExpired: false,
             signIn: vi.fn(),
             signOut: vi.fn(),
           }}
