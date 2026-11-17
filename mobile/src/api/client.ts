@@ -25,7 +25,9 @@ import type {
   PassSubscription,
   PassPlan,
   Passkey,
+  PasskeyOptions,
   Passport,
+  Presence,
   Profile,
   Progress,
   Purchase,
@@ -43,10 +45,14 @@ import type {
   Wallet,
 } from './types';
 
-// Desenvolvimento com `adb reverse tcp:8000 tcp:8000`: o aparelho acessa o backend local.
-// Para rede local sem cabo, troque para o IP da máquina (ex.: http://192.168.0.105:8000).
-export const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
-export const API_ORIGIN = 'http://127.0.0.1:8000';
+// Configure pela variável de ambiente EXPO_PUBLIC_API_URL.
+// Sem a variável, usa o backend local via `adb reverse tcp:8000 tcp:8000`.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+export const API_BASE_URL = (configuredApiUrl || 'http://127.0.0.1:8000/api/v1').replace(
+  /\/+$/,
+  '',
+);
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/v1$/i, '');
 
 export function apiAssetUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -224,6 +230,44 @@ export const api = {
         token,
       });
     },
+    passkeyRegistrationOptions(token: string) {
+      return call<PasskeyOptions>('/auth/passkeys/registration/options', {
+        method: 'POST',
+        token,
+      });
+    },
+    passkeyRegistrationVerify(
+      token: string,
+      challengeId: string,
+      credential: Record<string, unknown>,
+      name: string | null,
+    ) {
+      return call<{ credential_id: string; name: string | null }>(
+        '/auth/passkeys/registration/verify',
+        {
+          method: 'POST',
+          body: { challenge_id: challengeId, credential, name },
+          token,
+        },
+      );
+    },
+    passkeyAuthenticationOptions() {
+      return call<PasskeyOptions>('/auth/passkeys/authentication/options', { method: 'POST' });
+    },
+    passkeyAuthenticationVerify(
+      challengeId: string,
+      credential: Record<string, unknown>,
+      device?: { name: string; platform: string },
+    ) {
+      return call<Tokens>('/auth/passkeys/authentication/verify', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          credential,
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
     passkeys(token: string) {
       return call<{ credentials: Passkey[] }>('/auth/passkeys', { token });
     },
@@ -250,6 +294,16 @@ export const api = {
     },
     me(token: string) {
       return call<Profile>('/me/profile', { token });
+    },
+    email(token: string) {
+      return call<{ email: string | null }>('/me/email', { token });
+    },
+    updateEmail(token: string, email: string | null) {
+      return call<{ email: string | null }>('/me/email', {
+        method: 'PUT',
+        body: { email },
+        token,
+      });
     },
     update(token: string, displayName: string | null, bio: string | null) {
       return call<Profile>('/me/profile', {
@@ -424,12 +478,6 @@ export const api = {
         token,
       });
     },
-    confirmPurchase(token: string, purchaseId: string) {
-      return call<Purchase>(`/me/tickets/purchases/${encodeURIComponent(purchaseId)}/confirm`, {
-        method: 'POST',
-        token,
-      });
-    },
   },
 
   passes: {
@@ -455,12 +503,6 @@ export const api = {
     sync(token: string, subscriptionId: string) {
       return call<PassSubscription>(
         `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}/sync`,
-        { method: 'POST', token },
-      );
-    },
-    confirm(token: string, subscriptionId: string) {
-      return call<PassSubscription>(
-        `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}/confirm`,
         { method: 'POST', token },
       );
     },
@@ -520,6 +562,40 @@ export const api = {
     get(token: string, bookingId: string) {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}`, { token });
     },
+    syncPayment(token: string, bookingId: string, paymentId: string) {
+      return call<{ payment_id: string; status: string; provider_status: string | null }>(
+        `/bookings/${encodeURIComponent(bookingId)}/payments/${encodeURIComponent(paymentId)}/sync`,
+        { method: 'POST', token },
+      );
+    },
+    preCheckIn(token: string, bookingId: string) {
+      return call<Presence>(`/bookings/${encodeURIComponent(bookingId)}/pre-check-in`, {
+        method: 'POST',
+        token,
+      });
+    },
+    confirmPresence(
+      token: string,
+      bookingId: string,
+      input: {
+        method: 'GPS' | 'VENUE';
+        latitude?: number;
+        longitude?: number;
+        accuracy_m?: number;
+      },
+    ) {
+      return call<Presence>(`/bookings/${encodeURIComponent(bookingId)}/presence`, {
+        method: 'POST',
+        body: input,
+        token,
+      });
+    },
+    presence(token: string, bookingId: string) {
+      return call<{ participants: Presence[] }>(
+        `/bookings/${encodeURIComponent(bookingId)}/presence`,
+        { token },
+      );
+    },
     participantConfirmation(token: string, bookingId: string, decision: 'CONFIRM' | 'DECLINE') {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/participant-confirmation`, {
         method: 'POST',
@@ -529,12 +605,6 @@ export const api = {
     },
     settleWithTickets(token: string, bookingId: string) {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/settle-with-tickets`, {
-        method: 'POST',
-        token,
-      });
-    },
-    simulatePayment(token: string, bookingId: string) {
-      return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/payments/simulate`, {
         method: 'POST',
         token,
       });

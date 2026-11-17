@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, View, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError } from '../api/client';
+import { subscribeLobby, subscribeRealtime } from '../api/realtime';
 import type { MatchSummary } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
@@ -53,6 +54,7 @@ import {
   timeOnly,
   WEEKDAY_NAMES,
 } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
@@ -528,6 +530,7 @@ function QueueSearch() {
   const { queue, loadQueue, session, profile } = useApp();
   const [now, setNow] = useState(new Date());
   const [busy, setBusy] = useState(false);
+  const routed = useRef(false);
   const started = useMemo(() => (queue ? new Date(queue.created_at) : new Date()), [queue]);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -540,8 +543,10 @@ function QueueSearch() {
     const timer = setInterval(() => {
       loadQueue()
         .then((entry) => {
-          if (entry?.lobby) {
-            nav.go('lobby-found', { lobbyId: entry.lobby.id, mode: entry.mode });
+          if (entry?.lobby && !routed.current) {
+            routed.current = true;
+            // replace evita empilhar a mesma tela a cada polling de 5 s.
+            nav.replace('lobby-found', { lobbyId: entry.lobby.id, mode: entry.mode });
           }
         })
         .catch(() => undefined);
@@ -939,50 +944,48 @@ function LobbyChat() {
     { id: string; sender: string; body: string; time: string; mine: boolean }[]
   >([]);
   const [input, setInput] = useState('');
-  useEffect(() => {
-    if (lobbyId && session) {
-      api.chat
-        .list(session.accessToken, lobbyId)
-        .then((result) => {
-          setMessages(
-            result.messages.map((message) => ({
-              id: message.id,
-              sender: message.sender_id === session.userId ? 'Você' : 'Jogador',
-              body: message.body,
-              time: timeOnly(message.created_at),
-              mine: message.sender_id === session.userId,
-            })),
-          );
-        })
-        .catch(() => undefined);
+  const loadMessages = useCallback(async () => {
+    if (!lobbyId || !session) {
+      return;
+    }
+    try {
+      const result = await api.chat.list(session.accessToken, lobbyId);
+      setMessages(
+        result.messages.map((message) => ({
+          id: message.id,
+          sender: message.sender_id === session.userId ? 'Você' : 'Jogador',
+          body: message.body,
+          time: timeOnly(message.created_at),
+          mine: message.sender_id === session.userId,
+        })),
+      );
+    } catch {
+      // Mantém o histórico já carregado; o polling/WebSocket tenta de novo.
     }
   }, [lobbyId, session]);
-  const fallback = messages.length
-    ? messages
-    : [
-        {
-          id: 'system',
-          sender: 'SISTEMA',
-          body: 'Lobby formado. Confirmação T1 até 18:00.',
-          time: '',
-          mine: false,
-        },
-        {
-          id: '1',
-          sender: 'Rafa',
-          body: 'Alguém leva bola? A Arena Sul tem rede.',
-          time: '18:04',
-          mine: false,
-        },
-        { id: '2', sender: 'Você', body: 'Eu levo. Chego 19:40.', time: '18:05', mine: true },
-        {
-          id: '3',
-          sender: 'Marcus_rise',
-          body: 'Fechado. Vou de metrô.',
-          time: '18:06',
-          mine: false,
-        },
-      ];
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadMessages();
+  }, [loadMessages]);
+  useEffect(() => {
+    if (!lobbyId || !session) {
+      return;
+    }
+    const unsubscribeLobby = subscribeLobby(lobbyId);
+    const unsubscribe = subscribeRealtime((event) => {
+      if (event.type === 'lobby.message.created') {
+        void loadMessages();
+      }
+    });
+    // Fallback de 15 s caso o WebSocket esteja indisponível na rede.
+    const timer = setInterval(() => void loadMessages(), 15_000);
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+      unsubscribeLobby();
+    };
+  }, [lobbyId, session, loadMessages]);
+  const visible = messages;
   const send = async () => {
     const body = input.trim();
     if (!body) {
@@ -1010,12 +1013,17 @@ function LobbyChat() {
       <Page title="Chat da partida">
         <Card tone="flat" padding={9}>
           <Row between>
-            <Txt variant="tiny">Futebol 5x5 · 10 participantes</Txt>
+            <Txt variant="tiny">Mensagens deste lobby</Txt>
             <Badge tone="green">só participantes</Badge>
           </Row>
         </Card>
         <View style={{ gap: 10 }}>
-          {fallback.map((message) =>
+          {visible.length === 0 ? (
+            <Card tone="flat" padding={12}>
+              <Txt variant="tiny">Nenhuma mensagem ainda. Comece a conversa.</Txt>
+            </Card>
+          ) : null}
+          {visible.map((message) =>
             message.sender === 'SISTEMA' ? (
               <SystemNotice key={message.id}>{message.body}</SystemNotice>
             ) : (
@@ -1048,9 +1056,8 @@ function LobbyChat() {
             <Row between>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ color: palette.muted }}>◉</Text>
-                <Txt variant="tiny">Arena Sul · 20:00</Txt>
+                <Txt variant="tiny">O histórico fica disponível para os participantes.</Txt>
               </View>
-              <TextBtn go="venue-detail">Ver quadra</TextBtn>
             </Row>
           </Card>
         </View>
@@ -1474,6 +1481,8 @@ function ProfileMe() {
       ? divisionLabel(rating.division)
       : '—';
   const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
+  const now = new Date();
+  const seasonLabel = `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
   return (
     <Page title="Perfil">
       <Card padding={18}>
@@ -1513,7 +1522,7 @@ function ProfileMe() {
           <View>
             <Txt variant="label">Divisão</Txt>
             <Txt variant="h3">{division}</Txt>
-            <Txt variant="tiny">2026-Q4 · reseta na virada</Txt>
+            <Txt variant="tiny">{seasonLabel} · reseta na virada</Txt>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Txt variant="label">Nível</Txt>
@@ -1644,7 +1653,7 @@ function ProfileMe() {
       <Card>
         <Row between>
           <Txt variant="h3">Insígnias</Txt>
-          <Txt variant="tiny">3 espaços</Txt>
+          <Txt variant="tiny">{Math.min(badges.length, 3)}/3 em destaque</Txt>
         </Row>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           {badges.length ? (
@@ -1824,7 +1833,7 @@ function ProfileOther() {
 function ProfileEdit() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { profile, onboarding, session, loadProfile } = useApp();
+  const { profile, onboarding, session, loadProfile, email } = useApp();
   const [name, setName] = useState(profile?.display_name ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [busy, setBusy] = useState(false);
@@ -1896,6 +1905,12 @@ function ProfileEdit() {
               ? `${profile.region.city ?? 'Região'} · ${profile.region.radius_km} km`
               : 'Definir região',
             go: 'region',
+          },
+          {
+            icon: 'wallet' as const,
+            title: 'E-mail para pagamento',
+            sub: email ?? 'Não informado',
+            go: 'payment-email',
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>

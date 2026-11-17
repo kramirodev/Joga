@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { api } from '../api/client';
 import type { TrackLevel } from '../api/types';
@@ -24,6 +24,7 @@ import {
   Txt,
 } from '../ui/kit';
 import { number } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 const MILESTONES = [4, 8, 12, 17, 21, 26, 30];

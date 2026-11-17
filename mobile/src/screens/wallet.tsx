@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import { View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
-import type { Purchase, TicketLot } from '../api/types';
+import type { PassSubscription, Purchase, TicketLot } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
+import { PaymentPix, paymentState } from '../ui/PaymentPix';
+import { Text } from '../ui/text';
 import {
   Badge,
   Btn,
@@ -12,16 +15,16 @@ import {
   Card,
   CardList,
   EmptyState,
+  Field,
+  Input,
   Kv,
   ListRow,
   LoadingState,
   Notice,
   Page,
-  QrSvg,
   Row,
   StateScreen,
   TextBtn,
-  TimerCard,
   Txt,
 } from '../ui/kit';
 import { cents, dateOnly } from '../ui/datetime';
@@ -520,185 +523,285 @@ function Store() {
   );
 }
 
-function CheckoutPackage({ avulso }: { avulso?: boolean }) {
+function pendingPurchaseKey(packCode: string): string {
+  return `joga.pending-purchase.${packCode}`;
+}
+
+function PaymentEmail() {
   const nav = useNav();
-  const { session, loadWallet } = useApp();
-  const packCode =
-    typeof nav.params.packCode === 'string' ? nav.params.packCode : avulso ? 'avulso' : 'pequeno';
-  const tickets = typeof nav.params.tickets === 'number' ? nav.params.tickets : avulso ? 3 : 10;
-  const amount = typeof nav.params.amount === 'number' ? nav.params.amount : avulso ? 1110 : 3400;
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const { email, emailReady, saveEmail } = useApp();
+  const [value, setValue] = useState(email ?? '');
   const [busy, setBusy] = useState(false);
+
   useEffect(() => {
-    if (session) {
-      api.tickets
-        .createPurchase(session.accessToken, packCode)
-        .then(setPurchase)
-        .catch(() => undefined);
+    if (emailReady) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setValue(email ?? '');
     }
-  }, [session, packCode]);
-  const confirm = async () => {
+  }, [email, emailReady]);
+
+  const save = async () => {
+    const normalized = value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized)) {
+      nav.toast('Informe um e-mail válido.');
+      return;
+    }
     setBusy(true);
     try {
-      if (purchase && session) {
-        try {
-          await api.tickets.syncPurchase(session.accessToken, purchase.id);
-        } catch {
-          // O sync pode não estar disponível em ambiente local; a confirmação abaixo cobre.
-        }
-        const updated = await api.tickets.confirmPurchase(session.accessToken, purchase.id);
-        if (updated.status.toLowerCase() === 'paid') {
-          await loadWallet();
-          nav.replace(avulso ? 'checkout-3-confirmed' : 'checkout-package-confirmed');
-          return;
-        }
-      }
-      nav.replace(avulso ? 'checkout-3-confirmed' : 'checkout-package-pending');
+      await saveEmail(normalized);
+      nav.toast('E-mail salvo.');
+      nav.back();
     } catch (error) {
-      if (error instanceof ApiError) {
-        nav.replace('checkout-package-failed');
-      } else {
-        nav.replace('checkout-package-pending');
-      }
+      nav.toast(
+        error instanceof ApiError && error.code === 'invalid_email'
+          ? 'E-mail inválido.'
+          : 'Não foi possível salvar o e-mail.',
+      );
     } finally {
       setBusy(false);
     }
   };
-  const payment = purchase?.payment;
+
   return (
-    <Page title="Checkout">
-      <Card>
-        <Row between>
-          <Txt variant="h3">{avulso ? 'Avulso' : 'Pacote pequeno'}</Txt>
-          <Badge>{tickets} ingressos</Badge>
-        </Row>
-        <Row between style={{ marginTop: 10 }}>
-          <Txt variant="tiny">Total</Txt>
-          <Txt variant="num" style={{ fontSize: 28 }}>
-            {cents(amount)}
-          </Txt>
-        </Row>
-      </Card>
-      <Card style={{ alignItems: 'center' }}>
-        {payment?.qr_code_base64 && payment.qr_code_base64.length > 100 ? (
-          <Image
-            source={{ uri: `data:image/png;base64,${payment.qr_code_base64}` }}
-            style={{ width: 168, height: 168 }}
-            resizeMode="contain"
-          />
-        ) : (
-          <View
-            style={{
-              width: 168,
-              height: 168,
-              borderWidth: 1.5,
-              borderColor: '#D5D9D6',
-              borderRadius: 8,
-              padding: 8,
-              backgroundColor: '#F1F3F0',
-            }}
-          >
-            <QrSvg seed={avulso ? 5 : 11} size={152} />
-          </View>
-        )}
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Escaneie o QR ou copie o código Pix
-        </Txt>
-        <View style={{ width: '100%', marginTop: 10 }}>
-          <Btn
-            tone="ghost"
-            icon="copy"
-            onPress={() => nav.toast('Código Pix copiado no protótipo')}
-          >
-            Copiar código Pix
-          </Btn>
-        </View>
-      </Card>
-      <TimerCard label="Expiração do Pix" value="09:42" note="pagamento pendente" tone="on" />
+    <Page title="E-mail para pagamento">
       <Notice tone="blue" icon="wallet">
-        Seus ingressos entram no saldo após o pagamento.
+        O Mercado Pago exige um e-mail para emitir a cobrança Pix. Ele não aparece no seu perfil
+        público.
       </Notice>
-      <Btn tone="primary" onPress={confirm} disabled={busy}>
-        {busy ? 'Verificando…' : 'Já paguei'}
+      <Field label="E-mail">
+        <Input
+          value={value}
+          onChangeText={setValue}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={254}
+          placeholder="voce@exemplo.com"
+        />
+      </Field>
+      <Txt variant="tiny">
+        Usaremos este e-mail apenas para a cobrança e o comprovante do pagamento.
+      </Txt>
+      <Btn tone="primary" onPress={save} disabled={busy || !value.trim()}>
+        {busy ? 'Salvando…' : 'Salvar e-mail'}
       </Btn>
     </Page>
   );
 }
 
-function CheckoutPending() {
-  return (
-    <Page title="Aguardando pagamento">
-      <StateScreen
-        icon="clock"
-        title="Pagamento pendente"
-        text="Assim que o pagamento for confirmado, os 10 ingressos entram no seu saldo. Você não precisa pagar de novo."
-        actions={
-          <>
-            <Btn tone="primary" toast="Verificação simulada no protótipo">
-              Verificar novamente
-            </Btn>
-            <Btn tone="ghost" go="wallet">
-              Voltar à carteira
-            </Btn>
-          </>
-        }
-      />
-      <Card>
-        <Kv label="Pacote" value="10 ingressos" />
-        <Kv label="Valor" value="R$ 34,00" />
-        <Kv label="Status" value="PENDENTE" />
-        <Kv label="Pedido" value="#PIX-8841" />
-      </Card>
-    </Page>
-  );
-}
+function CheckoutPackage({ avulso }: { avulso?: boolean }) {
+  const nav = useNav();
+  const { session, loadWallet, email, emailReady } = useApp();
+  const packCode =
+    typeof nav.params.packCode === 'string' ? nav.params.packCode : avulso ? 'avulso' : 'pequeno';
+  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const created = useRef(false);
 
-function CheckoutConfirmed({ avulso }: { avulso?: boolean }) {
-  return (
-    <Page title="Pagamento confirmado">
-      <StateScreen
-        icon="check"
-        title={avulso ? '+3 ingressos' : '+10 ingressos'}
-        text="Pagamento confirmado. Os ingressos já estão no seu saldo."
-        actions={
-          <>
-            <Btn tone="primary" go="wallet">
-              Voltar à carteira
-            </Btn>
-            <Btn tone="ghost" toast="Comprovante aberto no protótipo">
-              Ver comprovante
-            </Btn>
-          </>
+  useEffect(() => {
+    if (created.current || !session || !emailReady || !email) {
+      return;
+    }
+    created.current = true;
+    setCreating(true);
+    const key = pendingPurchaseKey(packCode);
+    (async () => {
+      try {
+        const existingId = await SecureStore.getItemAsync(key);
+        if (existingId) {
+          try {
+            const existing = await api.tickets.purchase(session.accessToken, existingId);
+            if (paymentState(existing.status, existing.payment?.provider_status) === 'pending') {
+              setPurchase(existing);
+              return;
+            }
+          } catch {
+            // Cobrança antiga não existe mais; cria uma nova abaixo.
+          }
+          await SecureStore.deleteItemAsync(key);
         }
-      />
-      <Card>
-        <Kv label="Pacote" value={avulso ? '3 ingressos' : '10 ingressos'} />
-        <Kv label="Valor" value={avulso ? 'R$ 11,10' : 'R$ 34,00'} />
-        <Kv label="Status" value="PAGO" />
-        <Kv label="Pedido" value={avulso ? '#PIX-8842' : '#PIX-8841'} />
-      </Card>
-    </Page>
-  );
-}
+        const createdPurchase = await api.tickets.createPurchase(session.accessToken, packCode);
+        await SecureStore.setItemAsync(key, createdPurchase.id);
+        setPurchase(createdPurchase);
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === 'payer_email_required') {
+          created.current = false;
+          nav.replace('payment-email');
+          return;
+        }
+        setError('Não foi possível abrir a cobrança Pix.');
+      } finally {
+        setCreating(false);
+      }
+    })();
+  }, [attempt, email, emailReady, nav, packCode, session]);
 
-function CheckoutFailed() {
+  useEffect(() => {
+    if (!purchase || !session) {
+      return;
+    }
+    if (paymentState(purchase.status, purchase.payment?.provider_status) !== 'pending') {
+      return;
+    }
+    let active = true;
+    const timer = setInterval(() => {
+      api.tickets
+        .syncPurchase(session.accessToken, purchase.id)
+        .then((updated) => {
+          if (active) {
+            setPurchase(updated);
+          }
+        })
+        .catch(() => undefined);
+    }, 7000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [purchase, session]);
+
+  const state = purchase
+    ? paymentState(purchase.status, purchase.payment?.provider_status)
+    : 'pending';
+
+  useEffect(() => {
+    if (purchase && state !== 'pending') {
+      void SecureStore.deleteItemAsync(pendingPurchaseKey(packCode));
+    }
+  }, [packCode, purchase, state]);
+
+  useEffect(() => {
+    if (state === 'paid') {
+      loadWallet().catch(() => undefined);
+    }
+  }, [loadWallet, state]);
+
+  const refresh = async () => {
+    if (!purchase || !session || refreshing) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const updated = await api.tickets.syncPurchase(session.accessToken, purchase.id);
+      setPurchase(updated);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'payer_email_required') {
+        nav.replace('payment-email');
+        return;
+      }
+      nav.toast('Não foi possível consultar o pagamento.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const retry = () => {
+    void SecureStore.deleteItemAsync(pendingPurchaseKey(packCode));
+    created.current = false;
+    setPurchase(null);
+    setError(null);
+    // O efeito de criação depende deste contador; sem ele, reabrir o checkout
+    // reutilizava o estado "nenhuma cobrança" e não gerava um novo Pix.
+    setAttempt((current) => current + 1);
+  };
+
+  if (!emailReady || creating) {
+    return (
+      <Page title="Checkout">
+        <LoadingState label="Abrindo cobrança Pix." variant="cards" />
+      </Page>
+    );
+  }
+
+  if (!email) {
+    return (
+      <Page title="Checkout">
+        <StateScreen
+          icon="mail"
+          title="E-mail necessário"
+          text="Antes da primeira cobrança, informe um e-mail para o Mercado Pago emitir o Pix."
+          actions={
+            <Btn tone="primary" go="payment-email">
+              Informar e-mail
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (!purchase) {
+    return (
+      <Page title="Checkout">
+        <StateScreen
+          icon="wifi-off"
+          title="Cobrança indisponível"
+          text={error ?? 'Não foi possível abrir o Pix agora. Tente novamente.'}
+          actions={
+            <>
+              <Btn tone="primary" onPress={retry}>
+                Tentar novamente
+              </Btn>
+              <Btn tone="ghost" go="wallet">
+                Voltar à carteira
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+
   return (
-    <Page title="Pagamento">
-      <StateScreen
-        icon="alert"
-        title="Pagamento não concluído"
-        text="O Pix expirou ou foi recusado. Nenhum ingresso foi creditado e nenhuma cobrança duplicada foi aberta."
-        actions={
-          <>
-            <Btn tone="primary" go="checkout-package">
-              Tentar novamente
-            </Btn>
-            <Btn tone="ghost" go="wallet">
-              Voltar à carteira
-            </Btn>
-          </>
-        }
+    <Page title="Checkout">
+      <Card>
+        <Row between>
+          <Txt variant="h3">{avulso ? 'Avulso' : 'Pacote pequeno'}</Txt>
+          <Badge>{purchase.tickets} ingressos</Badge>
+        </Row>
+        <Row between style={{ marginTop: 10 }}>
+          <Txt variant="tiny">Total</Txt>
+          <Txt variant="num" style={{ fontSize: 28 }}>
+            {cents(purchase.payment?.amount_cents ?? purchase.amount_cents)}
+          </Txt>
+        </Row>
+      </Card>
+      <PaymentPix
+        payment={purchase.payment}
+        purchaseStatus={purchase.status}
+        amountCents={purchase.payment?.amount_cents ?? purchase.amount_cents}
+        onRefresh={refresh}
+        refreshing={refreshing}
       />
+      {state === 'paid' ? (
+        <>
+          <Notice tone="green" icon="check">
+            Pagamento confirmado. Os ingressos já estão no seu saldo.
+          </Notice>
+          <Btn tone="primary" go="wallet">
+            Voltar à carteira
+          </Btn>
+        </>
+      ) : state === 'expired' || state === 'failed' ? (
+        <>
+          <Notice tone="orange" icon="alert">
+            {state === 'expired'
+              ? 'O Pix expirou. Nenhum valor foi cobrado; gere uma nova cobrança.'
+              : 'O pagamento não foi concluído. Nenhum ingresso foi creditado.'}
+          </Notice>
+          <Btn tone="primary" onPress={retry}>
+            Gerar novo Pix
+          </Btn>
+        </>
+      ) : (
+        <Notice tone="blue" icon="wallet">
+          Seus ingressos entram no saldo após o pagamento. Esta tela atualiza sozinha a cada 7
+          segundos.
+        </Notice>
+      )}
     </Page>
   );
 }
@@ -895,7 +998,7 @@ function Pass() {
 
 function CheckoutPass() {
   const nav = useNav();
-  const { session, passPlans, loadPass } = useApp();
+  const { session, passPlans, loadPass, email, emailReady } = useApp();
   const code = typeof nav.params.planCode === 'string' ? nav.params.planCode : 'craque';
   const plan = passPlans.find((item) => item.code === code) ?? {
     code: 'craque',
@@ -905,28 +1008,142 @@ function CheckoutPass() {
     price_per_month_cents: 6500,
     quarter_cents: 19500,
   };
-  const [busy, setBusy] = useState(false);
-  const pay = async () => {
-    if (!session) {
-      nav.replace('checkout-pass-confirmed');
+  const [subscription, setSubscription] = useState<PassSubscription | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const created = useRef(false);
+
+  useEffect(() => {
+    if (created.current || !session || !emailReady || !email) {
       return;
     }
-    setBusy(true);
+    created.current = true;
+    setCreating(true);
+    api.passes
+      .subscribe(session.accessToken, plan.code)
+      .then(setSubscription)
+      .catch((cause) => {
+        if (cause instanceof ApiError && cause.code === 'payer_email_required') {
+          created.current = false;
+          nav.replace('payment-email');
+          return;
+        }
+        setError('Não foi possível abrir a cobrança Pix do passe.');
+      })
+      .finally(() => setCreating(false));
+  }, [attempt, email, emailReady, nav, plan.code, session]);
+
+  useEffect(() => {
+    if (!subscription || !session) {
+      return;
+    }
+    if (paymentState(subscription.status, subscription.payment?.provider_status) !== 'pending') {
+      return;
+    }
+    let active = true;
+    const timer = setInterval(() => {
+      api.passes
+        .sync(session.accessToken, subscription.id)
+        .then((updated) => {
+          if (active) {
+            setSubscription(updated);
+          }
+        })
+        .catch(() => undefined);
+    }, 7000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [subscription, session]);
+
+  const state = subscription
+    ? paymentState(subscription.status, subscription.payment?.provider_status)
+    : 'pending';
+
+  useEffect(() => {
+    if (state === 'paid') {
+      loadPass().catch(() => undefined);
+    }
+  }, [loadPass, state]);
+
+  const refresh = async () => {
+    if (!subscription || !session || refreshing) {
+      return;
+    }
+    setRefreshing(true);
     try {
-      const subscription = await api.passes.subscribe(session.accessToken, plan.code);
-      await api.passes.confirm(session.accessToken, subscription.id);
-      await loadPass();
-      nav.replace('checkout-pass-confirmed');
-    } catch (error) {
-      if (error instanceof ApiError) {
-        nav.toast('Não foi possível concluir o pagamento.');
-      } else {
-        nav.toast('Não foi possível concluir o pagamento.');
+      setSubscription(await api.passes.sync(session.accessToken, subscription.id));
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'payer_email_required') {
+        nav.replace('payment-email');
+        return;
       }
+      nav.toast('Não foi possível consultar o pagamento.');
     } finally {
-      setBusy(false);
+      setRefreshing(false);
     }
   };
+
+  const retry = async () => {
+    if (subscription && session && subscription.status === 'pending') {
+      await api.passes.cancel(session.accessToken, subscription.id).catch(() => undefined);
+    }
+    created.current = false;
+    setSubscription(null);
+    setError(null);
+    setAttempt((current) => current + 1);
+  };
+
+  if (!emailReady || creating) {
+    return (
+      <Page title="Checkout do passe">
+        <LoadingState label="Abrindo cobrança Pix do passe." variant="cards" />
+      </Page>
+    );
+  }
+
+  if (!email) {
+    return (
+      <Page title="Checkout do passe">
+        <StateScreen
+          icon="mail"
+          title="E-mail necessário"
+          text="Antes da primeira cobrança, informe um e-mail para o Mercado Pago emitir o Pix."
+          actions={
+            <Btn tone="primary" go="payment-email">
+              Informar e-mail
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (!subscription) {
+    return (
+      <Page title="Checkout do passe">
+        <StateScreen
+          icon="wifi-off"
+          title="Cobrança indisponível"
+          text={error ?? 'Não foi possível abrir o Pix do passe agora. Tente novamente.'}
+          actions={
+            <>
+              <Btn tone="primary" onPress={retry}>
+                Tentar novamente
+              </Btn>
+              <Btn tone="ghost" go="pass">
+                Voltar ao passe
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+
   return (
     <Page title="Checkout do passe">
       <Card>
@@ -937,76 +1154,45 @@ function CheckoutPass() {
         <Row between style={{ marginTop: 10 }}>
           <Txt variant="tiny">Trimestre</Txt>
           <Txt variant="num" style={{ fontSize: 28 }}>
-            {cents(plan.quarter_cents)}
+            {cents(subscription.payment?.amount_cents ?? plan.quarter_cents)}
           </Txt>
         </Row>
         <Txt variant="tiny">
           3 meses · {plan.tickets_per_month * 3} ingressos no total, entregues mês a mês
         </Txt>
       </Card>
-      <Card>
-        <Kv label="Primeira entrega" value={`01 dez · ${plan.tickets_per_month} ingressos`} />
-        <Kv label="Segunda entrega" value={`01 jan · ${plan.tickets_per_month} ingressos`} />
-        <Kv label="Terceira entrega" value={`01 fev · ${plan.tickets_per_month} ingressos`} />
-        <Kv label="Renovação" value="Pix a cada trimestre" />
-      </Card>
-      <Card style={{ alignItems: 'center' }}>
-        <View
-          style={{
-            width: 168,
-            height: 168,
-            borderWidth: 1.5,
-            borderColor: '#D5D9D6',
-            borderRadius: 8,
-            padding: 8,
-            backgroundColor: '#F1F3F0',
-          }}
-        >
-          <QrSvg seed={17} size={152} />
-        </View>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Pix
-        </Txt>
-      </Card>
-      <Notice tone="blue" icon="lock">
-        A franquia é entregue mês a mês. Cancelamento vale para o próximo ciclo.
-      </Notice>
-      <Btn tone="primary" onPress={pay} disabled={busy}>
-        {busy ? 'Processando…' : `Pagar ${cents(plan.quarter_cents)}`}
-      </Btn>
-    </Page>
-  );
-}
-
-function CheckoutPassConfirmed() {
-  const { pass, passPlans } = useApp();
-  const plan = passPlans.find((item) => item.code === pass?.plan_code) ?? passPlans[0];
-  const label = plan?.label ?? 'Passe';
-  const tickets = plan?.tickets_per_month ?? pass?.tickets_per_month ?? 0;
-  const amount = plan?.quarter_cents ?? pass?.amount_cents ?? 0;
-  return (
-    <Page title="Passe ativo">
-      <StateScreen
-        icon="check"
-        title={`Passe ${label} ativo`}
-        text={`Pagamento confirmado. A primeira franquia de ${tickets} ingressos será entregue no próximo ciclo.`}
-        actions={
-          <>
-            <Btn tone="primary" go="pass-manage">
-              Ver meu passe
-            </Btn>
-            <Btn tone="ghost" back>
-              Voltar
-            </Btn>
-          </>
-        }
+      <PaymentPix
+        payment={subscription.payment}
+        purchaseStatus={subscription.status}
+        amountCents={subscription.payment?.amount_cents ?? plan.quarter_cents}
+        onRefresh={refresh}
+        refreshing={refreshing}
       />
-      <Card>
-        <Kv label="Plano" value={`${label} · ${tickets}/mês`} />
-        <Kv label="Trimestre" value={cents(amount)} />
-        <Kv label="Status" value="PAGO" />
-        <Kv label="Próxima entrega" value="01 dez" />
-      </Card>
+      {state === 'paid' ? (
+        <>
+          <Notice tone="green" icon="check">
+            Pagamento confirmado. O passe será ativado e a primeira franquia será entregue no
+            próximo ciclo.
+          </Notice>
+          <Btn tone="primary" go="pass-manage">
+            Ver meu passe
+          </Btn>
+        </>
+      ) : state === 'expired' || state === 'failed' ? (
+        <>
+          <Notice tone="orange" icon="alert">
+            O Pix do passe expirou ou não foi concluído. Nenhuma cobrança foi ativada.
+          </Notice>
+          <Btn tone="primary" onPress={retry}>
+            Gerar novo Pix
+          </Btn>
+        </>
+      ) : (
+        <Notice tone="blue" icon="lock">
+          A franquia é entregue mês a mês. O cancelamento vale para o próximo ciclo. Esta tela
+          atualiza sozinha a cada 7 segundos.
+        </Notice>
+      )}
     </Page>
   );
 }
@@ -1126,15 +1312,11 @@ export const walletScreens: ScreenDef[] = [
   { id: 'match-cost', tab: 'jogar', render: () => <MatchCost /> },
   { id: 'store', tab: 'perfil', render: () => <Store /> },
   { id: 'checkout-package', tab: 'perfil', render: () => <CheckoutPackage /> },
-  { id: 'checkout-package-pending', tab: 'perfil', render: () => <CheckoutPending /> },
-  { id: 'checkout-package-confirmed', tab: 'perfil', render: () => <CheckoutConfirmed /> },
-  { id: 'checkout-package-failed', tab: 'perfil', render: () => <CheckoutFailed /> },
+  { id: 'payment-email', tab: 'perfil', render: () => <PaymentEmail /> },
   { id: 'insufficient-tickets', tab: 'jogar', render: () => <InsufficientTickets /> },
   { id: 'buy-3', tab: 'jogar', render: () => <CheckoutPackage avulso /> },
-  { id: 'checkout-3-confirmed', tab: 'perfil', render: () => <CheckoutConfirmed avulso /> },
   { id: 'pass', tab: 'perfil', render: () => <Pass /> },
   { id: 'checkout-pass', tab: 'perfil', render: () => <CheckoutPass /> },
-  { id: 'checkout-pass-confirmed', tab: 'perfil', render: () => <CheckoutPassConfirmed /> },
   { id: 'pass-manage', tab: 'perfil', render: () => <PassManage /> },
   { id: 'pass-past-due', tab: 'perfil', render: () => <PassPastDue /> },
   { id: 'refund-tickets', tab: 'perfil', render: () => <RefundTickets /> },

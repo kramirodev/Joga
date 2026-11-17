@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image, Linking, View } from 'react-native';
+import * as Location from 'expo-location';
 
 import { api, apiAssetUrl, ApiError } from '../api/client';
 import type {
@@ -7,6 +8,7 @@ import type {
   BookableVenueDetail,
   BookableVenueSpace,
   Booking,
+  BookingPayment as BookingPaymentData,
   MatchSummary,
   ResultView,
   Substitute,
@@ -14,6 +16,7 @@ import type {
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { Avatar } from '../ui/Avatar';
+import { PaymentPix, paymentState } from '../ui/PaymentPix';
 import {
   Badge,
   Btn,
@@ -31,7 +34,6 @@ import {
   Notice,
   Page,
   Photo,
-  PhotoCap,
   PlayerRow,
   Row,
   Seg,
@@ -43,6 +45,7 @@ import {
   Txt,
 } from '../ui/kit';
 import { cents, dateOnly, divisionLabel, shortDateTime, timeOnly } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
@@ -58,6 +61,12 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       booking_not_found: 'Reserva não encontrada.',
       forbidden: 'Você não participa deste lobby.',
       network_unavailable: 'Não foi possível falar com o servidor.',
+      invalid_transition: 'Esta ação não é válida no estado atual da reserva.',
+      presence_window_closed: 'O pré-check-in ou a confirmação de presença está fora da janela.',
+      presence_closed: 'A presença desta reserva já foi encerrada.',
+      too_far: 'Você está longe demais da quadra para confirmar a presença.',
+      low_accuracy: 'O GPS do aparelho não tem precisão suficiente. Tente novamente.',
+      pre_check_in_required: 'Faça o pré-check-in antes de confirmar a presença.',
     };
     nav.toast(map[error.code] ?? 'Não foi possível concluir a ação.');
   } else {
@@ -605,7 +614,7 @@ function VenueDetail() {
 
 function BookingRequest() {
   const nav = useNav();
-  const { session, matches, queue, loadBookings } = useApp();
+  const { session, matches, queue, loadBookings, email, emailReady } = useApp();
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const venueId = typeof nav.params.venueId === 'string' ? nav.params.venueId : null;
@@ -664,6 +673,36 @@ function BookingRequest() {
     );
   }
 
+  if (!emailReady) {
+    return (
+      <Page title="Solicitar reserva">
+        <LoadingState label="Verificando seus dados de pagamento." variant="cards" />
+      </Page>
+    );
+  }
+
+  if (!email) {
+    return (
+      <Page title="Solicitar reserva">
+        <StateScreen
+          icon="wallet"
+          title="E-mail necessário"
+          text="A reserva pode gerar uma cobrança Pix. Informe um e-mail para o Mercado Pago antes de solicitar."
+          actions={
+            <>
+              <Btn tone="primary" go="payment-email">
+                Informar e-mail
+              </Btn>
+              <Btn tone="ghost" back>
+                Voltar
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+
   const duration = Math.max(
     1,
     Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60_000),
@@ -685,6 +724,10 @@ function BookingRequest() {
       await loadBookings();
       nav.replace('booking-t1t2', { bookingId: booking.id });
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'payer_email_required') {
+        nav.go('payment-email');
+        return;
+      }
       toastError(nav, error);
     } finally {
       setBusy(false);
@@ -738,6 +781,174 @@ function bookingStatusLabel(status: string): string {
     COMPLETED: 'CONCLUÍDA',
   };
   return labels[status] ?? status.replaceAll('_', ' ');
+}
+
+function BookingActions({ booking }: { booking: Booking }) {
+  const nav = useNav();
+  const { session, loadBookings } = useApp();
+  const [busy, setBusy] = useState(false);
+  const ownParticipant =
+    booking.participants.find((participant) => participant.user_id === session?.userId) ?? null;
+  const ownPayment = ownParticipant
+    ? booking.payments.find((item) => item.participant_id === ownParticipant.id)
+    : undefined;
+  const awaitingConfirmation =
+    booking.status === 'PARTICIPANT_CONFIRMATION' &&
+    !!ownParticipant &&
+    !ownParticipant.confirmed_at &&
+    !ownParticipant.declined_at;
+  const canCancel = ![
+    'CANCELLED',
+    'CANCELLED_BY_PLAYER',
+    'CANCELLED_BY_VENUE',
+    'COMPLETED',
+    'EXPIRED',
+    'DECLINED',
+  ].includes(booking.status);
+
+  const respond = async (decision: 'CONFIRM' | 'DECLINE') => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.bookings.participantConfirmation(session.accessToken, booking.id, decision);
+      await loadBookings();
+      if (decision === 'DECLINE') {
+        nav.replace('booking-declined', { bookingId: booking.id });
+      } else {
+        nav.toast('Participação confirmada.');
+      }
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelBooking = async () => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.bookings.cancel(
+        session.accessToken,
+        booking.id,
+        'Cancelada pelo jogador no aplicativo.',
+      );
+      await loadBookings();
+      nav.replace('booking-history');
+      nav.toast('Reserva cancelada.');
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const preCheckIn = async () => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.bookings.preCheckIn(session.accessToken, booking.id);
+      await loadBookings();
+      nav.toast('Pré-check-in confirmado.');
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmPresence = async () => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        nav.toast('Permita o acesso à localização para confirmar a presença.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      await api.bookings.confirmPresence(session.accessToken, booking.id, {
+        method: 'GPS',
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy_m: Math.max(0, Math.round(position.coords.accuracy ?? 0)),
+      });
+      await loadBookings();
+      nav.toast('Presença confirmada.');
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {awaitingConfirmation ? (
+        <BtnRow>
+          <Btn tone="primary" onPress={() => respond('CONFIRM')} disabled={busy}>
+            Confirmar participação
+          </Btn>
+          <Btn tone="ghost" onPress={() => respond('DECLINE')} disabled={busy}>
+            Recusar
+          </Btn>
+        </BtnRow>
+      ) : null}
+      {ownParticipant ? (
+        <Row between style={{ marginTop: 2 }}>
+          <Txt variant="tiny">Sua confirmação</Txt>
+          <Badge tone={ownParticipant.confirmed_at ? 'green' : 'orange'}>
+            {ownParticipant.confirmed_at
+              ? 'CONFIRMADA'
+              : ownParticipant.declined_at
+                ? 'RECUSADA'
+                : 'PENDENTE'}
+          </Badge>
+        </Row>
+      ) : null}
+      {ownPayment && ['PENDING', 'FAILED'].includes(ownPayment.status) ? (
+        <Btn tone="primary" onPress={() => nav.go('booking-payment', { bookingId: booking.id })}>
+          Pagar minha vaga
+        </Btn>
+      ) : null}
+      {ownParticipant?.presence_status === 'PRESENT' ? (
+        <Notice tone="green" icon="check">
+          Presença confirmada no local.
+        </Notice>
+      ) : booking.status === 'CONFIRMED' ? (
+        <BtnRow>
+          <Btn tone="primary" onPress={confirmPresence} disabled={busy}>
+            {busy ? 'Confirmando…' : 'Confirmar presença'}
+          </Btn>
+          <Btn tone="ghost" onPress={preCheckIn} disabled={busy}>
+            Pré-check-in
+          </Btn>
+        </BtnRow>
+      ) : null}
+      <Btn tone="primary" go="booking-history">
+        Ver histórico de reservas
+      </Btn>
+      {canCancel ? (
+        <Btn
+          tone="ghost"
+          onPress={() => nav.openModal('cancel-booking', () => void cancelBooking())}
+          disabled={busy}
+        >
+          Cancelar reserva
+        </Btn>
+      ) : null}
+    </>
+  );
 }
 
 function BookingT1T2() {
@@ -853,12 +1064,7 @@ function BookingT1T2() {
           <Badge tone="lime">{tickets != null ? 'CONGELADOS' : 'PENDENTE'}</Badge>
         </Row>
       </Card>
-      <Btn tone="primary" go="booking-history">
-        Ver histórico de reservas
-      </Btn>
-      <Btn tone="ghost" modal="cancel">
-        Cancelar reserva
-      </Btn>
+      <BookingActions booking={booking} />
     </Page>
   );
 }
@@ -899,8 +1105,8 @@ function BookingConfirmed() {
           label="Ingressos por vaga"
           value={booking?.tickets_per_seat != null ? `${booking.tickets_per_seat}` : '—'}
         />
-        <Kv label="Check-in" value="T-1h · pré-check-in" />
       </Card>
+      {booking ? <BookingActions booking={booking} /> : null}
     </Page>
   );
 }
@@ -911,7 +1117,7 @@ function BookingDeclined() {
       <StateScreen
         icon="alert"
         title="A quadra não aceitou"
-        text="O horário ficou indisponível na Arena Sul. Seus ingressos voltam para o saldo."
+        text="O horário ficou indisponível na quadra. Seus ingressos voltam para o saldo."
         actions={
           <>
             <Btn tone="primary" go="venues">
@@ -1039,21 +1245,32 @@ function CancelClosed() {
 }
 
 function CheckinPre() {
+  const nav = useNav();
+  const { matches } = useApp();
+  const match = matches.find((item) => item.id === nav.params.matchId) ?? matches[0];
   return (
     <Page title="Pré-check-in">
-      <TimerCard label="T-1h · intenção" value="58 min" note="até 19:00" tone="on" />
+      <TimerCard
+        label="Intenção de presença"
+        value={match ? timeOnly(match.check_in_deadline) : '--:--'}
+        note={match ? `abre ${timeOnly(match.check_in_opens_at)}` : 'partida não encontrada'}
+        tone="on"
+      />
       <Card tone="ink">
         <Txt variant="display" color="onInk" style={{ fontSize: 26 }}>
           Você vai{'\n'}comparecer?
         </Txt>
         <Txt variant="tiny" color="softOnInk" style={{ marginTop: 6 }}>
-          Arena Sul · ter, 17 nov · 20:00
+          {match ? shortDateTime(match.scheduled_start_at) : 'Escolha uma partida na agenda.'}
         </Txt>
       </Card>
       <Notice tone="blue" icon="info">
         No ranqueado é obrigatório. No casual é recomendado e ajuda o grupo a se organizar.
       </Notice>
-      <Btn tone="primary" go="checkin-presence">
+      <Btn
+        tone="primary"
+        onPress={() => nav.go('checkin-presence', match ? { matchId: match.id } : undefined)}
+      >
         Vou comparecer
       </Btn>
       <Btn tone="ghost" go="cancel-cutoff">
@@ -1067,42 +1284,41 @@ function CheckinPresence() {
   const nav = useNav();
   const { session, matches, loadMatches } = useApp();
   const [busy, setBusy] = useState(false);
+  const match = matches.find((item) => item.id === nav.params.matchId) ?? matches[0];
   const confirm = async () => {
     if (busy) {
       return;
     }
-    setBusy(true);
-    const match = matches.find((item) => item.id === nav.params.matchId) ?? matches[0];
-    if (session && match) {
-      try {
-        await api.matches.checkIn(session.accessToken, match.id);
-        await loadMatches();
-        nav.toast('Presença validada no protótipo');
-      } catch (error) {
-        toastError(nav, error);
-      } finally {
-        setBusy(false);
-      }
+    if (!session || !match) {
+      nav.toast('Escolha uma partida na agenda para confirmar a presença.');
       return;
     }
-    setBusy(false);
-    nav.toast('Presença validada no protótipo');
+    setBusy(true);
+    try {
+      await api.matches.checkIn(session.accessToken, match.id);
+      await loadMatches();
+      nav.toast('Presença confirmada.');
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <Page title="Confirmar presença">
-      <TimerCard label="T-30m · presença no local" value="12 min" note="até 19:30" tone="on" />
-      <Photo tone="green">
-        <PhotoCap badge={<Badge tone="green">GEOFENCE</Badge>}>
-          Arena Sul · Rua das Palmeiras, 240 · raio de 250 m
-        </PhotoCap>
-      </Photo>
+      <TimerCard
+        label="Presença no local"
+        value={match ? timeOnly(match.check_in_deadline) : '--:--'}
+        note={match ? shortDateTime(match.scheduled_start_at) : 'partida não encontrada'}
+        tone="on"
+      />
       <Card>
         <Row between>
-          <Txt variant="h3">Você está perto</Txt>
-          <Badge tone="lime">180 m</Badge>
+          <Txt variant="h3">Confirmação no local</Txt>
+          <Badge tone="lime">GPS</Badge>
         </Row>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
-          Precisão aproximada de 35 m.
+          O servidor valida a distância e a precisão informadas pelo GPS do aparelho.
         </Txt>
       </Card>
       <Btn tone="primary" icon="check" onPress={confirm} disabled={busy}>
@@ -1129,14 +1345,14 @@ function CheckinFallback() {
       <StateScreen
         icon="pin"
         title="GPS indisponível ou fora do raio"
-        text="Você pode pedir que a Arena Sul confirme sua presença no local."
+        text="Peça à recepção da quadra para confirmar sua presença no local. A confirmação por GPS pode ser tentada novamente."
         actions={
           <>
-            <Btn tone="primary" toast="Pedido enviado à Arena Sul no protótipo">
-              Solicitar confirmação
-            </Btn>
-            <Btn tone="ghost" go="checkin-presence">
+            <Btn tone="primary" go="checkin-presence">
               Tentar GPS novamente
+            </Btn>
+            <Btn tone="ghost" back>
+              Voltar
             </Btn>
           </>
         }
@@ -1154,7 +1370,7 @@ function CheckinDenied() {
         text="Para confirmar presença por GPS, ative a localização. Se preferir não ativar, peça a confirmação da quadra no local."
         actions={
           <>
-            <Btn tone="primary" toast="Permissão simulada no protótipo">
+            <Btn tone="primary" onPress={() => void Linking.openSettings()}>
               Ativar localização
             </Btn>
             <Btn tone="ghost" go="checkin-fallback">
@@ -1235,52 +1451,52 @@ function Substitutes() {
       try {
         const item = await api.substitutions.joinQueue(session.accessToken, lobbyId);
         setItems((current) => [...current, item]);
-        nav.toast('Você entrou na fila no protótipo');
+        nav.toast('Você entrou na fila de substitutos.');
       } catch (error) {
         toastError(nav, error);
       }
       return;
     }
-    nav.toast('Você entrou na fila no protótipo');
+    nav.toast('Entre na fila a partir de um lobby.');
   };
   const leave = async () => {
     if (session && lobbyId) {
       try {
         await api.substitutions.leaveQueue(session.accessToken, lobbyId);
         setItems((current) => current.filter((item) => item.user_id !== session.userId));
-        nav.toast('Você saiu da fila no protótipo');
+        nav.toast('Você saiu da fila de substitutos.');
       } catch (error) {
         toastError(nav, error);
       }
       return;
     }
-    nav.toast('Você saiu da fila no protótipo');
+    nav.toast('Entre na fila a partir de um lobby.');
   };
-  const list = items.length
-    ? items.map((item, index) => ({
-        name: item.status === 'CALLED' ? 'Chamado' : 'Jogador',
-        sub: `${item.position}º · ${item.status.toLowerCase()}`,
-        ready: item.status === 'CONFIRMED',
-      }))
-    : [
-        { name: 'Rafa', sub: '1º · confirmou T-2h', ready: true },
-        { name: 'Bia', sub: '2º · confirmou T-2h', ready: true },
-        { name: 'Jo', sub: '3º · aguardando', ready: false },
-      ];
+  const list = items.map((item, index) => ({
+    id: `${item.user_id}-${index}`,
+    name: item.status === 'CALLED' ? 'Chamado' : 'Jogador',
+    sub: `${item.position}º · ${item.status.toLowerCase()}`,
+    ready: item.status === 'CONFIRMED',
+  }));
   return (
     <Page title="Fila de substitutos">
       <Card>
         <Row between>
           <Txt variant="h3">Standby</Txt>
-          <Badge tone="lime">{items.length || 3} na fila</Badge>
+          <Badge tone="lime">{items.length} na fila</Badge>
         </Row>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
           Chamada só quando o número de ativos fica ímpar. Um por vez, com prazo de 5 min.
         </Txt>
       </Card>
+      {list.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">Ninguém na fila de substitutos deste lobby.</Txt>
+        </Card>
+      ) : null}
       <CardList>
         {list.map((item, index) => (
-          <ListRow key={`${item.name}-${index}`} last={index === list.length - 1}>
+          <ListRow key={item.id} last={index === list.length - 1}>
             <Avatar
               size={34}
               palette={palette}
@@ -1991,7 +2207,190 @@ function MatchDetail() {
   );
 }
 
+function BookingPayment() {
+  const nav = useNav();
+  const { session, bookings, loadBookings } = useApp();
+  const bookingId = typeof nav.params.bookingId === 'string' ? nav.params.bookingId : null;
+  const [booking, setBooking] = useState<Booking | null>(
+    bookings.find((item) => item.id === bookingId) ?? null,
+  );
+  const [loading, setLoading] = useState(!booking);
+  const [refreshing, setRefreshing] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const reload = async () => {
+    if (!session || !bookingId) {
+      return null;
+    }
+    const result = await api.bookings.get(session.accessToken, bookingId);
+    setBooking(result);
+    return result;
+  };
+
+  useEffect(() => {
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    reload()
+      .catch(() => {
+        if (active) {
+          setFailed(true);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingId, session]);
+
+  // `participant_id` da cobrança é o id da vaga (BookingParticipant.id), não o userId.
+  const ownParticipant =
+    booking?.participants.find((item) => item.user_id === session?.userId) ?? null;
+  const payment: BookingPaymentData | null = ownParticipant
+    ? (booking?.payments.find((item) => item.participant_id === ownParticipant.id) ?? null)
+    : null;
+  const state = payment ? paymentState(payment.status, payment.provider_status) : 'pending';
+
+  useEffect(() => {
+    if (!session || !booking || !payment || state !== 'pending') {
+      return;
+    }
+    let active = true;
+    const timer = setInterval(() => {
+      api.bookings
+        .syncPayment(session.accessToken, booking.id, payment.id)
+        .then(() => reload())
+        .catch(() => undefined);
+    }, 7000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      void active;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.id, payment?.id, session, state]);
+
+  const refresh = async () => {
+    if (!session || !booking || !payment || refreshing) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      await api.bookings.syncPayment(session.accessToken, booking.id, payment.id);
+      await reload();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'payer_email_required') {
+        nav.go('payment-email');
+        return;
+      }
+      nav.toast('Não foi possível consultar o pagamento.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (state === 'paid') {
+      loadBookings().catch(() => undefined);
+    }
+  }, [loadBookings, state]);
+
+  if (loading) {
+    return (
+      <Page title="Pagamento da reserva">
+        <LoadingState label="Buscando a cobrança da reserva." variant="cards" />
+      </Page>
+    );
+  }
+
+  if (failed || !booking) {
+    return (
+      <Page title="Pagamento da reserva">
+        <StateScreen
+          icon="wifi-off"
+          title="Não foi possível carregar a reserva"
+          text="Verifique a conexão e tente novamente."
+          actions={
+            <Btn tone="primary" back>
+              Voltar
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (!payment) {
+    return (
+      <Page title="Pagamento da reserva">
+        <EmptyState
+          title="Nenhuma cobrança aberta"
+          text="Sua vaga não tem Pix pendente. Se a quadra abrir uma cobrança, ela aparece aqui."
+          actions={
+            <>
+              <Btn tone="primary" onPress={() => loadBookings().catch(() => undefined)}>
+                Atualizar
+              </Btn>
+              <Btn tone="ghost" go="booking-history">
+                Minhas reservas
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+
+  return (
+    <Page title="Pagamento da reserva">
+      <Card>
+        <Txt variant="h3">{booking.organization_venue_name}</Txt>
+        <Txt variant="tiny" style={{ marginTop: 4 }}>
+          {shortDateTime(booking.starts_at)} · {booking.venue_space_name}
+        </Txt>
+        <Row between style={{ marginTop: 10 }}>
+          <Txt variant="tiny">Sua vaga</Txt>
+          <Txt variant="num" style={{ fontSize: 28 }}>
+            {cents(payment.amount_cents)}
+          </Txt>
+        </Row>
+      </Card>
+      <PaymentPix
+        payment={payment}
+        purchaseStatus={payment.status}
+        amountCents={payment.amount_cents}
+        onRefresh={refresh}
+        refreshing={refreshing}
+      />
+      {state === 'paid' ? (
+        <>
+          <Notice tone="green" icon="check">
+            Pagamento confirmado. Sua vaga está garantida.
+          </Notice>
+          <Btn tone="primary" go="booking-history">
+            Ver minhas reservas
+          </Btn>
+        </>
+      ) : state === 'expired' || state === 'failed' ? (
+        <Notice tone="orange" icon="alert">
+          O Pix da reserva expirou ou não foi concluído. Fale com a quadra ou com o suporte para
+          reabrir a cobrança.
+        </Notice>
+      ) : (
+        <Notice tone="blue" icon="wallet">
+          A reserva será confirmada após o pagamento. Esta tela atualiza sozinha a cada 7 segundos.
+        </Notice>
+      )}
+    </Page>
+  );
+}
+
 function BookingHistory() {
+  const nav = useNav();
   const { bookings, loadBookings } = useApp();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -2000,6 +2399,7 @@ function BookingHistory() {
       .finally(() => setLoading(false));
   }, [loadBookings]);
   const rows = bookings.map((booking) => ({
+    id: booking.id,
     date: dateOnly(booking.starts_at),
     venue: booking.organization_venue_name,
     space: booking.venue_space_name,
@@ -2043,7 +2443,11 @@ function BookingHistory() {
     <Page title="Reservas">
       <CardList>
         {rows.map((row, index) => (
-          <ListRow key={`${row.date}-${index}`} last={index === rows.length - 1}>
+          <ListRow
+            key={row.id}
+            last={index === rows.length - 1}
+            onPress={() => nav.go('booking-t1t2', { bookingId: row.id })}
+          >
             <View style={{ flex: 1 }}>
               <Row between>
                 <Text style={{ fontSize: 14, fontWeight: '800' }}>{row.venue}</Text>
@@ -2061,11 +2465,8 @@ function BookingHistory() {
           </ListRow>
         ))}
       </CardList>
-      <Btn tone="ghost" icon="download" toast="Comprovante aberto no protótipo">
-        Abrir comprovante
-      </Btn>
       <Btn tone="ghost" go="refund-tickets">
-        Reembolsos em ingressos
+        Reembolsos
       </Btn>
     </Page>
   );
@@ -2077,6 +2478,7 @@ export const venueScreens: ScreenDef[] = [
   { id: 'booking-request', tab: 'jogar', render: () => <BookingRequest /> },
   { id: 'booking-t1t2', tab: 'jogar', render: () => <BookingT1T2 /> },
   { id: 'booking-confirmed', tab: 'jogar', render: () => <BookingConfirmed /> },
+  { id: 'booking-payment', tab: 'jogar', render: () => <BookingPayment /> },
   { id: 'booking-declined', tab: 'jogar', render: () => <BookingDeclined /> },
   { id: 'booking-expired', tab: 'jogar', render: () => <BookingExpired /> },
   { id: 'cancel-cutoff', tab: 'jogar', render: () => <CancelCutoff /> },

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, View } from 'react-native';
 
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { Device, Passkey } from '../api/types';
+import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { Icon } from '../ui/icons';
@@ -26,6 +27,7 @@ import {
   Toggle,
   Txt,
 } from '../ui/kit';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function Settings() {
@@ -129,9 +131,21 @@ function Settings() {
 }
 
 function Accessibility() {
-  const [size, setSize] = useState('AA');
-  const [motion, setMotion] = useState(false);
-  const [targets, setTargets] = useState(true);
+  const nav = useNav();
+  const { accessibility, setAccessibility } = useApp();
+  const [size, setSize] = useState(accessibility.fontScale);
+  const [motion, setMotion] = useState(accessibility.reducedMotion);
+  const [targets, setTargets] = useState(accessibility.largeTargets);
+
+  const save = async () => {
+    try {
+      await setAccessibility({ fontScale: size, reducedMotion: motion, largeTargets: targets });
+      nav.toast('Preferências de acessibilidade salvas.');
+    } catch {
+      nav.toast('Não foi possível salvar as preferências.');
+    }
+  };
+
   return (
     <Page title="Acessibilidade">
       <Card>
@@ -141,7 +155,11 @@ function Accessibility() {
         </Row>
         <Seg style={{ marginTop: 8 }}>
           {['A', 'AA', 'AAA'].map((item) => (
-            <SegBtn key={item} on={size === item} onPress={() => setSize(item)}>
+            <SegBtn
+              key={item}
+              on={size === item}
+              onPress={() => setSize(item as 'A' | 'AA' | 'AAA')}
+            >
               {item}
             </SegBtn>
           ))}
@@ -158,9 +176,10 @@ function Accessibility() {
         </Row>
       </Card>
       <Notice tone="green" icon="shield">
-        Essas preferências não são itens de catálogo e não dependem do passe.
+        Essas preferências não são itens de catálogo e não dependem do passe. Elas ficam salvas
+        neste aparelho.
       </Notice>
-      <Btn tone="primary" toast="Preferências salvas no protótipo">
+      <Btn tone="primary" onPress={save}>
         Salvar preferências
       </Btn>
     </Page>
@@ -267,11 +286,25 @@ function Customization() {
   );
 }
 
+function passkeyError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const map: Record<string, string> = {
+      invalid_passkey: 'Não foi possível validar a passkey.',
+      passkey_already_registered: 'Esta passkey já está cadastrada.',
+      rate_limited: 'Muitas tentativas. Aguarde e tente novamente.',
+      invalid_token: 'Sua sessão expirou. Entre novamente.',
+    };
+    return map[error.code] ?? 'Não foi possível concluir a passkey.';
+  }
+  return 'Não foi possível concluir a passkey.';
+}
+
 function Security() {
   const nav = useNav();
   const { palette } = useTheme();
   const { session } = useApp();
   const [keys, setKeys] = useState<Passkey[]>([]);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (session) {
       api.auth
@@ -280,24 +313,50 @@ function Security() {
         .catch(() => undefined);
     }
   }, [session]);
-  const list = keys.length
-    ? keys.map((item) => ({
-        id: item.credential_id,
-        name: item.name ?? 'Passkey',
-        sub: item.last_used_at ? 'último uso recente' : 'sem uso',
-      }))
-    : [
-        { id: 'iphone', name: 'iPhone de Susan', sub: 'último uso hoje · Face ID' },
-        { id: 'notebook', name: 'Notebook', sub: 'último uso 12 nov' },
-      ];
+  const list = keys.map((item) => ({
+    id: item.credential_id,
+    name: item.name ?? 'Passkey',
+    sub: item.last_used_at
+      ? `último uso em ${item.last_used_at.slice(0, 10)}`
+      : `cadastrada em ${item.created_at.slice(0, 10)}`,
+  }));
   const revoke = async (id: string) => {
-    if (session && !['iphone', 'notebook'].includes(id)) {
-      try {
-        await api.auth.revokePasskey(session.accessToken, id);
-        setKeys((current) => current.filter((item) => item.credential_id !== id));
-      } catch {
-        return;
-      }
+    if (!session) {
+      return;
+    }
+    try {
+      await api.auth.revokePasskey(session.accessToken, id);
+      setKeys((current) => current.filter((item) => item.credential_id !== id));
+      nav.toast('Passkey revogada.');
+    } catch (error) {
+      nav.toast(passkeyError(error));
+    }
+  };
+  const addPasskey = async () => {
+    if (!session || busy) {
+      return;
+    }
+    if (!passkeyAvailable()) {
+      nav.toast('A passkey exige o development build Android; o módulo iOS ainda não existe.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const options = await api.auth.passkeyRegistrationOptions(session.accessToken);
+      const credential = await createPasskey(options.public_key);
+      await api.auth.passkeyRegistrationVerify(
+        session.accessToken,
+        options.challenge_id,
+        credential,
+        Platform.OS === 'ios' ? 'iPhone' : 'Android',
+      );
+      const refreshed = await api.auth.passkeys(session.accessToken);
+      setKeys(refreshed.credentials);
+      nav.toast('Passkey adicionada.');
+    } catch (error) {
+      nav.toast(passkeyError(error));
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -308,6 +367,11 @@ function Security() {
           <Badge tone="green">{list.length} ativas</Badge>
         </Row>
         <View style={{ marginTop: 6 }}>
+          {list.length === 0 ? (
+            <Txt variant="tiny" style={{ paddingVertical: 10 }}>
+              Nenhuma passkey cadastrada. Adicione uma para entrar sem SMS.
+            </Txt>
+          ) : null}
           {list.map((item, index) => (
             <View
               key={item.id}
@@ -327,19 +391,15 @@ function Security() {
                 </Text>
                 <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
               </View>
-              {index === 0 ? (
-                <Badge tone="lime">ATUAL</Badge>
-              ) : (
-                <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
-                  Revogar
-                </Btn>
-              )}
+              <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
+                Revogar
+              </Btn>
             </View>
           ))}
         </View>
         <View style={{ marginTop: 10 }}>
-          <Btn tone="primary" icon="plus" toast="Passkey adicionada no protótipo">
-            Adicionar passkey
+          <Btn tone="primary" icon="plus" onPress={addPasskey} disabled={busy}>
+            {busy ? 'Abrindo…' : 'Adicionar passkey'}
           </Btn>
         </View>
       </Card>
@@ -348,13 +408,13 @@ function Security() {
           {
             icon: 'user' as const,
             title: 'Trocar telefone',
-            sub: '+55 (11) 9****-1234',
+            sub: 'Confirme por código no telefone atual',
             go: 'phone-change',
           },
           {
             icon: 'eye' as const,
             title: 'Dispositivos e sessões',
-            sub: '2 dispositivos conectados',
+            sub: 'Sessões ativas da conta',
             go: 'devices',
           },
           {
@@ -384,6 +444,7 @@ function Security() {
 }
 
 function Devices() {
+  const nav = useNav();
   const { palette } = useTheme();
   const { session } = useApp();
   const [devices, setDevices] = useState<Device[]>([]);
@@ -395,58 +456,47 @@ function Devices() {
         .catch(() => undefined);
     }
   }, [session]);
-  const list = devices.length
-    ? devices.map((item, index) => ({
-        id: item.id,
-        name: `${item.name ?? item.platform} ${index === 0 ? '· este aparelho' : ''}`,
-        sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
-        current: index === 0,
-      }))
-    : [
-        {
-          id: 'iphone',
-          name: 'iPhone 15 · este aparelho',
-          sub: 'São Paulo · agora',
-          current: true,
-        },
-        { id: 'pixel', name: 'Pixel 8', sub: 'São Paulo · há 2 dias', current: false },
-        { id: 'chrome', name: 'Chrome · notebook', sub: 'São Paulo · há 8 dias', current: false },
-      ];
+  const list = devices.map((item) => ({
+    id: item.id,
+    name: item.name ?? item.platform,
+    sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
+  }));
   const revoke = async (id: string) => {
-    if (session && !['iphone', 'pixel', 'chrome'].includes(id)) {
-      try {
-        await api.auth.revokeDevice(session.accessToken, id);
-        setDevices((current) => current.filter((item) => item.id !== id));
-      } catch {
-        return;
-      }
+    if (!session) {
+      return;
+    }
+    try {
+      await api.auth.revokeDevice(session.accessToken, id);
+      setDevices((current) => current.filter((item) => item.id !== id));
+      nav.toast('Sessão revogada.');
+    } catch {
+      nav.toast('Não foi possível revogar esta sessão.');
     }
   };
   return (
     <Page title="Dispositivos">
-      <CardList>
-        {list.map((item, index) => (
-          <ListRow key={item.id} last={index === list.length - 1}>
-            <Text style={{ color: palette.ink }}>◉</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                {item.name}
-              </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
-            </View>
-            {item.current ? (
-              <Badge tone="lime">ATUAL</Badge>
-            ) : (
+      {list.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">Nenhuma sessão ativa encontrada.</Txt>
+        </Card>
+      ) : (
+        <CardList>
+          {list.map((item, index) => (
+            <ListRow key={item.id} last={index === list.length - 1}>
+              <Text style={{ color: palette.ink }}>◉</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.name}
+                </Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+              </View>
               <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
                 Revogar
               </Btn>
-            )}
-          </ListRow>
-        ))}
-      </CardList>
-      <Btn tone="ghost" modal="confirm">
-        Revogar todas as outras
-      </Btn>
+            </ListRow>
+          ))}
+        </CardList>
+      )}
     </Page>
   );
 }

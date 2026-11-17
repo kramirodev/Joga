@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, type ElementRef } from 'react';
-import { Platform, ScrollView, Text, TextInput, View } from 'react-native';
+import { Platform, ScrollView, TextInput, View } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError } from '../api/client';
+import { createPasskey, getPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { AddWindowSheet } from '../ui/AddWindowSheet';
@@ -33,6 +34,7 @@ import {
   WelcomeCourt,
 } from '../ui/kit';
 import { courtFromLabel, levelFromLabel } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function errorText(error: unknown): string {
@@ -45,6 +47,8 @@ function errorText(error: unknown): string {
       invalid_receipt: 'Verificação expirada. Recomece o cadastro.',
       phone_already_registered: 'Este telefone já tem conta.',
       account_not_found: 'Conta não encontrada.',
+      invalid_passkey: 'Não foi possível validar a passkey. Tente novamente.',
+      passkey_already_registered: 'Esta passkey já está cadastrada.',
     };
     return messages[error.code] ?? 'Não foi possível concluir a ação.';
   }
@@ -782,6 +786,23 @@ function Passkey() {
         platform: Platform.OS === 'ios' ? 'ios' : 'android',
       });
       await setSession(tokens);
+      try {
+        if (!passkeyAvailable()) {
+          throw new Error('passkey_unavailable');
+        }
+        const options = await api.auth.passkeyRegistrationOptions(tokens.access_token);
+        const credential = await createPasskey(options.public_key);
+        await api.auth.passkeyRegistrationVerify(
+          tokens.access_token,
+          options.challenge_id,
+          credential,
+          Platform.OS === 'ios' ? 'iPhone' : 'Android',
+        );
+      } catch {
+        nav.toast(
+          'Conta criada. A passkey pode ser adicionada depois em Configurações › Segurança.',
+        );
+      }
       await loadProfile();
       nav.reset('onboarding-1');
     } catch (error) {
@@ -816,22 +837,42 @@ function Passkey() {
 
 function Login() {
   const nav = useNav();
-  const { setAuth } = useApp();
+  const { setAuth, setSession, loadProfile } = useApp();
+  const [busy, setBusy] = useState(false);
+
+  const enterWithPasskey = async () => {
+    if (busy) {
+      return;
+    }
+    if (!passkeyAvailable()) {
+      nav.toast('A passkey exige o development build Android; o módulo iOS ainda não existe.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const options = await api.auth.passkeyAuthenticationOptions();
+      const credential = await getPasskey(options.public_key);
+      const tokens = await api.auth.passkeyAuthenticationVerify(options.challenge_id, credential, {
+        name: Platform.OS === 'ios' ? 'iPhone' : 'Android',
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      });
+      await setSession(tokens);
+      await loadProfile();
+      nav.reset('home');
+    } catch (error) {
+      nav.toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Page title="Entrar">
       <Txt variant="lead">
         Escolha como quer entrar. A passkey é mais rápida e não depende de SMS.
       </Txt>
-      <Btn
-        tone="primary"
-        icon="shield"
-        onPress={() => {
-          setAuth({ purpose: 'login' });
-          nav.toast('Passkey ainda não está conectada nesta versão. Entre com o telefone.');
-          nav.go('signup-phone');
-        }}
-      >
-        Usar passkey
+      <Btn tone="primary" icon="shield" onPress={enterWithPasskey} disabled={busy}>
+        {busy ? 'Abrindo…' : 'Usar passkey'}
       </Btn>
       <Btn
         tone="ghost"

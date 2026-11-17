@@ -323,6 +323,9 @@ export type TicketPack = {
 export type PurchasePayment = {
   provider: string | null;
   provider_status: string | null;
+  status_detail: string | null;
+  external_reference: string | null;
+  amount_cents: number | null;
   qr_code: string | null;
   qr_code_base64: string | null;
   ticket_url: string | null;
@@ -433,6 +436,18 @@ export type BookingParticipant = {
   presence_confirmed_at: string | null;
 };
 
+export type Presence = {
+  user_id: string;
+  seat: number;
+  active: boolean;
+  pre_checked_in_at: string | null;
+  status: string;
+  method: string | null;
+  confirmed_at: string | null;
+  distance_m: number | null;
+  accuracy_m: number | null;
+};
+
 export type BookingTimer = {
   timer_type: string;
   status: string;
@@ -451,6 +466,8 @@ export type BookingPayment = {
   provider_order_id: string | null;
   provider_payment_id: string | null;
   provider_status: string | null;
+  status_detail: string | null;
+  external_reference: string | null;
   qr_code: string | null;
   qr_code_base64: string | null;
   ticket_url: string | null;
@@ -654,4 +671,10 @@ export type Passkey = {
   name: string | null;
   created_at: string;
   last_used_at: string | null;
+};
+
+export type PasskeyOptions = {
+  challenge_id: string;
+  public_key: Record<string, unknown>;
+  expires_at: string;
 };

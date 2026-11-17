@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { api } from '../api/client';
 import type { CourtHistory, Passport } from '../api/types';
@@ -28,6 +28,7 @@ import {
   Txt,
 } from '../ui/kit';
 import { divisionLabel } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function Stats() {

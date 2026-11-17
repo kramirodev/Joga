@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
 import type {
@@ -41,6 +41,7 @@ import {
   Txt,
 } from '../ui/kit';
 import { divisionLabel, number, shortDateTime } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
@@ -346,7 +347,7 @@ function ClanProfile() {
           {
             icon: 'users' as const,
             title: 'Membros e cargos',
-            sub: `${clanMembers.length || 24} membros · 3 oficiais`,
+            sub: `${clanMembers.length} ${clanMembers.length === 1 ? 'membro' : 'membros'}`,
             go: 'clan-members',
           },
           {
@@ -610,24 +611,23 @@ function ClanJoin() {
 function ClanMembers() {
   const { palette } = useTheme();
   const { clan, clanMembers } = useApp();
-  const members: ClanMember[] = clanMembers.length
-    ? clanMembers
-    : [
-        { user_id: 'susan', display_name: 'Susan', role: 'leader', joined_at: '' },
-        { user_id: 'rafa', display_name: 'Rafa', role: 'admin', joined_at: '' },
-        { user_id: 'bia', display_name: 'Bia', role: 'admin', joined_at: '' },
-        { user_id: 'jo', display_name: 'Jo', role: 'member', joined_at: '' },
-        { user_id: 'nina', display_name: 'Nina', role: 'member', joined_at: '' },
-        { user_id: 'caio', display_name: 'Caio', role: 'member', joined_at: '' },
-      ];
+  const members: ClanMember[] = clanMembers;
+  const officers = members.filter((member) => member.role === 'admin').length;
   const roleLabel = (role: string) =>
     role === 'leader' ? 'Líder' : role === 'admin' ? 'Oficial' : 'Membro';
   return (
     <Page title="Membros">
       <Row between>
-        <Txt variant="h3">{clan?.members ?? 24} membros</Txt>
-        <Badge>3 oficiais</Badge>
+        <Txt variant="h3">
+          {clan?.members ?? members.length} {members.length === 1 ? 'membro' : 'membros'}
+        </Txt>
+        <Badge>{officers} oficiais</Badge>
       </Row>
+      {members.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">O clã ainda não tem membros carregados.</Txt>
+        </Card>
+      ) : null}
       <CardList>
         {members.map((member, index) => (
           <ListRow key={member.user_id} last={index === members.length - 1}>
@@ -643,9 +643,7 @@ function ClanMembers() {
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {member.display_name ?? 'Jogador'}
               </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>
-                {roleLabel(member.role)} · online
-              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{roleLabel(member.role)}</Text>
             </View>
             <Badge
               tone={
@@ -657,14 +655,9 @@ function ClanMembers() {
           </ListRow>
         ))}
       </CardList>
-      <BtnRow>
-        <Btn tone="primary" go="clan-invite">
-          Convidar
-        </Btn>
-        <Btn tone="ghost" toast="Cargos abertos no protótipo">
-          Gerenciar cargos
-        </Btn>
-      </BtnRow>
+      <Btn tone="primary" go="clan-invite">
+        Convidar
+      </Btn>
     </Page>
   );
 }
