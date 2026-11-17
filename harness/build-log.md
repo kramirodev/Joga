@@ -1348,13 +1348,13 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 ### 2026-11-17 - Mobile: correções da auditoria e interface da 14E
 
 - **Escopo:** somente `mobile/` e este registro. Backend, migrações e `web/` não foram alterados. Sem push, merge, deploy ou build publicada.
-- **Trabalho preservado:** os commits `2e5c373` (Pix, passkeys, presença e tempo real) e `fd77374` (acessibilidade e sessão offline) integram o trabalho não commitado das sessões anteriores; o commit `5984304` fecha as correções e a interface financeira.
+- **Trabalho preservado:** os commits `2e5c373` (Pix, passkeys, presença e tempo real) e `fd77374` (acessibilidade e sessão offline) integram o trabalho não commitado das sessões anteriores; os commits `5984304`, `ae0d3a6` e `e8a5fdd` fecham as correções e a interface financeira.
 - **Vaga x pessoa:** `payments[].participant_id` passou a ser comparado com `participants[].id` (id da vaga), nunca com `session.userId`. A tela de pagamento e as ações da reserva usam o mesmo critério.
 - **Checkout:** o retry volta a disparar a criação da cobrança, com `Idempotency-Key` persistida por tentativa; replay devolve a mesma cobrança e `409 idempotency_conflict` limpa a chave. Pacote e passe têm chaves separadas; cobrança expirada gera chave nova.
 - **Polling:** `queue-search` usa `replace` e uma referência de rota para não empilhar `lobby-found` a cada 5 s.
 - **Cold start:** falha de rede mantém a sessão salva; somente `401` encerra a sessão. Conta suspensa abre a tela de recurso.
 - **Acessibilidade:** preferência A/AA/AAA aplicada por um `Text` global, alvos de toque maiores em botões/listas/campos, redução de movimento respeitada na navegação.
-- **Telas sem lastro:** 17 telas sem caminho real foram marcadas como `hidden` e deixaram de ser registradas; dados fictícios de lobby, chat de clã, convite, resultado e pacotes foram removidos ou substituídos por dados do servidor. A tabela de custo da partida passou a usar a tabela 2D correta.
+- **Telas sem lastro:** 21 telas sem caminho real foram marcadas como `hidden` e deixaram de ser registradas; dados fictícios de lobby, chat de clã, convite, resultado e pacotes foram removidos ou substituídos por dados do servidor. A tabela de custo da partida passou a usar a tabela 2D correta.
 - **Crédito e preço:** carteira exibe ingressos (`balance` de `GET /me/tickets`, `source=ledger`), não saldo em reais; `503 balance_unavailable` mostra indisponibilidade e retry, nunca zero. Reserva mostra valor da quadra, valor do JOGA e total por participante a partir de `venue_price_cents`/`fee_cents`/`space_charge_cents`/`fee_charge_cents`; a tabela 2D aparece antes da confirmação. O app não aplica 20%: no Pix a segunda linha vem do servidor com rótulo de taxa de 20%.
 - **Passe:** franquia mensal por `period`, sem acúmulo; crédito comprado sem expiração; remoção de plano e valores fictícios no checkout.
 - **CPF, termos e NFS-e:** `GET/PUT/DELETE /me/cpf`, `GET /legal/terms/current` e `POST /legal/terms/accept` consumidos; compra de pacote exige `terms_version_id` quando há versão aprovada. A confirmação mostra o placeholder da NFS-e sem inventar número.
