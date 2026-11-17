@@ -490,24 +490,25 @@ JOGA_MERCADO_PAGO_NOTIFICATION_URL=https://seu-dominio/api/v1/payments/mercadopa
 
 ### Interface financeira e conciliação (Fase 15)
 
-> **Proposta técnica local, não política aprovada.** O prazo de liberação, a janela de
-> contestação, o modelo de repasse, a moderação financeira e o tratamento de divergência
-> não foram aprovados. O repasse à quadra ocorre no horário da partida (ADR 0040,
-> `JOGA_RELEASE_DELAY_HOURS=2` por padrão); a CLI é provisória para testes e `FAILED` é uma
-> salvaguarda técnica.
+> **Decisões de 17/11/2026.** A 15A está entregue no backend e a 15B depende do
+> painel. O repasse é em `starts_at + 2h` (ADR 0040,
+> `JOGA_RELEASE_DELAY_HOURS=2`); a contestação tem **72 h** persistidas
+> (`JOGA_DISPUTE_WINDOW_HOURS=72`). Custódia B com Inter PJ; escrow/modelo C
+> fica para a fase comercial. MED bloqueia repasse e cria receivable sem
+> clawback da quadra (fluxo real na 14B). Não existe reembolso parcial.
 >
-> A política de cancelamento/substituição/presença é a **ADR 0039**. O código já reverteu a
-> ADR 0038 e tem as fatias 1–6 (fila, chamada automática, cancelamento individual, T4/T5,
-> reembolso sem o desistente, atribuição/pagamento, vaga paga em no-show, presença, localização
-> e recomendação de formação). O Trust Factor está na ADR 0041; UI de presença/suporte ainda não existe.
+> A política de cancelamento/substituição/presença é a **ADR 0039**, complementada
+> pela decisão de 17/11/2026: antes do cutoff, devolução integral e sem repasse;
+> depois do cutoff/no-show, sem devolução, quadra integral e repasse; quadra que
+> cancela devolve tudo e não recebe; disputa aberta congela o repasse. O Trust
+> Factor está na ADR 0041; UI de presença/suporte ainda não existe.
 
-- Três relógios distintos: pagamento (T3), contestação e repasse. Hoje só o primeiro está
-  definido como requisito; os outros dois continuam pendentes.
-- Resumo: `GET /api/v1/organizations/{org}/financial/summary` inclui `pending_release_cents` e `disputed_cents`.
-- Recebíveis: `GET /api/v1/organizations/{org}/financial/receivables?status=PENDING`.
-- Extrato: `GET /api/v1/organizations/{org}/financial/statement`.
-- Contestações: `GET/POST /api/v1/organizations/{org}/financial/disputes` e `GET .../{dispute_id}`.
-- A reserva `CONFIRMED` ou `COMPLETED` ganha liberação com `eligible_at = starts_at + JOGA_RELEASE_DELAY_HOURS` (padrão 2 h, ADR 0040). Contestações `OPEN` suspendem a liberação na proposta técnica.
+- Três relógios distintos: pagamento (T3), contestação (72 h) e repasse (`starts_at + 2h`).
+- Resumo: `GET /api/v1/organizations/{org}/financial/summary` inclui `pending_release_cents`, `disputed_cents`, `venue_price_cents` e `joga_fee_cents`.
+- Recebíveis: `GET /api/v1/organizations/{org}/financial/receivables?status=PENDING`, com `receipt_reference`, `dispute_deadline` e o preço em duas linhas.
+- Extrato: `GET /api/v1/organizations/{org}/financial/statement`; comissão: `GET .../financial/commission`.
+- Contestações: `GET/POST /api/v1/organizations/{org}/financial/disputes`, `GET .../{dispute_id}` e `POST .../{dispute_id}/decision`.
+- A reserva `CONFIRMED` ou `COMPLETED` ganha liberação com `eligible_at = starts_at + JOGA_RELEASE_DELAY_HOURS` (padrão 2 h, ADR 0040) e snapshot de 72 h. Contestações `OPEN` suspendem a liberação.
 - Worker de liberação (reexecutável):
 
 ```powershell
@@ -516,7 +517,7 @@ Set-Location C:\prog\joga\backend
 .venv\Scripts\python.exe -m scripts.release_payments --loop --interval 60
 ```
 
-- Decisão interna de contestação (**provisória para teste**; não é o modelo aprovado de moderação financeira e não há painel interno):
+- Decisão interna de contestação: endpoint com `financial:manage` + `JOGA_REVIEW_OPERATORS` ou CLI operacional:
 
 ```powershell
 $env:JOGA_REVIEW_OPERATORS = "operador-1"
@@ -555,8 +556,10 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
   `ledger_entries` (`u5f6a7b8c9d0`); `booking_ledger_entries` não existe mais.
   `CHARGE_CREATED` deixou de existir, `PAYMENT_CONFIRMED` representa a parte da
   quadra e `booking_payment_id` vem nulo no extrato.
-- O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação.
-- Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, NFS-e e a política de repasse continuam pendentes; a 14E deve integrar o ledger em reais.
+- O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação. A decisão exige `financial:manage` **e** usuário em `JOGA_REVIEW_OPERATORS`; o fornecedor não decide a própria contestação.
+- Contestações só são aceitas com liberação `PENDING` e antes do snapshot `dispute_deadline` (72 h). O comprovante real será `bank:<e2e_id>` + PDF privado; `simulated:<release_id>` só em teste. A NFS-e é exibida de `fiscal_documents` (`pending_manual`).
+- O relatório `GET /organizations/{id}/financial/commission` separa `venue_price_cents` (fornecedor) de `joga_fee_cents` (JOGA). `block_for_chargeback` bloqueia/reverte a liberação sem tocar saldo; MED real é 14B.
+- Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, NFS-e e a política de repasse continuam pendentes; a 14E integrou o ledger em reais.
 
 ### CPF, termos e intenção fiscal (Fase 14E-E)
 

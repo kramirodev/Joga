@@ -406,7 +406,9 @@ Os envelopes abaixo incluem `total` (antes da paginação) além de `limit` e
 
 - App: usar a vitrine, escolher espaço/horário e chamar `POST /bookings`.
 - App: exibir quitação por ingressos e a faixa congelada.
-- Painel: cadastrar payout, editar faixa/cobertura e mostrar o repasse a receber.
+- Painel: consumir os campos novos do Financeiro (preço em duas linhas,
+  comprovante, prazo de contestação, comissão separada e NFS-e placeholder)
+  descritos na seção 10.
 - Ambos: notificações de prazo e nova reserva.
 
 ## 9. CEP e geocodificação de estabelecimento (Fase 1)
@@ -497,6 +499,173 @@ subconjunto desses três campos e mantém os demais. Regras válidas nos dois:
 gravados quando o T2 começa, a partir do expediente vigente naquele instante.
 Editar o expediente depois não altera reservas já em andamento; a mudança vale
 para os próximos T2.
+
+## 10. Interface financeira do fornecedor (Fase 15 sobre o ledger em reais)
+
+Escopo: painel do fornecedor e operação interna. O app mobile do jogador **não**
+consome estes endpoints e não exibe saldo em reais como carteira.
+
+Autorização: toda rota é escopada pela organização no servidor. Leitura exige
+`financial:read` (`OWNER`, `ADMIN`, `OPERATOR`); abrir contestação exige
+`financial:manage` (`OWNER`, `ADMIN`); decidir contestação exige
+`financial:manage` **e** o usuário em `JOGA_REVIEW_OPERATORS`. Membro de outra
+organização recebe `404`; capacidade ausente recebe `403`.
+
+### 10.1 Endpoints
+
+| Método | Rota | Capacidade |
+|---|---|---|
+| `GET` | `/api/v1/organizations/{org}/financial/summary` | `financial:read` |
+| `GET` | `/api/v1/organizations/{org}/financial/receivables?status=` | `financial:read` |
+| `GET` | `/api/v1/organizations/{org}/financial/statement?limit=&offset=` | `financial:read` |
+| `GET` | `/api/v1/organizations/{org}/financial/commission?from=&to=&limit=&offset=` | `financial:read` |
+| `GET` | `/api/v1/organizations/{org}/bookings/{booking}/financial` | `financial:read` |
+| `GET` | `/api/v1/organizations/{org}/financial/disputes?status=` | `financial:read` |
+| `POST` | `/api/v1/organizations/{org}/financial/disputes` | `financial:manage` |
+| `GET` | `/api/v1/organizations/{org}/financial/disputes/{id}` | `financial:read` |
+| `POST` | `/api/v1/organizations/{org}/financial/disputes/{id}/decision` | `financial:manage` + operador |
+
+### 10.2 Preço em duas linhas
+
+Toda linha de extrato e todo recebível trazem `venue_price_cents`, `fee_cents` e
+`total_cents` congelados na reserva, com
+`venue_price_cents + fee_cents == total_cents`. O valor do fornecedor **nunca** é
+receita do JOGA:
+
+- `financial/summary` devolve `venue_price_cents` (fornecedor) e
+  `joga_fee_cents` (comissão) em campos distintos; não somar os dois.
+- `financial/commission` devolve, por reserva, `venue_price_cents`, `fee_cents` e
+  `total_cents`, e em `totals` somente `venue_price_cents`, `joga_fee_cents` e
+  `total_cents`. A comissão é `joga_fee_cents`; o restante é obrigação do
+  fornecedor.
+- O ticket continua sendo unidade de exibição; nenhum campo em reais pode ser
+  apresentado como carteira do jogador.
+
+### 10.3 Semântica por endpoint
+
+**`GET financial/receivables`** — agenda de repasses:
+
+| Campo | Semântica |
+|---|---|
+| `booking_id`, `release_id` | Reserva e obrigação de repasse |
+| `amount_cents` | Valor do fornecedor devido (`venue_price_cents`) |
+| `status` | `PENDING`, `RELEASED`, `FAILED` ou `REVERSED` |
+| `eligible_at` | `starts_at + 2 h` (ADR 0040) |
+| `released_at` | Instante do repasse simulado; `null` enquanto pendente |
+| `venue_price_cents`, `fee_cents`, `total_cents` | Preço congelado em duas linhas |
+| `receipt_reference` | Comprovante do repasse. Em produção: `bank:<e2e_id>` ou `psp:<id>`, com PDF do JOGA em storage privado. No protótipo/teste: `simulated:<release_id>`; `null` enquanto pendente |
+| `dispute_deadline` | Snapshot persistido de `eligible_at + JOGA_DISPUTE_WINDOW_HOURS` (72 h); não é recalculado |
+| `has_open_dispute`, `dispute_id` | Contestação aberta suspende a liberação |
+| `reason` | Motivo de falha, reversão ou liberação |
+
+**`GET financial/statement`** — extrato do fornecedor, uma linha por transação
+contábil que afeta a conta da quadra:
+
+| Campo | Semântica |
+|---|---|
+| `id` | `ledger_transactions.id` |
+| `entry_type` | `PAYMENT_CONFIRMED` (parte da quadra na confirmação), `PAYMENT_REFUNDED` (devolução) ou `VENUE_RELEASE` (repasse) |
+| `direction` | `CREDIT` ou `DEBIT`; `amount_cents` é sempre positivo |
+| `release_id` | Preenchido somente em `VENUE_RELEASE` |
+| `venue_price_cents`, `fee_cents`, `total_cents` | Preço congelado da reserva |
+| `booking_payment_id` | Sempre `null`; o fato contábil é a reserva |
+| `status` | Sempre `POSTED` |
+| `details` | `{ "kind", "idempotency_key" }` |
+
+`PAYMENT_CONFIRMED` já é a parte da quadra; a comissão do JOGA não aparece como
+linha do extrato do fornecedor.
+
+**`GET financial/commission`** — relatório por reserva confirmada. `from` e `to`
+são ISO 8601 e filtram `confirmed_at` (inclusivo). `totals.bookings` conta as
+reservas do período.
+
+**`GET organizations/{org}/bookings/{booking}/financial`** — detalhe:
+
+```json
+{
+  "booking_id": "uuid",
+  "pricing": {
+    "venue_price_cents": 40000,
+    "fee_cents": 8000,
+    "fee_percent_applied": 2000,
+    "total_cents": 48000,
+    "pricing_version": "adr0049_v1"
+  },
+  "release": { "...": "mesmo formato de receivable ou null" },
+  "dispute": { "...": "última contestação ou null" },
+  "fiscal_document": {
+    "id": "uuid",
+    "status": "pending_manual",
+    "amount_cents": 40000,
+    "number": null,
+    "provider_ref": null,
+    "issued_at": null
+  },
+  "ledger": [ "..." ],
+  "refunds": [ "..." ]
+}
+```
+
+`fiscal_document` é a **exibição do placeholder**: `pending_manual` significa
+intenção registrada, sem emissão de NFS-e. `null` quando a reserva não tem
+documento (por exemplo, `JOGA_FISCAL_MODE=disabled`). Cada item de `ledger` tem
+o mesmo formato de `statement.entries[]`, incluindo `release_id`,
+`venue_price_cents`, `fee_cents` e `total_cents`.
+
+### 10.4 Contestações
+
+- `POST .../disputes` recebe `{ "booking_id", "reason", "evidence"? }`.
+- Só é aceita enquanto a liberação está `PENDING` e antes de
+  `dispute_deadline`. Depois disso: `409 release_not_contestable` ou
+  `409 dispute_window_expired`.
+- Uma contestação `OPEN` por reserva; duplicata responde
+  `409 dispute_already_open`.
+- `POST .../disputes/{id}/decision` recebe
+  `{ "decision": "ACCEPTED" | "REJECTED", "reason": "..." }` (1–500 caracteres).
+  Exige operador interno em `JOGA_REVIEW_OPERATORS`; usuário comum com
+  `financial:manage` recebe `403 operator_not_authorized`.
+- A decisão grava `decided_by`, `decided_at`, `decision_reason` e auditoria
+  append-only `financial.dispute_decided`. `ACCEPTED` libera o repasse
+  (`RELEASED`); `REJECTED` mantém a liberação pendente para o worker.
+- Janela de contestação: `JOGA_DISPUTE_WINDOW_HOURS` = **72 h**, decidida em
+  2026-11-17 e persistida como snapshot em `venue_releases.dispute_deadline` e
+  `financial_disputes.deadline_at`. Mudar a configuração não altera prazos já
+  gravados.
+- `DisputeView` inclui `deadline_at` (o snapshot da contestação).
+
+### 10.5 `participant_id` em `payments[]`
+
+Em `BookingView.payments[]`, **`participant_id` é o id da vaga**
+(`booking_participants`), **não** o `user_id`. O app deve localizar o pagamento
+pelo participante correspondente na própria reserva, nunca comparar
+`participant_id` com `session.userId`. O `user_id` do participante está em
+`BookingView.participants[]`, não em `payments[]`.
+
+### 10.6 Erros
+
+| HTTP | `code` |
+|---:|---|
+| 403 | `forbidden`, `operator_not_authorized` |
+| 404 | `organization_not_found`, `dispute_not_found`, `booking_not_found`, `release_not_found` |
+| 409 | `dispute_already_open`, `dispute_not_open`, `release_not_contestable`, `dispute_window_expired`, `cancellation_closed` |
+| 422 | `validation_error` |
+
+### 10.7 Cancelamento, substituição e no-show (decisão de 17/11/2026)
+
+| Situação | Jogador | Quadra | Repasse |
+|---|---|---|---|
+| Antes do cutoff | Devolução integral | Não executa a reserva | **Sem repasse** |
+| Depois do cutoff, antes do jogo | Sem devolução; perde os tickets | Recebe integral | **Repasse sim** |
+| No-show | Sem devolução; perde os tickets | Recebe integral | **Repasse sim** |
+| Quadra cancela | Devolução integral | Falha da quadra | **Sem repasse** |
+| Contestação aberta | — | — | **Congelado até a decisão** |
+
+- Não existe reembolso parcial: o rateio é integral por jogador e o valor da
+  quadra é sempre integral quando há jogo.
+- Depois do cutoff, a vaga é oferecida a substituto e a substituição segue a
+  ADR 0039; não estornar o desistente.
+- Antes do cutoff, o desistente também recebe; a substituição serve para a
+  quadra não perder a venda.
 
 ## E-mail do pagador e cobrança Pix (Bloco A)
 

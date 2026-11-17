@@ -1308,3 +1308,28 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migracoes:** `upgrade head` -> `downgrade base` -> `upgrade head` e `alembic check` sem diff no PostgreSQL local; conversao de saldo legado validada (view 7, lote `admin` 7, um evento). Head final `u5f6a7b8c9d0`.
 - **Documentacao:** `DATA_MODEL.md`, `PENDENCIAS.md`, `RUNBOOK.md`, `JOGA_DOCUMENTACAO_TECNICA.md`, `CONTRATO_RESERVAS_APP.md`, `backend/.env.example` e a fase 14E.
 - **Fora do escopo:** 14B/18, dinheiro real, webhook publico, alteracao da ADR 0049 e UI nova.
+
+### 2026-11-17 - 14E.10/11: interface financeira sobre o ledger em reais
+
+- **Extrato:** cada linha de `financial/statement` carrega `release_id`, `venue_price_cents`, `fee_cents` e `total_cents`, inclusive em `VENUE_RELEASE`; `booking_payment_id` continua nulo e `PAYMENT_CONFIRMED` e a parte da quadra. O extrato e projecao de `ledger_transactions` + `ledger_entries` e foi conferido contra o ledger nos testes.
+- **Recebiveis:** `financial/receivables` expoe preco em duas linhas, `receipt_reference` (comprovante simulado `simulated:<release_id>`, nulo enquanto pendente), `dispute_deadline` e `reason`. O valor do repasse usa `Booking.venue_price_cents`.
+- **Comissao:** novo `GET financial/commission?from=&to=` por reserva confirmada; `joga_fee_cents` soma apenas `fee_cents` e o valor do fornecedor fica em `venue_price_cents`. O resumo tambem separa `venue_price_cents`/`joga_fee_cents` e adiciona `reversed_cents`/`failed_cents`.
+- **Detalhe da reserva:** `GET organizations/{org}/bookings/{booking}/financial` devolve `pricing`, `release`, `dispute`, `fiscal_document` (placeholder `pending_manual`), `ledger` e `refunds`.
+- **Contestacao:** so liberacao `PENDING` e antes de `eligible_at + JOGA_DISPUTE_WINDOW_HOURS` (default tecnico 24 h, nao aprovado). Nova `POST .../disputes/{id}/decision` exige `financial:manage` + `JOGA_REVIEW_OPERATORS`, grava `decided_by`/`decided_at` e auditoria `financial.dispute_decided`; `ACCEPTED` libera, `REJECTED` mantem pendente.
+- **Bloqueio/reversao:** `block_for_chargeback` marca `PENDING` como `FAILED` e `RELEASED` como `REVERSED`, com auditoria e sem tocar saldo; reembolso continua usando `reverse_for_refund`. MED real fica para 14B.
+- **Sem schema novo:** nenhuma tabela, coluna ou migracao; os campos sao projecao/derivacao de `bookings` e `venue_releases`.
+- **Contrato (Etapa 11):** `docs/CONTRATO_RESERVAS_APP.md` ganhou a secao 10 com endpoints, campos, capacidades, erros e o aviso de que `participant_id` em `payments[]` e o id da vaga, nao o `user_id`. `tests/test_openapi_financial.py` confirma o OpenAPI.
+- **Testes:** suite completa **595 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos. Nenhuma migracao nova.
+- **Fora do escopo:** 14B/18, transferencia real, MED/chargeback real, PSP de producao, NFS-e operacional, comprovante fiscal real e atualizacao do painel 15B.
+
+### 2026-11-17 - 14E.12: correcoes finais, 72 h e publicacao
+
+- **Tabela 2D:** confirmadas as 18 celulas (5x5, 6x6, 3x3) e as quatro correcoes (Coberta 5x5 11, Padrao noite 6x6 8, Padrao noite 3x3 15, Premium 3x3 20).
+- **Ledger:** o caminho por tickets debita `k x 310` (nao `contribution_cents`) e credita `venue_payable` + `fee_revenue = (k x 310) - space`; Pix mantem `psp_clearing` e 20%.
+- **Notificacao:** `booking_confirmed` mostra quadra = `space_charge_cents`, JOGA = `(tickets_consumed x 310) - space` e total = `tickets_consumed x 310`; Pix usa `contribution_cents`/`fee_charge_cents`; nunca 20% do total.
+- **Conciliacao:** confere espaco somado = `venue_price_cents`, taxa somada = `sum(k x 310) - venue_price` (reservas so-credito), contribuicao/taxa por participante de credito e saldos nao negativos; o invariante `ledger == remaining x preco pago` nao existe.
+- **Cancelamento:** antes do cutoff devolve todos (inclusive o desistente) e reverte o repasse; depois do cutoff o cancelamento do jogador e bloqueado e o no-show nao reembolsa, mantendo quadra integral e repasse; quadra que cancela devolve tudo e nao recebe; contestacao aberta congela. Sem reembolso parcial.
+- **Janela de contestacao:** 72 h (`JOGA_DISPUTE_WINDOW_HOURS=72`) persistidas como snapshot em `venue_releases.dispute_deadline` e `financial_disputes.deadline_at`; migracao `v6a7b8c9d0e1`; `DisputeView.deadline_at`.
+- **Decisoes registradas:** custodia B com Inter PJ; MED bloqueia repasse + receivable + evidencia + prazo, sem clawback (real na 14B); NFS-e em duas notas por jogador (JOGA no Rio) com parametros versionados e automacao posterior; CPF valida formato no perfil e existencia antes da 1a confirmacao; comprovante real `bank:<e2e_id>` + PDF privado.
+- **Testes:** suite completa **596 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos; `alembic check` sem diff; ciclo `downgrade -1`/`upgrade head` validado; head `v6a7b8c9d0e1`.
+- **Publicacao:** commit e push autorizados; `PLANS.md` atualizado com 14E implementada/pendente de revisao, 15A entregue e 15B pendente.

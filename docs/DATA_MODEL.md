@@ -115,13 +115,12 @@
 | `payment_refunds` | Reembolso por cobrança: `FULL` (um por cobrança) e `PARTIAL` (schema pronto) |
 | `payment_events` | Eventos append-only de cobrança/PSP |
 | `psp_webhook_events` | Webhook bruto, idempotência por provedor e retry |
-| `booking_ledger_entries` | Ledger legado single-entry por reserva |
 | `ticket_ledger` | Ledger append-only de créditos/consumos |
 | `ledger_accounts` | Plano de contas do ledger de dupla entrada (ADR 0049) |
 | `ledger_transactions` | Transação balanceada e idempotente |
 | `ledger_entries` | Lançamentos de débito/crédito, imutáveis por trigger |
-| `venue_releases` | Repasse ao fornecedor, status e elegibilidade |
-| `financial_disputes` | Contestação do fornecedor |
+| `venue_releases` | Repasse ao fornecedor: valor do espaço (`venue_price_cents`), status, elegibilidade e snapshot de `dispute_deadline` |
+| `financial_disputes` | Contestação do fornecedor; `deadline_at` copiado da liberação e decisão auditável |
 | `fiscal_documents` | Intenção/documento fiscal por reserva (`pending_manual` no placeholder) |
 | `fiscal_document_takers` | Um tomador por jogador: cota em centavos e CPF cifrado no instante da intenção |
 | `terms_versions` | Versões de termos (rascunho/aprovada) |
@@ -129,7 +128,20 @@
 
 **Constraints relevantes:** webhook único por `(provider, event_id)`; índice parcial `uq_payment_refunds_full_payment` garante um único `FULL` por cobrança; `uq_payment_refunds_idempotency_key` evita reembolso parcial duplicado; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado; `fiscal_document_takers` é único por `(fiscal_document_id, user_id)`; `terms_acceptances` é único por `(user_id, terms_version_id, context)` e só aceita contexto conhecido.
 
-**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b/9). A leitura do saldo é exclusivamente lotes + ledger e valida caixa + tickets; `ticket_balances` é view. O extrato do fornecedor é projetado do ledger duplo desde `u5f6a7b8c9d0`. `payment_refunds` aceita `PARTIAL` desde `s3d4e5f6a7b8`, mas nenhum fluxo cria parcial ainda. `fiscal_documents` é intenção `pending_manual` (sem emissor, município ou alíquota); `terms_acceptances` só é exigido quando existe versão `approved`.
+**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b/9). A leitura do saldo é exclusivamente lotes + ledger e valida caixa + tickets; `ticket_balances` é view. O extrato do fornecedor é projetado do ledger duplo desde `u5f6a7b8c9d0`. `payment_refunds` aceita `PARTIAL` no schema desde `s3d4e5f6a7b8`, mas **reembolso parcial não existe**: o rateio é integral por jogador e o campo fica sem uso. `fiscal_documents` é intenção `pending_manual` (sem emissor, município ou alíquota); `terms_acceptances` só é exigido quando existe versão `approved`.
+
+**Interface financeira sobre o ledger (Fase 15):** não há tabela nova além do
+snapshot de prazo. O extrato por reserva e por repasse é projeção de
+`ledger_transactions` + `ledger_entries`, com `venue_price_cents`, `fee_cents` e
+`total_cents` lidos de `bookings`. O relatório de comissão também é derivado de
+`bookings` confirmadas: o valor do fornecedor (`venue_price_cents`) e a comissão
+(`fee_cents`) ficam em campos distintos e nunca são somados como receita.
+`venue_releases.dispute_deadline` e `financial_disputes.deadline_at` são
+snapshots de 72 h; mudar `JOGA_DISPUTE_WINDOW_HOURS` não recalcula prazos
+gravados. O comprovante real será `bank:<e2e_id>` + PDF privado; o protótipo usa
+`simulated:<release_id>`. A NFS-e é exibida de `fiscal_documents`
+(`pending_manual`), sem emissão. MED tem política aprovada (bloquear repasse +
+receivable + evidência + prazo, sem clawback) e execução real na 14B.
 
 ---
 
@@ -256,8 +268,8 @@
 - Migração de saldo monetário legado — **feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`. Os lotes continuam em tickets; não existe `remaining_cents`. Passe, grátis e admin ficam fora da abertura.
 - ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
 - `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots` guarda tickets e `unit_price_cents` (só abertura/reembolso). A tabela 2D é a unidade de consumo.
-- CPF cifrado e documento fiscal por reserva.
-- Reembolso parcial.
+- CPF cifrado e documento fiscal por reserva — **feito na Etapa 8** (`q1b2c3d4e5f6`): CPF cifrado, snapshot por tomador e intenção `pending_manual`.
+- Reembolso parcial — **schema pronto em `s3d4e5f6a7b8`**; nenhum fluxo cria `PARTIAL` ainda.
 - Constraint de exclusão para sobreposição de reservas.
 - Unicidade de item de temporada por temporada.
 - ~~Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço~~ — **feito em `k5b6c7d8e9f0`**.
@@ -271,6 +283,6 @@
 - Organizações/quadras: `a1b2c3d4e5f6`, `99c1055b81b5`, `a1c2e3f40517`, `e1f2a3b4c5d6`, `f5a6172b3949`.
 - Reservas/pagamentos: `26b70fd0fbc7`, `c97807d1b140`, `bb4083b7b697`, `c15a1b2c3d4e`, `f4b5c6d7e8f9`, `e4a1c9d7b203`.
 - Crédito/temporada: `d3e4f5061927`, `e4f5061a2838`, `c9f0a1b2d3e4`, `b7c8394d5162`, `c8d94a5e6273`, `d9e95b6f7384`, `f5b2d8e4c310`.
-- Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`.
+- Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`, `m7d8e9f0a1b2`, `n8e9f0a1b2c3`, `o9f0a1b2c3d4`, `p0a1b2c3d4e5`, `q1b2c3d4e5f6`, `r2c3d4e5f6a7`, `s3d4e5f6a7b8`, `t4e5f6a7b8c9`, `u5f6a7b8c9d0`, `v6a7b8c9d0e1`.
 
-O head atual é `j3f4a5b6c7d8`. A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.
+O head atual é `v6a7b8c9d0e1`. A Fase 15 sobre o ledger em reais adicionou apenas o snapshot de prazo (`v6a7b8c9d0e1`). A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.

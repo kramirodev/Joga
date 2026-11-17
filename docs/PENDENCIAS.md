@@ -35,15 +35,15 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Trust Factor interno | 17 | **Implementado** na ADR 0041: −30 no-show, −7 cancelamento pós-confirmação, −2 pré-pagamento, recuperação não linear e restrição ranqueada |
 | UI de presença/check-in no mobile | 13B/19 | Backend pronto; tela e revisão LGPD pendentes |
 | Reversão/ajuste da ADR 0038 no código | 15 | **Concluída**: coluna, migração, lógica e testes da ADR 0038 foram removidos |
-| Repasse à quadra em desistência pós-confirmação | 14B/15 | Valor não reembolsado permanece no ledger sem regra específica de repasse; decisão pendente |
+| Repasse à quadra em desistência pós-confirmação | 14B/15 | **Decidido em 17/11/2026**: antes do cutoff há devolução integral e sem repasse; depois do cutoff/no-show não há devolução, a quadra recebe integral e o repasse continua |
 | Check-in por localização e retenção LGPD | 19 | Definido na ADR 0039; implementação e revisão jurídica pendentes |
 | Termos de uso e tela de pagamento com exemplos de cancelamento/substituição/ausência | 19 | Pendente de revisão jurídica |
-| Reembolso real, MED e chargeback | 14B/15 | Apenas simulado |
+| Reembolso real, MED e chargeback | 14B/15 | MED tem política aprovada (bloquear repasse + receivable + evidência + prazo, sem clawback); execução real fica na 14B |
 | Conciliação periódica com PSP | 15 | Conciliação interna de referência; comparação com PSP real pendente |
-| Repasse ao fornecedor | 15 | **Implementado como elegibilidade** em `starts_at + 2h` (ADR 0040); transferência real/PSP pendente |
-| Janela de contestação antes/depois do repasse | 15 | Contestação `OPEN` suspende o repasse na proposta técnica; prazos **não definidos** |
-| Extrato/recibos/comprovantes reais | 15 | Extrato interno existe; NFS-e e comprovantes fiscais pendentes |
-| Interface financeira completa do fornecedor | 15 | Resumo, extrato, recebíveis e contestação como proposta técnica; exportação e comprovantes pendentes |
+| Repasse ao fornecedor | 15 | **Implementado como elegibilidade** em `starts_at + 2h` (ADR 0040); transferência real/PSP e comprovante real pendentes |
+| Janela de contestação antes/depois do repasse | 15 | **72 h aprovadas e persistidas** como snapshot em `venue_releases.dispute_deadline` e `financial_disputes.deadline_at` |
+| Extrato/recibos/comprovantes reais | 15 | Extrato interno e NFS-e placeholder por reserva implementados; comprovante real `bank:<e2e_id>` + PDF privado pendente; `simulated:<release_id>` só em teste |
+| Interface financeira completa do fornecedor | 15 | **Backend sobre o ledger em reais entregue**; 15B pendente de painel; exportação e comprovante real pendentes |
 | Jornada mobile completa de reserva/quadra | 13B/13C | Vitrine, criação e pagamento existem no app; faltam cancelamento, presença, substituição e correção do pagador | Completar fluxo e testes |
 | Revisão independente de fotos | 17 | Revisão inicial é feita pela organização |
 | CEP do estabelecimento | 13F | **Fases 1 e 2 implementadas**: endpoint autenticado, BrasilAPI, cache, rate limit, `postal_code`/proveniência no venue e rebaixamento para `manual`. Mapa e pino ajustável pendentes | Implementar mapa/pino no painel |
@@ -77,7 +77,7 @@ O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, m
 | Migração de lotes para saldo monetário | 14E | **Feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`; lotes continuam em tickets e `unit_price_cents` só serve à abertura/reembolso |
 | CPF e NFS-e | 14E/19A | **CPF feito na Etapa 8** (`/me/cpf`, chave em configuração, máscara como única exibição); NFS-e é intenção `pending_manual` com um tomador por jogador; definir município/emissor na 19A |
 | Custódia B→C e escrow | 19A | Contratar fornecedor de C |
-| Reembolso parcial e política de passe/pacote | 14E/14B | **Schema pronto na Etapa 8**: `refund_type FULL|PARTIAL`, `idempotency_key` e índice parcial de um único `FULL` por cobrança; nenhum fluxo cria `PARTIAL` ainda — falta a regra de negócio |
+| Reembolso parcial e política de passe/pacote | 14E/14B | **Não existe por decisão de 17/11/2026**: o rateio é integral por jogador e o valor da quadra é sempre integral; `refund_type=PARTIAL` fica sem uso e pode ser removido em migração futura |
 | Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real e conversão no piloto |
 | Busca por CEP restrita ao passe | Definido | Definir exceção para mudança de cidade |
 | Reajuste de preço e pausa do fornecedor | ADR 0042 §9 | Implementação no painel pendente |
@@ -141,8 +141,8 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 
 | **13** | T3 = bloqueio **e pagamento** | T3 é janela de confirmação; no crédito não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por crédito |
 | **14A** | Uma cobrança Pix **por participante** | Compra de crédito/passe; `purchase_payments` | **Implementado (14D.13)** como protótipo; migrar para ledger em reais na 14E |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em crédito; dinheiro só nos 7 dias do CDC | **Parcial (14D.6)**: devolução em crédito; reembolso de passe/pacote pendente |
-| **14E** | Tabela 2D como unidade de consumo; leitura validada por flag | Duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0-8 e 6b entregues; falta a aposentadoria (9) |
-| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Proposta local (15A/15B); refazer após 14E/14B |
+| **14E** | Tabela 2D como unidade de consumo; leitura validada por flag | Duas linhas, ledger de dupla entrada, CPF/NFS-e | **Etapas 0-11 e 6b entregues**; revisão/commit pendentes |
+| **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Backend refeito sobre o ledger (Etapa 10); painel e 14B pendentes |
 | **10** | Threat model cita PSP/reservas antigos | Atualizar para MP, custódia B/C, crédito e NFS-e | **Atualizado em 16/11** |
 
 **Fases 0–10 não mudam.** Identidade, perfil, matchmaking, partidas, resultados, MMR e tempo real são indiferentes ao meio de pagamento.
@@ -151,18 +151,27 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 
 
 **Risco de execução:** a 13 e a 14A estão implementadas com testes. Mexer no T3, no crédito e no modelo de cobrança derruba cobertura existente. Tratar como reescopo de fase, com arquivo próprio em `harness/build/`, não como patch.
 
-## Decisões financeiras não aprovadas (Fase 15)
+## Decisões financeiras da Fase 15 (17/11/2026)
 
-A implementação 15A/15B é uma **proposta técnica local**. Estes pontos não são regra
-aprovada e não devem ser tratados como decisão tomada:
+A implementação 15A está entregue no backend e a 15B está pendente de painel. As
+decisões abaixo foram tomadas em 17/11/2026; o que ainda depende de fase futura
+está marcado explicitamente.
 
 | Item | Situação | Observação |
 |---|---|---|
-| `N = 24 h` | **Substituído** | ADR 0040 define repasse em `starts_at + 2h` |
-| Liberação/repasse simulados no ledger | Não aprovado | Modelo financeiro final em aberto |
-| Contestação por CLI | Não aprovado | CLI é provisória para testes; moderação financeira não definida |
-| Divergência marcada como `FAILED` | Não aprovado | Salvaguarda técnica sem procedimento oficial |
-| PSP real e conciliação externa | Parcialmente definido | Provedor e integração pendentes |
+| Repasse | **Definido** | `starts_at + 2h` (ADR 0040), como elegibilidade; transferência real na 14B |
+| Janela de contestação | **Aprovada: 72 h** | `JOGA_DISPUTE_WINDOW_HOURS=72`, persistida como snapshot; não recalcular |
+| Decisão de contestação | **Definida** | Operador interno em `JOGA_REVIEW_OPERATORS`; o fornecedor não decide a própria contestação |
+| Divergência marcada como `FAILED` | Técnica | Ainda sem procedimento oficial; não corrigir saldo manualmente |
+| Custódia | **Modelo B com Inter PJ** | Escrow/modelo C e KYC ficam para a fase comercial |
+| MED/chargeback | **Política aprovada** | Bloquear repasse, criar receivable do jogador, evidência e prazo; sem clawback da quadra; fluxo real na 14B |
+| Reembolso parcial | **Não existe** | O rateio é integral por jogador; `PARTIAL` do schema fica sem uso e pode ser removido em migração futura |
+| Contestação de valor pelo jogador | **Atendimento/suporte** | Não é fluxo automático de devolução; a disputa financeira é da quadra contra o repasse |
+| NFS-e | **Especificada; automatizar depois** | Duas notas por jogador: quadra (`space_charge`) e JOGA (`fee_charge`, município do Rio); provedor, código, alíquota e retenção em configuração |
+| CPF | **Formato no perfil; existência antes da 1ª confirmação** | Provedor de verificação, status e DPA/LGPD ficam para a implementação; não é exigido na transferência à quadra |
+| Comprovante de repasse | **Especificado** | `bank:<e2e_id>` + PDF do JOGA em storage privado; `simulated:<release_id>` só em teste |
+| Pareceres jurídico/fiscal | **Ignorados no protótipo** | Revisão obrigatória antes de dinheiro real |
+| PSP real e conciliação externa | Pendente | 14B |
 
 ### Relógios distintos
 
@@ -172,10 +181,10 @@ aprovada e não devem ser tratados como decisão tomada:
 | Cancelamento (T5/cutoff) | Até quando é possível cancelar com reembolso/substituição | **Implementado** — configurável, padrão 6 h antes (`JOGA_CANCELLATION_CUTOFF_HOURS`) |
 | Substituição (T4) | Quanto tempo o matchmaking tem para achar substituto | **Implementado** — 25% do tempo restante, piso 30 min, teto 12 h |
 | Presença (T7/T8) | Pré-check-in e confirmação no local | **Implementada** na ADR 0039 (GPS/estabelecimento); UI mobile pendente |
-| Contestação | Janela para o estabelecimento contestar valores/repasse | **Não definido** |
-| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Definido na ADR 0040** (`starts_at + 2h`) e implementado como elegibilidade no ledger; transferência real pendente |
+| Contestação | Janela para o estabelecimento contestar valores/repasse | **72 h aprovadas e persistidas**; snapshot em `venue_releases`/`financial_disputes` |
+| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Definido na ADR 0040** (`starts_at + 2h`) e implementado como elegibilidade; transferência real pendente |
 
-A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2 h, ADR 0040) e permite contestação enquanto a liberação está `PENDING`. O relógio de contestação ainda não tem prazo definido.
+A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2 h, ADR 0040) e permite contestação enquanto a liberação está `PENDING`, dentro do snapshot de 72 h. A matriz de cancelamento é: antes do cutoff, devolução integral e sem repasse; depois do cutoff/no-show, sem devolução, quadra integral e repasse; quadra que cancela devolve tudo e não recebe; contestação aberta congela o repasse.
 
 ## Dívidas técnicas conhecidas
 
@@ -185,13 +194,13 @@ A implementação usa `eligible_at = starts_at + release_delay_hours` (padrão 2
 - O e-mail do pagador é obrigatório na Orders API; MP-04 adiciona e-mail ao usuário e remove o e-mail global fixo.
 - O repasse ao fornecedor é um lançamento simulado no ledger; não há transferência real.
 - O worker de reservas reembolsa com o adaptador configurado; se o PSP real falhar, a operação precisa de retry e conciliação.
-- A interface financeira ainda não tem comprovantes, NFS-e, exportação nem contestação de MED/chargeback.
-- `JOGA_RELEASE_DELAY_HOURS=2` é a regra da ADR 0040 (repasse em `starts_at + 2h`); a janela de contestação após o repasse continua pendente.
-- A decisão de contestação financeira por CLI com `JOGA_REVIEW_OPERATORS` é **provisória para teste**; não é o modelo aprovado de moderação financeira.
+- A interface financeira já exibe extrato, comissão, prazo e NFS-e placeholder; ainda faltam comprovante real (`bank:<e2e_id>` + PDF), NFS-e operacional, exportação e o fluxo real de MED/chargeback.
+- `JOGA_RELEASE_DELAY_HOURS=2` é a regra da ADR 0040 (repasse em `starts_at + 2h`); a janela de contestação é de **72 h persistidas** em snapshot.
+- A decisão de contestação financeira está disponível por endpoint (`financial:manage` + `JOGA_REVIEW_OPERATORS`) e por CLI. O fornecedor não decide a própria contestação; a moderação financeira definitiva continua em aberto.
 - Marcar divergência de ledger como `FAILED` é uma salvaguarda técnica; o procedimento oficial de divergência não está definido.
-- A implementação da ADR 0038 foi revertida. As fatias 1–6 da ADR 0039 têm fila, chamada automática, T4/T5, cancelamento individual, expiração, exclusão de reembolso, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação. O Trust Factor interno está na ADR 0041; falta a UI de presença/suporte.
-- O valor não reembolsado de desistência pós-confirmação ainda não tem regra de repasse/liberação à quadra; não liberar automaticamente sem decisão. A ADR 0039 determina que ele não pode virar receita silenciosa do JOGA.
-- `cancellation_policy` voltou a `full_refund_until_confirmed`/`policy_version="v1"` após a reversão; a ADR 0039 exige novo rótulo/estrutura quando o fluxo completo existir. A oferta e os termos ainda precisam refletir a política consolidada.
+- A implementação da ADR 0038 foi revertida. As fatias 1–6 da ADR 0039 têm fila, chamada automática, T4/T5, cancelamento individual, expiração, atribuição/pagamento, vaga paga em no-show, presença T6–T9, coordenadas obrigatórias e recomendação de formação. O Trust Factor interno está na ADR 0041; falta a UI de presença/suporte.
+- **Decisão de 17/11/2026:** antes do cutoff, devolução integral e sem repasse; depois do cutoff/no-show, sem devolução, quadra integral e repasse; quadra que cancela devolve tudo e não recebe; disputa aberta congela o repasse. O desistente antes do cutoff também recebe. Não existe reembolso parcial.
+- `cancellation_policy` ainda usa `full_refund_until_confirmed`/`policy_version="v1"`; a oferta e os termos precisam refletir a matriz consolidada.
 - T6–T9 (presença/check-in), a atribuição/pagamento do substituto e a recomendação de formação estão implementados no backend; falta a UI mobile.
 - O repasse ao fornecedor está definido na ADR 0040 (`starts_at + 2h`); a conciliação/repasse real com PSP continua pendente.
 
@@ -206,7 +215,7 @@ Itens descobertos na auditoria integral e ainda não implementados. São bloquea
 | T3 expirado não devolve ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: `expire_due` devolve ingressos; teste `test_t3_expiry_returns_tickets` |
 | Pix pago + quitação por ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: vaga paga por Pix não consome ingresso; teste `test_pix_paid_seat_cannot_be_settled_with_tickets` |
 | Reembolso não reverte repasse | P0 | `payments/service.py`; `REVERSED` sem uso | **Corrigido (onda 1)**: `refund_booking` marca release como `REVERSED`; teste `test_refund_reverses_venue_release` |
-| Reembolso parcial impossível | P1 | unique por pagamento e valor integral | **Schema resolvido na Etapa 8** (`s3d4e5f6a7b8`); falta a regra de criação do `PARTIAL` em 14B |
+| Reembolso parcial impossível | P1 | unique por pagamento e valor integral | **Não existe por decisão de 17/11/2026**; o schema `PARTIAL` fica sem uso e pode ser removido depois. Não implementar fluxo parcial |
 | Reembolso de compra não revoga crédito | P1 | `purchase.apply_status` ignorava `REFUNDED` | **Corrigido (onda 1)**: revoga crédito/assinatura; testes de pacote e passe |
 | Estorno em `processing` marcado como falha/refunded | P0 | `payments/service.py` | **Corrigido (onda 1)**: fica `PENDING`, sem marcar jogador como `REFUNDED`; teste `test_refund_processing_does_not_mark_refunded` |
 | Compra de pacote sem idempotência de requisição | P1 | `api/v1/tickets.py` | **Corrigido (onda 1)**: pendência única por jogador/pacote e teste de concorrência PostgreSQL |
