@@ -68,6 +68,9 @@ class ParticipantView(BaseModel):
     seat: int
     active: bool
     contribution_cents: int
+    space_charge_cents: int
+    fee_charge_cents: int
+    funding_source: str | None
     payment_status: str
     confirmed_at: datetime | None
     declined_at: datetime | None
@@ -261,6 +264,9 @@ def _view(
                 seat=item.seat,
                 active=item.active,
                 contribution_cents=item.contribution_cents,
+                space_charge_cents=item.space_charge_cents,
+                fee_charge_cents=item.fee_charge_cents,
+                funding_source=item.funding_source,
                 payment_status=(
                     item.payment_status
                     if include_all_payments or item.user_id == viewer_user_id

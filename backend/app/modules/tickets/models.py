@@ -165,8 +165,8 @@ class TicketLot(Base):
             name="remaining_valid",
         ),
         CheckConstraint(
-            "remaining_cents IS NULL OR remaining_cents >= 0",
-            name="remaining_cents_valid",
+            "unit_price_cents IS NULL OR unit_price_cents > 0",
+            name="unit_price_positive",
         ),
         CheckConstraint(
             "source IN ('purchase','pass','free_level','admin','refund')",
@@ -188,9 +188,9 @@ class TicketLot(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     original_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Saldo em centavos dos lotes comprados/devolução (ADR 0049 §11.6). É a
-    # verdade do crédito; `remaining` é a contagem de exibição a R$ 3,10.
-    remaining_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Preço pago por ticket no lote. Só abertura legada e reembolso usam este
+    # valor; o consumo usa a tabela 2D (ADR 0049 §13).
+    unit_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Franquia do passe: 'YYYY-MM'. Não é validade de crédito comprado.
     period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

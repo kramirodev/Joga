@@ -1,9 +1,11 @@
-"""Reconciliação do crédito em centavos (ADR 0049 §11.6).
+"""Reconciliação do crédito (ADR 0049 §13.7).
 
-Compara `player_credit:<user>` no ledger com a soma de
-`ticket_lots.remaining_cents` dos lotes comprados/devolução. Não corrige nada.
-Também lista as vagas de passe/grátis/admin como excluídas da Etapa 6 — a
-Etapa 6b é quem lança a quadra e a taxa dessas fontes.
+Dois saldos independentes:
+- tickets: `ticket_balances` == soma de `ticket_lots.remaining`;
+- caixa: `player_credit` == compras pagas + abertura − Σ k×310 das reservas
+  quitadas por tickets.
+
+Não corrige nada. Lista vagas de passe/grátis/admin como excluídas da Etapa 6b.
 """
 
 from __future__ import annotations
@@ -18,8 +20,8 @@ from app.modules.bookings.models import BookingParticipant
 from app.modules.ledger.accounts import PLAYER_CREDIT_PREFIX, player_credit_code
 from app.modules.ledger.models import LedgerAccount
 from app.modules.ledger.service import LedgerError, LedgerService
-from app.modules.tickets.models import TicketLot
-from app.modules.tickets.service import PAID_SOURCES
+from app.modules.tickets.models import TicketBalance, TicketLot
+from app.modules.tickets.service import expected_player_credit_cents
 
 EXCLUDED_SOURCES = ("pass", "free_level", "admin")
 
@@ -28,11 +30,22 @@ EXCLUDED_SOURCES = ("pass", "free_level", "admin")
 class CreditMismatch:
     user_id: uuid.UUID
     ledger_cents: int
-    lots_cents: int
+    expected_cents: int
 
     @property
     def difference(self) -> int:
-        return self.ledger_cents - self.lots_cents
+        return self.ledger_cents - self.expected_cents
+
+
+@dataclass(frozen=True)
+class BalanceMismatch:
+    user_id: uuid.UUID
+    cache_balance: int
+    lots_balance: int
+
+    @property
+    def difference(self) -> int:
+        return self.cache_balance - self.lots_balance
 
 
 @dataclass(frozen=True)
@@ -48,18 +61,19 @@ class ExcludedSeat:
 class ReconciliationReport:
     checked_users: int = 0
     mismatches: list[CreditMismatch] = field(default_factory=list)
+    balance_mismatches: list[BalanceMismatch] = field(default_factory=list)
     excluded_seats: list[ExcludedSeat] = field(default_factory=list)
 
     @property
     def divergence_count(self) -> int:
-        return len(self.mismatches)
+        return len(self.mismatches) + len(self.balance_mismatches)
 
     @property
     def clean(self) -> bool:
-        return not self.mismatches
+        return self.divergence_count == 0
 
 
-def _credit_users(session: Session) -> set[uuid.UUID]:
+def _known_users(session: Session) -> set[uuid.UUID]:
     users = set(
         session.scalars(
             select(LedgerAccount.owner_id).where(
@@ -69,25 +83,23 @@ def _credit_users(session: Session) -> set[uuid.UUID]:
             )
         ).all()
     )
-    users.update(
-        session.scalars(
-            select(TicketLot.user_id)
-            .where(
-                TicketLot.source.in_(PAID_SOURCES),
-                TicketLot.remaining_cents.is_not(None),
-            )
-            .distinct()
-        ).all()
-    )
+    users.update(session.scalars(select(TicketLot.user_id).distinct()).all())
+    users.update(session.scalars(select(TicketBalance.user_id).distinct()).all())
     return {user_id for user_id in users if user_id is not None}
 
 
-def _lots_cents(session: Session, user_id: uuid.UUID) -> int:
+def _ledger_credit_cents(session: Session, user_id: uuid.UUID) -> int:
+    service = LedgerService(session)
+    try:
+        return service.balance_for_code(player_credit_code(user_id))
+    except LedgerError:
+        return 0
+
+
+def _lots_balance(session: Session, user_id: uuid.UUID) -> int:
     value = session.scalar(
-        select(func.coalesce(func.sum(TicketLot.remaining_cents), 0)).where(
+        select(func.coalesce(func.sum(TicketLot.remaining), 0)).where(
             TicketLot.user_id == user_id,
-            TicketLot.source.in_(PAID_SOURCES),
-            TicketLot.remaining_cents.is_not(None),
         )
     )
     return int(value or 0)
@@ -95,20 +107,27 @@ def _lots_cents(session: Session, user_id: uuid.UUID) -> int:
 
 def reconcile_credit(session: Session) -> ReconciliationReport:
     report = ReconciliationReport()
-    service = LedgerService(session)
-    for user_id in sorted(_credit_users(session), key=str):
-        try:
-            ledger_cents = service.balance_for_code(player_credit_code(user_id))
-        except LedgerError:
-            ledger_cents = 0
-        lots_cents = _lots_cents(session, user_id)
+    for user_id in sorted(_known_users(session), key=str):
+        ledger_cents = _ledger_credit_cents(session, user_id)
+        expected_cents = expected_player_credit_cents(session, user_id)
         report.checked_users += 1
-        if ledger_cents != lots_cents:
+        if ledger_cents != expected_cents:
             report.mismatches.append(
                 CreditMismatch(
                     user_id=user_id,
                     ledger_cents=ledger_cents,
-                    lots_cents=lots_cents,
+                    expected_cents=expected_cents,
+                )
+            )
+        cache = session.get(TicketBalance, user_id)
+        cache_balance = cache.balance if cache is not None else 0
+        lots_balance = _lots_balance(session, user_id)
+        if cache_balance != lots_balance:
+            report.balance_mismatches.append(
+                BalanceMismatch(
+                    user_id=user_id,
+                    cache_balance=cache_balance,
+                    lots_balance=lots_balance,
                 )
             )
 
@@ -139,11 +158,14 @@ def ledger_health(session: Session) -> dict[str, object]:
         "clean": report.clean,
         "checked_users": report.checked_users,
         "divergence_count": report.divergence_count,
+        "credit_mismatches": len(report.mismatches),
+        "balance_mismatches": len(report.balance_mismatches),
         "excluded_seats": len(report.excluded_seats),
     }
 
 
 __all__ = [
+    "BalanceMismatch",
     "CreditMismatch",
     "ExcludedSeat",
     "ReconciliationReport",

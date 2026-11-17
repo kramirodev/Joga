@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import Booking
 from app.modules.matchmaking.models import Lobby
+from app.modules.payments.money import compute_fee_cents
+from app.modules.pricing.service import BAND_TICKETS, DEFAULT_BANDS, TICKET_CALIBRATION_CENTS
 from app.modules.profile.models import Sport, SportFormat
 from tests.helpers_results import make_token, make_user
 
@@ -205,3 +207,33 @@ def test_price_change_applies_only_to_new_bookings(client: TestClient, db_sessio
     assert booking.price_cents == 12_000
     # A reserva nova usaria a faixa nova (R$ 130 cabe em "Econômica noite").
     assert response.json()["band_id"] != created["body"]["band_id"]
+
+
+def test_standard_2d_table_has_eighteen_cells_that_cover_price_and_fee() -> None:
+    """ADR 0049 §13.3/§13.5: k × 310 ≥ (V + 20%) / n nas 18 células."""
+
+    assert set(BAND_TICKETS) == {code for code, _label, _ceiling in DEFAULT_BANDS}
+    for code, _label, ceiling in DEFAULT_BANDS:
+        by_team = BAND_TICKETS[code]
+        assert set(by_team) == {3, 5, 6}, "4x4 e menores são contingência"
+        fee = compute_fee_cents(ceiling, 2000, 800)
+        total = ceiling + fee
+        for team_size, tickets in by_team.items():
+            players = team_size * 2
+            assert tickets * TICKET_CALIBRATION_CENTS * players >= total, (code, team_size)
+
+
+def test_standard_table_contains_the_four_corrections() -> None:
+    assert BAND_TICKETS["coberta"][5] == 11
+    assert BAND_TICKETS["padrao_noite"][6] == 8
+    assert BAND_TICKETS["padrao_noite"][3] == 15
+    assert BAND_TICKETS["premium"][3] == 20
+
+
+def test_contingency_formats_derive_tickets() -> None:
+    from app.modules.pricing.service import contingency_tickets
+
+    total = 48_000
+    seats = 4
+    assert contingency_tickets(total, seats) == 39
+    assert contingency_tickets(14_400, 10) == 5

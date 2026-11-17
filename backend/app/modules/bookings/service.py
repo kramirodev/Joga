@@ -43,8 +43,13 @@ from app.modules.organizations.service import (
 )
 from app.modules.payments.money import compute_fee_cents
 from app.modules.pricing.models import PricingBand
+from app.modules.pricing.service import (
+    STANDARD_TEAM_SIZES,
+    TICKET_CALIBRATION_CENTS,
+    contingency_tickets,
+    tickets_for,
+)
 from app.modules.pricing.service import PricingBandError as PricingError
-from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.trust import TrustService
 from app.modules.season.service import (
@@ -58,11 +63,11 @@ from app.modules.season.service import (
 from app.modules.tickets.service import (
     InsufficientTickets,
     consume,
-    consume_credit,
+    consume_paid_tickets,
     non_paid_tickets_available,
+    paid_tickets_available,
+    player_credit_cents,
     refund,
-    refund_credit,
-    tickets_for_cents,
 )
 from app.modules.venues.business_hours import business_deadline
 from app.modules.venues.models import (
@@ -240,12 +245,15 @@ class BookingService:
         availability = self._availability_for(booking, venue, space)
         booking.band_id = availability.band_id
         if availability.band_id is not None:
-            try:
-                booking.tickets_per_seat = tickets_for(
-                    self.session, availability.band_id, format_.team_size
-                )
-            except PricingError:
-                booking.tickets_per_seat = None
+            if format_.team_size in STANDARD_TEAM_SIZES:
+                try:
+                    booking.tickets_per_seat = tickets_for(
+                        self.session, availability.band_id, format_.team_size
+                    )
+                except PricingError as exc:
+                    raise BookingConflict("tickets_not_configured") from exc
+            else:
+                booking.tickets_per_seat = contingency_tickets(price_cents + fee_cents, seats)
         try:
             with self.session.begin_nested():
                 self.session.add(booking)
@@ -708,10 +716,9 @@ class BookingService:
         if booking.status != "PAYMENT_PENDING":
             raise BookingTransitionError
 
-        amount_cents = participant.contribution_cents
-        if amount_cents <= 0:
+        tickets = self._tickets_per_seat(booking)
+        if tickets <= 0:
             raise BookingInvalid
-        tickets = tickets_for_cents(amount_cents)
         non_paid_tickets, non_paid_source = non_paid_tickets_available(self.session, actor_user_id)
         try:
             if non_paid_tickets >= tickets:
@@ -726,15 +733,23 @@ class BookingService:
                 )
                 participant.funding_source = non_paid_source
             else:
-                consume_credit(
+                ticket_value = tickets * TICKET_CALIBRATION_CENTS
+                if participant.space_charge_cents > ticket_value:
+                    raise BookingConflict("ticket_value_below_space")
+                if paid_tickets_available(self.session, actor_user_id) < tickets:
+                    raise BookingConflict("insufficient_tickets")
+                if player_credit_cents(self.session, actor_user_id) < ticket_value:
+                    raise BookingConflict("insufficient_credit")
+                consume_paid_tickets(
                     self.session,
                     actor_user_id,
-                    amount_cents,
                     tickets,
                     ref_type="booking",
                     ref_id=booking.id,
                 )
                 participant.funding_source = "credit"
+                participant.contribution_cents = ticket_value
+                participant.fee_charge_cents = ticket_value - participant.space_charge_cents
         except InsufficientTickets as exc:
             raise BookingConflict("insufficient_tickets") from exc
 
@@ -857,23 +872,13 @@ class BookingService:
                 continue
             if exclude_user_id is not None and participant.user_id == exclude_user_id:
                 continue
-            if participant.funding_source in {None, "credit"}:
-                refund_credit(
-                    self.session,
-                    participant.user_id,
-                    participant.contribution_cents,
-                    participant.tickets_consumed,
-                    ref_type="booking_cancel",
-                    ref_id=booking.id,
-                )
-            else:
-                refund(
-                    self.session,
-                    participant.user_id,
-                    participant.tickets_consumed,
-                    ref_type="booking_cancel",
-                    ref_id=booking.id,
-                )
+            refund(
+                self.session,
+                participant.user_id,
+                participant.tickets_consumed,
+                ref_type="booking_cancel",
+                ref_id=booking.id,
+            )
             participant.payment_status = "REFUNDED"
 
         credit_participants = [
@@ -902,17 +907,21 @@ class BookingService:
         if fmt is None:
             raise BookingInvalid
         if booking.band_id is not None:
-            try:
-                return tickets_for(self.session, booking.band_id, fmt.team_size)
-            except PricingError as exc:
-                raise BookingConflict("tickets_not_configured") from exc
+            if fmt.team_size in STANDARD_TEAM_SIZES:
+                try:
+                    return tickets_for(self.session, booking.band_id, fmt.team_size)
+                except PricingError as exc:
+                    raise BookingConflict("tickets_not_configured") from exc
+            return contingency_tickets(booking.total_cents, booking.seats)
         availability = self._availability_for(booking, venue, space)
         if availability.band_id is None:
             raise BookingConflict("band_missing")
-        try:
-            return tickets_for(self.session, availability.band_id, fmt.team_size)
-        except PricingError as exc:
-            raise BookingConflict("tickets_not_configured") from exc
+        if fmt.team_size in STANDARD_TEAM_SIZES:
+            try:
+                return tickets_for(self.session, availability.band_id, fmt.team_size)
+            except PricingError as exc:
+                raise BookingConflict("tickets_not_configured") from exc
+        return contingency_tickets(booking.total_cents, booking.seats)
 
     def _availability_for(
         self,
@@ -967,13 +976,22 @@ class BookingService:
         from app.modules.ledger.flow import post_booking_confirmed
 
         post_booking_confirmed(self.session, booking, active, now=now)
-        self._notify_participants(
-            booking,
-            "booking_confirmed",
-            "Reserva confirmada",
-            "Todos os participantes quitaram a vaga. A reserva está confirmada.",
-            now,
-        )
+        notifications = NotificationService(self.session)
+        for participant in active:
+            notifications.create(
+                user_id=participant.user_id,
+                kind="booking_confirmed",
+                title="Reserva confirmada",
+                body="Todos os participantes quitaram a vaga. A reserva está confirmada.",
+                idempotency_key=f"booking_confirmed:{booking.id}:{participant.user_id}",
+                data={
+                    "booking_id": str(booking.id),
+                    "space_charge_cents": participant.space_charge_cents,
+                    "fee_charge_cents": participant.fee_charge_cents,
+                    "tickets_consumed": participant.tickets_consumed,
+                },
+                now=now,
+            )
 
     # -- cancelamento/conclusão --------------------------------------------
 

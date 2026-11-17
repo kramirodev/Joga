@@ -127,7 +127,7 @@
 
 **Constraints relevantes:** webhook único por `(provider, event_id)`; reembolso único por pagamento; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado.
 
-**Lacunas conhecidas:** o ledger de dupla entrada existe, mas **não é usado por nenhum fluxo**; pagamentos, compras e repasses ainda escrevem `booking_ledger_entries`/`ticket_ledger`. `compute_fee_cents` existe, mas não é chamado. `payment_refunds` não permite reembolso parcial. `purchase.apply_status` ignora `REFUNDED`. `venue_releases.REVERSED` não é usado. `fiscal_documents` e `terms_versions` não têm chamador.
+**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapa 6). A leitura do saldo usa `JOGA_TICKET_BALANCE_SOURCE` e valida caixa + tickets. `payment_refunds` ainda não permite reembolso parcial. `fiscal_documents` e `terms_versions` não têm chamador. A Etapa 6b (passe/grátis/admin) e a Etapa 9 (aposentadoria dos ledgers legados) estão pendentes.
 
 ---
 
@@ -137,9 +137,9 @@
 |---|---|
 | `ticket_packs` | Escada de pacotes e preço de exibição |
 | `ticket_purchases` | Compra de pacote, valor, status e idempotência |
-| `ticket_lots` | Lote de origem, saldo projetado, preço unitário e período |
-| `ticket_lot_consumptions` | Consumo por lote e referência |
-| `ticket_balances` | Cache do saldo em tickets, mantido na mesma transação; a leitura usa o ledger com a flag `JOGA_TICKET_BALANCE_SOURCE` |
+| `ticket_lots` | Lote de origem em tickets; `unit_price_cents` só para abertura/reembolso; `remaining` é o saldo de tickets |
+| `ticket_lot_consumptions` | Consumo por lote e referência; `amount` é a contagem de tickets |
+| `ticket_balances` | Cache do saldo em tickets, mantido na mesma transação; a leitura valida lotes e caixa com a flag `JOGA_TICKET_BALANCE_SOURCE` |
 | `pass_subscriptions` | Assinatura trimestral, status e período |
 | `pass_deliveries` | Entrega mensal idempotente por assinatura/mês |
 | `seasons` | Temporada trimestral, início/fim e estado |
@@ -251,9 +251,9 @@
 
 - ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
 - Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse e passe — **feita na Etapa 6** (`n8e9f0a1b2c3` + `ledger/flow.py`). A leitura pública usa `JOGA_TICKET_BALANCE_SOURCE` (`cache`/`ledger`); em `ledger`, conta ausente ou divergência falha alto. Vagas pagas por passe/grátis/admin ficam na Etapa 6b e o reconciliador as lista como excluídas.
-- Migração de `ticket_lots.remaining` para saldo em reais 1:1 — **parcial**: `remaining_cents = remaining × 310` para lotes comprados/devolução, com abertura contra `opening_equity`. Passe, grátis e admin continuam em tickets.
+- Migração de saldo monetário legado — **feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`. Os lotes continuam em tickets; não existe `remaining_cents`. Passe, grátis e admin ficam fora da abertura.
 - ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
-- `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots.remaining_cents` é a verdade do crédito comprado.
+- `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots` guarda tickets e `unit_price_cents` (só abertura/reembolso). A tabela 2D é a unidade de consumo.
 - CPF cifrado e documento fiscal por reserva.
 - Reembolso parcial.
 - Constraint de exclusão para sobreposição de reservas.

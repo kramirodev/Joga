@@ -72,9 +72,9 @@ O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, m
 |---|---|---|
 | Parecer fiscal: base de cálculo da comissão, ISS por município, retenção pelo tomador, IBS/CBS na transição | Produção com dinheiro real | Contador e advogado tributário |
 | Parecer jurídico: intermediação, escrow, insolvência, 7 dias do CDC | Contrato e termos de uso | Advogado |
-| Ledger de dupla entrada integrado | 14E | **Feito na Etapa 6** para os fluxos cobertos; falta a leitura (Etapa 7) e as vagas por passe/grátis/admin (Etapa 6b) |
+| Ledger de dupla entrada integrado | 14E | **Feito nas Etapas 6/7** para os fluxos cobertos; falta 6b (passe/grátis/admin) |
 | Preço em duas linhas e taxa persistida | 14E | `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` |
-| Migração de lotes para saldo em reais | 14E | **Feita na Etapa 6**: `remaining_cents = remaining × 310` para compra/devolução, com `opening:{user}` contra `opening_equity`; passe/grátis/admin continuam em tickets |
+| Migração de lotes para saldo monetário | 14E | **Feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`; lotes continuam em tickets e `unit_price_cents` só serve à abertura/reembolso |
 | CPF e NFS-e | 14E/19A | Placeholders; definir fluxo e município |
 | Custódia B→C e escrow | 19A | Contratar fornecedor de C |
 | Reembolso parcial e política de passe/pacote | 14E/14B | Schema e regra pendentes |
@@ -141,7 +141,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 
 | **13** | T3 = bloqueio **e pagamento** | T3 é janela de confirmação; no crédito não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por crédito |
 | **14A** | Uma cobrança Pix **por participante** | Compra de crédito/passe; `purchase_payments` | **Implementado (14D.13)** como protótipo; migrar para ledger em reais na 14E |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em crédito; dinheiro só nos 7 dias do CDC | **Parcial (14D.6)**: devolução em crédito; reembolso de passe/pacote pendente |
-| **14E** | Unidade e preço ainda em tickets/2D; leitura do saldo ainda em `ticket_balances` | Saldo em reais, duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0–6 entregues; falta leitura (7), conformidade (8) e aposentadoria (9) |
+| **14E** | Tabela 2D como unidade de consumo; leitura validada por flag | Duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0-7 entregues; faltam 6b, conformidade (8) e aposentadoria (9) |
 | **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Proposta local (15A/15B); refazer após 14E/14B |
 | **10** | Threat model cita PSP/reservas antigos | Atualizar para MP, custódia B/C, crédito e NFS-e | **Atualizado em 16/11** |
 

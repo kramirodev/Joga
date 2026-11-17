@@ -123,7 +123,12 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
             tickets,
             source="purchase",
             idempotency_key=f"purchase:{user_id}",
+            unit_price_cents=310,
         )
+    db_session.flush()
+    from app.modules.ledger.opening import open_ledger
+
+    open_ledger(db_session, dry_run=False)
     db_session.flush()
     return {
         "users": users,

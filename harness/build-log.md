@@ -1259,3 +1259,17 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** 5 novos em `tests/test_balance_source.py` (composicao, conta ausente, divergencia, API com flag e cache escrito). Suite **565 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic check` sem diff.
 - **Operacao:** ligar a flag somente depois de `scripts.ledger_opening --apply` e `scripts.reconcile_ledger` limpo. RUNBOOK atualizado.
 - **Fora do escopo:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).
+
+### 2026-11-17 - CORRECAO 14E: tabela 2D como unidade de consumo
+
+- **Decisao vigente:** ADR 0049 §13 e `DECISOES_BACKEND_ADR_0049.md` §11. O ticket e a unidade de consumo da tabela 2D (`k = tickets_for(band, team_size)`), nao uma conversao de `contribution_cents`. O preco em reais continua congelado na reserva.
+- **Cancelado:** ticket fixo 3,70; ticket fixo 3,10 com `ceil(contribution/310)`; `TICKET_VALUE_CENTS`; `ticket_lots.remaining_cents`; `purchase_premium_deferred`; 4x4/3x3 como tabela padrao; ledger debitando `contribution_cents` no caminho por tickets.
+- **Tabela:** 5x5, 6x6 e 3x3 (futevolei) padrao; 4x4 e menores contingencia por `ceil((V+taxa)/(n×310))`. Correcoes: Coberta 5x5 11, Padrao noite 6x6 8, Padrao noite 3x3 15, Premium 3x3 20. Teste das 18 celulas: `k×310×jogadores >= V+20%`.
+- **Consumo:** `settle_with_tickets` volta a consumir `tickets_per_seat`; exige tickets e credito. A vaga por tickets grava `contribution = k×310`, `space_charge_cents` exato e `fee_charge_cents = k×310 − space`.
+- **Ledger:** compra D `psp_clearing` N×P / C `player_credit` N×P (sem premio); quitação D `player_credit` k×310 / C `venue_payable` space / C `fee_revenue` (k×310 − space); Pix mantem `psp_clearing` e a taxa de 20%.
+- **Schema (`o9f0a1b2c3d4`):** remove `remaining_cents`, adiciona `ticket_lots.unit_price_cents` (abertura/reembolso), remove a conta de premio, corrige a tabela 2D e remove a celula 4x4. Downgrade restaura a coluna, a conta e a tabela anterior.
+- **Abertura:** `opening:{user} = Σ remaining × unit_price_cents` contra `opening_equity`; aborta se algum lote comprado/devolucao com saldo nao tiver preco.
+- **Leitura:** `JOGA_TICKET_BALANCE_SOURCE` continua; em `ledger`, compõe tickets dos lotes + passe/grátis/admin e valida caixa (`compras + abertura − Σ k×310`) em vez de `ledger/310`.
+- **API:** `BookingView.participants[]` ganhou `space_charge_cents`, `fee_charge_cents` e `funding_source`; notificacao `booking_confirmed` leva os dois valores por participante.
+- **Testes:** **566 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff.
+- **Pendente:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).

@@ -13,7 +13,6 @@ BANK = "bank"
 FEE_REVENUE = "fee_revenue"
 PASS_DEFERRED_REVENUE = "pass_deferred_revenue"
 PASS_REVENUE = "pass_revenue"
-PURCHASE_PREMIUM_DEFERRED = "purchase_premium_deferred"
 TAX_PAYABLE = "tax_payable"
 TAX_EXPENSE = "tax_expense"
 PSP_FEE_EXPENSE = "psp_fee_expense"
@@ -31,7 +30,6 @@ SINGLETON_ACCOUNTS: dict[str, str] = {
     FEE_REVENUE: "revenue",
     PASS_DEFERRED_REVENUE: "liability",
     PASS_REVENUE: "revenue",
-    PURCHASE_PREMIUM_DEFERRED: "liability",
     TAX_PAYABLE: "liability",
     TAX_EXPENSE: "expense",
     PSP_FEE_EXPENSE: "expense",
@@ -82,7 +80,6 @@ __all__ = [
     "PLAYER_CREDIT_PREFIX",
     "PSP_CLEARING",
     "PSP_FEE_EXPENSE",
-    "PURCHASE_PREMIUM_DEFERRED",
     "SINGLETON_ACCOUNTS",
     "TAX_EXPENSE",
     "TAX_PAYABLE",

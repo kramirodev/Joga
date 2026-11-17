@@ -5,16 +5,15 @@
 
 ## 0. Preço, tickets e NFS-e (ADR 0049)
 
-- A substância jurídica e contábil é **crédito em reais**; o ticket é **unidade de exibição 1:1**.
+- A substância jurídica e contábil é **crédito em reais**; o ticket é a **unidade de consumo** da tabela 2D, não uma conversão do real.
 - O saldo em reais não é exibido como carteira.
 - Antes da confirmação, o app mostra o valor do espaço, a taxa de intermediação e a tabela de conversão tickets ↔ faixa/valor.
 - A NFS-e materializa o valor: locação/uso pelo fornecedor e intermediação pelo JOGA.
 - `price_cents` continua sendo o valor do espaço (compatibilidade). A reserva nova grava também `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version`, congelados na criação; `venue_price_cents + fee_cents == total_cents`.
-- O rateio é feito em duas linhas por participante: `space_charge_cents` + `fee_charge_cents`, com `Σ space_charge_cents == venue_price_cents` e `Σ fee_charge_cents == fee_cents`. Esses campos existem no banco; `BookingView` expõe `contribution_cents` (a soma) e os campos de preço da reserva.
-- O ticket vale **R$ 3,10** (`TICKET_VALUE_CENTS = 310`). A contagem da vaga é `k = ceil(contribution_cents / 310)`; ela é exibição e baixa de lote, nunca o valor debitado. O valor debitado é `contribution_cents`.
-- Na compra de pacote, o preço pago acima de R$ 3,10 por ticket é **prêmio de compra**, não crédito. Pacote de 3,10 fica no par; 3,20/3,40/3,70 pagam prêmio. Não há desconto abaixo de 3,10.
-- Reservas anteriores à 14E têm `pricing_version = "legacy_v0"`, `fee_cents = 0` e `total_cents = venue_price_cents`. Elas não são relançadas no ledger.
-- `band_code`/`tickets_per_seat` são exibição/conversão, não preço jurídico.
+- A contagem da vaga é `k = tickets_per_seat`, resolvida pela tabela 2D (faixa × formato) e congelada na reserva. 5x5, 6x6 e 3x3 (futevôlei) são padrão; 4x4 e menores usam `ceil((V + taxa) / (n × 3,10))`.
+- O ticket é calibrado em R$ 3,10, mas **não é convertido em real no consumo**. No caminho por tickets, o ledger debita `k × 310`, credita a quadra com `space_charge_cents` e o restante em `fee_revenue`.
+- O preço pago no pacote é caixa e vira `player_credit`; não existe conta de prêmio nem desconto. O excedente do pacote acima de R$ 3,10 fica como crédito (passivo).
+- `band_code`/`tickets_per_seat` são a unidade de consumo/exibição; o preço jurídico continua sendo valor da quadra + taxa.
 - **Atenção:** em `BookingView.payments[]`, `participant_id` é o id da **vaga** (`booking_participants`), não o `user_id`. O app deve localizar o pagamento pelo participante correspondente, não comparar com `session.userId`.
 
 ## 1. Descobrir quadras reserváveis
@@ -176,6 +175,10 @@ Regras:
   "participants": [
     {
       "user_id": "uuid",
+      "contribution_cents": 2480,
+      "space_charge_cents": 2000,
+      "fee_charge_cents": 480,
+      "funding_source": "credit",
       "settled_with": "tickets",
       "tickets_consumed": 8
     }
@@ -183,20 +186,23 @@ Regras:
 }
 ```
 
-`band_code`, `tickets_per_seat` e `settled_with` são `null` quando não se aplicam. A reserva congela faixa e ingressos no momento da criação; reajuste posterior não altera a reserva.
+`band_code`, `tickets_per_seat` e `settled_with` são `null` quando não se aplicam. A reserva congela faixa, `tickets_per_seat` e preço no momento da criação; reajuste posterior não altera a reserva.
 
-`fee_percent_applied` está em **basis points** (`2000` = 20%). A taxa é calculada no servidor com percentual uniforme e piso configuráveis; o cliente nunca envia preço nem taxa. O rateio entre participantes usa `total_cents` (espaço + taxa), e o repasse ao fornecedor usa `venue_price_cents`.
+`fee_percent_applied` está em **basis points** (`2000` = 20%). A taxa é calculada no servidor com percentual uniforme e piso configuráveis; o cliente nunca envia preço nem taxa.
+
+No caminho por tickets, `contribution_cents = k × 310`, `space_charge_cents` é a cota exata da quadra e `fee_charge_cents = contribution_cents − space_charge_cents` (o valor do JOGA, não 20% fixo). No Pix, `contribution_cents` é o preço congelado e `fee_charge_cents` é a taxa de 20%. `Σ space_charge_cents == venue_price_cents`.
 
 ### 4.1 Crédito e franquia
 
-- Crédito comprado (`ticket_lots.source = "purchase"`) **não expira** e não é afetado pelo job de expiração.
-- O crédito comprado vale R$ 3,10 por ticket (`remaining_cents`). O que o jogador pagou acima disso na compra é prêmio, não saldo.
+- Crédito comprado (`ticket_lots.source = "purchase"`) **não expira** e não é afetado pelo job de expiração. Os lotes continuam em tickets.
+- O ticket é a unidade de consumo da tabela 2D; o valor de referência é R$ 3,10. O preço pago no pacote vira `player_credit` (caixa) e o lote sobe em tickets. Não há prêmio nem desconto.
 - `ticket_lots.source = "pass"` é franquia mensal: usa `period` (`YYYY-MM`), não `expires_at`, não acumula e não vira crédito.
 - `free_level`/`admin` usam `expires_at` quando existir; ingresso grátis de nível expira com a temporada.
 - A ordem de consumo é `pass → free_level → admin → purchase → refund`.
-- `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição; o saldo real em centavos do crédito comprado não é exibido como carteira.
-- A resposta do wallet ganhou `source`: `cache` (leitura antiga de `ticket_balances`) ou `ledger` (crédito comprado no ledger + passe/grátis utilizáveis). A flag `JOGA_TICKET_BALANCE_SOURCE` alterna sem deploy.
-- No modo `ledger`, conta ausente para lote existente ou divergência ledger × lotes responde `503 balance_unavailable`. O app não deve tratar esse erro como saldo zero; deve mostrar indisponibilidade e tentar novamente.
+- `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição; o saldo monetário não é exibido como carteira.
+- A resposta do wallet ganhou `source`: `cache` (leitura de `ticket_balances`) ou `ledger` (tickets dos lotes + passe/grátis utilizáveis, com validação do caixa `player_credit`). A flag `JOGA_TICKET_BALANCE_SOURCE` alterna sem deploy.
+- No modo `ledger`, conta ausente para lote existente, caixa divergente ou saldo negativo responde `503 balance_unavailable`. O app não deve tratar esse erro como saldo zero; deve mostrar indisponibilidade e tentar novamente.
+- Reservas anteriores à 14E têm `pricing_version = "legacy_v0"`, `fee_cents = 0` e `total_cents = venue_price_cents`. Elas não são relançadas no ledger.
 
 `timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
 

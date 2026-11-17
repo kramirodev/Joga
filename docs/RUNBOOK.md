@@ -529,21 +529,23 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
 .venv\Scripts\python.exe -m scripts.reconcile_financials --organization-id <uuid> --json
 ```
 
-- Crédito em reais (14E): abertura e reconciliação do ledger. A abertura é
+- Crédito e tickets (14E): abertura e reconciliação do ledger. A abertura é
   idempotente e deve rodar antes de ligar a leitura:
 
 ```powershell
 # dry-run com relatório por usuário
 .venv\Scripts\python.exe -m scripts.ledger_opening
-# aplica opening:{user} contra opening_equity
+# aplica opening:{user} = Σ remaining × unit_price_cents contra opening_equity
 .venv\Scripts\python.exe -m scripts.ledger_opening --apply
-# health check: exit 1 e contador de divergência se ledger != lotes
+# health check: exit 1 e contador de divergência de tickets e caixa
 .venv\Scripts\python.exe -m scripts.reconcile_ledger --json
 ```
 
 - Flag de leitura do saldo: `JOGA_TICKET_BALANCE_SOURCE=cache` (padrão) ou
-  `ledger`. Em `ledger`, conta ausente para lote existente ou divergência
-  ledger × lotes responde `503 balance_unavailable`; não há fallback. Para
+  `ledger`. Em `ledger`, o saldo é a soma dos tickets dos lotes comprados +
+  passe/grátis/admin utilizáveis, com validação do caixa `player_credit`
+  (compras pagas + abertura − Σ k×310). Conta ausente, caixa divergente ou
+  saldo negativo responde `503 balance_unavailable`; não há fallback. Para
   reverter sem deploy, volte a flag para `cache` e reinicie o processo.
 - `ticket_balances` continua sendo escrita como cache na mesma transação; a
   leitura não depende dela no modo `ledger`.

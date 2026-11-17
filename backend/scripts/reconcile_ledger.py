@@ -40,10 +40,19 @@ def main() -> int:
             {
                 "user_id": str(item.user_id),
                 "ledger_cents": item.ledger_cents,
-                "lots_cents": item.lots_cents,
+                "expected_cents": item.expected_cents,
                 "difference": item.difference,
             }
             for item in report.mismatches
+        ],
+        "balance_mismatches": [
+            {
+                "user_id": str(item.user_id),
+                "cache_balance": item.cache_balance,
+                "lots_balance": item.lots_balance,
+                "difference": item.difference,
+            }
+            for item in report.balance_mismatches
         ],
         "excluded_seats": [
             {

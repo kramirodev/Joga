@@ -1,8 +1,9 @@
-"""Abertura do ledger no cutover (ADR 0049 §11.7).
+"""Abertura do ledger no cutover (ADR 0049 §13.7).
 
-Lê `ticket_lots.remaining_cents` — nunca `ticket_balances` — e lança uma única
-transação `opening:{user}` por jogador, contra `opening_equity`. Passe, grátis e
-admin ficam fora porque não têm valor de crédito.
+Lê `ticket_lots.remaining × unit_price_cents` — nunca `ticket_balances` — e
+lança uma única transação `opening:{user}` por jogador, contra
+`opening_equity`. Passe, grátis e admin ficam fora porque não têm valor
+monetário.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.modules.ledger.accounts import OPENING_EQUITY, player_credit_code
 from app.modules.ledger.service import LedgerError, LedgerPosting, LedgerService
 from app.modules.tickets.models import TicketLot
-from app.modules.tickets.service import PAID_SOURCES, TICKET_VALUE_CENTS
+from app.modules.tickets.service import PAID_SOURCES
 
 
 @dataclass(frozen=True)
@@ -42,29 +43,18 @@ def compute_opening(session: Session) -> OpeningReport:
             select(TicketLot)
             .where(
                 TicketLot.source.in_(PAID_SOURCES),
-                TicketLot.remaining_cents.is_not(None),
-                TicketLot.remaining_cents > 0,
+                TicketLot.remaining > 0,
             )
             .order_by(TicketLot.user_id, TicketLot.created_at, TicketLot.id)
         ).all()
     )
-    missing = [
-        lot.id
-        for lot in session.scalars(
-            select(TicketLot).where(
-                TicketLot.source.in_(PAID_SOURCES),
-                TicketLot.remaining_cents.is_(None),
-            )
-        ).all()
-    ]
+    missing = [lot.id for lot in lots if lot.unit_price_cents is None]
     if missing:
-        raise LedgerError("opening_lot_without_remaining_cents")
+        raise LedgerError("opening_lot_without_unit_price")
 
     by_user: dict[uuid.UUID, OpeningLine] = {}
     for lot in lots:
-        cents = lot.remaining_cents or 0
-        if cents > lot.original_amount * TICKET_VALUE_CENTS:
-            raise LedgerError("opening_lot_above_capacity")
+        cents = lot.remaining * int(lot.unit_price_cents or 0)
         current = by_user.get(lot.user_id)
         if current is None:
             by_user[lot.user_id] = OpeningLine(user_id=lot.user_id, cents=cents, lots=1)

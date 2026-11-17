@@ -23,7 +23,6 @@ from app.modules.ledger.accounts import (
     PASS_REVENUE,
     PLAYER_CREDIT_PREFIX,
     PSP_CLEARING,
-    PURCHASE_PREMIUM_DEFERRED,
     VENUE_PAYABLE_PREFIX,
     VENUE_RECEIVABLE_PREFIX,
 )
@@ -32,7 +31,6 @@ from app.modules.ledger.service import LedgerError, LedgerPosting, LedgerService
 from app.modules.passes.models import PassSubscription
 from app.modules.payments.models import VenueRelease
 from app.modules.tickets.models import TicketPurchase
-from app.modules.tickets.service import TICKET_VALUE_CENTS
 
 
 def _account(
@@ -52,64 +50,16 @@ def post_credit_purchase(
     *,
     now: datetime | None = None,
 ) -> None:
-    """Regra 1 + prêmio: caixa entra, crédito e prêmio ficam separados."""
-
-    credit_cents = purchase.tickets * TICKET_VALUE_CENTS
-    premium_cents = purchase.amount_cents - credit_cents
-    if premium_cents < 0:
-        raise LedgerError("purchase_below_ticket_value")
+    """Regra 1: o caixa pago entra como crédito do jogador."""
 
     service = LedgerService(session)
-    postings = [
-        LedgerPosting(_account(service, PSP_CLEARING, "asset"), "D", purchase.amount_cents),
-        LedgerPosting(
-            _account(
-                service,
-                f"{PLAYER_CREDIT_PREFIX}{purchase.user_id}",
-                "liability",
-                owner_kind="user",
-                owner_id=purchase.user_id,
-            ),
-            "C",
-            credit_cents,
-        ),
-    ]
-    if premium_cents > 0:
-        postings.append(
-            LedgerPosting(
-                _account(service, PURCHASE_PREMIUM_DEFERRED, "liability"),
-                "C",
-                premium_cents,
-            )
-        )
     service.post(
         kind="credit_purchase",
         ref_type="ticket_purchase",
         ref_id=purchase.id,
         idempotency_key=f"purchase:{purchase.id}",
-        postings=postings,
-        occurred_at=purchase.paid_at or now,
-    )
-
-
-def post_purchase_refund(
-    session: Session,
-    purchase: TicketPurchase,
-    *,
-    remaining_cents: int,
-    now: datetime | None = None,
-) -> None:
-    """Reversão de compra/chargeback: crédito restante + prêmio + receivable."""
-
-    credit_cents = purchase.tickets * TICKET_VALUE_CENTS
-    premium_cents = max(0, purchase.amount_cents - credit_cents)
-    removed = min(max(0, remaining_cents), credit_cents)
-    receivable = credit_cents - removed
-
-    service = LedgerService(session)
-    postings: list[LedgerPosting] = []
-    if removed > 0:
-        postings.append(
+        postings=[
+            LedgerPosting(_account(service, PSP_CLEARING, "asset"), "D", purchase.amount_cents),
             LedgerPosting(
                 _account(
                     service,
@@ -118,10 +68,37 @@ def post_purchase_refund(
                     owner_kind="user",
                     owner_id=purchase.user_id,
                 ),
-                "D",
-                removed,
-            )
-        )
+                "C",
+                purchase.amount_cents,
+            ),
+        ],
+        occurred_at=purchase.paid_at or now,
+    )
+
+
+def post_purchase_refund(
+    session: Session,
+    purchase: TicketPurchase,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Reversão de compra/chargeback: saldo do jogador + receivable."""
+
+    service = LedgerService(session)
+    credit_account = _account(
+        service,
+        f"{PLAYER_CREDIT_PREFIX}{purchase.user_id}",
+        "liability",
+        owner_kind="user",
+        owner_id=purchase.user_id,
+    )
+    balance = max(0, service.balance_cents(credit_account))
+    removed = min(balance, purchase.amount_cents)
+    receivable = purchase.amount_cents - removed
+
+    postings: list[LedgerPosting] = []
+    if removed > 0:
+        postings.append(LedgerPosting(credit_account, "D", removed))
     if receivable > 0:
         postings.append(
             LedgerPosting(
@@ -134,14 +111,6 @@ def post_purchase_refund(
                 ),
                 "D",
                 receivable,
-            )
-        )
-    if premium_cents > 0:
-        postings.append(
-            LedgerPosting(
-                _account(service, PURCHASE_PREMIUM_DEFERRED, "liability"),
-                "D",
-                premium_cents,
             )
         )
     postings.append(

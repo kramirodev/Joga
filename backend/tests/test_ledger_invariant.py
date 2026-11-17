@@ -1,7 +1,10 @@
-"""Invariante permanente do crédito em centavos (ADR 0049 §11.6).
+"""Invariante permanente por evento (ADR 0049 §13.7).
 
-Sem skip. O ticket vale R$ 3,10; `k = ceil(contribution / 310)` é exibição. O
-ledger, a cota congelada e o consumo do lote fecham no mesmo evento.
+Tickets e caixa são dois saldos independentes:
+- compra sobe o caixa pago e o lote em tickets;
+- quitação baixa k×310 e k tickets na mesma transação;
+- quadra + JOGA fecham k×310;
+- nenhum saldo negativo.
 """
 
 from __future__ import annotations
@@ -17,32 +20,35 @@ from app.modules.ledger.accounts import FEE_REVENUE, VENUE_PAYABLE_PREFIX, playe
 from app.modules.ledger.models import LedgerAccount, LedgerEntry, LedgerTransaction
 from app.modules.ledger.opening import open_ledger
 from app.modules.ledger.reconciliation import reconcile_credit
-from app.modules.ledger.service import LedgerService
-from app.modules.tickets.models import TicketLotConsumption
+from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
+from app.modules.tickets.models import TicketBalance, TicketLot, TicketLotConsumption
 from app.modules.tickets.service import (
-    TICKET_VALUE_CENTS,
     confirm_purchase,
     create_purchase,
-    credit_balance_cents,
-    tickets_for_cents,
+    expected_player_credit_cents,
+    player_credit_cents,
 )
 from tests.helpers_results import make_user
 from tests.test_ticket_settlement import api_client, bearer, open_booking, setup_context
 
 
-def test_purchase_credit_matches_lots(db_session: Session) -> None:
+def test_purchase_raises_cash_and_ticket_lot(db_session: Session) -> None:
     user_id = make_user(db_session)
-    purchase = create_purchase(db_session, user_id, "medio")
+    purchase = create_purchase(db_session, user_id, "avulso")
     confirm_purchase(db_session, user_id, purchase.id)
     db_session.flush()
 
-    expected = purchase.tickets * TICKET_VALUE_CENTS
-    assert credit_balance_cents(db_session, user_id) == expected
-    assert LedgerService(db_session).balance_for_code(player_credit_code(user_id)) == expected
+    assert player_credit_cents(db_session, user_id) == purchase.amount_cents
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None
+    assert lot.remaining == purchase.tickets
+    assert lot.unit_price_cents == purchase.amount_cents // purchase.tickets
+    cached = db_session.get(TicketBalance, user_id)
+    assert cached is not None and cached.balance == purchase.tickets
     assert reconcile_credit(db_session).clean
 
 
-def test_settlement_event_closes_cents_and_tickets(
+def test_settlement_event_closes_cash_and_tickets(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -73,26 +79,28 @@ def test_settlement_event_closes_cents_and_tickets(
     ).all()
     assert participants
     assert sum(item.space_charge_cents for item in participants) == model.venue_price_cents
-    assert sum(item.fee_charge_cents for item in participants) == model.fee_cents
-    assert sum(item.contribution_cents for item in participants) == model.total_cents
+    assert sum(item.tickets_consumed for item in participants) == (
+        model.tickets_per_seat or 0
+    ) * len(participants)
+
+    ticket_total = sum(item.tickets_consumed * TICKET_CALIBRATION_CENTS for item in participants)
+    assert sum(item.fee_charge_cents for item in participants) == (
+        ticket_total - model.venue_price_cents
+    )
+    assert sum(item.contribution_cents for item in participants) == ticket_total
 
     for participant in participants:
-        expected_tickets = tickets_for_cents(participant.contribution_cents)
-        assert participant.tickets_consumed == expected_tickets
-        amount = db_session.scalar(
-            select(func.coalesce(func.sum(TicketLotConsumption.amount_cents), 0)).where(
-                TicketLotConsumption.user_id == participant.user_id,
-                TicketLotConsumption.ref_id == booking_id,
-            )
+        assert participant.tickets_consumed == model.tickets_per_seat
+        assert participant.contribution_cents == (
+            participant.tickets_consumed * TICKET_CALIBRATION_CENTS
         )
-        tickets = db_session.scalar(
+        amount = db_session.scalar(
             select(func.coalesce(func.sum(TicketLotConsumption.amount), 0)).where(
                 TicketLotConsumption.user_id == participant.user_id,
                 TicketLotConsumption.ref_id == booking_id,
             )
         )
-        assert int(amount or 0) == participant.contribution_cents
-        assert int(tickets or 0) == expected_tickets
+        assert int(amount or 0) == participant.tickets_consumed
 
         debit = db_session.scalar(
             select(func.coalesce(func.sum(LedgerEntry.amount_cents), 0))
@@ -104,6 +112,7 @@ def test_settlement_event_closes_cents_and_tickets(
             )
         )
         assert int(debit or 0) == participant.contribution_cents
+        assert player_credit_cents(db_session, participant.user_id) == 0
 
     credits = db_session.execute(
         select(LedgerAccount.code, LedgerEntry.amount_cents)
@@ -115,9 +124,10 @@ def test_settlement_event_closes_cents_and_tickets(
     ).all()
     by_code = {str(code): int(amount) for code, amount in credits}
     assert by_code[f"{VENUE_PAYABLE_PREFIX}{context['venue'].id}"] == model.venue_price_cents
-    assert by_code[FEE_REVENUE] == model.fee_cents
+    assert by_code[FEE_REVENUE] == ticket_total - model.venue_price_cents
 
     report = reconcile_credit(db_session)
-    assert report.clean, report.mismatches
+    assert report.clean, (report.mismatches, report.balance_mismatches)
     for user_id in context["users"]:
-        assert credit_balance_cents(db_session, user_id) >= 0
+        assert player_credit_cents(db_session, user_id) >= 0
+        assert expected_player_credit_cents(db_session, user_id) >= 0

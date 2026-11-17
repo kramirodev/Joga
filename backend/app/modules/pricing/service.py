@@ -27,15 +27,29 @@ class BandTicketsNotConfigured(PricingBandError):
     """A faixa não tem quantidade de ingressos para o formato."""
 
 
-# Tabela 2D da ADR 0042 §3: ingressos por jogador, por faixa e tamanho de time.
+# Tabela 2D da ADR 0042 §3, corrigida pela ADR 0049 §13: ingressos por jogador,
+# por faixa e tamanho de time. 5x5, 6x6 e 3x3 (futevôlei) são padrão; 4x4 e
+# menores são contingência e não têm célula fixa.
 BAND_TICKETS: dict[str, dict[int, int]] = {
-    "economica_dia": {5: 5, 6: 4, 4: 6, 3: 8},
-    "economica_noite": {5: 6, 6: 5, 4: 8, 3: 10},
-    "padrao_dia": {5: 7, 6: 6, 4: 9, 3: 12},
-    "padrao_noite": {5: 9, 6: 7, 4: 11, 3: 14},
-    "coberta": {5: 10, 6: 9, 4: 13, 3: 17},
-    "premium": {5: 12, 6: 10, 4: 14, 3: 19},
+    "economica_dia": {5: 5, 6: 4, 3: 8},
+    "economica_noite": {5: 6, 6: 5, 3: 10},
+    "padrao_dia": {5: 7, 6: 6, 3: 12},
+    "padrao_noite": {5: 9, 6: 8, 3: 15},
+    "coberta": {5: 11, 6: 9, 3: 17},
+    "premium": {5: 12, 6: 10, 3: 20},
 }
+
+STANDARD_TEAM_SIZES = frozenset({3, 5, 6})
+TICKET_CALIBRATION_CENTS = 310
+
+
+def contingency_tickets(total_cents: int, seats: int) -> int:
+    """Contagem de contingência para 4x4 e menores (ADR 0049 §13.2)."""
+
+    if total_cents <= 0 or seats <= 0:
+        raise PricingBandError("invalid_contingency_input")
+    denominator = seats * TICKET_CALIBRATION_CENTS
+    return (total_cents + denominator - 1) // denominator
 
 
 DEFAULT_BANDS: tuple[tuple[str, str, int], ...] = (
