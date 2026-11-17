@@ -7,6 +7,7 @@ import type {
   BusinessHour,
   BusinessHourListResponse,
   ChallengeResponse,
+  CommissionResponse,
   FinancialDispute,
   FinancialDisputeListResponse,
   FinancialStatementListResponse,
@@ -476,8 +477,15 @@ export const api = {
     );
   },
 
-  listReceivables(organizationId: string, limit = 50, offset = 0): Promise<ReceivableListResponse> {
-    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  listReceivables(
+    organizationId: string,
+    options: { status?: string | null; limit?: number; offset?: number } = {},
+  ): Promise<ReceivableListResponse> {
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.status) params.set("status", options.status);
     return request<ReceivableListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/receivables?${params.toString()}`,
     );
@@ -496,12 +504,30 @@ export const api = {
 
   listFinancialDisputes(
     organizationId: string,
-    limit = 50,
-    offset = 0,
+    options: { status?: string | null; limit?: number; offset?: number } = {},
   ): Promise<FinancialDisputeListResponse> {
-    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.status) params.set("status", options.status);
     return request<FinancialDisputeListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/disputes?${params.toString()}`,
+    );
+  },
+
+  getFinancialCommission(
+    organizationId: string,
+    options: { from?: string | null; to?: string | null; limit?: number; offset?: number } = {},
+  ): Promise<CommissionResponse> {
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.from) params.set("from", options.from);
+    if (options.to) params.set("to", options.to);
+    return request<CommissionResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/commission?${params.toString()}`,
     );
   },
 
@@ -511,6 +537,30 @@ export const api = {
   ): Promise<FinancialDispute> {
     return request<FinancialDispute>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/disputes`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  getFinancialDispute(organizationId: string, disputeId: string): Promise<FinancialDispute> {
+    return request<FinancialDispute>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes/${encodeURIComponent(
+        disputeId,
+      )}`,
+    );
+  },
+
+  decideFinancialDispute(
+    organizationId: string,
+    disputeId: string,
+    payload: { decision: "ACCEPTED" | "REJECTED"; reason: string },
+  ): Promise<FinancialDispute> {
+    return request<FinancialDispute>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes/${encodeURIComponent(
+        disputeId,
+      )}/decision`,
       {
         method: "POST",
         body: JSON.stringify(payload),

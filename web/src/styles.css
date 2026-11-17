@@ -2014,6 +2014,23 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 
+.financial-summary small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.financial-composition {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.financial-composition strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
 .payout-status {
   display: flex;
   flex-wrap: wrap;

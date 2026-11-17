@@ -101,6 +101,12 @@ const receivable: Receivable = {
   ends_at: "2026-12-15T19:00:00Z",
   has_open_dispute: false,
   dispute_id: null,
+  venue_price_cents: 40000,
+  fee_cents: 8000,
+  total_cents: 48000,
+  receipt_reference: null,
+  dispute_deadline: "2026-12-19T19:00:00Z",
+  reason: null,
 };
 
 function organizationFor(role: Role): Organization {
@@ -156,9 +162,26 @@ function stubApi(role: Role, bookings: Booking[] = []) {
         pending_cents: 0,
         released_cents: 0,
         pending_release_cents: 40000,
+        reversed_cents: 0,
+        failed_cents: 0,
         disputed_cents: 0,
+        venue_price_cents: 40000,
+        joga_fee_cents: 8000,
         payments: 0,
         refunds: 0,
+      });
+    }
+    if (path.endsWith("/financial/commission")) {
+      return jsonResponse({
+        rows: [],
+        totals: {
+          bookings: 0,
+          venue_price_cents: 0,
+          joga_fee_cents: 0,
+          total_cents: 0,
+        },
+        limit: 50,
+        offset: 0,
       });
     }
     if (path.endsWith("/financial/receivables")) {
@@ -182,6 +205,7 @@ function stubApi(role: Role, bookings: Booking[] = []) {
             release_id: "release-1",
             amount_cents: 40000,
             status: "OPEN",
+            deadline_at: "2026-12-19T19:00:00Z",
             reason: "Valor divergente",
             evidence: null,
             decision_reason: null,
@@ -255,7 +279,7 @@ describe("OrganizationPage — permissões na interface", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(false);
 
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    expect(await screen.findByText(/liberação prevista em/)).toBeInTheDocument();
+    expect(await screen.findByText(/repasse elegível em/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Contestar repasse" })).not.toBeInTheDocument();
   });
 

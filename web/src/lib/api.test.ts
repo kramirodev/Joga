@@ -387,4 +387,64 @@ describe("cliente HTTP do painel", () => {
       requestId: "req-abc-123",
     });
   });
+
+  it("envia status e paginação dos repasses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ receivables: [], total: 0, limit: 25, offset: 50 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listReceivables("org-1", { status: "RELEASED", limit: 25, offset: 50 });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url, "http://joga.local");
+    expect(parsed.pathname).toBe("/api/v1/organizations/org-1/financial/receivables");
+    expect(parsed.searchParams.get("status")).toBe("RELEASED");
+    expect(parsed.searchParams.get("limit")).toBe("25");
+    expect(parsed.searchParams.get("offset")).toBe("50");
+  });
+
+  it("envia o período da comissão como from/to", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        rows: [],
+        totals: { bookings: 0, venue_price_cents: 0, joga_fee_cents: 0, total_cents: 0 },
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.getFinancialCommission("org-1", {
+      from: "2026-11-01T00:00:00.000Z",
+      to: "2026-11-30T23:59:59.999Z",
+    });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url, "http://joga.local");
+    expect(parsed.pathname).toBe("/api/v1/organizations/org-1/financial/commission");
+    expect(parsed.searchParams.get("from")).toBe("2026-11-01T00:00:00.000Z");
+    expect(parsed.searchParams.get("to")).toBe("2026-11-30T23:59:59.999Z");
+  });
+
+  it("edita o expediente via PATCH no recurso existente", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: "hour-1",
+        weekday: 1,
+        opens_at: "10:00:00",
+        closes_at: "18:00:00",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    await api.updateBusinessHour("org-1", "venue-1", "hour-1", { opens_at: "10:00:00" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/organizations/org-1/venues/venue-1/business-hours/hour-1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ opens_at: "10:00:00" });
+    expect((init.headers as Headers).get("X-CSRF-Token")).toBe("csrf-1");
+  });
 });

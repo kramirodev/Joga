@@ -145,10 +145,10 @@ const TIMER_STATUS: Record<string, string> = {
 };
 
 const RELEASE_STATUS: Record<string, string> = {
-  PENDING: "A repassar",
+  PENDING: "Repasse pendente",
   RELEASED: "Repassado",
   FAILED: "Falhou",
-  REVERSED: "Revertido",
+  REVERSED: "Revertido após reembolso",
 };
 
 const HOLD_STATUS: Record<string, string> = {
@@ -165,10 +165,18 @@ const DISPUTE_STATUS: Record<string, string> = {
 };
 
 const LEDGER_ENTRY: Record<string, string> = {
-  CHARGE_CREATED: "Cobrança criada",
-  PAYMENT_CONFIRMED: "Pagamento confirmado",
-  PAYMENT_REFUNDED: "Reembolso",
-  VENUE_RELEASE: "Repasse ao estabelecimento",
+  PAYMENT_CONFIRMED: "Pagamento confirmado — parte da quadra",
+  PAYMENT_REFUNDED: "Reembolso — devolução",
+  VENUE_RELEASE: "Repasse ao fornecedor",
+};
+
+const FISCAL_STATUS: Record<string, string> = {
+  pending_manual: "Intenção registrada — sem emissão",
+  issued: "Emitida",
+  processing: "Em processamento",
+  failed: "Falhou",
+  cancelled: "Cancelada",
+  disabled: "Documento desativado",
 };
 
 const ORGANIZATION_STATUS: Record<string, string> = {
@@ -261,6 +269,10 @@ export function disputeStatusLabel(status: string): string {
 
 export function ledgerEntryLabel(type: string): string {
   return LEDGER_ENTRY[type] ?? type;
+}
+
+export function fiscalStatusLabel(status: string): string {
+  return FISCAL_STATUS[status] ?? status;
 }
 
 export function organizationStatusLabel(status: string): string {
@@ -386,6 +398,14 @@ export function formatError(error: unknown): string {
       return "Contestação não encontrada ou fora do seu acesso.";
     case "dispute_already_open":
       return "Já existe uma contestação em análise para esta reserva.";
+    case "dispute_not_open":
+      return "A contestação não está aberta para decisão.";
+    case "release_not_contestable":
+      return "Esta liberação não pode mais ser contestada.";
+    case "dispute_window_expired":
+      return "O prazo de 72 horas para contestar esta reserva terminou.";
+    case "operator_not_authorized":
+      return "Somente a equipe de revisão do JOGA pode decidir esta contestação.";
     case "invalid_input":
       return "Algum campo está inválido. Revise os valores destacados e tente novamente.";
     case "invalid_postal_code":
