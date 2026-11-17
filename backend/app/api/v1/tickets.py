@@ -85,7 +85,6 @@ class TicketWalletView(BaseModel):
 def read_wallet(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> TicketWalletView:
     """Saldo e últimos movimentos. O saldo nunca é editável pelo cliente."""
@@ -93,11 +92,7 @@ def read_wallet(
     entries = list_entries(session, current.user_id, limit=limit)
     lots = list_lots(session, current.user_id)
     try:
-        balance = get_balance(
-            session,
-            current.user_id,
-            source=settings.ticket_balance_source,
-        )
+        balance = get_balance(session, current.user_id)
     except (BalanceUnavailable, LedgerInconsistency) as exc:
         logger.error("wallet_balance_unavailable code=%s", exc.args[0] if exc.args else "")
         raise HTTPException(
@@ -106,7 +101,7 @@ def read_wallet(
         ) from exc
     return TicketWalletView(
         balance=balance,
-        source=settings.ticket_balance_source,
+        source="ledger",
         entries=[
             TicketEntryView(
                 id=item.id,

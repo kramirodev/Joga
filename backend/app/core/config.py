@@ -150,9 +150,6 @@ class Settings(BaseSettings):
     tax_rate_bps: int = Field(default=1550, ge=0, le=10_000)
     fee_percent_bps: int = Field(default=2_000, ge=0, le=10_000)
     fee_min_cents: int = Field(default=800, ge=0)
-    # Etapa 7: fonte do saldo exibido. `cache` mantém o comportamento antigo;
-    # `ledger` compõe crédito comprado no ledger + passe/grátis utilizáveis.
-    ticket_balance_source: str = Field(default="cache", pattern="^(cache|ledger)$")
     cancellation_provision_cents: int = Field(default=20, ge=0)
     payout_requires_fiscal_document: bool = True
     fiscal_document_grace_days: int = Field(default=5, ge=0, le=60)

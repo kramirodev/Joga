@@ -25,7 +25,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 
-LEDGER_ENTRY_TYPES = ("CHARGE_CREATED", "PAYMENT_CONFIRMED", "PAYMENT_REFUNDED", "VENUE_RELEASE")
 REFUND_STATUSES = ("PENDING", "PROCESSED", "FAILED")
 RELEASE_STATUSES = ("PENDING", "RELEASED", "FAILED", "REVERSED")
 DISPUTE_STATUSES = ("OPEN", "ACCEPTED", "REJECTED", "WITHDRAWN")
@@ -193,46 +192,6 @@ class PurchasePayment(Base):
         default=utcnow,
         onupdate=utcnow,
         server_default=func.now(),
-    )
-
-
-class LedgerEntry(Base):
-    """Registro append-only de direitos e obrigações financeiras internas."""
-
-    __tablename__ = "booking_ledger_entries"
-    __table_args__ = (
-        CheckConstraint(
-            "entry_type IN ("
-            "'CHARGE_CREATED', 'PAYMENT_CONFIRMED', 'PAYMENT_REFUNDED', 'VENUE_RELEASE'"
-            ")",
-            name="entry_type_valid",
-        ),
-        CheckConstraint("direction IN ('DEBIT', 'CREDIT')", name="direction_valid"),
-        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        Index("ix_booking_ledger_entries_booking_created", "booking_id", "created_at"),
-        UniqueConstraint(
-            "booking_payment_id",
-            "entry_type",
-            name="uq_booking_ledger_entries_payment_type",
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    booking_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
-    )
-    booking_payment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("booking_payments.id", ondelete="SET NULL"), nullable=True
-    )
-    entry_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    direction: Mapped[str] = mapped_column(String(10), nullable=False)
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="POSTED", server_default="POSTED"
-    )
-    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
 
 

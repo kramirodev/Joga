@@ -21,7 +21,7 @@ from app.modules.ledger.models import LedgerAccount, LedgerEntry, LedgerTransact
 from app.modules.ledger.opening import open_ledger
 from app.modules.ledger.reconciliation import reconcile_credit
 from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
-from app.modules.tickets.models import TicketBalance, TicketLot, TicketLotConsumption
+from app.modules.tickets.models import TicketLot, TicketLotConsumption
 from app.modules.tickets.service import (
     confirm_purchase,
     create_purchase,
@@ -43,8 +43,6 @@ def test_purchase_raises_cash_and_ticket_lot(db_session: Session) -> None:
     assert lot is not None
     assert lot.remaining == purchase.tickets
     assert lot.unit_price_cents == purchase.amount_cents // purchase.tickets
-    cached = db_session.get(TicketBalance, user_id)
-    assert cached is not None and cached.balance == purchase.tickets
     assert reconcile_credit(db_session).clean
 
 

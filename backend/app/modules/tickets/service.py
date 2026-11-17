@@ -21,13 +21,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.config import get_settings
 from app.modules.identity.clock import ensure_utc, utcnow
+from app.modules.identity.models import User
 from app.modules.ledger.accounts import player_credit_code
 from app.modules.ledger.models import LedgerAccount
 from app.modules.ledger.service import LedgerService
 from app.modules.tickets.models import (
-    TicketBalance,
     TicketLedgerEntry,
     TicketLot,
     TicketLotConsumption,
@@ -165,7 +164,7 @@ def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
     purchase = session.get(TicketPurchase, purchase_id)
     if purchase is None or purchase.user_id != user_id:
         raise PurchaseNotFound
-    balance = _lock_balance(session, user_id)
+    _lock_user(session, user_id)
     lot = session.scalars(
         select(TicketLot)
         .where(
@@ -193,7 +192,6 @@ def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
         )
         session.add(ledger)
         session.flush()
-        balance.balance -= amount
     if existing is None and lot is not None:
         lot.remaining = 0
     purchase.status = "cancelled"
@@ -202,7 +200,7 @@ def revoke_purchase(session: Session, user_id: uuid.UUID, purchase_id: uuid.UUID
         from app.modules.ledger.flow import post_purchase_refund
 
         post_purchase_refund(session, purchase)
-    return balance.balance
+    return _tickets_balance(session, user_id)
 
 
 def confirm_purchase(
@@ -247,7 +245,13 @@ def _paid_lots_tickets(session: Session, user_id: uuid.UUID) -> int:
 
 
 def expected_player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
-    """Caixa das compras + abertura − consumo por tickets (ADR 0049 §13.7)."""
+    """Caixa esperado: compras + abertura − consumo de reservas confirmadas.
+
+    O débito de ``player_credit`` acontece quando a reserva confirma
+    (``post_booking_confirmed``), não no momento em que cada vaga é quitada.
+    Por isso só entram aqui as vagas de reservas com ``confirmed_at``; sem esse
+    recorte, uma reserva parcialmente quitada apareceria como divergência.
+    """
 
     from app.modules.bookings.models import Booking, BookingParticipant
     from app.modules.ledger.models import LedgerEntry, LedgerTransaction
@@ -278,6 +282,7 @@ def expected_player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
             BookingParticipant.funding_source == "credit",
             BookingParticipant.payment_status != "REFUNDED",
             Booking.pricing_version != "legacy_v0",
+            Booking.confirmed_at.is_not(None),
         )
     )
     return (
@@ -287,41 +292,49 @@ def expected_player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
     )
 
 
-def usable_non_paid_tickets(session: Session, user_id: uuid.UUID) -> int:
-    """Tickets de passe/grátis/admin utilizáveis agora (sem lock)."""
+def usable_non_paid_tickets(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Tickets de passe/grátis/admin utilizáveis no instante informado (sem lock)."""
 
-    now = utcnow()
+    moment = ensure_utc(now or utcnow())
     lots = session.scalars(
         select(TicketLot).where(
             TicketLot.user_id == user_id,
             TicketLot.remaining > 0,
             TicketLot.source.in_(("pass", "free_level", "admin")),
-            _usable_lot_condition(now),
+            _usable_lot_condition(moment),
         )
     ).all()
     return sum(lot.remaining for lot in lots)
+
+
+def _tickets_balance(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Soma dos lotes utilizáveis; não valida o caixa em reais."""
+
+    return _paid_lots_tickets(session, user_id) + usable_non_paid_tickets(session, user_id, now=now)
 
 
 def get_balance(
     session: Session,
     user_id: uuid.UUID,
     *,
-    source: str | None = None,
+    now: datetime | None = None,
 ) -> int:
-    """Saldo exibido em tickets.
+    """Saldo exibido em tickets, lido exclusivamente dos lotes.
 
-    `cache` mantém a leitura antiga de `ticket_balances` para rollback. `ledger`
-    compõe os tickets comprados (lotes) com passe/grátis/admin utilizáveis e
+    Compõe os tickets comprados (lotes) com passe/grátis/admin utilizáveis e
     valida o caixa em `player_credit`. Sem fallback: conta ausente, caixa
     divergente ou saldo negativo falha alto.
     """
-
-    mode = (source or get_settings().ticket_balance_source).strip().lower()
-    if mode == "cache":
-        record = session.get(TicketBalance, user_id)
-        return record.balance if record is not None else 0
-    if mode != "ledger":
-        raise TicketError("invalid_balance_source")
 
     purchased = _paid_lots_tickets(session, user_id)
     account = session.scalar(
@@ -338,9 +351,13 @@ def get_balance(
             raise LedgerInconsistency("negative_player_credit")
         expected = expected_player_credit_cents(session, user_id)
         if ledger_cents != expected:
-            logger.error("balance_unavailable code=ledger_cash_mismatch")
+            logger.error(
+                "balance_unavailable code=ledger_cash_mismatch ledger=%s expected=%s",
+                ledger_cents,
+                expected,
+            )
             raise LedgerInconsistency("ledger_cash_mismatch")
-    return purchased + usable_non_paid_tickets(session, user_id)
+    return purchased + usable_non_paid_tickets(session, user_id, now=now)
 
 
 def list_entries(
@@ -409,15 +426,16 @@ def _lot_is_usable(lot: TicketLot, now: datetime) -> bool:
     return lot.expires_at is None or ensure_utc(lot.expires_at) > now
 
 
-def _lock_balance(session: Session, user_id: uuid.UUID) -> TicketBalance:
-    record = session.scalars(
-        select(TicketBalance).where(TicketBalance.user_id == user_id).with_for_update()
-    ).first()
-    if record is None:
-        record = TicketBalance(user_id=user_id, balance=0)
-        session.add(record)
-        session.flush()
-    return record
+def _lock_user(session: Session, user_id: uuid.UUID) -> None:
+    """Serializa operações de carteira por jogador.
+
+    A linha de ``users`` é o lock de coordenação; lotes continuam sendo a
+    verdade do saldo e não há mais escrita em ``ticket_balances``.
+    """
+
+    locked = session.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    if locked is None:
+        raise TicketError("user_missing")
 
 
 def _active_lots(session: Session, user_id: uuid.UUID, now: datetime) -> list[TicketLot]:
@@ -444,32 +462,6 @@ def _active_lots(session: Session, user_id: uuid.UUID, now: datetime) -> list[Ti
     )
 
 
-def _legacy_lot(session: Session, user_id: uuid.UUID, balance: int) -> TicketLot:
-    """Cria lote administrativo para saldo anterior à introdução dos lotes."""
-
-    ledger = TicketLedgerEntry(
-        user_id=user_id,
-        amount=balance,
-        source="admin",
-        ref_type="legacy_balance",
-        ref_id=None,
-        idempotency_key=f"legacy_lot:{user_id}:{balance}",
-    )
-    session.add(ledger)
-    session.flush()
-    lot = TicketLot(
-        user_id=user_id,
-        source="admin",
-        original_amount=balance,
-        remaining=balance,
-        ledger_entry_id=ledger.id,
-        ref_type="legacy_balance",
-    )
-    session.add(lot)
-    session.flush()
-    return lot
-
-
 def apply_entry(
     session: Session,
     user_id: uuid.UUID,
@@ -487,7 +479,8 @@ def apply_entry(
 
     A chave de idempotência garante que repetir a chamada não duplica o efeito.
     Créditos sempre criam um lote; débitos consomem lotes ativos na ordem da
-    política de origem/validade.
+    política de origem/validade. O lock é a linha do jogador, não um saldo em
+    cache.
     """
 
     if amount == 0:
@@ -498,10 +491,10 @@ def apply_entry(
     if existing is not None:
         if existing.user_id != user_id or existing.amount != amount:
             raise TicketConflict("idempotency_key_reused")
-        return get_balance(session, user_id)
+        return _tickets_balance(session, user_id)
 
     now = utcnow()
-    balance = _lock_balance(session, user_id)
+    _lock_user(session, user_id)
     if amount > 0:
         if source not in GRANT_SOURCES:
             raise TicketError("invalid_grant_source")
@@ -539,14 +532,9 @@ def apply_entry(
                 ledger_entry_id=ledger.id,
             )
         )
-        balance.balance += amount
     else:
         need = -amount
-        if balance.balance < need:
-            raise InsufficientTickets
         lots = _active_lots(session, user_id, now)
-        if not lots and balance.balance > 0:
-            lots = [_legacy_lot(session, user_id, balance.balance)]
         if sum(lot.remaining for lot in lots) < need:
             raise InsufficientTickets
         ledger = TicketLedgerEntry(
@@ -578,13 +566,14 @@ def apply_entry(
             remaining -= take
             if remaining == 0:
                 break
-        balance.balance -= need
+        if remaining != 0:
+            raise InsufficientTickets
 
     try:
         session.flush()
     except IntegrityError as exc:
         raise TicketConflict("idempotency_key_reused") from exc
-    return balance.balance
+    return _tickets_balance(session, user_id)
 
 
 def grant(
@@ -659,10 +648,10 @@ def refund(
         select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
     ).first()
     if existing is not None:
-        return get_balance(session, user_id)
+        return _tickets_balance(session, user_id)
 
     now = utcnow()
-    balance = _lock_balance(session, user_id)
+    _lock_user(session, user_id)
     lookup_type = "booking" if ref_type == "booking_cancel" else ref_type
     consumptions = list(
         session.scalars(
@@ -695,7 +684,7 @@ def refund(
             requested -= quantity
             restored += quantity
         if restored == 0:
-            return balance.balance
+            return _tickets_balance(session, user_id)
     else:
         restored = amount
 
@@ -729,9 +718,8 @@ def refund(
                 ledger_entry_id=ledger.id,
             )
         )
-    balance.balance += restored
     session.flush()
-    return balance.balance
+    return _tickets_balance(session, user_id)
 
 
 def player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
@@ -789,9 +777,9 @@ def consume_paid_tickets(
         select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
     ).first()
     if existing is not None:
-        return get_balance(session, user_id)
+        return _tickets_balance(session, user_id)
 
-    balance = _lock_balance(session, user_id)
+    _lock_user(session, user_id)
     lots = _paid_lots(session, user_id)
     if sum(lot.remaining for lot in lots) < tickets:
         raise InsufficientTickets
@@ -829,11 +817,8 @@ def consume_paid_tickets(
     if remaining != 0:
         raise InsufficientTickets
 
-    balance.balance -= tickets
-    if balance.balance < 0:
-        raise TicketError("balance_inconsistent")
     session.flush()
-    return balance.balance
+    return _tickets_balance(session, user_id)
 
 
 def non_paid_tickets_available(session: Session, user_id: uuid.UUID) -> tuple[int, str | None]:
@@ -859,51 +844,56 @@ def expire_due(session: Session, *, now: datetime | None = None) -> int:
 
     moment = ensure_utc(now or utcnow())
     period = current_period(moment)
-    lots = list(
+    due_before = or_(
+        and_(
+            TicketLot.source == "pass",
+            or_(TicketLot.period.is_(None), TicketLot.period < period),
+        ),
+        and_(
+            TicketLot.source.in_(("free_level", "admin")),
+            TicketLot.expires_at.is_not(None),
+            TicketLot.expires_at <= moment,
+        ),
+    )
+    user_ids = list(
         session.scalars(
-            select(TicketLot)
-            .where(
-                TicketLot.remaining > 0,
-                or_(
-                    and_(
-                        TicketLot.source == "pass",
-                        or_(TicketLot.period.is_(None), TicketLot.period < period),
-                    ),
-                    and_(
-                        TicketLot.source.in_(("free_level", "admin")),
-                        TicketLot.expires_at.is_not(None),
-                        TicketLot.expires_at <= moment,
-                    ),
-                ),
-            )
-            .with_for_update()
+            select(TicketLot.user_id).where(TicketLot.remaining > 0, due_before).distinct()
         ).all()
     )
     expired = 0
-    for lot in lots:
-        key = f"expire:{lot.id}"
-        existing = session.scalars(
-            select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
-        ).first()
-        if existing is not None:
-            lot.remaining = 0
-            continue
-        balance = _lock_balance(session, lot.user_id)
-        amount = lot.remaining
-        if balance.balance < amount:
-            raise TicketError("balance_inconsistent")
-        session.add(
-            TicketLedgerEntry(
-                user_id=lot.user_id,
-                amount=-amount,
-                source="expired",
-                ref_type="ticket_lot",
-                ref_id=lot.id,
-                idempotency_key=key,
-            )
+    for user_id in sorted(user_ids, key=str):
+        _lock_user(session, user_id)
+        lots = list(
+            session.scalars(
+                select(TicketLot)
+                .where(
+                    TicketLot.user_id == user_id,
+                    TicketLot.remaining > 0,
+                    due_before,
+                )
+                .with_for_update()
+            ).all()
         )
-        lot.remaining = 0
-        balance.balance -= amount
-        expired += 1
+        for lot in lots:
+            key = f"expire:{lot.id}"
+            existing = session.scalars(
+                select(TicketLedgerEntry).where(TicketLedgerEntry.idempotency_key == key)
+            ).first()
+            if existing is not None:
+                lot.remaining = 0
+                continue
+            amount = lot.remaining
+            session.add(
+                TicketLedgerEntry(
+                    user_id=lot.user_id,
+                    amount=-amount,
+                    source="expired",
+                    ref_type="ticket_lot",
+                    ref_id=lot.id,
+                    idempotency_key=key,
+                )
+            )
+            lot.remaining = 0
+            expired += 1
     session.flush()
     return expired

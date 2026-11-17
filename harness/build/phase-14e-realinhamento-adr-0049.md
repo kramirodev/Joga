@@ -1,6 +1,6 @@
 # Fase 14E — Realinhamento da ADR 0049
 
-**Status:** em andamento. Etapas 0–8 e 6b concluídas; falta a 9 (aposentadoria dos ledgers legados).
+**Status:** em andamento. Etapas 0–9 e 6b concluídas; resta revisão e autorização de commit/merge.
 **Depende de:** 14, 14D congeladas e estabilização do repositório.
 **Bloqueia:** 14B, 15, 19A e qualquer dinheiro real.
 **Referência:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md`, `docs/DECISOES_BACKEND_ADR_0049.md`, `docs/DATA_MODEL.md`.
@@ -70,3 +70,11 @@ A fase termina quando os critérios acima estão verdes, a documentação está 
 - **Termos:** `terms_acceptances` (versão, contexto, `terms_hash`, `ip_hash` HMAC e `user_agent_hash` SHA-256). `GET /legal/terms/current` e `POST /legal/terms/accept`; a compra exige aceite apenas quando existe versão `approved`.
 - **Reembolso:** `refund_type FULL|PARTIAL`, `idempotency_key` e índice parcial de um único `FULL` por cobrança; nenhum fluxo cria `PARTIAL` nesta etapa.
 - **Verificação:** `ruff`, `ruff format --check` e `mypy app` limpos; suíte **587 passed, 30 skipped**; `upgrade head` → `downgrade base` → `upgrade head` e `alembic check` sem diff no PostgreSQL local, head `s3d4e5f6a7b8`.
+
+## Etapa 9 — aposentadoria dos ledgers legados
+
+- **9a (leitura):** `get_balance` lê exclusivamente lotes + ledger. Removidos o modo `cache` e `JOGA_TICKET_BALANCE_SOURCE`; a API mantém `source` com valor constante `ledger`.
+- **9b (escrita):** `ticket_balances` deixou de ser escrita e virou **view** sobre `ticket_lots` (`t4e5f6a7b8c9`). O lock de carteira é a linha de `users` (`SELECT ... FOR UPDATE`). Saldo legado sem lote é convertido em lote `admin` auditável com evento em `ticket_ledger`.
+- **9c (extrato):** `booking_ledger_entries` foi removido (`u5f6a7b8c9d0`). O extrato do fornecedor e o `booking_ledger` são projeções de `ledger_transactions` + `ledger_entries`; `CHARGE_CREATED` deixou de existir, `PAYMENT_CONFIRMED` representa a parte da quadra e `booking_payment_id` vem nulo.
+- **Conciliação:** tickets reconstruídos por `Σ original_amount` + débitos + devoluções que reabriram lote; caixa conferido só para reservas com `confirmed_at` (o débito ocorre na confirmação, não na quitação individual); pagamentos conferem `booking_confirmed`, `booking_refund`, `payment_refund` e `venue_release`, incluindo `VenueRelease.amount_cents == Booking.venue_price_cents`.
+- **Verificação:** `ruff`, `ruff format --check` e `mypy app` limpos; suíte **587 passed, 30 skipped**; ciclo `upgrade head` → `downgrade base` → `upgrade head` + `alembic check` sem diff; conversão de saldo legado validada no PostgreSQL local; head `u5f6a7b8c9d0`.

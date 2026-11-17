@@ -10,6 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.bookings.models import Booking
+from app.modules.identity.clock import utcnow
+from app.modules.ledger.models import LedgerTransaction
 from app.modules.organizations.models import OrganizationMembership
 from app.modules.organizations.permissions import Role
 from app.modules.payments.financial import (
@@ -18,7 +20,7 @@ from app.modules.payments.financial import (
     FinancialService,
     OperatorNotAuthorized,
 )
-from app.modules.payments.models import FinancialDispute, LedgerEntry, VenueRelease
+from app.modules.payments.models import FinancialDispute, VenueRelease
 from app.modules.payments.reconciliation import reconcile
 from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import api_client, bearer, setup_booking
@@ -59,10 +61,11 @@ def test_completion_schedules_release_without_paying_immediately(
 
     ledger_count = db_session.scalar(
         select(func.count())
-        .select_from(LedgerEntry)
+        .select_from(LedgerTransaction)
         .where(
-            LedgerEntry.booking_id == booking_id,
-            LedgerEntry.entry_type == "VENUE_RELEASE",
+            LedgerTransaction.ref_type == "venue_release",
+            LedgerTransaction.ref_id == release.id,
+            LedgerTransaction.kind == "venue_release",
         )
     )
     assert ledger_count == 0
@@ -120,14 +123,22 @@ def test_release_is_idempotent_and_only_after_eligibility(
     db_session.refresh(release)
     assert release.status == "RELEASED"
     assert release.released_at is not None
-    entries = db_session.scalars(
-        select(LedgerEntry).where(
-            LedgerEntry.booking_id == booking_id,
-            LedgerEntry.entry_type == "VENUE_RELEASE",
+    transaction = db_session.scalar(
+        select(LedgerTransaction).where(
+            LedgerTransaction.idempotency_key == f"release:{release.id}"
         )
-    ).all()
-    assert len(entries) == 1
-    assert entries[0].amount_cents == 40_000
+    )
+    assert transaction is not None
+    assert transaction.kind == "venue_release"
+
+    statement = api.get(
+        f"/api/v1/organizations/{context['organization'].id}/financial/statement",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert statement.status_code == 200, statement.text
+    types = [entry["entry_type"] for entry in statement.json()["entries"]]
+    assert "VENUE_RELEASE" in types
+    assert "CHARGE_CREATED" not in types
 
     assert service.release_due(now=aware(release.eligible_at) + timedelta(days=2)) == 0
     db_session.commit()
@@ -275,13 +286,6 @@ def test_statement_and_reconciliation_detect_divergence(
     context = setup_booking(db_session)
     accepted, _ = complete_booking(api, context)
     organization_id = context["organization"].id
-    service = FinancialService(db_session)
-    release = db_session.scalar(
-        select(VenueRelease).where(VenueRelease.booking_id == uuid.UUID(accepted["id"]))
-    )
-    assert release is not None
-    service.release_due(now=aware(release.eligible_at) + timedelta(minutes=1))
-    db_session.commit()
 
     statement = api.get(
         f"/api/v1/organizations/{organization_id}/financial/statement",
@@ -290,18 +294,16 @@ def test_statement_and_reconciliation_detect_divergence(
     assert statement.status_code == 200, statement.text
     types = [entry["entry_type"] for entry in statement.json()["entries"]]
     assert statement.json()["total"] >= len(types)
-    assert "CHARGE_CREATED" in types
+    assert "CHARGE_CREATED" not in types
     assert "PAYMENT_CONFIRMED" in types
-    assert "VENUE_RELEASE" in types
 
-    entry = db_session.scalar(
-        select(LedgerEntry).where(
-            LedgerEntry.booking_id == uuid.UUID(accepted["id"]),
-            LedgerEntry.entry_type == "VENUE_RELEASE",
-        )
+    # Divergência simulada: liberação marcada como paga sem transação contábil.
+    release = db_session.scalar(
+        select(VenueRelease).where(VenueRelease.booking_id == uuid.UUID(accepted["id"]))
     )
-    assert entry is not None
-    db_session.delete(entry)
+    assert release is not None
+    release.status = "RELEASED"
+    release.released_at = utcnow()
     db_session.commit()
 
     issues = reconcile(db_session)

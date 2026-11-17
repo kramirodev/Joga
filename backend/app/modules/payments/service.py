@@ -28,7 +28,6 @@ from app.modules.payments.adapter import (
     PspAdapter,
 )
 from app.modules.payments.models import (
-    LedgerEntry,
     PaymentEvent,
     PaymentRefund,
     PspWebhookEvent,
@@ -42,6 +41,8 @@ from app.modules.payments.purchase import (
 from app.modules.payments.purchase import (
     find_by_provider as find_purchase_payment,
 )
+from app.modules.payments.statement import StatementRow
+from app.modules.payments.statement import statement as project_statement
 from app.modules.payments.status import map_provider_status
 
 
@@ -163,13 +164,6 @@ class PaymentService:
             payment.ticket_url = result.ticket_url
             payment.expires_at = result.expires_at
             payment.last_synced_at = utcnow()
-            self._ledger(
-                payment,
-                "CHARGE_CREATED",
-                "DEBIT",
-                payment.amount_cents,
-                {"provider": result.provider, "order_id": result.provider_order_id},
-            )
             self.session.add(
                 PaymentEvent(
                     booking_payment_id=payment.id,
@@ -356,13 +350,6 @@ class PaymentService:
         )
         if payment is None or payment.status != "PAID":
             return bundle
-        self._ledger(
-            payment,
-            "PAYMENT_CONFIRMED",
-            "CREDIT",
-            payment.amount_cents,
-            {"provider": "simulator"},
-        )
         self._event(
             payment,
             "PAYMENT_SIMULATED",
@@ -448,13 +435,6 @@ class PaymentService:
             participant = self.session.get(BookingParticipant, payment.participant_id)
             if participant is not None:
                 post_payment_refund(self.session, payment, participant)
-            self._ledger(
-                payment,
-                "PAYMENT_REFUNDED",
-                "DEBIT",
-                payment.amount_cents,
-                {"provider": result.provider, "refund_id": result.refund_id},
-            )
             self._event(
                 payment,
                 "REFUND_PROCESSED",
@@ -576,14 +556,10 @@ class PaymentService:
             )
         return count
 
-    def booking_ledger(self, booking_id: uuid.UUID) -> list[LedgerEntry]:
-        return list(
-            self.session.scalars(
-                select(LedgerEntry)
-                .where(LedgerEntry.booking_id == booking_id)
-                .order_by(LedgerEntry.created_at, LedgerEntry.id)
-            ).all()
-        )
+    def booking_ledger(self, booking_id: uuid.UUID) -> list[StatementRow]:
+        """Movimentos contábeis da reserva, projetados do ledger de dupla entrada."""
+
+        return project_statement(self.session, booking_id=booking_id, limit=200)
 
     def organization_summary(self, organization_id: uuid.UUID) -> dict[str, int]:
         """Totais financeiros internos da organização, sem conciliação externa."""
@@ -648,22 +624,6 @@ class PaymentService:
         payment.provider_status = status.status
         payment.provider_status_detail = status.status_detail
         payment.last_synced_at = utcnow()
-        if internal == "PAID" and payment.status != "PAID":
-            self._ledger(
-                payment,
-                "PAYMENT_CONFIRMED",
-                "CREDIT",
-                payment.amount_cents,
-                {"provider": status.provider, "provider_status": status.status},
-            )
-        if internal == "REFUNDED" and payment.status != "REFUNDED":
-            self._ledger(
-                payment,
-                "PAYMENT_REFUNDED",
-                "DEBIT",
-                payment.amount_cents,
-                {"provider": status.provider, "provider_status": status.status},
-            )
         self.bookings.register_payment_result(
             booking.id,
             payment.id,
@@ -733,33 +693,6 @@ class PaymentService:
                 booking_payment_id=payment.id,
                 event_type=event_type,
                 provider_event_id=provider_event_id,
-                details=details,
-            )
-        )
-
-    def _ledger(
-        self,
-        payment: BookingPayment,
-        entry_type: str,
-        direction: str,
-        amount_cents: int,
-        details: dict[str, Any],
-    ) -> None:
-        existing = self.session.scalar(
-            select(LedgerEntry).where(
-                LedgerEntry.booking_payment_id == payment.id,
-                LedgerEntry.entry_type == entry_type,
-            )
-        )
-        if existing is not None:
-            return
-        self.session.add(
-            LedgerEntry(
-                booking_id=payment.booking_id,
-                booking_payment_id=payment.id,
-                entry_type=entry_type,
-                direction=direction,
-                amount_cents=amount_cents,
                 details=details,
             )
         )

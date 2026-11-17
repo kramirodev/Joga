@@ -1,7 +1,8 @@
-"""Inversão da leitura do saldo (ADR 0049 §11, Etapa 7).
+"""Leitura exclusiva do saldo pelo ledger/lotes (ADR 0049 §11, Etapas 7 e 9).
 
-A flag `JOGA_TICKET_BALANCE_SOURCE` alterna `cache` e `ledger` sem deploy. No
-modo ledger, conta ausente ou divergência ledger × lotes falha alto.
+Não existe mais flag de fonte nem escrita em ``ticket_balances``: o saldo é a
+soma dos lotes utilizáveis, com validação do caixa em ``player_credit``. Sem
+fallback: conta ausente ou divergência falha alto e a API devolve 503.
 """
 
 from __future__ import annotations
@@ -10,16 +11,15 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 from app.modules.ledger.accounts import FEE_REVENUE, player_credit_code
 from app.modules.ledger.opening import open_ledger
 from app.modules.ledger.reconciliation import ledger_health, reconcile_credit
 from app.modules.ledger.service import LedgerPosting, LedgerService
-from app.modules.tickets.models import TicketBalance
 from app.modules.tickets.service import (
     BalanceUnavailable,
     LedgerInconsistency,
@@ -31,11 +31,11 @@ from tests.helpers_results import make_token, make_user
 from tests.test_ticket_settlement import api_client, bearer
 
 
-def ledger_settings(source: str = "ledger") -> Settings:
-    return Settings(_env_file=None, environment="local", ticket_balance_source=source)
+def ledger_settings() -> Settings:
+    return Settings(_env_file=None, environment="local")
 
 
-def test_ledger_source_composes_purchased_pass_and_free(db_session: Session) -> None:
+def test_balance_composes_purchased_pass_and_free(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(
         db_session,
@@ -62,12 +62,17 @@ def test_ledger_source_composes_purchased_pass_and_free(db_session: Session) -> 
     db_session.flush()
     open_ledger(db_session, dry_run=False)
 
-    assert get_balance(db_session, user_id, source="ledger") == 15
-    assert get_balance(db_session, user_id, source="cache") == 15
+    assert get_balance(db_session, user_id) == 15
     assert reconcile_credit(db_session).clean
 
 
-def test_ledger_source_fails_when_account_is_missing(db_session: Session) -> None:
+def test_ticket_balances_is_not_a_model_anymore() -> None:
+    """A tabela virou view no PostgreSQL; a metadata não pode recriá-la."""
+
+    assert "ticket_balances" not in Base.metadata.tables
+
+
+def test_balance_fails_when_account_is_missing(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(
         db_session,
@@ -79,10 +84,10 @@ def test_ledger_source_fails_when_account_is_missing(db_session: Session) -> Non
     db_session.flush()
 
     with pytest.raises(BalanceUnavailable):
-        get_balance(db_session, user_id, source="ledger")
+        get_balance(db_session, user_id)
 
 
-def test_ledger_source_fails_on_deliberate_divergence(db_session: Session) -> None:
+def test_balance_fails_on_deliberate_divergence(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(
         db_session,
@@ -117,7 +122,7 @@ def test_ledger_source_fails_on_deliberate_divergence(db_session: Session) -> No
     db_session.flush()
 
     with pytest.raises(LedgerInconsistency):
-        get_balance(db_session, user_id, source="ledger")
+        get_balance(db_session, user_id)
 
     report = reconcile_credit(db_session)
     assert report.divergence_count == 1
@@ -126,7 +131,7 @@ def test_ledger_source_fails_on_deliberate_divergence(db_session: Session) -> No
     assert health["divergence_count"] == 1
 
 
-def test_wallet_api_respects_flag_and_does_not_mask(
+def test_wallet_api_reports_ledger_and_does_not_mask(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -171,22 +176,6 @@ def test_wallet_api_respects_flag_and_does_not_mask(
     )
     db_session.flush()
 
-    cached = db_session.get(TicketBalance, user_id)
-    assert cached is not None and cached.balance == 8
     failed = api.get("/api/v1/me/tickets", headers=bearer(token))
     assert failed.status_code == 503, failed.text
     assert failed.json()["detail"]["code"] == "balance_unavailable"
-
-
-def test_cache_is_still_written_in_the_same_transaction(db_session: Session) -> None:
-    user_id = make_user(db_session)
-    grant(
-        db_session,
-        user_id,
-        4,
-        source="purchase",
-        idempotency_key="balance:cache",
-    )
-    db_session.flush()
-    cached = db_session.scalar(select(TicketBalance).where(TicketBalance.user_id == user_id))
-    assert cached is not None and cached.balance == 4

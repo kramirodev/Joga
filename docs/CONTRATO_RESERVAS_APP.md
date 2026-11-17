@@ -202,8 +202,8 @@ Quando a vaga é paga por passe/grátis/admin, `funding_source` identifica a fon
 - `free_level`/`admin` usam `expires_at` quando existir; ingresso grátis de nível expira com a temporada.
 - A ordem de consumo é `pass → free_level → admin → purchase → refund`.
 - `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição; o saldo monetário não é exibido como carteira.
-- A resposta do wallet ganhou `source`: `cache` (leitura de `ticket_balances`) ou `ledger` (tickets dos lotes + passe/grátis utilizáveis, com validação do caixa `player_credit`). A flag `JOGA_TICKET_BALANCE_SOURCE` alterna sem deploy.
-- No modo `ledger`, conta ausente para lote existente, caixa divergente ou saldo negativo responde `503 balance_unavailable`. O app não deve tratar esse erro como saldo zero; deve mostrar indisponibilidade e tentar novamente.
+- A resposta do wallet mantém `source`, agora sempre `ledger`: tickets dos lotes + passe/grátis/admin utilizáveis, com validação do caixa `player_credit`. A flag `JOGA_TICKET_BALANCE_SOURCE` foi removida na Etapa 9.
+- Conta ausente para lote existente, caixa divergente ou saldo negativo responde `503 balance_unavailable`. O app não deve tratar esse erro como saldo zero; deve mostrar indisponibilidade e tentar novamente.
 - Reservas anteriores à 14E têm `pricing_version = "legacy_v0"`, `fee_cents = 0` e `total_cents = venue_price_cents`. Elas não são relançadas no ledger.
 
 `timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.

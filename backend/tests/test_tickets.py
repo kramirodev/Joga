@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.ledger.opening import open_ledger
 from app.modules.tickets.models import TicketLedgerEntry, TicketLot
 from app.modules.tickets.service import (
     InsufficientTickets,
@@ -42,6 +43,7 @@ def test_grant_and_consume(db_session: Session) -> None:
     user_id = make_user(db_session)
 
     assert grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:1") == 10
+    open_ledger(db_session, dry_run=False)
     booking_id = uuid.uuid4()
     assert consume(db_session, user_id, 6, ref_type="booking", ref_id=booking_id) == 4
     assert get_balance(db_session, user_id) == 4
@@ -50,6 +52,7 @@ def test_grant_and_consume(db_session: Session) -> None:
 def test_insufficient_balance_does_not_debit(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(db_session, user_id, 3, source="purchase", idempotency_key="purchase:2")
+    open_ledger(db_session, dry_run=False)
 
     with pytest.raises(InsufficientTickets):
         consume(db_session, user_id, 6, ref_type="booking", ref_id=uuid.uuid4())
@@ -60,6 +63,7 @@ def test_insufficient_balance_does_not_debit(db_session: Session) -> None:
 def test_consumption_is_idempotent(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:3")
+    open_ledger(db_session, dry_run=False)
     booking_id = uuid.uuid4()
 
     assert consume(db_session, user_id, 6, ref_type="booking", ref_id=booking_id) == 4
@@ -116,7 +120,9 @@ def test_expired_lot_does_not_count_in_the_balance(db_session: Session) -> None:
         idempotency_key="pass:expired",
         period="2000-01",
     )
-    assert get_balance(db_session, user_id) == 5
+    assert get_balance(db_session, user_id) == 0
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None and lot.remaining == 5
 
     assert expire_due(db_session) == 1
     assert get_balance(db_session, user_id) == 0
@@ -135,6 +141,7 @@ def test_expired_lot_does_not_count_in_the_balance(db_session: Session) -> None:
 def test_purchased_credit_never_expires(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(db_session, user_id, 7, source="purchase", idempotency_key="purchase:never")
+    open_ledger(db_session, dry_run=False)
     lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
     assert lot is not None and lot.expires_at is None
     # Mesmo que algo antigo tenha gravado uma validade, o crédito comprado
@@ -192,6 +199,7 @@ def test_wallet_endpoint_returns_balance_and_entries(
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)
     grant(db_session, user_id, 10, source="purchase", idempotency_key=f"purchase:{user_id}")
+    open_ledger(db_session, dry_run=False)
     consume(db_session, user_id, 4, ref_type="booking", ref_id=uuid.uuid4())
     db_session.commit()
 
@@ -211,6 +219,7 @@ def test_wallet_is_scoped_to_the_user(client: TestClient, db_session: Session) -
     owner_id = make_user(db_session)
     owner_token = make_token(db_session, owner_id)
     grant(db_session, owner_id, 9, source="purchase", idempotency_key=f"purchase:{owner_id}")
+    open_ledger(db_session, dry_run=False)
     db_session.commit()
 
     other_id = make_user(db_session)

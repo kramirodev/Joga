@@ -33,10 +33,12 @@ from app.modules.passes.service import activate_subscription, create_subscriptio
 from app.modules.payments.financial import FinancialService
 from app.modules.payments.models import VenueRelease
 from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
-from app.modules.tickets.models import TicketBalance
+from app.modules.tickets.models import TicketLot
 from app.modules.tickets.service import (
     confirm_purchase,
+    consume,
     create_purchase,
+    get_balance,
     grant,
     player_credit_cents,
     revoke_purchase,
@@ -80,8 +82,9 @@ def test_purchase_credits_cash_and_tickets(db_session: Session) -> None:
     assert service.balance_for_code("psp_clearing") == purchase.amount_cents
     assert service.balance_for_code(player_credit_code(user_id)) == purchase.amount_cents
     assert player_credit_cents(db_session, user_id) == purchase.amount_cents
-    cached = db_session.get(TicketBalance, user_id)
-    assert cached is not None and cached.balance == purchase.tickets
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None and lot.remaining == purchase.tickets
+    assert get_balance(db_session, user_id) == purchase.tickets
     assert reconcile_credit(db_session).clean
 
 
@@ -258,14 +261,13 @@ def test_free_level_seat_posts_promo_expense(
     api = api_client(client, db_session)
     context = setup_context(db_session)
     user_id = context["users"][0]
-    from app.modules.tickets.models import TicketLot
-
-    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
-    assert lot is not None
-    lot.remaining = 0
-    balance = db_session.get(TicketBalance, user_id)
-    assert balance is not None
-    balance.balance = 0
+    consume(
+        db_session,
+        user_id,
+        TICKETS_PER_SEAT,
+        ref_type="test_reset",
+        ref_id=uuid.uuid4(),
+    )
     grant(
         db_session,
         user_id,
@@ -307,14 +309,13 @@ def test_reconciler_covers_non_credit_seat(
     api = api_client(client, db_session)
     context = setup_context(db_session)
     user_id = context["users"][0]
-    from app.modules.tickets.models import TicketLot
-
-    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
-    assert lot is not None
-    lot.remaining = 0
-    balance = db_session.get(TicketBalance, user_id)
-    assert balance is not None
-    balance.balance = 0
+    consume(
+        db_session,
+        user_id,
+        TICKETS_PER_SEAT,
+        ref_type="test_reset",
+        ref_id=uuid.uuid4(),
+    )
     grant(
         db_session,
         user_id,

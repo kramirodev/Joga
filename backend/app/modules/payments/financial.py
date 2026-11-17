@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, aliased
@@ -19,7 +18,14 @@ from app.modules.bookings.models import Booking
 from app.modules.bookings.service import BookingNotFound
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
-from app.modules.payments.models import FinancialDispute, LedgerEntry, VenueRelease
+from app.modules.payments.models import FinancialDispute, VenueRelease
+from app.modules.payments.statement import (
+    StatementRow,
+)
+from app.modules.payments.statement import (
+    count_statement as project_count_statement,
+)
+from app.modules.payments.statement import statement as project_statement
 
 DISPUTE_DECISIONS = frozenset({"ACCEPTED", "REJECTED"})
 
@@ -231,28 +237,13 @@ class FinancialService:
         *,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[LedgerEntry]:
-        return list(
-            self.session.scalars(
-                select(LedgerEntry)
-                .join(Booking, Booking.id == LedgerEntry.booking_id)
-                .where(Booking.organization_id == organization_id)
-                .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
-                .offset(offset)
-                .limit(limit)
-            ).all()
+    ) -> list[StatementRow]:
+        return project_statement(
+            self.session, organization_id=organization_id, limit=limit, offset=offset
         )
 
     def count_statement(self, organization_id: uuid.UUID) -> int:
-        return int(
-            self.session.scalar(
-                select(func.count())
-                .select_from(LedgerEntry)
-                .join(Booking, Booking.id == LedgerEntry.booking_id)
-                .where(Booking.organization_id == organization_id)
-            )
-            or 0
-        )
+        return project_count_statement(self.session, organization_id=organization_id)
 
     def release_totals(self, organization_id: uuid.UUID) -> dict[str, int]:
         rows = self.session.execute(
@@ -425,29 +416,6 @@ class FinancialService:
     def _release(self, release: VenueRelease, now: datetime, *, reason: str) -> bool:
         if release.status != "PENDING":
             return False
-        existing = self.session.scalar(
-            select(LedgerEntry).where(
-                LedgerEntry.booking_id == release.booking_id,
-                LedgerEntry.entry_type == "VENUE_RELEASE",
-            )
-        )
-        details: dict[str, Any] = {
-            "release_id": str(release.id),
-            "simulated": True,
-            "provider": get_settings().psp_provider,
-            "reason": reason,
-        }
-        if existing is None:
-            self.session.add(
-                LedgerEntry(
-                    booking_id=release.booking_id,
-                    booking_payment_id=None,
-                    entry_type="VENUE_RELEASE",
-                    direction="CREDIT",
-                    amount_cents=release.amount_cents,
-                    details=details,
-                )
-            )
         release.status = "RELEASED"
         release.released_at = now
         release.reason = reason

@@ -544,14 +544,17 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
 .venv\Scripts\python.exe -m scripts.reconcile_ledger --json
 ```
 
-- Flag de leitura do saldo: `JOGA_TICKET_BALANCE_SOURCE=cache` (padrão) ou
-  `ledger`. Em `ledger`, o saldo é a soma dos tickets dos lotes comprados +
-  passe/grátis/admin utilizáveis, com validação do caixa `player_credit`
-  (compras pagas + abertura − Σ k×310). Conta ausente, caixa divergente ou
-  saldo negativo responde `503 balance_unavailable`; não há fallback. Para
-  reverter sem deploy, volte a flag para `cache` e reinicie o processo.
-- `ticket_balances` continua sendo escrita como cache na mesma transação; a
-  leitura não depende dela no modo `ledger`.
+- Leitura do saldo: exclusivamente lotes + ledger. O saldo é a soma dos
+  tickets dos lotes comprados + passe/grátis/admin utilizáveis, com validação
+  do caixa `player_credit` (compras pagas + abertura − Σ k×310 das reservas
+  confirmadas). Conta ausente, caixa divergente ou saldo negativo responde
+  `503 balance_unavailable`; não há flag nem fallback.
+- `ticket_balances` é **view** sobre `ticket_lots` (migração `t4e5f6a7b8c9`);
+  não é mais escrita. O lock de carteira é a linha de `users`.
+- O extrato financeiro do fornecedor é projetado de `ledger_transactions` +
+  `ledger_entries` (`u5f6a7b8c9d0`); `booking_ledger_entries` não existe mais.
+  `CHARGE_CREATED` deixou de existir, `PAYMENT_CONFIRMED` representa a parte da
+  quadra e `booking_payment_id` vem nulo no extrato.
 - O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação.
 - Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, NFS-e e a política de repasse continuam pendentes; a 14E deve integrar o ledger em reais.
 

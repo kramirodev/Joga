@@ -129,31 +129,11 @@ class TicketLedgerEntry(Base):
     )
 
 
-class TicketBalance(Base):
-    """Saldo projetado. Reconstruível a partir do ledger."""
-
-    __tablename__ = "ticket_balances"
-    __table_args__ = (CheckConstraint("balance >= 0", name="balance_non_negative"),)
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    balance: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        onupdate=utcnow,
-        server_default=func.now(),
-    )
-
-
 class TicketLot(Base):
     """Lote de ingressos com origem, saldo e validade próprios.
 
-    O saldo de ``ticket_balances`` é a soma dos lotes ativos. Lotes expirados
+    É a fonte da verdade do saldo de tickets. ``ticket_balances`` é apenas uma
+    view de compatibilidade sobre os lotes utilizáveis; lotes expirados
     permanecem para auditoria, mas não contam no saldo.
     """
 

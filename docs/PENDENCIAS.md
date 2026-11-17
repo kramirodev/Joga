@@ -60,7 +60,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Integração da conclusão com o ciclo da partida | 15 | Hoje é ação operacional do estabelecimento |
 | Testes de UI mobile | 19 | Ainda manuais |
 | LGPD e retenção definitiva | 19 | Revisão jurídica pendente. Base legal e prazos do CPF estão descritos em `docs/PRIVACIDADE_CPF_E_RETENCAO.md` (Etapa 14E-E); a política definitiva depende de parecer |
-| Ledger de dupla entrada integrado | 14E | **Feito nas Etapas 6/7/6b**: compra, confirmação, devolução, repasse, passe e vagas por passe/grátis/admin lançam no ledger; leitura alternável por `JOGA_TICKET_BALANCE_SOURCE`. |
+| Ledger de dupla entrada integrado | 14E | **Feito nas Etapas 6/7/6b/9**: compra, confirmação, devolução, repasse, passe e vagas por passe/grátis/admin lançam no ledger; saldo lido exclusivamente dos lotes + ledger; `ticket_balances` é view e o extrato do fornecedor é projetado do ledger duplo. |
 | Taxa/preço em duas linhas | 14E | `compute_fee_cents` calcula e a reserva persiste `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents` desde `m7d8e9f0a1b2`; o rateio usa `total_cents` e o repasse usa `venue_price_cents`. |
 | CPF e NFS-e | 14E/19A | **CPF entregue na Etapa 8**: cifrado (AES-256-GCM, chave fora do banco) em `user_profiles` e snapshot por tomador em `fiscal_document_takers`; NFS-e segue intenção `pending_manual` por reserva, sem emissor/município |
 

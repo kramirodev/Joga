@@ -1,7 +1,9 @@
 """Reconciliação do crédito (ADR 0049 §13.7).
 
 Dois saldos independentes:
-- tickets: `ticket_balances` == soma de `ticket_lots.remaining`;
+- tickets: `ticket_balances` é view; a verdade é a soma de
+  `ticket_lots.remaining`, conferida contra `Σ original_amount` menos a soma
+  algébrica de `ticket_ledger.amount` negativo por jogador;
 - caixa: `player_credit` == compras pagas + abertura − Σ k×310 das reservas
   quitadas por tickets.
 
@@ -21,7 +23,7 @@ from app.modules.bookings.models import Booking, BookingParticipant
 from app.modules.ledger.accounts import PLAYER_CREDIT_PREFIX, player_credit_code
 from app.modules.ledger.models import LedgerAccount, LedgerTransaction
 from app.modules.ledger.service import LedgerError, LedgerService
-from app.modules.tickets.models import TicketBalance, TicketLot
+from app.modules.tickets.models import TicketLedgerEntry, TicketLot
 from app.modules.tickets.service import expected_player_credit_cents
 
 EXCLUDED_SOURCES = ("pass", "free_level", "admin")
@@ -41,12 +43,12 @@ class CreditMismatch:
 @dataclass(frozen=True)
 class BalanceMismatch:
     user_id: uuid.UUID
-    cache_balance: int
     lots_balance: int
+    derived_balance: int
 
     @property
     def difference(self) -> int:
-        return self.cache_balance - self.lots_balance
+        return self.lots_balance - self.derived_balance
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,7 @@ def _known_users(session: Session) -> set[uuid.UUID]:
         ).all()
     )
     users.update(session.scalars(select(TicketLot.user_id).distinct()).all())
-    users.update(session.scalars(select(TicketBalance.user_id).distinct()).all())
+    users.update(session.scalars(select(TicketLedgerEntry.user_id).distinct()).all())
     return {user_id for user_id in users if user_id is not None}
 
 
@@ -111,6 +113,39 @@ def _lots_balance(session: Session, user_id: uuid.UUID) -> int:
     return int(value or 0)
 
 
+def _derived_balance(session: Session, user_id: uuid.UUID) -> int:
+    """Saldo reconstruído dos lotes e do ledger de tickets.
+
+    ``Σ original_amount`` + débitos (consumo, expiração, revogação) + devoluções
+    que apenas reabriram um lote existente. Uma devolução que cria lote novo já
+    entra em ``original_amount`` e é identificada por estar referenciada em
+    ``ticket_lots.ledger_entry_id``.
+    """
+
+    original = session.scalar(
+        select(func.coalesce(func.sum(TicketLot.original_amount), 0)).where(
+            TicketLot.user_id == user_id,
+        )
+    )
+    negative = session.scalar(
+        select(func.coalesce(func.sum(TicketLedgerEntry.amount), 0)).where(
+            TicketLedgerEntry.user_id == user_id,
+            TicketLedgerEntry.amount < 0,
+        )
+    )
+    restored = session.scalar(
+        select(func.coalesce(func.sum(TicketLedgerEntry.amount), 0)).where(
+            TicketLedgerEntry.user_id == user_id,
+            TicketLedgerEntry.source == "refund",
+            TicketLedgerEntry.amount > 0,
+            TicketLedgerEntry.id.notin_(
+                select(TicketLot.ledger_entry_id).where(TicketLot.ledger_entry_id.is_not(None))
+            ),
+        )
+    )
+    return int(original or 0) + int(negative or 0) + int(restored or 0)
+
+
 def reconcile_credit(session: Session) -> ReconciliationReport:
     report = ReconciliationReport()
     for user_id in sorted(_known_users(session), key=str):
@@ -125,15 +160,14 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
                     expected_cents=expected_cents,
                 )
             )
-        cache = session.get(TicketBalance, user_id)
-        cache_balance = cache.balance if cache is not None else 0
         lots_balance = _lots_balance(session, user_id)
-        if cache_balance != lots_balance:
+        derived_balance = _derived_balance(session, user_id)
+        if lots_balance != derived_balance:
             report.balance_mismatches.append(
                 BalanceMismatch(
                     user_id=user_id,
-                    cache_balance=cache_balance,
                     lots_balance=lots_balance,
+                    derived_balance=derived_balance,
                 )
             )
 

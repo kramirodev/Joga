@@ -18,6 +18,7 @@ from app.modules.bookings.models import (
 )
 from app.modules.bookings.service import BookingNotFound, BookingService
 from app.modules.identity.clock import utcnow
+from app.modules.ledger.models import LedgerTransaction
 from app.modules.payments.adapter import (
     PixChargeRequest,
     ProviderStatus,
@@ -26,7 +27,6 @@ from app.modules.payments.adapter import (
 )
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import (
-    LedgerEntry,
     PaymentEvent,
     PaymentRefund,
     PspWebhookEvent,
@@ -177,7 +177,7 @@ def test_open_charges_and_webhooks_confirm_booking(
     assert player_payment["qr_code"]
     assert player_payment["provider"] == "simulator"
 
-    ledger_count = db_session.scalar(select(func.count()).select_from(LedgerEntry))
+    ledger_count = db_session.scalar(select(func.count()).select_from(PaymentEvent))
     assert ledger_count == 4
 
     adapter = FakeAdapter(fake_orders(accepted))
@@ -200,8 +200,6 @@ def test_open_charges_and_webhooks_confirm_booking(
     assert booking.status == "CONFIRMED"
     hold = db_session.scalar(select(BookingHold).where(BookingHold.booking_id == booking.id))
     assert hold is not None and hold.status == "RELEASED"
-    ledger_count = db_session.scalar(select(func.count()).select_from(LedgerEntry))
-    assert ledger_count == 8
 
     first = accepted["payments"][0]
     service.handle_webhook(
@@ -224,17 +222,16 @@ def test_open_charges_and_webhooks_confirm_booking(
     assert release is not None
     assert release.status == "PENDING"
     assert release.amount_cents == 40_000
-    assert (
-        db_session.scalar(
-            select(func.count())
-            .select_from(LedgerEntry)
-            .where(
-                LedgerEntry.booking_id == booking.id,
-                LedgerEntry.entry_type == "VENUE_RELEASE",
-            )
+    release_ledger = db_session.scalar(
+        select(func.count())
+        .select_from(LedgerTransaction)
+        .where(
+            LedgerTransaction.ref_type == "venue_release",
+            LedgerTransaction.ref_id == release.id,
+            LedgerTransaction.kind == "venue_release",
         )
-        == 0
     )
+    assert release_ledger == 0
 
 
 def test_amount_mismatch_does_not_confirm(
@@ -386,8 +383,16 @@ def test_venue_cancel_refunds_all_paid_participants(
     ).all()
     assert len(refunds) == 4
     assert {item.status for item in refunds} == {"PROCESSED"}
-    ledger_count = db_session.scalar(select(func.count()).select_from(LedgerEntry))
-    assert ledger_count == 12
+    refund_transactions = db_session.scalar(
+        select(func.count())
+        .select_from(LedgerTransaction)
+        .join(BookingPayment, BookingPayment.id == LedgerTransaction.ref_id)
+        .where(
+            LedgerTransaction.kind == "payment_refund",
+            BookingPayment.booking_id == uuid.UUID(accepted["id"]),
+        )
+    )
+    assert refund_transactions == 4
 
     again = api.post(
         f"/api/v1/organizations/{context['organization'].id}/bookings/{accepted['id']}/refund",
@@ -507,7 +512,12 @@ def test_financial_summary_and_booking_ledger(
     )
     assert financial.status_code == 200, financial.text
     body = financial.json()
-    assert len(body["ledger"]) == 8
+    assert len(body["ledger"]) == 1
+    entry = body["ledger"][0]
+    assert entry["entry_type"] == "PAYMENT_CONFIRMED"
+    assert entry["direction"] == "CREDIT"
+    assert entry["amount_cents"] == 40_000
+    assert entry["booking_payment_id"] is None
     assert body["refunds"] == []
 
 

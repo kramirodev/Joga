@@ -1297,3 +1297,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Migracoes validadas do zero:** `upgrade head` -> `downgrade base` -> `upgrade head` e `alembic check` sem diff no PostgreSQL local. Corrigido o nome do check no downgrade (convencao `ck_<tabela>_` reaplicada).
 - **Documentacao:** `DATA_MODEL.md`, `PENDENCIAS.md`, `RUNBOOK.md`, `backend/.env.example` e o novo `docs/PRIVACIDADE_CPF_E_RETENCAO.md` (base legal, finalidade, acesso, rotacao e retencao).
 - **Fora do escopo:** Etapa 9 (aposentadoria dos ledgers legados), emissao real de NFS-e, municipio/aliquota, recifragem em lote e qualquer fluxo de reembolso parcial.
+
+### 2026-11-17 - 14E.9: aposentadoria dos ledgers legados
+
+- **Leitura (9a):** `get_balance` le exclusivamente `ticket_lots` + ledger; removidos o modo `cache` e `JOGA_TICKET_BALANCE_SOURCE`. A API de wallet mantem `source`, agora sempre `ledger`. O saldo aceita `now` injetavel para testes de competencia mensal.
+- **Escrita (9b):** `TicketBalance` foi removido do modelo; `ticket_balances` e **view** sobre `ticket_lots` (`t4e5f6a7b8c9`), com conversao do saldo legado em lote `admin` + evento `ticket_ledger` (`legacy_lot:*`). O lock de carteira passou a ser `SELECT ... FOR UPDATE` na linha de `users`. `expire_due` opera por jogador.
+- **Extrato (9c):** novo `payments/statement.py` projeta `statement`/`count_statement` de `ledger_transactions` + `ledger_entries` + contas de venue. `booking_ledger_entries` foi removido (`u5f6a7b8c9d0`); `CHARGE_CREATED` deixou de existir, `PAYMENT_CONFIRMED` representa a parte da quadra e `booking_payment_id` vem nulo.
+- **Conciliacao:** tickets reconstruidos por `sum(original_amount)` + debitos + devolucoes que reabriram lote existente; caixa conferido apenas para reservas com `confirmed_at` (o debito ocorre na confirmacao, nao na quitacao individual); pagamentos conferem `booking_confirmed`, `booking_refund`, `payment_refund` e `venue_release`, incluindo `VenueRelease.amount_cents == Booking.venue_price_cents`.
+- **Testes:** ajustados `test_balance_source.py` (leitura exclusiva, sem flag, `ticket_balances` fora da metadata), `test_ledger_shadow.py`, `test_ledger_invariant.py`, `test_tickets.py`, `test_financials.py`, `test_payments_service.py` e `test_pass.py`. Suite completa **587 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos.
+- **Migracoes:** `upgrade head` -> `downgrade base` -> `upgrade head` e `alembic check` sem diff no PostgreSQL local; conversao de saldo legado validada (view 7, lote `admin` 7, um evento). Head final `u5f6a7b8c9d0`.
+- **Documentacao:** `DATA_MODEL.md`, `PENDENCIAS.md`, `RUNBOOK.md`, `JOGA_DOCUMENTACAO_TECNICA.md`, `CONTRATO_RESERVAS_APP.md`, `backend/.env.example` e a fase 14E.
+- **Fora do escopo:** 14B/18, dinheiro real, webhook publico, alteracao da ADR 0049 e UI nova.
