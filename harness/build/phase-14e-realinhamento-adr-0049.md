@@ -1,6 +1,6 @@
 # Fase 14E — Realinhamento da ADR 0049
 
-**Status:** **implementada, pendente de revisão/commit**. Etapas 0–11 e 6b entregues; commit e push autorizados em 17/11/2026. 14B e 18 não iniciadas.
+**Status:** **implementada, pendente de revisão/commit**. Etapas 0–11 e 6b entregues; commit e push autorizados em 17/11/2026 e publicados em `65d9ff5`, `7c56da5` e `5afd32c`. 14B e 18 não iniciadas.
 **Depende de:** 14, 14D congeladas e estabilização do repositório.
 **Bloqueia:** 14B, 15, 19A e qualquer dinheiro real.
 **Referência:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md`, `docs/DECISOES_BACKEND_ADR_0049.md`, `docs/DATA_MODEL.md`.
