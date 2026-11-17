@@ -10,10 +10,10 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
 - Cadastro de destino de repasse (CNPJ e chave Pix) e status de prontidão.
-- Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios, expediente, fechamentos e fotos de quadra com revisão.
+- Quadras/espaços, modalidades, atributo de cobertura, agenda semanal, preços, bloqueios, expediente, fechamentos e fotos de quadra com revisão. O expediente é editado por `PATCH`, sem apagar e recriar a janela.
 - Reservas: lista por organização, aceite/recusa, cancelamento, reembolso, presença e conclusão; T1/T2/T3 controlados pelo backend.
-- Financeiro: resumo, repasses a receber, extrato e contestação.
-- Moderação: fila, decisão, recursos, operadores e **central de notificações internas**.
+- Financeiro em reais sobre o ledger: resumo com comissão do JOGA separada do valor do fornecedor, repasses com composição e comprovante simulado, extrato do fornecedor, comissão por período, contestações com prazo e decisão, e detalhe financeiro por reserva com NFS-e placeholder.
+- Moderação: fila paginada por `limit/offset` com filtro `IN_REVIEW`, decisão, recursos, operadores e **central de notificações internas**.
 - Sem PSP de produção, escrow, KYC contratual, NFS-e operacional, classificador de IA e publicidade.
 
 ## Desenvolvimento local
@@ -105,6 +105,22 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 `vite preview` serve o build com a CSP do `<meta>`, mas não simula os
 cabeçalhos da hospedagem.
 
+## Financeiro e repasses
+
+- A substância financeira é o crédito em reais. O ticket é a unidade de exibição e
+  consumo (R$ 3,10), não a unidade de conta.
+- O valor do espaço pertence ao fornecedor e **nunca** é rotulado como receita do
+  JOGA. A receita do JOGA é a comissão de intermediação (`joga_fee_cents`).
+- `Cobrança total` (`charged_cents`) é o valor cobrado do jogador, não receita.
+- No caminho por tickets, o valor do JOGA é o restante de
+  `tickets × R$ 3,10 − valor do espaço`; o percentual é referência, não valor final.
+- O repasse fica elegível em `starts_at + 2h`. Contestação aberta suspende o
+  repasse. Reembolso após repasse aparece como `REVERSED` na agenda.
+- `receipt_reference` é exibido como comprovante; no protótipo, `simulated:<release_id>`.
+- NFS-e é exibida como placeholder (`pending_manual`), sem emissão operacional.
+- A decisão de contestação é interna (`JOGA_REVIEW_OPERATORS`) e apenas exibida no
+  painel do fornecedor; o estabelecimento não decide a própria contestação.
+
 ## Observabilidade
 
 - A API devolve `X-Request-ID` em todas as respostas.
@@ -116,6 +132,8 @@ cabeçalhos da hospedagem.
 
 - A sessão web usa cookies `SameSite=Strict`; o painel deve ser servido no mesmo
   site da API.
+- Em 401/refresh inválido, o painel limpa os tokens e redireciona para `/login`
+  preservando o destino em `state.from`; o login devolve ao caminho original.
 - A direção visual é um design system dark alinhado à marca JOGA (lime/coral), com
   tipografia de sistema. Assets próprios, fontes licenciadas e testes com usuários
   continuam pendentes.
@@ -125,3 +143,9 @@ cabeçalhos da hospedagem.
 - A tela de moderação continua sendo uma ferramenta interna separada; a **central de notificações internas está implementada** (`NotificationCenter`) e consome `/moderation/notifications`.
 - A CSP depende de a hospedagem enviar `frame-ancestors` e os demais cabeçalhos;
   o `<meta>` sozinho não cobre enquadramento.
+- O relatório de comissão pagina por `limit/offset` e usa o tamanho da página para
+  inferir o fim do período; o contrato ainda não devolve `total`.
+- Repasse, comprovante e NFS-e são simulados. Transferência real, MED/chargeback
+  real, PSP de produção e emissão fiscal continuam fora do escopo do painel.
+- A decisão de contestação não é oferecida ao fornecedor: ela é interna e exige
+  `JOGA_REVIEW_OPERATORS`, conforme ADR 0049/contrato da Fase 15.
