@@ -139,7 +139,7 @@
 | `ticket_purchases` | Compra de pacote, valor, status e idempotência |
 | `ticket_lots` | Lote de origem, saldo projetado, preço unitário e período |
 | `ticket_lot_consumptions` | Consumo por lote e referência |
-| `ticket_balances` | Projeção de saldo por usuário |
+| `ticket_balances` | Cache do saldo em tickets, mantido na mesma transação; a leitura usa o ledger com a flag `JOGA_TICKET_BALANCE_SOURCE` |
 | `pass_subscriptions` | Assinatura trimestral, status e período |
 | `pass_deliveries` | Entrega mensal idempotente por assinatura/mês |
 | `seasons` | Temporada trimestral, início/fim e estado |
@@ -250,7 +250,7 @@
 ## 12. Lacunas que a Fase 14E deve fechar
 
 - ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
-- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse e passe — **feita na Etapa 6** (`n8e9f0a1b2c3` + `ledger/flow.py`). A leitura pública ainda usa `ticket_balances`; a inversão é a Etapa 7. Vagas pagas por passe/grátis/admin ficam na Etapa 6b e o reconciliador as lista como excluídas.
+- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse e passe — **feita na Etapa 6** (`n8e9f0a1b2c3` + `ledger/flow.py`). A leitura pública usa `JOGA_TICKET_BALANCE_SOURCE` (`cache`/`ledger`); em `ledger`, conta ausente ou divergência falha alto. Vagas pagas por passe/grátis/admin ficam na Etapa 6b e o reconciliador as lista como excluídas.
 - Migração de `ticket_lots.remaining` para saldo em reais 1:1 — **parcial**: `remaining_cents = remaining × 310` para lotes comprados/devolução, com abertura contra `opening_equity`. Passe, grátis e admin continuam em tickets.
 - ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
 - `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots.remaining_cents` é a verdade do crédito comprado.

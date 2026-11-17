@@ -51,6 +51,10 @@ class ReconciliationReport:
     excluded_seats: list[ExcludedSeat] = field(default_factory=list)
 
     @property
+    def divergence_count(self) -> int:
+        return len(self.mismatches)
+
+    @property
     def clean(self) -> bool:
         return not self.mismatches
 
@@ -127,9 +131,22 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
     return report
 
 
+def ledger_health(session: Session) -> dict[str, object]:
+    """Health check executável, sem PII: contadores de divergência."""
+
+    report = reconcile_credit(session)
+    return {
+        "clean": report.clean,
+        "checked_users": report.checked_users,
+        "divergence_count": report.divergence_count,
+        "excluded_seats": len(report.excluded_seats),
+    }
+
+
 __all__ = [
     "CreditMismatch",
     "ExcludedSeat",
     "ReconciliationReport",
+    "ledger_health",
     "reconcile_credit",
 ]

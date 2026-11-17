@@ -195,6 +195,8 @@ Regras:
 - `free_level`/`admin` usam `expires_at` quando existir; ingresso grátis de nível expira com a temporada.
 - A ordem de consumo é `pass → free_level → admin → purchase → refund`.
 - `GET /api/v1/me/tickets` devolve `period` em cada lote (aditivo). `balance` continua em tickets de exibição; o saldo real em centavos do crédito comprado não é exibido como carteira.
+- A resposta do wallet ganhou `source`: `cache` (leitura antiga de `ticket_balances`) ou `ledger` (crédito comprado no ledger + passe/grátis utilizáveis). A flag `JOGA_TICKET_BALANCE_SOURCE` alterna sem deploy.
+- No modo `ledger`, conta ausente para lote existente ou divergência ledger × lotes responde `503 balance_unavailable`. O app não deve tratar esse erro como saldo zero; deve mostrar indisponibilidade e tentar novamente.
 
 `timezone` é o fuso IANA do estabelecimento. `starts_at`/`ends_at` continuam em UTC; o cliente deve formatar usando esse fuso, nunca o fuso do navegador.
 

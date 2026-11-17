@@ -35,6 +35,7 @@ def main() -> int:
     payload = {
         "clean": report.clean,
         "checked_users": report.checked_users,
+        "divergence_count": report.divergence_count,
         "mismatches": [
             {
                 "user_id": str(item.user_id),
@@ -60,9 +61,14 @@ def main() -> int:
     elif report.clean:
         print(
             f"Reconciliação limpa: {report.checked_users} usuários; "
+            f"{report.divergence_count} divergências; "
             f"{len(report.excluded_seats)} vagas excluídas (Etapa 6b)."
         )
     else:
+        print(
+            f"Reconciliação com {report.divergence_count} divergências "
+            f"em {report.checked_users} usuários."
+        )
         for item in report.mismatches:
             print(
                 f"divergência user={item.user_id} "

@@ -983,6 +983,8 @@ O `external_reference` do PSP associa a cobrança à compra ou reserva. O ledger
 
 **Etapa 6 (sombra de escrita):** os fluxos cobertos lançam no `ledger_*` na mesma transação do evento: compra de crédito com prêmio (`purchase:{id}`), confirmação da reserva (`booking:{id}:confirm`), devolução de crédito (`booking:{id}:refund`), repasse (`release:{id}`), venda do passe (`pass:{id}:sale`) e mês disponibilizado (`pass:{id}:month:{n}`). O ticket vale R$ 3,10; a vaga debita `contribution_cents` e baixa `ceil(contribution/310)` tickets. A abertura do cutover (`opening:{user}`, contra `opening_equity`) e o reconciliador de `player_credit` × `ticket_lots.remaining_cents` existem em `ledger/opening.py`, `ledger/reconciliation.py` e `scripts/`. A leitura pública continua em `ticket_balances` até a Etapa 7; vagas pagas por passe/grátis/admin são a Etapa 6b e aparecem como excluídas no reconciliador.
 
+**Etapa 7 (inversão de leitura):** `JOGA_TICKET_BALANCE_SOURCE=cache|ledger` alterna a fonte do saldo exibido sem deploy. Em `ledger`, o saldo é `ceil(player_credit_cents / 310)` + tickets de passe/grátis/admin utilizáveis. Sem fallback: conta ausente para lote existente ou divergência entre ledger e lotes responde `503 balance_unavailable` e registra alerta. `ticket_balances` continua sendo escrita como cache na mesma transação. O reconciliador (`scripts/reconcile_ledger.py`) tem contador de divergência e exit code diferente de zero; a abertura deve ser aplicada antes de ligar a flag.
+
 ### 15.3 Custódia e repasse
 
 **Modelo B (protótipo):** conta separada do caixa operacional, ledger por jogador e reconhecimento como passivo. O risco fiscal é declarado.

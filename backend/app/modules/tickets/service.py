@@ -11,6 +11,7 @@ Regras:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
@@ -20,7 +21,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.config import get_settings
 from app.modules.identity.clock import ensure_utc, utcnow
+from app.modules.ledger.accounts import player_credit_code
+from app.modules.ledger.models import LedgerAccount
+from app.modules.ledger.service import LedgerService
 from app.modules.tickets.models import (
     TicketBalance,
     TicketLedgerEntry,
@@ -40,6 +45,8 @@ SOURCE_PRIORITY = {
 GRANT_SOURCES = frozenset({"purchase", "pass", "free_level", "admin", "refund"})
 PAID_SOURCES = frozenset({"purchase", "refund"})
 TICKET_VALUE_CENTS = 310
+
+logger = logging.getLogger("joga.tickets.balance")
 
 
 def tickets_for_cents(amount_cents: int) -> int:
@@ -68,6 +75,14 @@ class PackNotFound(TicketError):
 
 class PurchaseNotFound(TicketError):
     """Compra inexistente ou de outro jogador."""
+
+
+class BalanceUnavailable(TicketError):
+    """A fonte ledger não tem conta para um saldo que deveria existir."""
+
+
+class LedgerInconsistency(TicketError):
+    """Ledger e lotes divergem; a leitura não pode mascarar."""
 
 
 DEFAULT_PACKS: tuple[tuple[str, str, int, int], ...] = (
@@ -228,9 +243,72 @@ def confirm_purchase(
     return purchase, balance
 
 
-def get_balance(session: Session, user_id: uuid.UUID) -> int:
-    record = session.get(TicketBalance, user_id)
-    return record.balance if record is not None else 0
+def _paid_lots_cents(session: Session, user_id: uuid.UUID) -> int:
+    value = session.scalar(
+        select(func.coalesce(func.sum(TicketLot.remaining_cents), 0)).where(
+            TicketLot.user_id == user_id,
+            TicketLot.source.in_(PAID_SOURCES),
+            TicketLot.remaining_cents.is_not(None),
+        )
+    )
+    return int(value or 0)
+
+
+def usable_non_paid_tickets(session: Session, user_id: uuid.UUID) -> int:
+    """Tickets de passe/grátis/admin utilizáveis agora (sem lock)."""
+
+    now = utcnow()
+    lots = session.scalars(
+        select(TicketLot).where(
+            TicketLot.user_id == user_id,
+            TicketLot.remaining > 0,
+            TicketLot.source.in_(("pass", "free_level", "admin")),
+            _usable_lot_condition(now),
+        )
+    ).all()
+    return sum(lot.remaining for lot in lots)
+
+
+def get_balance(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    source: str | None = None,
+) -> int:
+    """Saldo exibido em tickets.
+
+    `cache` mantém a leitura antiga de `ticket_balances` para rollback. `ledger`
+    compõe o crédito comprado no ledger (em centavos, exibido a R$ 3,10 por
+    ticket) com passe/grátis/admin utilizáveis. Sem fallback: conta ausente com
+    lote existente ou divergência ledger × lotes falha alto.
+    """
+
+    mode = (source or get_settings().ticket_balance_source).strip().lower()
+    if mode == "cache":
+        record = session.get(TicketBalance, user_id)
+        return record.balance if record is not None else 0
+    if mode != "ledger":
+        raise TicketError("invalid_balance_source")
+
+    lots_cents = _paid_lots_cents(session, user_id)
+    account = session.scalar(
+        select(LedgerAccount).where(LedgerAccount.code == player_credit_code(user_id))
+    )
+    if account is None:
+        if lots_cents > 0:
+            logger.error("balance_unavailable code=ledger_account_missing")
+            raise BalanceUnavailable("ledger_account_missing")
+        purchased = 0
+    else:
+        ledger_cents = LedgerService(session).balance_cents(account)
+        if ledger_cents < 0:
+            logger.error("balance_unavailable code=negative_player_credit")
+            raise LedgerInconsistency("negative_player_credit")
+        if ledger_cents != lots_cents:
+            logger.error("balance_unavailable code=ledger_lots_mismatch")
+            raise LedgerInconsistency("ledger_lots_mismatch")
+        purchased = tickets_for_cents(ledger_cents)
+    return purchased + usable_non_paid_tickets(session, user_id)
 
 
 def list_entries(

@@ -1247,3 +1247,15 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Consumo multi-lote:** quando a cota e dividida entre lotes, a soma de `ticket_lot_consumptions.amount` e ajustada para ser exatamente `k = ceil(contribution/310)`; um lote pode receber `amount = 0` e manter apenas `amount_cents`, por isso a constraint passou de `amount > 0` para `amount >= 0`.
 - **Teste:** `test_consumption_across_lots_keeps_k_exact` cobre dois lotes com sobra de centavos e confirma `Σ amount_cents == cota` e `Σ amount == k`.
 - **Migracoes validadas do zero:** schema local recriado, `upgrade head`, `downgrade base`, `upgrade head` e `alembic check` sem diff.
+
+### 2026-11-16 - 14E.3: inversao da leitura do saldo
+
+- **Flag:** `JOGA_TICKET_BALANCE_SOURCE=cache|ledger` (padrao `cache`). Alterna a fonte sem deploy de codigo; `cache` preserva a leitura antiga para rollback.
+- **Composição:** no modo `ledger`, o saldo exibido é `ceil(player_credit_cents / 310)` + tickets utilizáveis de passe/grátis/admin. A verdade continua em centavos; nenhum saldo em reais é exposto como carteira.
+- **Sem fallback:** conta `player_credit` ausente com lote comprado existente, saldo negativo ou divergencia ledger x lotes levantam `BalanceUnavailable`/`LedgerInconsistency`, registram alerta e respondem `503 balance_unavailable`. O teste cobre divergencia proposital com cache intacto, garantindo que a resposta nao mascara.
+- **Cache:** `ticket_balances` continua sendo escrito na mesma transacao; nenhuma tabela foi removida.
+- **Health check:** `ReconciliationReport.divergence_count` e `ledger_health()` sem PII; `scripts/reconcile_ledger.py` mostra o contador e retorna exit code 1 com divergencia.
+- **API:** `GET /api/v1/me/tickets` ganhou `source` (aditivo) e responde `503` quando a leitura nao fecha. `source=cache` mantem o contrato anterior.
+- **Testes:** 5 novos em `tests/test_balance_source.py` (composicao, conta ausente, divergencia, API com flag e cache escrito). Suite **565 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic check` sem diff.
+- **Operacao:** ligar a flag somente depois de `scripts.ledger_opening --apply` e `scripts.reconcile_ledger` limpo. RUNBOOK atualizado.
+- **Fora do escopo:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).

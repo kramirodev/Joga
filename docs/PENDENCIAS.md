@@ -60,7 +60,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Integração da conclusão com o ciclo da partida | 15 | Hoje é ação operacional do estabelecimento |
 | Testes de UI mobile | 19 | Ainda manuais |
 | LGPD e retenção definitiva | 19 | Revisão jurídica pendente |
-| Ledger de dupla entrada integrado | 14E | **Sombra de escrita feita na Etapa 6**: compra, confirmação, devolução, repasse e passe lançam na mesma transação. Leitura ainda em `ticket_balances` (Etapa 7); vagas por passe/grátis/admin ficam na 6b. |
+| Ledger de dupla entrada integrado | 14E | **Sombra de escrita feita na Etapa 6**; leitura alternável por `JOGA_TICKET_BALANCE_SOURCE` (Etapa 7). Falta 6b (passe/grátis/admin). |
 | Taxa/preço em duas linhas | 14E | `compute_fee_cents` calcula e a reserva persiste `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents` desde `m7d8e9f0a1b2`; o rateio usa `total_cents` e o repasse usa `venue_price_cents`. |
 | CPF e NFS-e | 14E/19A | Placeholders; sem fluxo operacional |
 

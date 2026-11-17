@@ -1,6 +1,6 @@
 # Fase 14E — Realinhamento da ADR 0049
 
-**Status:** em andamento. Etapas 0–6 concluídas; 6b (vagas por passe/grátis/admin), 7 (inversão de leitura), 8 (conformidade) e 9 (aposentadoria) pendentes.
+**Status:** em andamento. Etapas 0–7 concluídas; 6b (vagas por passe/grátis/admin), 8 (conformidade) e 9 (aposentadoria) pendentes.
 **Depende de:** 14, 14D congeladas e estabilização do repositório.
 **Bloqueia:** 14B, 15, 19A e qualquer dinheiro real.
 **Referência:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md`, `docs/DECISOES_BACKEND_ADR_0049.md`, `docs/DATA_MODEL.md`.

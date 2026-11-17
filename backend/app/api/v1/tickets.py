@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -31,6 +32,8 @@ from app.modules.payments.purchase import (
 )
 from app.modules.tickets.models import TicketPack, TicketPurchase
 from app.modules.tickets.service import (
+    BalanceUnavailable,
+    LedgerInconsistency,
     PackNotFound,
     PurchaseNotFound,
     TicketError,
@@ -43,6 +46,8 @@ from app.modules.tickets.service import (
 )
 
 router = APIRouter(prefix="/me/tickets", tags=["tickets"])
+
+logger = logging.getLogger("joga.tickets.api")
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
@@ -69,6 +74,7 @@ class TicketLotView(BaseModel):
 
 class TicketWalletView(BaseModel):
     balance: int
+    source: str
     entries: list[TicketEntryView]
     lots: list[TicketLotView]
 
@@ -77,14 +83,28 @@ class TicketWalletView(BaseModel):
 def read_wallet(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> TicketWalletView:
     """Saldo e últimos movimentos. O saldo nunca é editável pelo cliente."""
 
     entries = list_entries(session, current.user_id, limit=limit)
     lots = list_lots(session, current.user_id)
+    try:
+        balance = get_balance(
+            session,
+            current.user_id,
+            source=settings.ticket_balance_source,
+        )
+    except (BalanceUnavailable, LedgerInconsistency) as exc:
+        logger.error("wallet_balance_unavailable code=%s", exc.args[0] if exc.args else "")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "balance_unavailable"},
+        ) from exc
     return TicketWalletView(
-        balance=get_balance(session, current.user_id),
+        balance=balance,
+        source=settings.ticket_balance_source,
         entries=[
             TicketEntryView(
                 id=item.id,
