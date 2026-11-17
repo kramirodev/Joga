@@ -29,6 +29,7 @@ from app.modules.ledger.models import LedgerAccount, LedgerEntry, LedgerTransact
 from app.modules.ledger.opening import open_ledger
 from app.modules.ledger.reconciliation import reconcile_credit
 from app.modules.ledger.service import LedgerService
+from app.modules.notifications.models import Notification
 from app.modules.passes.service import activate_subscription, create_subscription
 from app.modules.payments.financial import FinancialService
 from app.modules.payments.models import VenueRelease
@@ -123,6 +124,19 @@ def test_booking_confirmation_posts_rule_4(
             == TICKETS_PER_SEAT * TICKET_CALIBRATION_CENTS
         )
         assert player_credit_cents(db_session, participant.user_id) == 0
+        notification = db_session.scalar(
+            select(Notification).where(
+                Notification.user_id == participant.user_id,
+                Notification.kind == "booking_confirmed",
+            )
+        )
+        assert notification is not None and notification.data is not None
+        expected_total = TICKETS_PER_SEAT * TICKET_CALIBRATION_CENTS
+        assert notification.data["total_cents"] == expected_total
+        assert notification.data["space_charge_cents"] == participant.space_charge_cents
+        assert notification.data["fee_charge_cents"] == (
+            expected_total - participant.space_charge_cents
+        )
 
     report = reconcile_credit(db_session)
     assert report.clean, (report.mismatches, report.balance_mismatches)
@@ -153,14 +167,9 @@ def test_booking_refund_restores_credit(
 
     tx = transaction(db_session, f"booking:{booking['id']}:refund")
     posted = entries(db_session, tx)
-    assert posted[(FEE_REVENUE, "D")] == 5 * 480
-    assert posted[(f"{VENUE_PAYABLE_PREFIX}{context['venue'].id}", "D")] == 10_000
-    canceller = context["users"][0]
+    assert posted[(FEE_REVENUE, "D")] == 6 * 480
+    assert posted[(f"{VENUE_PAYABLE_PREFIX}{context['venue'].id}", "D")] == 12_000
     for user_id in context["users"]:
-        if user_id == canceller:
-            assert (player_credit_code(user_id), "C") not in posted
-            assert player_credit_cents(db_session, user_id) == 0
-            continue
         assert (
             posted[(player_credit_code(user_id), "C")]
             == TICKETS_PER_SEAT * TICKET_CALIBRATION_CENTS

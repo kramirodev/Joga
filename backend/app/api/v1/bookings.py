@@ -606,7 +606,6 @@ def cancel_booking(
                     )
                 ).all()
             )
-            excluded.add(current.user_id)
         PaymentService(session, adapter).refund_booking(
             booking_id,
             reason=payload.reason,

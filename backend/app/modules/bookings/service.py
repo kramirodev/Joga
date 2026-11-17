@@ -979,14 +979,33 @@ class BookingService:
         self._record_fiscal_intent(booking, active)
         notifications = NotificationService(self.session)
         for participant in active:
-            if participant.funding_source in {"credit", "pix"}:
+            if participant.funding_source == "credit":
+                # k × 310 é o total pago em tickets; a quadra recebe o valor
+                # congelado e o resto é a taxa do JOGA. Não aplicar 20% sobre o
+                # total: o percentual é piso do cálculo da reserva, não a taxa
+                # efetiva do caminho por tickets.
+                total_cents = participant.tickets_consumed * TICKET_CALIBRATION_CENTS
+                joga_cents = total_cents - participant.space_charge_cents
                 body = (
                     f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
-                    f"JOGA: R$ {participant.fee_charge_cents / 100:.2f}"
+                    f"JOGA: R$ {joga_cents / 100:.2f} · "
+                    f"Total: R$ {total_cents / 100:.2f}"
+                )
+            elif participant.funding_source == "pix":
+                total_cents = participant.contribution_cents
+                joga_cents = participant.fee_charge_cents
+                body = (
+                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
+                    f"JOGA: R$ {joga_cents / 100:.2f} · "
+                    f"Total: R$ {total_cents / 100:.2f}"
                 )
             elif participant.funding_source == "pass":
+                total_cents = participant.space_charge_cents
+                joga_cents = 0
                 body = f"Cota do passe · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
             else:
+                total_cents = participant.space_charge_cents
+                joga_cents = 0
                 body = f"Cortesia · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
             notifications.create(
                 user_id=participant.user_id,
@@ -997,7 +1016,8 @@ class BookingService:
                 data={
                     "booking_id": str(booking.id),
                     "space_charge_cents": participant.space_charge_cents,
-                    "fee_charge_cents": participant.fee_charge_cents,
+                    "fee_charge_cents": joga_cents,
+                    "total_cents": total_cents,
                     "tickets_consumed": participant.tickets_consumed,
                 },
                 now=now,
@@ -1070,6 +1090,11 @@ class BookingService:
             raise BookingTransitionError
 
         now = utcnow()
+        cutoff = ensure_utc(booking.starts_at) - timedelta(
+            hours=get_settings().cancellation_cutoff_hours
+        )
+        if not by_venue and now >= cutoff:
+            raise BookingConflict("cancellation_closed")
         previous = booking.status
         booking.status = target
         booking.cancelled_at = now
@@ -1084,12 +1109,17 @@ class BookingService:
             target,
             reason=booking.cancellation_reason,
         )
-        if by_venue:
-            # Falha do estabelecimento: todos recebem os ingressos de volta.
-            self._refund_tickets(booking)
-        else:
-            # ADR 0039: quem cancelou perde; os demais recebem.
-            self._refund_tickets(booking, exclude_user_id=actor_user_id)
+        # Antes do cutoff, todo mundo recebe integralmente; a quadra não recebe.
+        # Falha da quadra também devolve tudo. Depois do cutoff a API bloqueia
+        # o cancelamento do jogador, e o no-show não reembolsa.
+        self._refund_tickets(booking)
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).reverse_for_refund(
+            booking.id,
+            reason=booking.cancellation_reason or target,
+            now=now,
+        )
         self._audit(
             actor_user_id,
             booking,
@@ -1143,6 +1173,13 @@ class BookingService:
         )
         # Reserva que não se confirma: todos recebem os ingressos de volta.
         self._refund_tickets(booking)
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).reverse_for_refund(
+            booking.id,
+            reason=booking.cancellation_reason or "cancelled_by_system",
+            now=moment,
+        )
         self._audit(
             None,
             booking,

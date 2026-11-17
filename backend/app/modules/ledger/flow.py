@@ -31,6 +31,7 @@ from app.modules.ledger.models import LedgerAccount
 from app.modules.ledger.service import LedgerError, LedgerPosting, LedgerService
 from app.modules.passes.models import PassSubscription
 from app.modules.payments.models import VenueRelease
+from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
 from app.modules.tickets.models import TicketPurchase
 
 
@@ -149,10 +150,13 @@ def post_booking_confirmed(
     for participant in participants:
         source = participant.funding_source
         if source == "credit":
+            # O ticket é a unidade de consumo: o caixa cai por k × 310, não
+            # pelo rateio em reais congelado na reserva.
+            ticket_value = participant.tickets_consumed * TICKET_CALIBRATION_CENTS
             debit_by_user[participant.user_id] = (
-                debit_by_user.get(participant.user_id, 0) + participant.contribution_cents
+                debit_by_user.get(participant.user_id, 0) + ticket_value
             )
-            fee_total += participant.fee_charge_cents
+            fee_total += ticket_value - participant.space_charge_cents
         elif source == "pix":
             psp_total += participant.contribution_cents
             fee_total += participant.fee_charge_cents
@@ -244,10 +248,11 @@ def post_booking_refund(
             continue
         source = participant.funding_source
         if source == "credit":
+            ticket_value = participant.tickets_consumed * TICKET_CALIBRATION_CENTS
             credit_by_user[participant.user_id] = (
-                credit_by_user.get(participant.user_id, 0) + participant.contribution_cents
+                credit_by_user.get(participant.user_id, 0) + ticket_value
             )
-            fee_total += participant.fee_charge_cents
+            fee_total += ticket_value - participant.space_charge_cents
         elif source == "pass":
             pass_total += participant.space_charge_cents
         elif source in {"free_level", "admin"}:

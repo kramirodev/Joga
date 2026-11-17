@@ -13,7 +13,6 @@ from app.modules.bookings.models import (
     Booking,
     BookingParticipant,
     BookingPayment,
-    BookingRefundExclusion,
     BookingSubstitution,
 )
 from app.modules.bookings.substitutions import (
@@ -23,7 +22,7 @@ from app.modules.bookings.substitutions import (
 )
 from app.modules.matchmaking.models import Lobby, LobbySubstitute
 from app.modules.payments.adapter import SimulatorPspAdapter
-from app.modules.payments.models import PaymentRefund
+from app.modules.payments.models import PaymentRefund, VenueRelease
 from app.modules.payments.service import PaymentService
 from tests.helpers_results import make_token, make_user
 from tests.test_bookings_api import api_client, bearer, setup_booking
@@ -121,7 +120,6 @@ def test_participant_cancellation_opens_t4_without_refund(
     assert participant is not None and participant.active is False
     assert participant.left_at is not None
     assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 0
-    assert db_session.scalar(select(func.count()).select_from(BookingRefundExclusion)) == 1
 
     again = api.post(
         f"/api/v1/bookings/{booking_id}/participant-cancellations",
@@ -157,7 +155,7 @@ def test_participant_cancellation_after_cutoff_is_rejected(
     db_session.rollback()
 
 
-def test_expiry_cancels_lobby_and_refunds_others_not_canceller(
+def test_expiry_cancels_lobby_and_refunds_everyone_before_cutoff(
     client,
     db_session: Session,
 ) -> None:
@@ -174,7 +172,7 @@ def test_expiry_cancels_lobby_and_refunds_others_not_canceller(
     assert expired == 1
     refunded = PaymentService(db_session, SimulatorPspAdapter()).refund_cancelled_bookings()
     db_session.commit()
-    assert refunded == 3
+    assert refunded == 4
 
     db_session.expire_all()
     booking = db_session.get(Booking, booking_id)
@@ -189,25 +187,25 @@ def test_expiry_cancels_lobby_and_refunds_others_not_canceller(
     payments = db_session.scalars(
         select(BookingParticipant).where(BookingParticipant.booking_id == booking_id)
     ).all()
-    canceller = next(item for item in payments if item.user_id == context["users"][0])
-    assert canceller.payment_status == "PAID"
-    others = [item for item in payments if item.user_id != context["users"][0]]
-    assert {item.payment_status for item in others} == {"REFUNDED"}
-    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 3
+    assert {item.payment_status for item in payments} == {"REFUNDED"}
+    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 4
 
-    # Worker também respeita a exclusão.
+    # Antes do cutoff, o desistente também recebe; o worker não repete.
     again = PaymentService(db_session, SimulatorPspAdapter()).refund_cancelled_bookings()
     db_session.commit()
     assert again == 0
-    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 3
+    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 4
 
     summary = api.get(
         f"/api/v1/organizations/{context['organization'].id}/financial/summary",
         headers=bearer(context["tokens"][0]),
     )
     assert summary.status_code == 200
-    assert summary.json()["refunded_cents"] == 36_000
-    assert summary.json()["paid_cents"] == 12_000
+    assert summary.json()["refunded_cents"] == 48_000
+    assert summary.json()["paid_cents"] == 0
+
+    release = db_session.scalar(select(VenueRelease).where(VenueRelease.booking_id == booking_id))
+    assert release is not None and release.status == "REVERSED"
 
 
 def test_assign_substitute_opens_payment_and_refunds_outgoing(
@@ -306,7 +304,7 @@ def test_assignment_expires_if_substitute_does_not_pay(
     assert expired == 1
     refunded = PaymentService(db_session, SimulatorPspAdapter()).refund_cancelled_bookings()
     db_session.commit()
-    assert refunded == 3
+    assert refunded == 4
 
     db_session.expire_all()
     booking = db_session.get(Booking, booking_id)
@@ -321,7 +319,7 @@ def test_assignment_expires_if_substitute_does_not_pay(
     )
     assert participant is not None and participant.active is False
     assert participant.payment_status == "FAILED"
-    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 3
+    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 4
 
 
 def test_cancel_calls_queue_and_called_substitute_accepts(
@@ -613,7 +611,7 @@ def test_outsider_cannot_assign_substitute(client, db_session: Session) -> None:
     assert response.status_code == 403
 
 
-def test_player_whole_booking_cancel_does_not_refund_initiator(
+def test_player_whole_booking_cancel_refunds_everyone_before_cutoff(
     client,
     db_session: Session,
 ) -> None:
@@ -634,11 +632,32 @@ def test_player_whole_booking_cancel_does_not_refund_initiator(
     participants = db_session.scalars(
         select(BookingParticipant).where(BookingParticipant.booking_id == booking_id)
     ).all()
-    canceller = next(item for item in participants if item.user_id == context["users"][0])
-    assert canceller.payment_status == "PAID"
-    others = [item for item in participants if item.user_id != context["users"][0]]
-    assert {item.payment_status for item in others} == {"REFUNDED"}
-    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 3
+    assert {item.payment_status for item in participants} == {"REFUNDED"}
+    assert db_session.scalar(select(func.count()).select_from(PaymentRefund)) == 4
+    release = db_session.scalar(select(VenueRelease).where(VenueRelease.booking_id == booking_id))
+    assert release is not None and release.status == "REVERSED"
+
+
+def test_player_cannot_cancel_whole_booking_after_cutoff(
+    client,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking_view = confirmed_booking(api, context)
+    booking_id = uuid.UUID(booking_view["id"])
+    booking = db_session.get(Booking, booking_id)
+    assert booking is not None
+    booking.starts_at = datetime.now(UTC) + timedelta(hours=1)
+    db_session.commit()
+
+    response = api.post(
+        f"/api/v1/bookings/{booking_id}/cancel",
+        headers=bearer(context["tokens"][0]),
+        json={"reason": "Fora do prazo"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "cancellation_closed"
 
 
 def test_outsider_cannot_cancel_participant(client, db_session: Session) -> None:

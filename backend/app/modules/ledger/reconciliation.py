@@ -23,6 +23,7 @@ from app.modules.bookings.models import Booking, BookingParticipant
 from app.modules.ledger.accounts import PLAYER_CREDIT_PREFIX, player_credit_code
 from app.modules.ledger.models import LedgerAccount, LedgerTransaction
 from app.modules.ledger.service import LedgerError, LedgerService
+from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
 from app.modules.tickets.models import TicketLedgerEntry, TicketLot
 from app.modules.tickets.service import expected_player_credit_cents
 
@@ -60,11 +61,28 @@ class ExcludedSeat:
     contribution_cents: int
 
 
+@dataclass(frozen=True)
+class BookingRateioMismatch:
+    booking_id: uuid.UUID
+    field: str
+    expected: int
+    actual: int
+
+
+@dataclass(frozen=True)
+class NegativeBalance:
+    kind: str
+    user_id: uuid.UUID
+    balance: int
+
+
 @dataclass
 class ReconciliationReport:
     checked_users: int = 0
     mismatches: list[CreditMismatch] = field(default_factory=list)
     balance_mismatches: list[BalanceMismatch] = field(default_factory=list)
+    rateio_mismatches: list[BookingRateioMismatch] = field(default_factory=list)
+    negative_balances: list[NegativeBalance] = field(default_factory=list)
     non_credit_seats: list[ExcludedSeat] = field(default_factory=list)
     missing_non_credit_postings: list[uuid.UUID] = field(default_factory=list)
 
@@ -73,6 +91,8 @@ class ReconciliationReport:
         return (
             len(self.mismatches)
             + len(self.balance_mismatches)
+            + len(self.rateio_mismatches)
+            + len(self.negative_balances)
             + len(self.missing_non_credit_postings)
         )
 
@@ -170,6 +190,74 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
                     derived_balance=derived_balance,
                 )
             )
+        if ledger_cents < 0:
+            report.negative_balances.append(NegativeBalance("credit", user_id, ledger_cents))
+        if lots_balance < 0:
+            report.negative_balances.append(NegativeBalance("tickets", user_id, lots_balance))
+
+    confirmed = session.scalars(
+        select(Booking).where(
+            Booking.status.in_(("CONFIRMED", "COMPLETED")),
+            Booking.pricing_version != "legacy_v0",
+        )
+    ).all()
+    for booking in confirmed:
+        participants = session.scalars(
+            select(BookingParticipant).where(
+                BookingParticipant.booking_id == booking.id,
+                BookingParticipant.active.is_(True),
+            )
+        ).all()
+        if not participants:
+            continue
+        space_sum = sum(item.space_charge_cents for item in participants)
+        if space_sum != booking.venue_price_cents:
+            report.rateio_mismatches.append(
+                BookingRateioMismatch(
+                    booking_id=booking.id,
+                    field="space_total",
+                    expected=booking.venue_price_cents,
+                    actual=space_sum,
+                )
+            )
+        if all(item.funding_source == "credit" for item in participants):
+            ticket_total = sum(
+                item.tickets_consumed * TICKET_CALIBRATION_CENTS for item in participants
+            )
+            fee_sum = sum(item.fee_charge_cents for item in participants)
+            expected_fee = ticket_total - booking.venue_price_cents
+            if fee_sum != expected_fee:
+                report.rateio_mismatches.append(
+                    BookingRateioMismatch(
+                        booking_id=booking.id,
+                        field="fee_total",
+                        expected=expected_fee,
+                        actual=fee_sum,
+                    )
+                )
+        for participant in participants:
+            if participant.funding_source != "credit":
+                continue
+            ticket_value = participant.tickets_consumed * TICKET_CALIBRATION_CENTS
+            if participant.contribution_cents != ticket_value:
+                report.rateio_mismatches.append(
+                    BookingRateioMismatch(
+                        booking_id=booking.id,
+                        field=f"participant:{participant.id}:contribution",
+                        expected=ticket_value,
+                        actual=participant.contribution_cents,
+                    )
+                )
+            expected_fee = ticket_value - participant.space_charge_cents
+            if participant.fee_charge_cents != expected_fee:
+                report.rateio_mismatches.append(
+                    BookingRateioMismatch(
+                        booking_id=booking.id,
+                        field=f"participant:{participant.id}:fee",
+                        expected=expected_fee,
+                        actual=participant.fee_charge_cents,
+                    )
+                )
 
     non_credit = list(
         session.scalars(
@@ -191,8 +279,8 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
     ]
     booking_ids = {participant.booking_id for participant in non_credit}
     for booking_id in booking_ids:
-        booking = session.get(Booking, booking_id)
-        if booking is None or booking.pricing_version == "legacy_v0":
+        non_credit_booking = session.get(Booking, booking_id)
+        if non_credit_booking is None or non_credit_booking.pricing_version == "legacy_v0":
             continue
         posted = session.scalar(
             select(LedgerTransaction.id).where(
@@ -214,6 +302,8 @@ def ledger_health(session: Session) -> dict[str, object]:
         "divergence_count": report.divergence_count,
         "credit_mismatches": len(report.mismatches),
         "balance_mismatches": len(report.balance_mismatches),
+        "rateio_mismatches": len(report.rateio_mismatches),
+        "negative_balances": len(report.negative_balances),
         "non_credit_seats": len(report.non_credit_seats),
         "missing_non_credit_postings": len(report.missing_non_credit_postings),
     }
@@ -221,8 +311,10 @@ def ledger_health(session: Session) -> dict[str, object]:
 
 __all__ = [
     "BalanceMismatch",
+    "BookingRateioMismatch",
     "CreditMismatch",
     "ExcludedSeat",
+    "NegativeBalance",
     "ReconciliationReport",
     "ledger_health",
     "reconcile_credit",

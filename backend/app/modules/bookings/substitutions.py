@@ -14,7 +14,6 @@ from app.modules.bookings.models import (
     BookingEvent,
     BookingParticipant,
     BookingPayment,
-    BookingRefundExclusion,
     BookingSubstitution,
 )
 from app.modules.bookings.service import BookingNotFound, BookingService
@@ -252,13 +251,9 @@ class BookingSubstitutionService:
             details={"booking_id": str(booking.id), "seat": participant.seat},
             now=current,
         )
-        self.session.add(
-            BookingRefundExclusion(
-                booking_id=booking.id,
-                user_id=actor_user_id,
-                reason="participant_cancelled",
-            )
-        )
+        # Antes do cutoff o desistente também tem direito à devolução; a
+        # substituição apenas evita que a quadra perca a venda. Não criar
+        # exclusão de reembolso para cancelamento antes do cutoff.
         self.session.add(
             BookingEvent(
                 booking_id=booking.id,
