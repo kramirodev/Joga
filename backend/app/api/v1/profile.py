@@ -24,6 +24,7 @@ from app.modules.profile.cep import (
     CepResolver,
     InvalidCep,
 )
+from app.modules.profile.cpf import CpfKeyUnavailable, InvalidCpf
 from app.modules.profile.models import Sport, SportFormat
 from app.modules.profile.service import (
     DiscoveryError,
@@ -265,6 +266,15 @@ class EmailUpdateRequest(BaseModel):
         return normalized
 
 
+class CpfView(BaseModel):
+    cpf_present: bool
+    cpf_masked: str | None
+
+
+class CpfUpdateRequest(BaseModel):
+    cpf: str = Field(min_length=11, max_length=14)
+
+
 @router.get("/me/email", response_model=EmailView)
 def get_my_email(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
@@ -289,6 +299,46 @@ def update_my_email(
     user.email = payload.email
     session.commit()
     return EmailView(email=user.email)
+
+
+@router.get("/me/cpf", response_model=CpfView)
+def read_my_cpf(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> CpfView:
+    """Presença e máscara; o CPF em claro nunca sai por esta rota."""
+    present, masked = service.cpf_status(current.user_id)
+    return CpfView(cpf_present=present, cpf_masked=masked)
+
+
+@router.put("/me/cpf", response_model=CpfView)
+def update_my_cpf(
+    payload: CpfUpdateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CpfView:
+    try:
+        present, masked = service.set_cpf(current.user_id, payload.cpf, settings)
+    except InvalidCpf:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_cpf") from None
+    except CpfKeyUnavailable:
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "cpf_key_unavailable") from None
+    session.commit()
+    return CpfView(cpf_present=present, cpf_masked=masked)
+
+
+@router.delete("/me/cpf", response_model=CpfView)
+def delete_my_cpf(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> CpfView:
+    """Remove o CPF do perfil; o snapshot fiscal já emitido é preservado."""
+    present, masked = service.clear_cpf(current.user_id)
+    session.commit()
+    return CpfView(cpf_present=present, cpf_masked=masked)
 
 
 @router.get("/me/profile", response_model=ProfileResponse)

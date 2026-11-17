@@ -1,6 +1,6 @@
 # Fase 14E — Realinhamento da ADR 0049
 
-**Status:** em andamento. Etapas 0–7 e 6b concluídas; 8 (conformidade) e 9 (aposentadoria) pendentes.
+**Status:** em andamento. Etapas 0–8 e 6b concluídas; falta a 9 (aposentadoria dos ledgers legados).
 **Depende de:** 14, 14D congeladas e estabilização do repositório.
 **Bloqueia:** 14B, 15, 19A e qualquer dinheiro real.
 **Referência:** `docs/ADR/0049-modelo-tributario-da-intermediacao.md`, `docs/DECISOES_BACKEND_ADR_0049.md`, `docs/DATA_MODEL.md`.
@@ -62,3 +62,11 @@ cd backend
 ## Condição de parada
 
 A fase termina quando os critérios acima estão verdes, a documentação está reconciliada e o usuário autoriza o commit/merge. Não iniciar 14B/15 automaticamente.
+
+## Etapa 8 — conformidade (14E-E)
+
+- **CPF:** `user_profiles.cpf_ciphertext`/`cpf_key_id`/`cpf_last2`/`cpf_updated_at` com AES-256-GCM, AAD = `user_id`, chave em `JOGA_CPF_KEY` e rotação por `JOGA_CPF_PREVIOUS_KEYS`. Endpoints `GET/PUT/DELETE /api/v1/me/cpf` só devolvem presença e máscara.
+- **Fiscal:** `fiscal_documents` continua uma intenção por reserva; `fiscal_document_takers` guarda um tomador por jogador com cota e CPF cifrado. A confirmação grava `pending_manual` com `JOGA_FISCAL_MODE=placeholder`, sem emissor, município ou alíquota.
+- **Termos:** `terms_acceptances` (versão, contexto, `terms_hash`, `ip_hash` HMAC e `user_agent_hash` SHA-256). `GET /legal/terms/current` e `POST /legal/terms/accept`; a compra exige aceite apenas quando existe versão `approved`.
+- **Reembolso:** `refund_type FULL|PARTIAL`, `idempotency_key` e índice parcial de um único `FULL` por cobrança; nenhum fluxo cria `PARTIAL` nesta etapa.
+- **Verificação:** `ruff`, `ruff format --check` e `mypy app` limpos; suíte **587 passed, 30 skipped**; `upgrade head` → `downgrade base` → `upgrade head` e `alembic check` sem diff no PostgreSQL local, head `s3d4e5f6a7b8`.

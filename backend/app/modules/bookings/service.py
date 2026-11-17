@@ -976,6 +976,7 @@ class BookingService:
         from app.modules.ledger.flow import post_booking_confirmed
 
         post_booking_confirmed(self.session, booking, active, now=now)
+        self._record_fiscal_intent(booking, active)
         notifications = NotificationService(self.session)
         for participant in active:
             if participant.funding_source in {"credit", "pix"}:
@@ -1001,6 +1002,48 @@ class BookingService:
                 },
                 now=now,
             )
+
+    def _record_fiscal_intent(
+        self,
+        booking: Booking,
+        participants: list[BookingParticipant],
+    ) -> None:
+        """Registra a intenção de NFS-e da quadra contra cada jogador.
+
+        Placeholder: nenhuma chamada externa. O valor é o preço do espaço, sem a
+        taxa do JOGA. O CPF vai como snapshot cifrado do perfil; tomador sem CPF
+        fica registrado sem o campo e o painel fiscal sinaliza a pendência.
+        """
+        settings = get_settings()
+        if settings.fiscal_mode == "disabled" or not participants:
+            return
+        organization = self.session.get(Organization, booking.organization_id)
+        if organization is None or not organization.legal_document:
+            return
+
+        from app.modules.fiscal.service import TakerSnapshot, record_document_intent
+        from app.modules.profile.models import UserProfile
+
+        takers: list[TakerSnapshot] = []
+        for participant in participants:
+            profile = self.session.get(UserProfile, participant.user_id)
+            takers.append(
+                TakerSnapshot(
+                    user_id=participant.user_id,
+                    amount_cents=participant.space_charge_cents,
+                    cpf_ciphertext=profile.cpf_ciphertext if profile is not None else None,
+                    cpf_key_id=profile.cpf_key_id if profile is not None else None,
+                )
+            )
+        record_document_intent(
+            self.session,
+            booking_id=booking.id,
+            issuer_cnpj=organization.legal_document,
+            taker_user_id=booking.created_by or participants[0].user_id,
+            amount_cents=booking.venue_price_cents,
+            takers=takers,
+            settings=settings,
+        )
 
     # -- cancelamento/conclusão --------------------------------------------
 

@@ -33,6 +33,7 @@ from app.modules.season.service import active_season, award_xp
 from app.modules.tickets.models import TicketLot
 from app.modules.tickets.service import expire_due as expire_tickets
 from app.modules.tickets.service import get_balance
+from tests.compliance_helpers import cpf_key_kwargs
 from tests.helpers_results import make_token, make_user
 
 START = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
@@ -84,6 +85,7 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     )
     production_tokens = SessionService(
         db_session,

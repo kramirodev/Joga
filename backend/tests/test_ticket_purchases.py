@@ -25,6 +25,7 @@ from app.modules.payments.models import PurchasePayment
 from app.modules.payments.purchase import apply_status
 from app.modules.tickets.models import TicketPurchase
 from app.modules.tickets.service import get_balance
+from tests.compliance_helpers import cpf_key_kwargs
 from tests.helpers_results import make_token, make_user
 
 
@@ -38,6 +39,7 @@ def production_settings() -> Settings:
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     )
 
 

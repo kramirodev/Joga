@@ -1,9 +1,9 @@
 # Modelo de dados — JOGA (as-built)
 
 **Versão:** 2.0<br>
-**Data:** 16 de novembro de 2026<br>
+**Data:** 17 de novembro de 2026<br>
 **Fonte:** migrations Alembic em `backend/migrations/versions/` e modelos SQLAlchemy em `backend/app/modules/`.<br>
-**Head de migrations:** `j3f4a5b6c7d8` (cadeia linear, 53 revisões).<br>
+**Head de migrations:** `s3d4e5f6a7b8` (cadeia linear, 62 revisões).<br>
 **Natureza:** este documento substitui a versão incremental das Fases 3–4. Ele descreve o schema **existente**, não o alvo. O alvo financeiro da ADR 0049 está na Fase 14E.
 
 > **Regra de leitura.** O banco é a fonte da verdade. Este resumo existe para orientar leitura e revisão; a definição exata de colunas, tipos e constraints está nos modelos e migrations. Não usar este documento para `alembic revision --autogenerate`.
@@ -47,14 +47,14 @@
 |---|---|
 | `sports` | Modalidades |
 | `sport_formats` | Formatos, duração, composição e versão |
-| `user_profiles` | Nome, gênero, cidade e preferências |
+| `user_profiles` | Nome, gênero, cidade, preferências e CPF cifrado (AES-256-GCM) |
 | `user_sport_profiles` | Nível autodeclarado e preferência por formato |
 | `availabilities` | Janelas de disponibilidade do jogador |
 | `user_regions` | Região aproximada e coordenada arredondada |
 | `venues` | Locais descobertos, geografia e endereço |
 | `postal_code_cache` | Cache de CEP/geocoding com TTL e proveniência |
 
-**Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor.
+**Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor. Em `user_profiles`, `cpf_ciphertext`, `cpf_key_id` e `cpf_last2` são todos nulos ou todos preenchidos (`cpf_present_consistent` desde `q1b2c3d4e5f6`); o texto claro do CPF nunca é persistido.
 
 **Lacunas conhecidas:** não há `user_avatars`; o avatar é decisão de catálogo ainda não implementada. `sport_equipment_requirements` não existe.
 
@@ -112,7 +112,7 @@
 |---|---|
 | `booking_payments` | Cobrança por participante/versão, status e dados do provedor |
 | `purchase_payments` | Compra de pacote/passe, `kind` e `reference_id` |
-| `payment_refunds` | Reembolso por cobrança (um por pagamento) |
+| `payment_refunds` | Reembolso por cobrança: `FULL` (um por cobrança) e `PARTIAL` (schema pronto) |
 | `payment_events` | Eventos append-only de cobrança/PSP |
 | `psp_webhook_events` | Webhook bruto, idempotência por provedor e retry |
 | `booking_ledger_entries` | Ledger legado single-entry por reserva |
@@ -122,12 +122,14 @@
 | `ledger_entries` | Lançamentos de débito/crédito, imutáveis por trigger |
 | `venue_releases` | Repasse ao fornecedor, status e elegibilidade |
 | `financial_disputes` | Contestação do fornecedor |
-| `fiscal_documents` | Intenção/documento fiscal por reserva (placeholder) |
-| `terms_versions` | Versões de termos e aceite |
+| `fiscal_documents` | Intenção/documento fiscal por reserva (`pending_manual` no placeholder) |
+| `fiscal_document_takers` | Um tomador por jogador: cota em centavos e CPF cifrado no instante da intenção |
+| `terms_versions` | Versões de termos (rascunho/aprovada) |
+| `terms_acceptances` | Prova de aceite por usuário, versão e contexto |
 
-**Constraints relevantes:** webhook único por `(provider, event_id)`; reembolso único por pagamento; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado.
+**Constraints relevantes:** webhook único por `(provider, event_id)`; índice parcial `uq_payment_refunds_full_payment` garante um único `FULL` por cobrança; `uq_payment_refunds_idempotency_key` evita reembolso parcial duplicado; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado; `fiscal_document_takers` é único por `(fiscal_document_id, user_id)`; `terms_acceptances` é único por `(user_id, terms_version_id, context)` e só aceita contexto conhecido.
 
-**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b). A leitura do saldo usa `JOGA_TICKET_BALANCE_SOURCE` e valida caixa + tickets. `payment_refunds` ainda não permite reembolso parcial. `fiscal_documents` e `terms_versions` não têm chamador. A Etapa 9 (aposentadoria dos ledgers legados) está pendente.
+**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b). A leitura do saldo usa `JOGA_TICKET_BALANCE_SOURCE` e valida caixa + tickets. `payment_refunds` aceita `PARTIAL` desde `s3d4e5f6a7b8`, mas nenhum fluxo cria parcial ainda. `fiscal_documents` é intenção `pending_manual` (sem emissor, município ou alíquota); `terms_acceptances` só é exigido quando existe versão `approved`. A Etapa 9 (aposentadoria dos ledgers legados) está pendente.
 
 ---
 

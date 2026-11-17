@@ -21,6 +21,7 @@ from app.modules.identity.models import PhoneChallenge, SecurityEvent
 from app.modules.identity.otp import OtpPolicy, PhoneChallengeService
 from app.modules.identity.phone import hash_otp
 from app.modules.identity.sms import RecordingSmsSender
+from tests.compliance_helpers import cpf_key_kwargs
 
 PHONE = "+5511987654321"
 OTHER_PHONE = "+5511911112222"
@@ -208,6 +209,7 @@ def test_production_without_sms_provider_returns_503(
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     )
 
     response = post_challenge(client)

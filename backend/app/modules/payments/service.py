@@ -390,7 +390,10 @@ class PaymentService:
             raise BookingNotFound
         payment = self._payment(booking.id, payment_id)
         existing = self.session.scalar(
-            select(PaymentRefund).where(PaymentRefund.booking_payment_id == payment.id)
+            select(PaymentRefund).where(
+                PaymentRefund.booking_payment_id == payment.id,
+                PaymentRefund.refund_type == "FULL",
+            )
         )
         if existing is not None and existing.status == "PROCESSED":
             return existing
@@ -409,6 +412,8 @@ class PaymentService:
                 booking_id=booking.id,
                 booking_payment_id=payment.id,
                 amount_cents=payment.amount_cents,
+                refund_type="FULL",
+                idempotency_key=f"refund:{payment.id}:full",
                 status="PENDING",
                 reason=reason,
                 requested_by=requested_by,

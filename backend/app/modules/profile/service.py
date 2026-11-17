@@ -13,8 +13,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.types import UserDefinedType
 
+from app.core.config import Settings
+from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.profile.cep import CepResolver
+from app.modules.profile.cpf import encrypt_cpf, mask_cpf
 from app.modules.profile.models import (
     COURT_PREFERENCES,
     LEVELS,
@@ -181,6 +184,57 @@ class ProfileService:
         profile.bio = _clean_optional(bio)
         self._session.flush()
         return self.get_profile(user_id)
+
+    def cpf_status(self, user_id: uuid.UUID) -> tuple[bool, str | None]:
+        """Presença e máscara do CPF; nunca o valor em claro."""
+        profile = self._session.get(UserProfile, user_id)
+        if profile is None or profile.cpf_ciphertext is None:
+            return False, None
+        return True, mask_cpf(profile.cpf_last2)
+
+    def set_cpf(
+        self, user_id: uuid.UUID, value: str, settings: Settings
+    ) -> tuple[bool, str | None]:
+        """Cifra e grava o CPF; a auditoria não recebe o número."""
+        ciphertext, key_id, last2 = encrypt_cpf(value, user_id, settings)
+        profile = self._session.get(UserProfile, user_id)
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+            self._session.add(profile)
+        profile.cpf_ciphertext = ciphertext
+        profile.cpf_key_id = key_id
+        profile.cpf_last2 = last2
+        profile.cpf_updated_at = utcnow()
+        record_audit(
+            self._session,
+            actor_user_id=user_id,
+            action="user.cpf_updated",
+            resource_type="user",
+            resource_id=user_id,
+            details={"cpf_present": True},
+        )
+        self._session.flush()
+        return True, mask_cpf(last2)
+
+    def clear_cpf(self, user_id: uuid.UUID) -> tuple[bool, str | None]:
+        """Anonimiza o CPF do perfil; o documento fiscal preserva o snapshot."""
+        profile = self._session.get(UserProfile, user_id)
+        if profile is None or profile.cpf_ciphertext is None:
+            return False, None
+        profile.cpf_ciphertext = None
+        profile.cpf_key_id = None
+        profile.cpf_last2 = None
+        profile.cpf_updated_at = None
+        record_audit(
+            self._session,
+            actor_user_id=user_id,
+            action="user.cpf_deleted",
+            resource_type="user",
+            resource_id=user_id,
+            details={"cpf_present": False},
+        )
+        self._session.flush()
+        return False, None
 
     def replace_sports(
         self,

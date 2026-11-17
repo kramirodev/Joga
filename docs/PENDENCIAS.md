@@ -59,10 +59,10 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Score de risco de pagamento | 15/17 | Só após dados reais de MED/chargeback |
 | Integração da conclusão com o ciclo da partida | 15 | Hoje é ação operacional do estabelecimento |
 | Testes de UI mobile | 19 | Ainda manuais |
-| LGPD e retenção definitiva | 19 | Revisão jurídica pendente |
+| LGPD e retenção definitiva | 19 | Revisão jurídica pendente. Base legal e prazos do CPF estão descritos em `docs/PRIVACIDADE_CPF_E_RETENCAO.md` (Etapa 14E-E); a política definitiva depende de parecer |
 | Ledger de dupla entrada integrado | 14E | **Feito nas Etapas 6/7/6b**: compra, confirmação, devolução, repasse, passe e vagas por passe/grátis/admin lançam no ledger; leitura alternável por `JOGA_TICKET_BALANCE_SOURCE`. |
 | Taxa/preço em duas linhas | 14E | `compute_fee_cents` calcula e a reserva persiste `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents` desde `m7d8e9f0a1b2`; o rateio usa `total_cents` e o repasse usa `venue_price_cents`. |
-| CPF e NFS-e | 14E/19A | Placeholders; sem fluxo operacional |
+| CPF e NFS-e | 14E/19A | **CPF entregue na Etapa 8**: cifrado (AES-256-GCM, chave fora do banco) em `user_profiles` e snapshot por tomador em `fiscal_document_takers`; NFS-e segue intenção `pending_manual` por reserva, sem emissor/município |
 
 ## Crédito JOGA, 14E e NFS-e (ADR 0042/0049)
 
@@ -75,9 +75,9 @@ O modelo de crédito foi implementado como protótipo pelas fatias 14D.1–16, m
 | Ledger de dupla entrada integrado | 14E | **Feito nas Etapas 6/7/6b** para os fluxos cobertos, incluindo passe/grátis/admin |
 | Preço em duas linhas e taxa persistida | 14E | `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` |
 | Migração de lotes para saldo monetário | 14E | **Feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`; lotes continuam em tickets e `unit_price_cents` só serve à abertura/reembolso |
-| CPF e NFS-e | 14E/19A | Placeholders; definir fluxo e município |
+| CPF e NFS-e | 14E/19A | **CPF feito na Etapa 8** (`/me/cpf`, chave em configuração, máscara como única exibição); NFS-e é intenção `pending_manual` com um tomador por jogador; definir município/emissor na 19A |
 | Custódia B→C e escrow | 19A | Contratar fornecedor de C |
-| Reembolso parcial e política de passe/pacote | 14E/14B | Schema e regra pendentes |
+| Reembolso parcial e política de passe/pacote | 14E/14B | **Schema pronto na Etapa 8**: `refund_type FULL|PARTIAL`, `idempotency_key` e índice parcial de um único `FULL` por cobrança; nenhum fluxo cria `PARTIAL` ainda — falta a regra de negócio |
 | Programa de ingressos grátis (1 a cada 5 níveis no free, 2 no passe) | Definido | Medir custo real e conversão no piloto |
 | Busca por CEP restrita ao passe | Definido | Definir exceção para mudança de cidade |
 | Reajuste de preço e pausa do fornecedor | ADR 0042 §9 | Implementação no painel pendente |
@@ -141,7 +141,7 @@ As fases 11–15 foram desenhadas para **reserva paga por participante**. A ADR 
 | **13** | T3 = bloqueio **e pagamento** | T3 é janela de confirmação; no crédito não há cobrança na reserva | **Implementado (14D.5)**: T3 é janela de confirmação e a quitação é por crédito |
 | **14A** | Uma cobrança Pix **por participante** | Compra de crédito/passe; `purchase_payments` | **Implementado (14D.13)** como protótipo; migrar para ledger em reais na 14E |
 | **14C** | Reembolso **integral em dinheiro** | Devolução em crédito; dinheiro só nos 7 dias do CDC | **Parcial (14D.6)**: devolução em crédito; reembolso de passe/pacote pendente |
-| **14E** | Tabela 2D como unidade de consumo; leitura validada por flag | Duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0-7 e 6b entregues; faltam conformidade (8) e aposentadoria (9) |
+| **14E** | Tabela 2D como unidade de consumo; leitura validada por flag | Duas linhas, ledger de dupla entrada, CPF/NFS-e | **Em andamento**: Etapas 0-8 e 6b entregues; falta a aposentadoria (9) |
 | **15** | Extrato de **liberação de recebedor** | Extrato de **repasse ao fornecedor** sobre ledger em reais | Proposta local (15A/15B); refazer após 14E/14B |
 | **10** | Threat model cita PSP/reservas antigos | Atualizar para MP, custódia B/C, crédito e NFS-e | **Atualizado em 16/11** |
 
@@ -202,11 +202,11 @@ Itens descobertos na auditoria integral e ainda não implementados. São bloquea
 | Item | Severidade | Evidência | Ação |
 |---|---|---|---|
 | Ledger de dupla entrada não integrado | P0 | `LedgerService` só era usado em testes | **Corrigido nas Etapas 6/7/6b**: fluxos cobertos lançam na mesma transação e a leitura valida caixa + tickets |
-| Taxa calculada e não aplicada | P0 | `compute_fee_cents` sem chamador; reserva divide `price_cents` | 14E |
+| Taxa calculada e não aplicada | P0 | `compute_fee_cents` sem chamador; reserva divide `price_cents` | **Corrigido (14E.1)**: reserva persiste as duas linhas desde `m7d8e9f0a1b2` |
 | T3 expirado não devolve ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: `expire_due` devolve ingressos; teste `test_t3_expiry_returns_tickets` |
 | Pix pago + quitação por ingressos | P0 | `bookings/service.py` | **Corrigido (onda 1)**: vaga paga por Pix não consome ingresso; teste `test_pix_paid_seat_cannot_be_settled_with_tickets` |
 | Reembolso não reverte repasse | P0 | `payments/service.py`; `REVERSED` sem uso | **Corrigido (onda 1)**: `refund_booking` marca release como `REVERSED`; teste `test_refund_reverses_venue_release` |
-| Reembolso parcial impossível | P1 | unique por pagamento e valor integral | 14E/14B |
+| Reembolso parcial impossível | P1 | unique por pagamento e valor integral | **Schema resolvido na Etapa 8** (`s3d4e5f6a7b8`); falta a regra de criação do `PARTIAL` em 14B |
 | Reembolso de compra não revoga crédito | P1 | `purchase.apply_status` ignorava `REFUNDED` | **Corrigido (onda 1)**: revoga crédito/assinatura; testes de pacote e passe |
 | Estorno em `processing` marcado como falha/refunded | P0 | `payments/service.py` | **Corrigido (onda 1)**: fica `PENDING`, sem marcar jogador como `REFUNDED`; teste `test_refund_processing_does_not_mark_refunded` |
 | Compra de pacote sem idempotência de requisição | P1 | `api/v1/tickets.py` | **Corrigido (onda 1)**: pendência única por jogador/pacote e teste de concorrência PostgreSQL |

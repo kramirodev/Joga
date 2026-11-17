@@ -32,7 +32,13 @@ DISPUTE_STATUSES = ("OPEN", "ACCEPTED", "REJECTED", "WITHDRAWN")
 
 
 class PaymentRefund(Base):
-    """Reembolso idempotente de uma cobrança Pix."""
+    """Reembolso de uma cobrança Pix, total ou parcial (Fase 14E-E).
+
+    O comportamento atual continua criando apenas ``FULL``. O schema aceita
+    ``PARTIAL`` sem alterar nenhum fluxo: a unicidade de reembolso integral é
+    garantida por índice parcial, e ``idempotency_key`` permite repetir um
+    pedido parcial sem duplicar.
+    """
 
     __tablename__ = "payment_refunds"
     __table_args__ = (
@@ -40,9 +46,17 @@ class PaymentRefund(Base):
             "status IN ('PENDING', 'PROCESSED', 'FAILED')",
             name="status_valid",
         ),
+        CheckConstraint("refund_type IN ('FULL', 'PARTIAL')", name="refund_type_valid"),
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        UniqueConstraint("booking_payment_id", name="uq_payment_refunds_payment"),
+        Index(
+            "uq_payment_refunds_full_payment",
+            "booking_payment_id",
+            unique=True,
+            postgresql_where=text("refund_type = 'FULL'"),
+            sqlite_where=text("refund_type = 'FULL'"),
+        ),
         Index("ix_payment_refunds_booking_created", "booking_id", "created_at"),
+        Index("uq_payment_refunds_idempotency_key", "idempotency_key", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -53,6 +67,10 @@ class PaymentRefund(Base):
         ForeignKey("booking_payments.id", ondelete="CASCADE"), nullable=False
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    refund_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="FULL", server_default="FULL"
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING", server_default="PENDING"
     )

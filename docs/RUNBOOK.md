@@ -177,6 +177,9 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_PRESENCE_RADIUS_M` | `200`; raio do geofence |
 | `JOGA_PRESENCE_MAX_ACCURACY_M` | `100`; precisão máxima aceita no GPS |
 | `JOGA_REVIEW_OPERATORS` | vazio; operadores autorizados a decidir contestações financeiras |
+| `JOGA_CPF_KEY` | vazio; 32 bytes em base64; obrigatório fora de `local`/`test`/`development`/`ci` |
+| `JOGA_CPF_KEY_ID` | vazio; id curto da chave vigente (ex.: `local-v1`) |
+| `JOGA_CPF_PREVIOUS_KEYS` | `{}`; JSON `{"<id>": "<base64>"}` apenas para leitura durante rotação |
 
 Nunca versionar `.env`, credenciais reais ou segredos. `.env.example` só contém placeholders.
 
@@ -551,6 +554,34 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
   leitura não depende dela no modo `ledger`.
 - O painel mostra a aba **Financeiro** para `OWNER`, `ADMIN` e `OPERATOR`; apenas `OWNER`/`ADMIN` abrem contestação.
 - Nenhum repasse real é feito: o ledger e a liberação são simulados como proposta técnica. Split, MED, chargeback, comprovantes, NFS-e e a política de repasse continuam pendentes; a 14E deve integrar o ledger em reais.
+
+### CPF, termos e intenção fiscal (Fase 14E-E)
+
+- **CPF:** `PUT /api/v1/me/cpf` grava o CPF cifrado; `GET` devolve só
+  `cpf_present` e `cpf_masked` (`***.***.***-25`); `DELETE` anonimiza o perfil e
+  preserva o snapshot fiscal já emitido. Nenhuma rota devolve o número em claro.
+- **Chave:** `JOGA_CPF_KEY` (32 bytes em base64) + `JOGA_CPF_KEY_ID`. Fora de
+  `local`/`test`/`development`/`ci`, o boot falha sem chave; o placeholder de 32
+  bytes zero é recusado. A chave nunca entra no banco, no Git, no bundle nem em log.
+- **Rotação:** gere a chave nova, publique como `JOGA_CPF_KEY` com um
+  `JOGA_CPF_KEY_ID` novo e mova a antiga para `JOGA_CPF_PREVIOUS_KEYS`. A leitura
+  usa o `cpf_key_id` gravado na linha. Não remova a chave antiga antes de
+  recifrar os registros ativos; a recifragem em lote ainda não é automatizada.
+- **Diagnóstico:** `GET /api/v1/me/cpf` e os eventos de auditoria
+  `user.cpf_updated`/`user.cpf_deleted` (apenas `cpf_present`). Não registre o
+  CPF, o CPF cifrado nem a chave em log, ticket ou captura de tela.
+- **Termos:** `GET /api/v1/legal/terms/current` devolve `null` enquanto não há
+  versão `approved`; `POST /api/v1/legal/terms/accept` só aceita versão aprovada.
+  Com versão aprovada, a compra de pacote passa a exigir `terms_version_id`;
+  sem versão aprovada, o fluxo atual continua sem aceite.
+- **Intenção fiscal:** com `JOGA_FISCAL_MODE=placeholder`, a confirmação da
+  reserva grava `fiscal_documents` (`pending_manual`, valor = preço do espaço) e
+  um `fiscal_document_takers` por jogador com a cota e o CPF cifrado. Nenhuma
+  chamada externa é feita; não há emissor, município nem alíquota definidos.
+- **Reembolso parcial:** o schema aceita `refund_type=PARTIAL`, mas nenhum fluxo
+  cria parcial nesta etapa; o serviço continua criando um único `FULL` por
+  cobrança.
+- **Retenção e base legal:** ver `docs/PRIVACIDADE_CPF_E_RETENCAO.md`.
 
 ### Quadras, agenda e fotos (Fase 12A)
 

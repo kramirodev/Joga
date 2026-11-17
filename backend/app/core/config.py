@@ -1,5 +1,7 @@
 """Configuração da API, lida de variáveis de ambiente com prefixo JOGA_."""
 
+import base64
+import binascii
 from datetime import date
 from functools import lru_cache
 from typing import Self
@@ -156,8 +158,12 @@ class Settings(BaseSettings):
     fiscal_document_grace_days: int = Field(default=5, ge=0, le=60)
     venue_receivable_offset_days: int = Field(default=90, ge=1, le=365)
     credit_refund_days: int = Field(default=30, ge=1, le=180)
+    # CPF cifrado (ADR 0049 §9.3). A chave de 32 bytes fica fora do banco; o
+    # ``cpf_key_id`` acompanha o ciphertext e as chaves anteriores são usadas
+    # apenas para leitura durante a rotação.
     cpf_key: SecretStr | None = None
     cpf_key_id: str | None = Field(default=None, max_length=20)
+    cpf_previous_keys: dict[str, SecretStr] = Field(default_factory=dict)
 
     # Push: transporte externo. O webhook é um adaptador operacional; a
     # central de notificações continua sendo a fonte de verdade.
@@ -250,6 +256,35 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} deve ser definido fora do ambiente local")
         if self.dev_fixed_otp is not None:
             raise ValueError("JOGA_DEV_FIXED_OTP só pode ser usado em ambiente local")
+        return self
+
+    @model_validator(mode="after")
+    def validate_cpf_key(self) -> Self:
+        """Valida a chave de CPF e exige que exista fora do ambiente local.
+
+        O CPF não pode ser cifrado sem chave, e degradar para texto claro é
+        inaceitável. O placeholder de 32 bytes zero é recusado sempre.
+        """
+        materials: list[tuple[str, str]] = []
+        if self.cpf_key is not None:
+            if not (self.cpf_key_id or "").strip():
+                raise ValueError("JOGA_CPF_KEY_ID é obrigatório quando JOGA_CPF_KEY existe")
+            materials.append((self.cpf_key.get_secret_value(), "JOGA_CPF_KEY"))
+        for key_id, key in self.cpf_previous_keys.items():
+            if not key_id.strip():
+                raise ValueError("JOGA_CPF_PREVIOUS_KEYS exige ids de chave não vazios")
+            materials.append((key.get_secret_value(), f"JOGA_CPF_PREVIOUS_KEYS[{key_id}]"))
+        for value, name in materials:
+            try:
+                raw = base64.b64decode(value.strip(), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError(f"{name} deve ser base64 válido") from exc
+            if len(raw) != 32:
+                raise ValueError(f"{name} deve ter 32 bytes")
+            if raw == b"\x00" * 32:
+                raise ValueError(f"{name} não pode ser o placeholder de desenvolvimento")
+        if self.environment.lower() not in LOCAL_ENVIRONMENTS and self.cpf_key is None:
+            raise ValueError("JOGA_CPF_KEY é obrigatório fora do ambiente local")
         return self
 
     @model_validator(mode="after")
