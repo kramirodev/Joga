@@ -280,8 +280,8 @@ function Customization() {
           <Toggle checked={animations} onChange={setAnimations} />
         </Row>
       </Card>
-      <Btn tone="primary" toast="Personalização salva no protótipo">
-        Salvar personalização
+      <Btn tone="primary" disabled>
+        Persistência da personalização em implantação
       </Btn>
     </Page>
   );
@@ -544,9 +544,9 @@ function Privacy() {
         {[
           {
             icon: 'lock' as const,
-            title: 'Usuários bloqueados',
-            sub: '1 bloqueado',
-            go: 'block-user',
+            title: 'Bloqueios',
+            sub: 'Gerencie a partir do perfil do jogador',
+            go: 'friends',
           },
           {
             icon: 'chat' as const,
@@ -874,7 +874,7 @@ function Support() {
       icon: 'clock' as const,
       title: 'Prazos, cutoff e no-show',
       sub: 'Como T1–T9 funcionam',
-      toast: 'Artigo aberto no protótipo',
+      toast: 'Conteúdo em implantação',
     },
     {
       icon: 'shield' as const,
@@ -991,8 +991,8 @@ function About() {
           {
             icon: 'info' as const,
             title: 'Licenças',
-            sub: 'Sem bibliotecas externas',
-            toast: 'Licenças abertas no protótipo',
+            sub: 'Expo, React Native e SVG',
+            toast: 'Licenças em implantação',
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1}>

@@ -623,8 +623,8 @@ function QueueEmpty() {
             <Btn tone="ghost" go="availability">
               Mudar horário
             </Btn>
-            <Btn tone="ghost" toast="Você entrou na espera no protótipo">
-              Entrar na espera
+            <Btn tone="ghost" disabled>
+              Fila de espera em implantação
             </Btn>
           </>
         }
@@ -1406,8 +1406,8 @@ function LobbyFull() {
         text="A partida está cheia. Você pode entrar na fila de espera; se alguém sair, o convite respeita a ordem e o prazo."
         actions={
           <>
-            <Btn tone="primary" toast="Você entrou na espera no protótipo">
-              Entrar na espera
+            <Btn tone="primary" disabled>
+              Fila de espera em implantação
             </Btn>
             <Btn tone="ghost" go="queue-casual">
               Ver outras partidas
@@ -2111,8 +2111,8 @@ function Sports() {
       <Notice tone="orange" icon="info">
         Nível autodeclarado não é divisão. A divisão só aparece em partidas ranqueadas.
       </Notice>
-      <Btn tone="ghost" icon="plus" toast="Modalidade adicionada no protótipo">
-        Adicionar modalidade
+      <Btn tone="ghost" icon="plus" disabled>
+        Adicionar modalidade em implantação
       </Btn>
       <Btn tone="primary" back>
         Salvar
@@ -2218,7 +2218,7 @@ function Region() {
         );
         setProfile(updated);
       }
-      nav.toast('GPS aproximado ativado no protótipo');
+      nav.toast('Localização aproximada ativada.');
     } catch {
       nav.toast('Não foi possível obter a localização.');
     } finally {

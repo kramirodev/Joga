@@ -395,7 +395,7 @@ function OnboardingThree() {
         );
         setProfile(updated);
       }
-      nav.toast('Localização aproximada ativada no protótipo');
+      nav.toast('Localização aproximada ativada.');
     } catch {
       nav.toast('Não foi possível obter a localização.');
     }

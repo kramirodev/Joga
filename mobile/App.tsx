@@ -923,13 +923,13 @@ function Shell() {
       return;
     }
     const messages: Record<string, string> = {
-      cancel: 'T4 aberto no protótipo',
-      block: 'Usuário bloqueado no protótipo',
-      filter: 'Filtros aplicados no protótipo',
-      share: 'Link copiado no protótipo',
-      confirm: 'Ação confirmada no protótipo',
+      cancel: 'Participação cancelada.',
+      block: 'Bloqueio ainda não disponível no app.',
+      filter: 'Filtros ainda não disponíveis no app.',
+      share: 'Compartilhamento ainda não disponível no app.',
+      confirm: 'Ação ainda não disponível no app.',
     };
-    nav.toast(messages[active.id] ?? 'Ação concluída no protótipo');
+    nav.toast(messages[active.id] ?? 'Ação ainda não disponível no app.');
   };
 
   const topStyle =
