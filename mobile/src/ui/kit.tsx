@@ -9,7 +9,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
   type StyleProp,
@@ -29,6 +28,7 @@ import Svg, {
 import { useNav, useTheme } from '../state/context';
 import { Avatar, type AvatarProps } from './Avatar';
 import { Icon, type IconName } from './icons';
+import { Text } from './text';
 import { space, type, type TextVariant } from './theme';
 
 type ColorToken = 'ink' | 'soft' | 'onInk' | 'softOnInk' | 'lime' | 'limeDeep' | 'white' | 'red';
@@ -394,7 +394,7 @@ export function Btn({
     onPress?: () => void;
   }
 >) {
-  const { palette, dark } = useTheme();
+  const { palette, dark, largeTargets } = useTheme();
   const run = useAction();
   const inRow = useContext(BtnRowContext);
   const cardTone = useContext(CardToneContext);
@@ -439,7 +439,7 @@ export function Btn({
       style={({ pressed }) => ({
         width: inRow ? undefined : block ? '100%' : small ? undefined : '100%',
         flex: inRow ? 1 : undefined,
-        minHeight: small ? 46 : 52,
+        minHeight: largeTargets ? (small ? 54 : 60) : small ? 46 : 52,
         borderRadius: small ? 11 : 14,
         borderWidth: 1.5,
         borderColor,
@@ -488,13 +488,17 @@ export function TextBtn({
   onPress,
   ...action
 }: PropsWithChildren<ActionProps & { muted?: boolean; onPress?: () => void }>) {
-  const { palette } = useTheme();
+  const { palette, largeTargets } = useTheme();
   const run = useAction();
   return (
     <Pressable
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
-      style={{ minHeight: 46, justifyContent: 'center', paddingHorizontal: 2 }}
+      style={{
+        minHeight: largeTargets ? 56 : 46,
+        justifyContent: 'center',
+        paddingHorizontal: 2,
+      }}
     >
       <Text
         style={{
@@ -525,7 +529,7 @@ export function IconBtn({
   ink?: boolean;
   onPress?: () => void;
 }) {
-  const { palette, dark } = useTheme();
+  const { palette, dark, largeTargets } = useTheme();
   const run = useAction();
   let bg = palette.surface;
   let border = palette.lineStrong;
@@ -545,10 +549,10 @@ export function IconBtn({
       accessibilityRole="button"
       accessibilityLabel={label}
       style={({ pressed }) => ({
-        width: 46,
-        height: 46,
+        width: largeTargets ? 54 : 46,
+        height: largeTargets ? 54 : 46,
         flexShrink: 0,
-        borderRadius: 23,
+        borderRadius: largeTargets ? 27 : 23,
         borderWidth: 1.5,
         borderColor: border,
         backgroundColor: bg,
@@ -581,7 +585,7 @@ export function Chip({
   toast?: string;
   onPress?: () => void;
 }>) {
-  const { palette, dark } = useTheme();
+  const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
   let bg = palette.surface;
   let border = palette.lineStrong;
@@ -614,7 +618,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: !!on }}
       style={({ pressed }) => ({
-        minHeight: 46,
+        minHeight: largeTargets ? 54 : 46,
         borderRadius: 999,
         borderWidth: 1.5,
         borderColor: border,
@@ -669,7 +673,7 @@ export function SegBtn({
   go,
   onPress,
 }: PropsWithChildren<{ on?: boolean; go?: string; onPress?: () => void }>) {
-  const { palette, dark } = useTheme();
+  const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
   return (
     <Pressable
@@ -678,7 +682,7 @@ export function SegBtn({
       accessibilityState={{ selected: !!on }}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: 46,
+        minHeight: largeTargets ? 54 : 46,
         borderRadius: 8,
         paddingHorizontal: 6,
         alignItems: 'center',
@@ -729,7 +733,7 @@ export function Field({ label, children }: PropsWithChildren<{ label: string }>)
 }
 
 export function Input(props: TextInputProps) {
-  const { palette } = useTheme();
+  const { palette, largeTargets, fontScale } = useTheme();
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
@@ -747,14 +751,14 @@ export function Input(props: TextInputProps) {
       style={[
         {
           width: '100%',
-          minHeight: 52,
+          minHeight: largeTargets ? 58 : 52,
           borderWidth: focused ? 2 : 1.5,
           borderColor: focused ? palette.ink : palette.lineStrong,
           borderRadius: 12,
           backgroundColor: palette.surface,
           paddingHorizontal: focused ? 13.5 : 14,
-          paddingVertical: 13,
-          fontSize: 14,
+          paddingVertical: largeTargets ? 16 : 13,
+          fontSize: Math.round(14 * fontScale * 10) / 10,
           color: palette.ink,
         },
         props.style,
@@ -1764,7 +1768,7 @@ export function ListRow({
   last,
   style,
 }: PropsWithChildren<{ onPress?: () => void; last?: boolean; style?: StyleProp<ViewStyle> }>) {
-  const { palette } = useTheme();
+  const { palette, largeTargets } = useTheme();
   const content = (
     <View
       style={[
@@ -1773,7 +1777,7 @@ export function ListRow({
           alignItems: 'center',
           gap: 12,
           paddingHorizontal: 18,
-          paddingVertical: 15,
+          paddingVertical: largeTargets ? 18 : 15,
           borderBottomWidth: last ? 0 : 1,
           borderBottomColor: palette.line,
         },

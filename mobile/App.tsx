@@ -9,13 +9,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { fontScaleFactor } from './src/accessibility';
 import { AppProvider, useApp } from './src/state/app';
+import { Text } from './src/ui/text';
 import {
   NavContext,
   ThemeContext,
@@ -98,7 +99,7 @@ function TabButton({
   icon: 'home' | 'cal' | 'trophy' | 'users' | 'user';
   onPress: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, largeTargets } = useTheme();
   const [focus] = useState(() => new Animated.Value(active ? 1 : 0));
 
   useEffect(() => {
@@ -118,7 +119,7 @@ function TabButton({
       accessibilityState={{ selected: active }}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: 48,
+        minHeight: largeTargets ? 56 : 48,
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
@@ -237,9 +238,16 @@ function Sheet({
   > = {
     confirm: {
       title: 'Confirmar ação?',
-      text: 'Esta é uma confirmação destrutiva. No protótipo, nenhum dado real é alterado.',
+      text: 'Esta ação não pode ser desfeita.',
       cancel: 'Voltar',
       confirm: 'Confirmar',
+      danger: true,
+    },
+    'cancel-booking': {
+      title: 'Cancelar reserva?',
+      text: 'A política de cancelamento da quadra será aplicada. Vagas já pagas podem virar crédito, conforme a antecedência.',
+      cancel: 'Manter reserva',
+      confirm: 'Cancelar reserva',
       danger: true,
     },
     cancel: {
@@ -733,6 +741,7 @@ function Shell() {
   const [phase, setPhase] = useState<ScreenPhase>('idle');
   const [motion, setMotion] = useState<ScreenMotion>('push');
   const palette = app.dark ? dark : light;
+  const reducedMotion = app.accessibility.reducedMotion;
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const statusInset = insets.top;
@@ -784,7 +793,7 @@ function Shell() {
         }
         const run = Animated.timing(anim, {
           toValue: 1,
-          duration: nextMotion === 'tab' ? 180 : 240,
+          duration: reducedMotion ? 0 : nextMotion === 'tab' ? 180 : 240,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         });
@@ -799,7 +808,7 @@ function Shell() {
         });
       });
     },
-    [anim],
+    [anim, reducedMotion],
   );
 
   const nav = useMemo<NavValue>(
@@ -886,8 +895,14 @@ function Shell() {
   }, [modal, canGoBack, nav]);
 
   const theme = useMemo(
-    () => ({ palette, dark: app.dark, setDark: app.setDark }),
-    [palette, app.dark, app.setDark],
+    () => ({
+      palette,
+      dark: app.dark,
+      setDark: app.setDark,
+      fontScale: fontScaleFactor(app.accessibility.fontScale),
+      largeTargets: app.accessibility.largeTargets,
+    }),
+    [palette, app.dark, app.setDark, app.accessibility],
   );
 
   const confirmModal = () => {

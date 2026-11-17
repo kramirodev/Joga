@@ -34,12 +34,16 @@ export type ThemeValue = {
   palette: Palette;
   dark: boolean;
   setDark: (value: boolean) => void;
+  fontScale: number;
+  largeTargets: boolean;
 };
 
 export const ThemeContext = createContext<ThemeValue>({
   palette: light,
   dark: false,
   setDark: () => undefined,
+  fontScale: 1,
+  largeTargets: false,
 });
 
 export function useTheme(): ThemeValue {

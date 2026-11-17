@@ -11,6 +11,13 @@ import {
 import { Appearance } from 'react-native';
 
 import { api, ApiError, setRefreshHandler, setSuspensionHandler } from '../api/client';
+import { startRealtime, stopRealtime, subscribeRealtime } from '../api/realtime';
+import {
+  defaultAccessibility,
+  loadAccessibility,
+  saveAccessibility,
+  type AccessibilityPreferences,
+} from '../accessibility';
 import type {
   Availability,
   Badge,
@@ -108,6 +115,10 @@ type AppValue = {
   suspended: boolean;
   moderationActions: ModerationAction[];
   moderationAppeals: ModerationAppeal[];
+  email: string | null;
+  emailReady: boolean;
+  accessibility: AccessibilityPreferences;
+  setAccessibility: (preferences: AccessibilityPreferences) => Promise<void>;
   setSession: (tokens: Parameters<typeof saveSession>[0]) => Promise<void>;
   signOut: () => Promise<void>;
   setProfile: (profile: Profile | null) => void;
@@ -135,6 +146,8 @@ type AppValue = {
   loadModerationActions: () => Promise<void>;
   loadModerationAppeals: () => Promise<void>;
   recheckSuspension: () => Promise<void>;
+  loadEmail: () => Promise<void>;
+  saveEmail: (email: string | null) => Promise<void>;
   loadRating: (formatId: string) => Promise<MyRating | null>;
   refreshCore: () => Promise<void>;
   formatForName: (name: string) => string | null;
@@ -195,6 +208,10 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [suspended, setSuspended] = useState(false);
   const [moderationActions, setModerationActions] = useState<ModerationAction[]>([]);
   const [moderationAppeals, setModerationAppeals] = useState<ModerationAppeal[]>([]);
+  const [email, setEmail] = useState<string | null>(null);
+  const [emailReady, setEmailReady] = useState(false);
+  const [accessibility, setAccessibilityState] =
+    useState<AccessibilityPreferences>(defaultAccessibility);
 
   const token = session?.accessToken ?? null;
 
@@ -242,6 +259,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     setSuspended(false);
     setModerationActions([]);
     setModerationAppeals([]);
+    setEmail(null);
+    setEmailReady(false);
     setAuthState(initialAuth);
     setOnboardingState(initialOnboarding);
   }, [token]);
@@ -466,6 +485,32 @@ export function AppProvider({ children }: PropsWithChildren) {
     setModerationAppeals(result.appeals);
   }, [token]);
 
+  const loadEmail = useCallback(async () => {
+    if (!token) {
+      setEmail(null);
+      setEmailReady(true);
+      return;
+    }
+    try {
+      const result = await api.profile.email(token);
+      setEmail(result.email);
+    } finally {
+      setEmailReady(true);
+    }
+  }, [token]);
+
+  const saveEmail = useCallback(
+    async (value: string | null) => {
+      if (!token) {
+        return;
+      }
+      const result = await api.profile.updateEmail(token, value?.trim() || null);
+      setEmail(result.email);
+      setEmailReady(true);
+    },
+    [token],
+  );
+
   const loadRating = useCallback(
     async (formatId: string) => {
       if (!token) {
@@ -490,6 +535,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       loadSeason(),
       loadNotifications(),
       loadModerationActions(),
+      loadEmail(),
     ]);
     if (catalog.length === 0) {
       await loadCatalog().catch(() => []);
@@ -503,6 +549,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     loadSeason,
     loadNotifications,
     loadModerationActions,
+    loadEmail,
     catalog.length,
     loadCatalog,
   ]);
@@ -557,9 +604,17 @@ export function AppProvider({ children }: PropsWithChildren) {
                 setSessionState(stored);
                 setSuspended(true);
               }
-            } else {
+            } else if (error instanceof ApiError && error.status === 401) {
+              // Apenas credencial inválida encerra a sessão.
               sessionRef.current = null;
               await clearSession();
+            } else {
+              // Rede indisponível no cold start: mantém a sessão salva e abre o app.
+              if (active) {
+                sessionRef.current = stored;
+                setSessionState(stored);
+                setSuspended(stored.userStatus === 'suspended');
+              }
             }
           }
         }
@@ -572,6 +627,23 @@ export function AppProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    loadAccessibility().then((preferences) => {
+      if (active) {
+        setAccessibilityState(preferences);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setAccessibility = useCallback(async (preferences: AccessibilityPreferences) => {
+    setAccessibilityState(preferences);
+    await saveAccessibility(preferences);
   }, []);
 
   useEffect(() => {
@@ -616,6 +688,23 @@ export function AppProvider({ children }: PropsWithChildren) {
     });
     return () => setSuspensionHandler(null);
   }, []);
+
+  useEffect(() => {
+    if (!token) {
+      stopRealtime();
+      return;
+    }
+    startRealtime(token);
+    const unsubscribe = subscribeRealtime((event) => {
+      if (event.type === 'lobby.invite.created') {
+        loadNotifications().catch(() => undefined);
+      }
+    });
+    return () => {
+      unsubscribe();
+      stopRealtime();
+    };
+  }, [token, loadNotifications]);
 
   useEffect(() => {
     if (!token) {
@@ -708,6 +797,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       suspended,
       moderationActions,
       moderationAppeals,
+      email,
+      emailReady,
+      accessibility,
+      setAccessibility,
       setSession,
       signOut,
       setProfile,
@@ -734,6 +827,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       markAllNotificationsRead,
       loadModerationActions,
       loadModerationAppeals,
+      loadEmail,
+      saveEmail,
       recheckSuspension,
       loadRating,
       refreshCore,
@@ -777,6 +872,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       suspended,
       moderationActions,
       moderationAppeals,
+      email,
+      emailReady,
+      accessibility,
+      setAccessibility,
       setSession,
       signOut,
       loadCatalog,
@@ -798,6 +897,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       markAllNotificationsRead,
       loadModerationActions,
       loadModerationAppeals,
+      loadEmail,
+      saveEmail,
       recheckSuspension,
       loadRating,
       refreshCore,
