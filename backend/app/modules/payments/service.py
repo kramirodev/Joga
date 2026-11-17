@@ -572,7 +572,9 @@ class PaymentService:
             .where(Booking.organization_id == organization_id)
         )
         payments = list(self.session.scalars(base).all())
-        totals = FinancialService(self.session).release_totals(organization_id)
+        financial = FinancialService(self.session)
+        totals = financial.release_totals(organization_id)
+        commission = financial.commission_totals(organization_id)
         return {
             "charged_cents": sum(item.amount_cents for item in payments),
             "paid_cents": sum(item.amount_cents for item in payments if item.status == "PAID"),
@@ -584,7 +586,12 @@ class PaymentService:
             ),
             "released_cents": totals["released_cents"],
             "pending_release_cents": totals["pending_release_cents"],
+            "reversed_cents": totals["reversed_cents"],
+            "failed_cents": totals["failed_cents"],
             "disputed_cents": totals["disputed_cents"],
+            # Valor do fornecedor e comissão do JOGA nunca são somados.
+            "venue_price_cents": commission["venue_price_cents"],
+            "joga_fee_cents": commission["joga_fee_cents"],
             "payments": len(payments),
             "refunds": self.session.scalar(
                 select(func.count())

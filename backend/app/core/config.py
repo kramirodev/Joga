@@ -171,6 +171,11 @@ class Settings(BaseSettings):
     # opcional existe apenas para operação; o padrão é zero.
     release_delay_hours: int = Field(default=2, ge=0, le=720)
 
+    # Janela técnica de contestação, contada a partir de ``eligible_at``.
+    # Decisão de 17/11/2026: 72 h, persistida como snapshot na liberação e na
+    # contestação. O valor é configurável, mas o snapshot não é recalculado.
+    dispute_window_hours: int = Field(default=72, ge=1, le=720)
+
     # Revisão humana de resultados (Fase 7). Lista separada por vírgula; vazia
     # significa que nenhum operador está autorizado.
     review_operators: str = ""

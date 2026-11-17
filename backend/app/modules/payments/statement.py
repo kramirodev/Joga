@@ -6,6 +6,11 @@ extrato é uma transação contábil que afeta a conta da quadra
 
 O identificador da linha é o ``ledger_transactions.id``. ``booking_payment_id``
 fica nulo: o fato contábil é a reserva, não a cobrança individual do PSP.
+
+A linha carrega também o preço congelado da reserva em duas linhas
+(``venue_price_cents`` + ``fee_cents`` = ``total_cents``) e o ``release_id``
+quando o fato é um repasse, para que o extrato seja reproduzível por reserva e
+por repasse. O valor do fornecedor nunca é somado à receita do JOGA.
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import and_, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.selectable import Subquery
 
 from app.modules.bookings.models import Booking, BookingPayment
@@ -45,11 +50,16 @@ class StatementRow:
     status: str
     details: dict[str, Any] | None
     created_at: datetime
+    release_id: uuid.UUID | None = None
+    venue_price_cents: int | None = None
+    fee_cents: int | None = None
+    total_cents: int | None = None
 
 
 def _base_statement() -> Subquery:
     """Transações do ledger que compõem o extrato, com a reserva resolvida."""
 
+    release_booking = aliased(Booking)
     booking_id = func.coalesce(
         Booking.id, BookingPayment.booking_id, VenueRelease.booking_id
     ).label("booking_id")
@@ -63,6 +73,8 @@ def _base_statement() -> Subquery:
         .group_by(LedgerEntry.transaction_id)
         .subquery()
     )
+    # ``venue_release`` referencia a liberação, não a reserva; o join extra
+    # permite devolver o preço congelado também nas linhas de repasse.
     statement = (
         select(
             LedgerTransaction.id.label("id"),
@@ -71,6 +83,12 @@ def _base_statement() -> Subquery:
             LedgerTransaction.idempotency_key.label("idempotency_key"),
             LedgerTransaction.occurred_at.label("occurred_at"),
             venue_amount.c.amount_cents.label("amount_cents"),
+            VenueRelease.id.label("release_id"),
+            func.coalesce(Booking.venue_price_cents, release_booking.venue_price_cents).label(
+                "venue_price_cents"
+            ),
+            func.coalesce(Booking.fee_cents, release_booking.fee_cents).label("fee_cents"),
+            func.coalesce(Booking.total_cents, release_booking.total_cents).label("total_cents"),
         )
         .outerjoin(
             Booking,
@@ -93,6 +111,7 @@ def _base_statement() -> Subquery:
                 VenueRelease.id == LedgerTransaction.ref_id,
             ),
         )
+        .outerjoin(release_booking, release_booking.id == VenueRelease.booking_id)
         .outerjoin(venue_amount, venue_amount.c.transaction_id == LedgerTransaction.id)
         .where(LedgerTransaction.kind.in_(tuple(STATEMENT_KINDS)))
     )
@@ -111,6 +130,10 @@ def _row(raw: Any) -> StatementRow:
         status="POSTED",
         details={"kind": str(raw.kind), "idempotency_key": str(raw.idempotency_key)},
         created_at=raw.occurred_at,
+        release_id=raw.release_id,
+        venue_price_cents=None if raw.venue_price_cents is None else int(raw.venue_price_cents),
+        fee_cents=None if raw.fee_cents is None else int(raw.fee_cents),
+        total_cents=None if raw.total_cents is None else int(raw.total_cents),
     )
 
 

@@ -221,6 +221,9 @@ class VenueRelease(Base):
         String(20), nullable=False, default="PENDING", server_default="PENDING"
     )
     eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Snapshot da janela de contestação no instante da criação da liberação.
+    # Não recalcular quando a configuração mudar.
+    dispute_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -274,6 +277,8 @@ class FinancialDispute(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="OPEN", server_default="OPEN"
     )
+    # Cópia do prazo da liberação no instante da abertura; não recalcular.
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
