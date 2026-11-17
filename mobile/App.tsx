@@ -64,7 +64,7 @@ const ALL_SCREENS: ScreenDef[] = [
   ...statsScreens,
   ...socialScreens,
   ...systemScreens,
-];
+].filter((screen) => !screen.hidden);
 
 const REGISTRY: Record<string, ScreenDef> = Object.fromEntries(
   ALL_SCREENS.map((screen) => [screen.id, screen]),
@@ -252,9 +252,9 @@ function Sheet({
     },
     cancel: {
       title: 'Cancelar participação?',
-      text: 'Antes do cutoff, você não recebe reembolso e o sistema abre T4 para um substituto. Os demais pagantes seguem protegidos.',
+      text: 'Você recusa a participação. Se a reserva já existe, o cutoff decide: antes dele há devolução integral em ingressos; depois dele não há devolução e um substituto pode ocupar a vaga.',
       cancel: 'Manter vaga',
-      confirm: 'Cancelar e abrir T4',
+      confirm: 'Cancelar participação',
       danger: true,
     },
     logout: {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
-import type { Device, Passkey } from '../api/types';
+import type { CpfStatus, Device, Passkey } from '../api/types';
 import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
@@ -18,6 +18,7 @@ import {
   Input,
   Kv,
   ListRow,
+  LoadingState,
   Notice,
   Page,
   Row,
@@ -570,6 +571,125 @@ function Privacy() {
   );
 }
 
+function Cpf() {
+  const nav = useNav();
+  const { session } = useApp();
+  const [status, setStatus] = useState<CpfStatus | null>(null);
+  const [value, setValue] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    if (!session) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    api.profile
+      .cpf(session.accessToken)
+      .then(setStatus)
+      .catch(() => nav.toast('Não foi possível consultar o CPF.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  const save = async () => {
+    if (!session || busy) {
+      return;
+    }
+    const digits = value.replace(/\D/g, '');
+    if (digits.length !== 11) {
+      nav.toast('Informe um CPF com 11 dígitos.');
+      return;
+    }
+    setBusy(true);
+    try {
+      setStatus(await api.profile.updateCpf(session.accessToken, digits));
+      setValue('');
+      nav.toast('CPF salvo para a nota fiscal.');
+    } catch (error) {
+      nav.toast(
+        error instanceof ApiError && error.code === 'invalid_cpf'
+          ? 'CPF inválido.'
+          : 'Não foi possível salvar o CPF.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      setStatus(await api.profile.clearCpf(session.accessToken));
+      nav.toast('CPF removido do perfil.');
+    } catch {
+      nav.toast('Não foi possível remover o CPF.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Page title="CPF para nota fiscal">
+        <LoadingState label="Consultando o CPF do perfil." variant="cards" />
+      </Page>
+    );
+  }
+
+  return (
+    <Page title="CPF para nota fiscal">
+      <Card>
+        <Row between>
+          <Txt variant="h3">CPF no perfil</Txt>
+          <Badge tone={status?.cpf_present ? 'green' : 'orange'}>
+            {status?.cpf_present ? 'INFORMADO' : 'NÃO INFORMADO'}
+          </Badge>
+        </Row>
+        {status?.cpf_present ? (
+          <Kv label="CPF" value={status.cpf_masked ?? '•••'} />
+        ) : (
+          <Txt variant="tiny" style={{ marginTop: 6 }}>
+            O CPF é usado na NFS-e emitida pelo estabelecimento pelo uso da quadra. Ele não aparece
+            no perfil público.
+          </Txt>
+        )}
+      </Card>
+      <Field label={status?.cpf_present ? 'Substituir CPF' : 'Informar CPF'}>
+        <Input
+          value={value}
+          onChangeText={setValue}
+          keyboardType="number-pad"
+          maxLength={14}
+          placeholder="000.000.000-00"
+          autoCorrect={false}
+        />
+      </Field>
+      <Btn tone="primary" onPress={save} disabled={busy || value.replace(/\D/g, '').length !== 11}>
+        {busy ? 'Salvando…' : 'Salvar CPF'}
+      </Btn>
+      {status?.cpf_present ? (
+        <Btn tone="ghost" onPress={remove} disabled={busy}>
+          Remover CPF do perfil
+        </Btn>
+      ) : null}
+      <Notice tone="blue" icon="shield">
+        O CPF é armazenado de forma protegida. A NFS-e de intermediação é emitida pelo JOGA contra o
+        mesmo titular; o app não inventa número de documento.
+      </Notice>
+    </Page>
+  );
+}
+
 function LgpdExport() {
   const { palette } = useTheme();
   return (
@@ -602,10 +722,11 @@ function LgpdExport() {
         </View>
       </Card>
       <Notice tone="green" icon="shield">
-        A exportação é gratuita e não exige passe. Dados de terceiros são omitidos.
+        A exportação é gratuita e não exige passe. Dados de terceiros são omitidos. O pedido é
+        atendido pelo suporte enquanto não há fluxo automático no app.
       </Notice>
-      <Btn tone="primary" icon="download" toast="Exportação solicitada no protótipo">
-        Solicitar exportação
+      <Btn tone="primary" go="support" icon="chat">
+        Solicitar pelo suporte
       </Btn>
       <Btn tone="ghost" go="lgpd-delete">
         Excluir minha conta
@@ -623,7 +744,8 @@ function LgpdDelete() {
         <Txt variant="h3">O que acontece</Txt>
         <Txt variant="tiny" style={{ marginTop: 6 }}>
           Sua conta, perfil, avatar, mensagens e preferências são excluídos. Registros financeiros e
-          fiscais podem ser retidos pelo prazo legal. Ingressos não usados são perdidos.
+          fiscais podem ser retidos pelo prazo legal. O saldo de crédito comprado segue a política
+          de encerramento; a franquia do passe já disponibilizada não é reembolsada.
         </Txt>
       </Card>
       <Field label="Digite EXCLUIR para confirmar">
@@ -636,8 +758,12 @@ function LgpdDelete() {
           autoCorrect={false}
         />
       </Field>
-      <Btn tone="danger" modal="confirm" disabled={!canDelete}>
-        Excluir minha conta
+      <Notice tone="blue" icon="chat">
+        A exclusão automática ainda não está disponível no app. Envie o pedido pelo suporte para
+        preservar o contraditório e os prazos legais.
+      </Notice>
+      <Btn tone="danger" go="support" disabled={!canDelete}>
+        Solicitar exclusão pelo suporte
       </Btn>
       <Btn tone="ghost" back>
         Cancelar
@@ -649,11 +775,36 @@ function LgpdDelete() {
 function TermsPrivacy() {
   const nav = useNav();
   const { palette } = useTheme();
+  const [terms, setTerms] = useState<{ id: string; version: string } | null>(null);
+  const [termsReady, setTermsReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api.legal
+      .currentTerms()
+      .then((result) => {
+        if (active) {
+          setTerms(result.terms);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setTermsReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const items = [
     {
       icon: 'info' as const,
       title: 'Termos de uso',
-      sub: 'Versão 2026-11 · revisão jurídica pendente',
+      sub: termsReady
+        ? terms
+          ? `Versão ${terms.version} aprovada`
+          : 'Nenhuma versão aprovada publicada'
+        : 'Consultando a versão vigente…',
       readOnly: true,
     },
     {
@@ -687,7 +838,7 @@ function TermsPrivacy() {
                 nav.go('terms', { readOnly: 1 });
                 return;
               }
-              nav.toast(`${item.title} disponível no protótipo.`);
+              nav.toast('Conteúdo disponível pelo suporte.');
             }}
           >
             <IconBtn
@@ -695,7 +846,7 @@ function TermsPrivacy() {
               label={item.title}
               plain
               onPress={item.readOnly ? () => nav.go('terms', { readOnly: 1 }) : undefined}
-              toast={item.readOnly ? undefined : `${item.title} aberto no protótipo`}
+              toast={item.readOnly ? undefined : 'Conteúdo disponível pelo suporte'}
             />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -707,9 +858,9 @@ function TermsPrivacy() {
           </ListRow>
         ))}
       </CardList>
-      <Notice tone="orange" icon="alert">
-        O texto final depende de revisão jurídica. O protótipo mostra a estrutura e os pontos
-        obrigatórios.
+      <Notice tone="blue" icon="info">
+        A versão vigente é a aprovada e publicada pelo servidor. Quando uma nova versão exige
+        aceite, a compra de crédito mostra o texto antes de abrir o Pix.
       </Notice>
     </Page>
   );
@@ -778,8 +929,8 @@ function Support() {
           </ListRow>
         ))}
       </CardList>
-      <Btn tone="primary" icon="chat" toast="Atendimento aberto no protótipo">
-        Abrir atendimento
+      <Btn tone="primary" icon="chat" disabled>
+        Atendimento em implantação
       </Btn>
       <Notice tone="blue" icon="shield">
         Toda contestação gera registro e possibilidade de revisão humana.
@@ -790,6 +941,8 @@ function Support() {
 
 function About() {
   const { palette } = useTheme();
+  const { profile, session, progress } = useApp();
+  const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
   return (
     <Page title="Sobre">
       <Card tone="ink">
@@ -809,14 +962,23 @@ function About() {
           Futebol e vôlei, quadra de verdade.
         </Txt>
         <View style={{ marginTop: 10 }}>
-          <Badge tone="lime">PROTÓTIPO v3 · 2026-11-13</Badge>
+          <Badge tone="lime">BUILD LOCAL · EXPO 58</Badge>
         </View>
       </Card>
       <Card>
-        <Kv label="Versão" value="3.0.0-prototipo" />
+        <Kv label="Versão" value="1.0.0" />
         <Kv label="Ambiente" value="Local · sem dados reais" />
-        <Kv label="Conta" value="Susan #4821" />
-        <Kv label="Temporada" value="2026-Q4" />
+        <Kv
+          label="Conta"
+          value={
+            profile?.display_name
+              ? `${profile.display_name} #${tag}`
+              : session
+                ? `#${tag}`
+                : 'não autenticado'
+          }
+        />
+        <Kv label="Temporada" value={progress?.season.code ?? '—'} />
       </Card>
       <CardList>
         {[
@@ -1058,14 +1220,15 @@ export const systemScreens: ScreenDef[] = [
   { id: 'security', tab: 'perfil', render: () => <Security /> },
   { id: 'devices', tab: 'perfil', render: () => <Devices /> },
   { id: 'privacy', tab: 'perfil', render: () => <Privacy /> },
+  { id: 'cpf', tab: 'perfil', render: () => <Cpf /> },
   { id: 'lgpd-export', tab: 'perfil', render: () => <LgpdExport /> },
   { id: 'lgpd-delete', tab: 'perfil', render: () => <LgpdDelete /> },
   { id: 'terms-privacy', tab: 'perfil', render: () => <TermsPrivacy /> },
   { id: 'support', tab: 'perfil', render: () => <Support /> },
   { id: 'about', tab: 'perfil', render: () => <About /> },
-  { id: 'offline', tab: 'jogar', render: () => <Offline /> },
-  { id: 'error-403', tab: 'jogar', render: () => <Error403 /> },
-  { id: 'error-generic', tab: 'jogar', render: () => <ErrorGeneric /> },
-  { id: 'loading', tab: 'jogar', render: () => <Loading /> },
+  { id: 'offline', tab: 'jogar', hidden: true, render: () => <Offline /> },
+  { id: 'error-403', tab: 'jogar', hidden: true, render: () => <Error403 /> },
+  { id: 'error-generic', tab: 'jogar', hidden: true, render: () => <ErrorGeneric /> },
+  { id: 'loading', tab: 'jogar', hidden: true, render: () => <Loading /> },
   { id: 'decisions', tab: 'perfil', render: () => <Decisions /> },
 ];

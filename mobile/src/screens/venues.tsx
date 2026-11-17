@@ -44,7 +44,23 @@ import {
   TimerCard,
   Txt,
 } from '../ui/kit';
-import { cents, dateOnly, divisionLabel, shortDateTime, timeOnly } from '../ui/datetime';
+import {
+  cents,
+  dateOnly,
+  divisionLabel,
+  shortDateTime,
+  timeOnly,
+  zonedShortDateTime,
+  zonedDateOnly,
+  zonedTimeOnly,
+} from '../ui/datetime';
+import {
+  PriceBreakdown,
+  TicketConversionTable,
+  bookingPrice,
+  participantPrice,
+} from '../ui/PriceBreakdown';
+import { formatFamily, referenceBreakdown, TICKET_REFERENCE_CENTS } from '../ui/tickets';
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
@@ -62,6 +78,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       forbidden: 'Você não participa deste lobby.',
       network_unavailable: 'Não foi possível falar com o servidor.',
       invalid_transition: 'Esta ação não é válida no estado atual da reserva.',
+      cancellation_closed: 'O prazo de cancelamento desta reserva já passou.',
       presence_window_closed: 'O pré-check-in ou a confirmação de presença está fora da janela.',
       presence_closed: 'A presença desta reserva já foi encerrada.',
       too_far: 'Você está longe demais da quadra para confirmar a presença.',
@@ -317,10 +334,12 @@ function SpaceBookingCard({
   space,
   venueId,
   venueName,
+  timezone,
 }: {
   space: BookableVenueSpace;
   venueId: string;
   venueName: string;
+  timezone: string;
 }) {
   const nav = useNav();
   const { palette } = useTheme();
@@ -395,7 +414,7 @@ function SpaceBookingCard({
               >
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                    {shortDateTime(slot.starts_at)}
+                    {zonedShortDateTime(slot.starts_at, timezone)}
                   </Text>
                   <Text style={{ fontSize: 13, color: palette.muted, marginTop: 2 }}>
                     {bandLabel(slot.band_code)} · {cents(slot.price_cents)}
@@ -424,6 +443,7 @@ function SpaceBookingCard({
                       bandLabel: bandLabel(slot.band_code),
                       ticketsPerSeat: tickets,
                       covered: space.is_covered,
+                      timezone,
                     })
                   }
                 >
@@ -596,6 +616,7 @@ function VenueDetail() {
             space={space}
             venueId={detail.id}
             venueName={venueName}
+            timezone={detail.timezone}
           />
         ))
       ) : (
@@ -629,6 +650,7 @@ function BookingRequest() {
   const ticketsPerSeat =
     typeof nav.params.ticketsPerSeat === 'number' ? nav.params.ticketsPerSeat : null;
   const covered = nav.params.covered === true;
+  const timezone = typeof nav.params.timezone === 'string' ? nav.params.timezone : null;
   const lobbyId =
     (typeof nav.params.lobbyId === 'string' && nav.params.lobbyId) ||
     matches.find((match) => match.lobby_id)?.lobby_id ||
@@ -707,6 +729,11 @@ function BookingRequest() {
     1,
     Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60_000),
   );
+  const estimate =
+    priceCents != null && ticketsPerSeat != null
+      ? referenceBreakdown(ticketsPerSeat, priceCents)
+      : null;
+  const family = formatFamily(formatName);
 
   const submit = async () => {
     if (!session || busy || !accepted) {
@@ -741,7 +768,7 @@ function BookingRequest() {
         <Kv label="Espaço" value={spaceName} />
         <Kv label="Formato" value={formatName ?? 'A confirmar'} />
         <Kv label="Faixa" value={bandLabel ?? 'Definida na confirmação'} />
-        <Kv label="Data e horário" value={shortDateTime(startsAt)} />
+        <Kv label="Data e horário" value={zonedShortDateTime(startsAt, timezone)} />
         <Kv label="Duração" value={`${duration} min`} />
         <Kv label="Cobertura" value={covered ? 'Coberta' : 'Aberta'} />
         <Kv label="Custo da quadra" value={priceCents != null ? cents(priceCents) : '—'} />
@@ -750,6 +777,31 @@ function BookingRequest() {
           value={ticketsPerSeat != null ? `${ticketsPerSeat} ingressos` : 'A confirmar'}
         />
       </Card>
+      {estimate && priceCents != null && ticketsPerSeat != null ? (
+        <Card tone="lime">
+          <Row between>
+            <Txt variant="tiny">Valor da quadra</Txt>
+            <Txt variant="num">{cents(priceCents)}</Txt>
+          </Row>
+          <Row between style={{ marginTop: 8 }}>
+            <Txt variant="tiny">Ingressos por vaga</Txt>
+            <Txt variant="num">{ticketsPerSeat}</Txt>
+          </Row>
+          <Row between style={{ marginTop: 8 }}>
+            <Txt variant="tiny">Total de referência por vaga</Txt>
+            <Txt variant="num">{cents(estimate.totalCents)}</Txt>
+          </Row>
+          <Row between style={{ marginTop: 8 }}>
+            <Txt variant="tiny">Valor do JOGA (restante)</Txt>
+            <Txt variant="num">{cents(estimate.jogaCents)}</Txt>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 8 }}>
+            Estimativa com o ingresso de referência a {cents(TICKET_REFERENCE_CENTS)}. Os valores
+            finais são congelados pelo servidor na confirmação.
+          </Txt>
+        </Card>
+      ) : null}
+      {family ? <TicketConversionTable emphasis={family} /> : null}
       <TimerCard
         label="T2 · resposta do estabelecimento"
         value="até 60 min"
@@ -760,6 +812,13 @@ function BookingRequest() {
         A faixa e os ingressos por vaga ficam congelados nesta reserva. Reajustes posteriores não
         alteram o valor.
       </Notice>
+      <Notice tone="blue" icon="shield">
+        A NFS-e do uso do espaço é emitida pelo estabelecimento contra o seu CPF. Informe ou revise
+        o CPF no perfil.
+      </Notice>
+      <TextBtn go="cpf" muted>
+        Informar CPF para a nota
+      </TextBtn>
       <Check checked={accepted} onChange={setAccepted}>
         Entendo que a vaga só é confirmada após o aceite da quadra e a quitação dos participantes.
       </Check>
@@ -773,11 +832,14 @@ function BookingRequest() {
 function bookingStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     PENDING_CONFIRMATION: 'AGUARDANDO',
+    PARTICIPANT_CONFIRMATION: 'CONFIRMAÇÃO',
     PAYMENT_PENDING: 'PAGAMENTO',
     CONFIRMED: 'CONFIRMADA',
     DECLINED: 'RECUSADA',
     EXPIRED: 'EXPIRADA',
     CANCELLED: 'CANCELADA',
+    CANCELLED_BY_PLAYER: 'CANCELADA',
+    CANCELLED_BY_VENUE: 'CANCELADA PELA QUADRA',
     COMPLETED: 'CONCLUÍDA',
   };
   return labels[status] ?? status.replaceAll('_', ' ');
@@ -871,7 +933,7 @@ function BookingActions({ booking }: { booking: Booking }) {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) {
-        nav.toast('Permita o acesso à localização para confirmar a presença.');
+        nav.go('checkin-denied', { bookingId: booking.id });
         return;
       }
       const position = await Location.getCurrentPositionAsync({
@@ -953,7 +1015,7 @@ function BookingActions({ booking }: { booking: Booking }) {
 
 function BookingT1T2() {
   const nav = useNav();
-  const { bookings, loadBookings } = useApp();
+  const { bookings, loadBookings, session } = useApp();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     loadBookings()
@@ -1000,13 +1062,16 @@ function BookingT1T2() {
   const active = booking.participants.filter((participant) => participant.active);
   const confirmed = active.filter((participant) => participant.confirmed_at).length;
   const tickets = booking.tickets_per_seat;
+  const ownParticipant =
+    booking.participants.find((participant) => participant.user_id === session?.userId) ?? null;
+  const ownPrice = participantPrice(ownParticipant);
   return (
     <Page title="Acompanhar reserva">
       <Row between>
         <View style={{ flex: 1 }}>
           <Txt variant="h2">{booking.organization_venue_name}</Txt>
           <Txt variant="tiny" style={{ marginTop: 3 }}>
-            {shortDateTime(booking.starts_at)} · {booking.venue_space_name}
+            {zonedShortDateTime(booking.starts_at, booking.timezone)} · {booking.venue_space_name}
             {booking.format_name ? ` · ${booking.format_name}` : ''}
           </Txt>
         </View>
@@ -1025,6 +1090,16 @@ function BookingT1T2() {
           <Txt variant="tiny">Custo da quadra</Txt>
           <Txt variant="h3">{cents(booking.price_cents)}</Txt>
         </Row>
+        {booking.fee_percent_applied > 0 ? (
+          <Row between style={{ marginTop: 8 }}>
+            <Txt variant="tiny">Percentual de referência congelado</Txt>
+            <Txt variant="h3">{(booking.fee_percent_applied / 100).toFixed(2)}%</Txt>
+          </Row>
+        ) : null}
+        <Row between style={{ marginTop: 8 }}>
+          <Txt variant="tiny">Versão de preço</Txt>
+          <Txt variant="h3">{booking.pricing_version}</Txt>
+        </Row>
         {booking.players_per_team != null ? (
           <Row between style={{ marginTop: 8 }}>
             <Txt variant="tiny">Jogadores por time</Txt>
@@ -1037,6 +1112,35 @@ function BookingT1T2() {
           </Txt>
         ) : null}
       </Card>
+      {booking.pricing_version !== 'legacy_v0' || booking.total_cents > 0 ? (
+        <>
+          <PriceBreakdown {...bookingPrice(booking)} tickets={tickets} />
+          {ownPrice ? (
+            <Card>
+              <Txt variant="h3">Sua vaga</Txt>
+              <Row between style={{ marginTop: 8 }}>
+                <Txt variant="tiny">Valor da quadra</Txt>
+                <Txt variant="num">{cents(ownPrice.venueCents)}</Txt>
+              </Row>
+              <Row between style={{ marginTop: 6 }}>
+                <Txt variant="tiny">
+                  {ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
+                </Txt>
+                <Txt variant="num">{cents(ownPrice.jogaCents)}</Txt>
+              </Row>
+              <Row between style={{ marginTop: 6 }}>
+                <Txt variant="h3">Total</Txt>
+                <Txt variant="num">{cents(ownPrice.totalCents)}</Txt>
+              </Row>
+              {ownParticipant?.tickets_consumed ? (
+                <Txt variant="tiny" style={{ marginTop: 6 }}>
+                  {ownParticipant.tickets_consumed} ingressos consumidos
+                </Txt>
+              ) : null}
+            </Card>
+          ) : null}
+        </>
+      ) : null}
       <TimerCard
         label="T1 · participação"
         value={
@@ -1049,8 +1153,8 @@ function BookingT1T2() {
       />
       <TimerCard
         label="T2 · resposta da quadra"
-        value={t2 ? timeOnly(t2.deadline_at) : 'aguardando'}
-        note={`${booking.organization_venue_name} · prazo ${t2 ? timeOnly(t2.deadline_at) : '—'}`}
+        value={t2 ? zonedTimeOnly(t2.deadline_at, booking.timezone) : 'aguardando'}
+        note={`${booking.organization_venue_name} · prazo ${t2 ? zonedTimeOnly(t2.deadline_at, booking.timezone) : '—'}`}
         tone="on"
       />
       <Card tone="lime">
@@ -1071,9 +1175,12 @@ function BookingT1T2() {
 
 function BookingConfirmed() {
   const nav = useNav();
-  const { bookings } = useApp();
+  const { bookings, session } = useApp();
   const bookingId = typeof nav.params.bookingId === 'string' ? nav.params.bookingId : null;
   const booking = bookings.find((item) => item.id === bookingId) ?? bookings[0];
+  const ownParticipant =
+    booking?.participants.find((participant) => participant.user_id === session?.userId) ?? null;
+  const ownPrice = participantPrice(ownParticipant);
   return (
     <Page title="Reserva confirmada">
       <StateScreen
@@ -1100,12 +1207,61 @@ function BookingConfirmed() {
         <Kv label="Espaço" value={booking?.venue_space_name ?? '—'} />
         <Kv label="Formato" value={booking?.format_name ?? '—'} />
         <Kv label="Faixa congelada" value={booking?.band_label ?? '—'} />
-        <Kv label="Horário" value={booking ? shortDateTime(booking.starts_at) : '—'} />
+        <Kv
+          label="Horário"
+          value={booking ? zonedShortDateTime(booking.starts_at, booking.timezone) : '—'}
+        />
         <Kv
           label="Ingressos por vaga"
           value={booking?.tickets_per_seat != null ? `${booking.tickets_per_seat}` : '—'}
         />
       </Card>
+      {booking ? (
+        <>
+          <PriceBreakdown {...bookingPrice(booking)} tickets={booking.tickets_per_seat} />
+          {ownPrice ? (
+            <Card tone="lime">
+              <Row between>
+                <Txt variant="h3">Sua vaga</Txt>
+                <Badge tone="lime">
+                  {ownParticipant?.tickets_consumed
+                    ? `${ownParticipant.tickets_consumed} ingressos`
+                    : 'quitada'}
+                </Badge>
+              </Row>
+              <Row between style={{ marginTop: 8 }}>
+                <Txt variant="tiny">Valor da quadra</Txt>
+                <Txt variant="num">{cents(ownPrice.venueCents)}</Txt>
+              </Row>
+              <Row between style={{ marginTop: 6 }}>
+                <Txt variant="tiny">
+                  {ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
+                </Txt>
+                <Txt variant="num">{cents(ownPrice.jogaCents)}</Txt>
+              </Row>
+              <Row between style={{ marginTop: 6 }}>
+                <Txt variant="h3">Total</Txt>
+                <Txt variant="num">{cents(ownPrice.totalCents)}</Txt>
+              </Row>
+            </Card>
+          ) : null}
+          <Card>
+            <Txt variant="h3">Documento fiscal</Txt>
+            <Txt variant="tiny" style={{ marginTop: 6 }}>
+              O estabelecimento emite a NFS-e de uso do espaço contra o seu CPF. O JOGA emite a
+              NFS-e de intermediação. O app não inventa número nem referência quando o documento
+              ainda não foi emitido.
+            </Txt>
+            <Row between style={{ marginTop: 10 }}>
+              <Txt variant="tiny">Referência da NFS-e</Txt>
+              <Badge tone="orange">aguardando emissão</Badge>
+            </Row>
+            <Btn tone="ghost" go="cpf">
+              Informar CPF para a nota
+            </Btn>
+          </Card>
+        </>
+      ) : null}
       {booking ? <BookingActions booking={booking} /> : null}
     </Page>
   );
@@ -1134,6 +1290,10 @@ function BookingDeclined() {
 }
 
 function BookingExpired() {
+  const nav = useNav();
+  const { bookings } = useApp();
+  const bookingId = typeof nav.params.bookingId === 'string' ? nav.params.bookingId : null;
+  const booking = bookings.find((item) => item.id === bookingId) ?? bookings[0];
   return (
     <Page title="Reserva">
       <StateScreen
@@ -1152,7 +1312,12 @@ function BookingExpired() {
         }
       />
       <Card>
-        <Kv label="Ingressos devolvidos" value="7 por jogador" />
+        <Kv
+          label="Ingressos devolvidos"
+          value={
+            booking?.tickets_per_seat != null ? `${booking.tickets_per_seat} por jogador` : '—'
+          }
+        />
         <Kv label="Status" value="Devolvido em ingressos" />
       </Card>
     </Page>
@@ -1273,8 +1438,8 @@ function CheckinPre() {
       >
         Vou comparecer
       </Btn>
-      <Btn tone="ghost" go="cancel-cutoff">
-        Não vou
+      <Btn tone="ghost" go="matches">
+        Gerenciar partida
       </Btn>
     </Page>
   );
@@ -1332,9 +1497,6 @@ function CheckinPresence() {
           Substitutos
         </Btn>
       </BtnRow>
-      <Btn tone="ghost" go="match-adapt">
-        Ver adaptação de formato
-      </Btn>
     </Page>
   );
 }
@@ -1435,8 +1597,10 @@ function MatchAdapt() {
 function Substitutes() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { matches, session } = useApp();
-  const lobbyId = (matches.find((item) => item.id === nav.params.matchId) ?? matches[0])?.lobby_id;
+  const { matches, bookings, session } = useApp();
+  const match = matches.find((item) => item.id === nav.params.matchId) ?? matches[0];
+  const lobbyId = match?.lobby_id;
+  const booking = bookings.find((item) => item.lobby_id === lobbyId) ?? null;
   const [items, setItems] = useState<Substitute[]>([]);
   useEffect(() => {
     if (session && lobbyId) {
@@ -1478,6 +1642,8 @@ function Substitutes() {
     sub: `${item.position}º · ${item.status.toLowerCase()}`,
     ready: item.status === 'CONFIRMED',
   }));
+  const called =
+    items.find((item) => item.user_id === session?.userId && item.status === 'CALLED') ?? null;
   return (
     <Page title="Fila de substitutos">
       <Card>
@@ -1526,39 +1692,106 @@ function Substitutes() {
       <Btn tone="ghost" onPress={leave}>
         Sair da fila
       </Btn>
-      <Btn tone="ghost" go="substitute-called">
-        Ver chamado de vaga
-      </Btn>
+      {called && booking ? (
+        <Btn
+          tone="primary"
+          onPress={() =>
+            nav.go('substitute-called', {
+              bookingId: booking.id,
+              substitutionId: called.id,
+              matchId: match?.id,
+            })
+          }
+        >
+          Ver meu chamado
+        </Btn>
+      ) : null}
     </Page>
   );
 }
 
 function SubstituteCalled() {
+  const nav = useNav();
+  const { matches, bookings, session, loadBookings } = useApp();
+  const [busy, setBusy] = useState(false);
+  const bookingId = typeof nav.params.bookingId === 'string' ? nav.params.bookingId : null;
+  const substitutionId =
+    typeof nav.params.substitutionId === 'string' ? nav.params.substitutionId : null;
+  const matchId = typeof nav.params.matchId === 'string' ? nav.params.matchId : null;
+  const match = matches.find((item) => item.id === matchId) ?? null;
+  const booking = bookings.find((item) => item.id === bookingId) ?? null;
+
+  const decide = async (decision: 'accept' | 'decline') => {
+    if (!session || !bookingId || !substitutionId || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      if (decision === 'accept') {
+        await api.substitutions.accept(session.accessToken, bookingId, substitutionId);
+        await loadBookings();
+        nav.replace('booking-t1t2', { bookingId });
+      } else {
+        await api.substitutions.decline(session.accessToken, bookingId, substitutionId);
+        nav.back();
+      }
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!bookingId || !substitutionId || !booking) {
+    return (
+      <Page title="Vaga aberta">
+        <EmptyState
+          title="Nenhum chamado ativo"
+          text="Quando uma vaga abrir e você for chamado, o aceite aparece aqui com o prazo do servidor."
+          actions={
+            <>
+              <Btn tone="primary" go="booking-history">
+                Ver minhas reservas
+              </Btn>
+              <Btn tone="ghost" go="matches">
+                Ver partidas
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+
   return (
     <Page title="Vaga aberta">
       <StateScreen
         icon="bolt"
         title={'Vaga\naberta'}
-        text="Um titular não confirmou presença. A vaga já está paga."
+        text="Você foi chamado para uma vaga desta reserva. O aceite é validado pelo servidor e respeita o prazo da chamada."
       />
-      <Txt variant="num" align="center" style={{ fontSize: 38 }}>
-        04:32
-      </Txt>
-      <Txt variant="tiny" align="center">
-        para aceitar
-      </Txt>
       <Card>
-        <Kv label="Partida" value="Futebol 5x5 · Arena Sul" />
-        <Kv label="Horário" value="Hoje · 20:00" />
-        <Kv label="Cobrança" value="Nenhuma · vaga já paga" />
-        <Kv label="Check-in" value="T-15m · presença no local" />
+        <Kv label="Quadra" value={booking.organization_venue_name} />
+        <Kv label="Espaço" value={booking.venue_space_name} />
+        <Kv
+          label="Horário"
+          value={zonedShortDateTime(
+            match?.scheduled_start_at ?? booking.starts_at,
+            booking.timezone,
+          )}
+        />
+        <Kv label="Formato" value={booking.format_name ?? '—'} />
+        <Kv label="Faixa" value={booking.band_label ?? '—'} />
       </Card>
-      <Btn tone="primary" go="lobby-detail">
-        Aceitar vaga
+      <Btn tone="primary" onPress={() => decide('accept')} disabled={busy}>
+        {busy ? 'Confirmando…' : 'Aceitar vaga'}
       </Btn>
-      <Btn tone="ghost" toast="Vaga devolvida à fila no protótipo">
+      <Btn tone="ghost" onPress={() => decide('decline')} disabled={busy}>
         Recusar
       </Btn>
+      <Notice tone="blue" icon="info">
+        A substituição não altera o preço congelado da reserva nem cria uma cobrança nova no app.
+      </Notice>
     </Page>
   );
 }
@@ -1602,16 +1835,8 @@ function ResultSelection({
 }) {
   const { palette } = useTheme();
   const items = second
-    ? [
-        { title: 'Time A', sub: '4 votos na 1ª rodada' },
-        { title: 'Empate', sub: '1 voto na 1ª rodada' },
-        { title: 'Time B', sub: '4 votos na 1ª rodada' },
-      ]
-    : [
-        { title: 'Time A venceu', sub: 'Susan, Rafa, Bia e mais 2' },
-        { title: 'Empate', sub: 'Permitido neste formato' },
-        { title: 'Time B venceu', sub: 'Marcus_rise, Jo, Léo e mais 2' },
-      ];
+    ? [{ title: 'Time A' }, { title: 'Empate' }, { title: 'Time B' }]
+    : [{ title: 'Time A venceu' }, { title: 'Empate' }, { title: 'Time B venceu' }];
   return (
     <View style={{ gap: 8 }}>
       {items.map((item, index) => (
@@ -1642,7 +1867,6 @@ function ResultSelection({
               ) : null}
             </View>
           </Row>
-          <Txt variant="tiny">{item.sub}</Txt>
         </Card>
       ))}
     </View>
@@ -1686,9 +1910,18 @@ function ReportResult() {
   };
   return (
     <Page title="Como foi a partida?">
-      <Txt variant="lead">Futebol 5x5 · Arena Sul · 17 nov</Txt>
+      <Txt variant="lead">
+        {match
+          ? `${shortDateTime(match.scheduled_start_at)} · ${match.state.replaceAll('_', ' ')}`
+          : 'Partida não carregada'}
+      </Txt>
       <ResultSelection selected={selected} setSelected={setSelected} />
-      <TimerCard label="Prazo de relato" value="08:42" note="10 min após o fim" tone="on" />
+      <TimerCard
+        label="Prazo de relato"
+        value={result?.deadline ? timeOnly(result.deadline) : '--:--'}
+        note={result ? `rodada ${result.round ?? 1}` : 'aguardando o servidor'}
+        tone="on"
+      />
       <Notice tone="blue" icon="info">
         Votos são visíveis aos participantes.
       </Notice>
@@ -1798,29 +2031,106 @@ function Dispute() {
 }
 
 function ResultReview() {
+  const nav = useNav();
+  const { session, matches } = useApp();
+  const matchId = typeof nav.params.matchId === 'string' ? nav.params.matchId : matches[0]?.id;
+  const [result, setResult] = useState<ResultView | null>(null);
+  const [loading, setLoading] = useState(!!(session && matchId));
+  useEffect(() => {
+    if (!session || !matchId) {
+      return;
+    }
+    let active = true;
+    api.results
+      .get(session.accessToken, matchId)
+      .then((value) => {
+        if (active) {
+          setResult(value);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [matchId, session]);
+  if (loading) {
+    return (
+      <Page title="Resultado">
+        <LoadingState label="Consultando o resultado." variant="cards" />
+      </Page>
+    );
+  }
+  if (!result) {
+    return (
+      <Page title="Resultado">
+        <StateScreen
+          icon="clock"
+          title="Resultado indisponível"
+          text="A partida ainda não tem resultado publicado ou você não participa dela."
+          actions={
+            <>
+              <Btn tone="primary" go="matches">
+                Ver partidas
+              </Btn>
+              <Btn tone="ghost" go="support">
+                Falar com suporte
+              </Btn>
+            </>
+          }
+        />
+      </Page>
+    );
+  }
+  const votes = result.aggregate?.valid_votes ?? result.valid_votes;
   return (
     <Page title="Resultado">
       <StateScreen
-        icon="clock"
-        title="Resultado em análise"
-        text="A partida não altera a divisão até a decisão."
+        icon={result.final_result ? 'check' : 'clock'}
+        title={result.final_result ? 'Resultado final' : 'Resultado em análise'}
+        text={
+          result.final_result
+            ? `Resultado: ${result.final_result.replaceAll('_', ' ')}.`
+            : 'A partida não altera a divisão até a decisão.'
+        }
         actions={
-          <>
-            <Btn tone="primary" toast="Você está acompanhando no protótipo">
-              Acompanhar
+          result.can_vote ? (
+            <Btn
+              tone="primary"
+              onPress={() => nav.go('report-result', matchId ? { matchId } : undefined)}
+            >
+              Relatar resultado
             </Btn>
-            <Btn tone="ghost" go="support">
-              Falar com suporte
+          ) : (
+            <Btn tone="primary" go="matches">
+              Ver partidas
             </Btn>
-          </>
+          )
         }
       />
       <Card>
-        <Kv label="Status" value="Em análise" />
-        <Kv label="Divisão" value="Congelada" />
-        <Kv label="Prazo" value="Não prometido" />
-        <Kv label="Evidência" value="Texto privado · 2.000 caracteres" />
+        <Kv label="Status" value={result.state.replaceAll('_', ' ')} />
+        <Kv label="Rodada" value={result.round != null ? String(result.round) : '—'} />
+        <Kv label="Prazo" value={result.deadline ? shortDateTime(result.deadline) : '—'} />
+        <Kv label="Votos válidos" value={votes != null ? String(votes) : 'não divulgado'} />
+        <Kv
+          label="Seu voto"
+          value={result.my_vote ? result.my_vote.outcome.replaceAll('_', ' ') : 'não registrado'}
+        />
       </Card>
+      <Notice tone="blue" icon="shield">
+        A divisão só muda quando o servidor fecha o resultado. Evidências e votos de terceiros não
+        são expostos.
+      </Notice>
+      {result.dispute_id ? (
+        <Btn tone="ghost" go="support">
+          Falar sobre a disputa
+        </Btn>
+      ) : null}
     </Page>
   );
 }
@@ -2350,7 +2660,7 @@ function BookingPayment() {
       <Card>
         <Txt variant="h3">{booking.organization_venue_name}</Txt>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
-          {shortDateTime(booking.starts_at)} · {booking.venue_space_name}
+          {zonedShortDateTime(booking.starts_at, booking.timezone)} · {booking.venue_space_name}
         </Txt>
         <Row between style={{ marginTop: 10 }}>
           <Txt variant="tiny">Sua vaga</Txt>
@@ -2358,6 +2668,18 @@ function BookingPayment() {
             {cents(payment.amount_cents)}
           </Txt>
         </Row>
+        {ownParticipant ? (
+          <>
+            <Row between style={{ marginTop: 8 }}>
+              <Txt variant="tiny">Valor da quadra</Txt>
+              <Txt variant="num">{cents(ownParticipant.space_charge_cents)}</Txt>
+            </Row>
+            <Row between style={{ marginTop: 6 }}>
+              <Txt variant="tiny">Taxa de 20%</Txt>
+              <Txt variant="num">{cents(ownParticipant.fee_charge_cents)}</Txt>
+            </Row>
+          </>
+        ) : null}
       </Card>
       <PaymentPix
         payment={payment}
@@ -2400,7 +2722,7 @@ function BookingHistory() {
   }, [loadBookings]);
   const rows = bookings.map((booking) => ({
     id: booking.id,
-    date: dateOnly(booking.starts_at),
+    date: zonedDateOnly(booking.starts_at, booking.timezone),
     venue: booking.organization_venue_name,
     space: booking.venue_space_name,
     format: booking.format_name,
@@ -2481,19 +2803,19 @@ export const venueScreens: ScreenDef[] = [
   { id: 'booking-payment', tab: 'jogar', render: () => <BookingPayment /> },
   { id: 'booking-declined', tab: 'jogar', render: () => <BookingDeclined /> },
   { id: 'booking-expired', tab: 'jogar', render: () => <BookingExpired /> },
-  { id: 'cancel-cutoff', tab: 'jogar', render: () => <CancelCutoff /> },
-  { id: 'cancel-closed', tab: 'jogar', render: () => <CancelClosed /> },
+  { id: 'cancel-cutoff', tab: 'jogar', hidden: true, render: () => <CancelCutoff /> },
+  { id: 'cancel-closed', tab: 'jogar', hidden: true, render: () => <CancelClosed /> },
   { id: 'checkin-pre', tab: 'jogar', render: () => <CheckinPre /> },
   { id: 'checkin-presence', tab: 'jogar', render: () => <CheckinPresence /> },
   { id: 'checkin-fallback', tab: 'jogar', render: () => <CheckinFallback /> },
   { id: 'checkin-denied', tab: 'jogar', render: () => <CheckinDenied /> },
-  { id: 'match-adapt', tab: 'jogar', render: () => <MatchAdapt /> },
+  { id: 'match-adapt', tab: 'jogar', hidden: true, render: () => <MatchAdapt /> },
   { id: 'substitutes', tab: 'jogar', render: () => <Substitutes /> },
   { id: 'substitute-called', tab: 'jogar', render: () => <SubstituteCalled /> },
-  { id: 'no-show', tab: 'jogar', render: () => <NoShow /> },
+  { id: 'no-show', tab: 'jogar', hidden: true, render: () => <NoShow /> },
   { id: 'report-result', tab: 'jogar', render: () => <ReportResult /> },
-  { id: 'result-second-round', tab: 'jogar', render: () => <ResultSecondRound /> },
-  { id: 'dispute', tab: 'jogar', render: () => <Dispute /> },
+  { id: 'result-second-round', tab: 'jogar', hidden: true, render: () => <ResultSecondRound /> },
+  { id: 'dispute', tab: 'jogar', hidden: true, render: () => <Dispute /> },
   { id: 'result-review', tab: 'jogar', render: () => <ResultReview /> },
   { id: 'matches', tab: 'partidas', render: () => <Matches /> },
   { id: 'match-history', tab: 'partidas', render: () => <MatchHistory /> },

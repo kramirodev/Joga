@@ -11,6 +11,7 @@ import type {
   ClanMember,
   ClanMessage,
   ClanRanking,
+  CpfStatus,
   Device,
   Friend,
   LobbyInvite,
@@ -37,6 +38,8 @@ import type {
   Sport,
   Stats,
   Substitute,
+  TermsAcceptance,
+  TermsVersion,
   TicketPack,
   Tokens,
   Track,
@@ -175,6 +178,11 @@ function key(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Chave para cabeçalho `Idempotency-Key`; o backend limita a 120 caracteres. */
+export function newIdempotencyKey(): string {
+  return key();
+}
+
 export const api = {
   auth: {
     requestChallenge(phone: string, purpose: 'registration' | 'login') {
@@ -304,6 +312,15 @@ export const api = {
         body: { email },
         token,
       });
+    },
+    cpf(token: string) {
+      return call<CpfStatus>('/me/cpf', { token });
+    },
+    updateCpf(token: string, cpf: string) {
+      return call<CpfStatus>('/me/cpf', { method: 'PUT', body: { cpf }, token });
+    },
+    clearCpf(token: string) {
+      return call<CpfStatus>('/me/cpf', { method: 'DELETE', token });
     },
     update(token: string, displayName: string | null, bio: string | null) {
       return call<Profile>('/me/profile', {
@@ -462,11 +479,20 @@ export const api = {
     packs(token: string) {
       return call<{ packs: TicketPack[] }>('/me/tickets/packs', { token });
     },
-    createPurchase(token: string, packCode: string) {
+    createPurchase(
+      token: string,
+      packCode: string,
+      idempotencyKey?: string,
+      termsVersionId?: string,
+    ) {
       return call<Purchase>('/me/tickets/purchases', {
         method: 'POST',
-        body: { pack_code: packCode },
+        body: {
+          pack_code: packCode,
+          ...(termsVersionId ? { terms_version_id: termsVersionId } : {}),
+        },
         token,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
     },
     purchase(token: string, purchaseId: string) {
@@ -487,11 +513,12 @@ export const api = {
     get(token: string) {
       return call<{ subscription: PassSubscription | null }>('/me/pass', { token });
     },
-    subscribe(token: string, planCode: string) {
+    subscribe(token: string, planCode: string, idempotencyKey?: string) {
       return call<PassSubscription>('/me/pass/subscriptions', {
         method: 'POST',
         body: { plan_code: planCode },
         token,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
     },
     subscription(token: string, subscriptionId: string) {
@@ -621,6 +648,23 @@ export const api = {
         `/bookings/${encodeURIComponent(bookingId)}/substitutions`,
         { token },
       );
+    },
+  },
+
+  legal: {
+    currentTerms() {
+      return call<{ terms: TermsVersion | null }>('/legal/terms/current');
+    },
+    acceptTerms(
+      token: string,
+      termsVersionId: string,
+      context: 'signup' | 'credit_purchase' | 'pass_purchase' | 'booking_ceiling',
+    ) {
+      return call<TermsAcceptance>('/legal/terms/accept', {
+        method: 'POST',
+        body: { terms_version_id: termsVersionId, context },
+        token,
+      });
     },
   },
 

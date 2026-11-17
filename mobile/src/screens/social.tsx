@@ -35,7 +35,6 @@ import {
   Seg,
   SegBtn,
   StateScreen,
-  SystemNotice,
   Textarea,
   TextBtn,
   Txt,
@@ -736,7 +735,6 @@ function ClanChat() {
   const nav = useNav();
   const { palette } = useTheme();
   const { clan, clanMessages, session, loadClanMessages, loadClan } = useApp();
-  const [extra, setExtra] = useState<typeof clanMessages>([]);
   const [input, setInput] = useState('');
   useEffect(() => {
     loadClan().catch(() => undefined);
@@ -755,59 +753,29 @@ function ClanChat() {
         return;
       }
     } else {
-      setExtra((current) => [
-        ...current,
-        {
-          id: String(Date.now()),
-          sender_id: 'me',
-          display_name: 'Você',
-          body,
-          hidden: false,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      nav.toast('Entre em um clã para enviar mensagens.');
+      return;
     }
     setInput('');
   };
-  const combined = [...clanMessages, ...extra];
-  const list = combined.length
-    ? combined
-    : [
-        {
-          id: '1',
-          sender_id: 'rafa',
-          display_name: 'Rafa',
-          body: 'Terça 20h na Arena Sul. Quem fecha?',
-          hidden: false,
-          created_at: '',
-        },
-        {
-          id: '2',
-          sender_id: 'me',
-          display_name: 'Você',
-          body: 'Eu e a Bia. Falta 1.',
-          hidden: false,
-          created_at: '',
-        },
-        {
-          id: '3',
-          sender_id: 'jo',
-          display_name: 'Jo',
-          body: 'Vou.',
-          hidden: false,
-          created_at: '',
-        },
-      ];
+  const combined = clanMessages;
+  const list = combined;
   return (
-    <Page title={clan?.name ?? 'Alpha Squad'}>
+    <Page title={clan?.name ?? 'Chat do clã'}>
       <Card tone="flat" padding={9}>
         <Row between>
-          <Txt variant="tiny">{clan?.members ?? 24} membros · chat permanente</Txt>
+          <Txt variant="tiny">
+            {clan ? `${clan.members} membros · chat permanente` : 'Entre em um clã para conversar'}
+          </Txt>
           <Badge tone="green">SÓ MEMBROS</Badge>
         </Row>
       </Card>
       <View style={{ gap: 10 }}>
-        <SystemNotice>Rafa entrou no clã.</SystemNotice>
+        {list.length === 0 ? (
+          <Notice tone="blue" icon="chat">
+            Nenhuma mensagem ainda. Comece a conversa com o clã.
+          </Notice>
+        ) : null}
         {list.map((message) => {
           const mine = message.sender_id === 'me' || message.sender_id === session?.userId;
           return (
@@ -1062,12 +1030,18 @@ function Notifications() {
       nav.go('result-review', matchId ? { matchId } : undefined);
       return;
     }
-    if (item.kind.includes('match') || item.kind.includes('lobby')) {
-      nav.go('lobby-detail', matchId ? { matchId } : undefined);
+    if (item.kind.includes('invite')) {
+      const inviteId =
+        typeof data.invite_id === 'string'
+          ? data.invite_id
+          : typeof data.id === 'string'
+            ? data.id
+            : undefined;
+      nav.go('lobby-invite-received', inviteId ? { inviteId } : undefined);
       return;
     }
-    if (item.kind.includes('invite')) {
-      nav.go('lobby-invite-received');
+    if (item.kind.includes('match') || item.kind.includes('lobby')) {
+      nav.go('lobby-detail', matchId ? { matchId } : undefined);
       return;
     }
     if (item.kind.includes('clan')) {

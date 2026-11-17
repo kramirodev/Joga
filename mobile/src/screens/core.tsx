@@ -45,6 +45,7 @@ import {
 import {
   countdown,
   courtLabel,
+  dateOnly,
   divisionLabel,
   elapsed,
   levelLabel,
@@ -227,11 +228,11 @@ function Home() {
       <Card onPress={() => nav.go('wallet')}>
         <Row between>
           <View>
-            <Txt variant="label">Saldo</Txt>
+            <Txt variant="label">Ingressos</Txt>
             <Txt variant="num" style={{ fontSize: 34, lineHeight: 34 }}>
-              {wallet?.balance ?? 0}
+              {wallet ? wallet.balance : '—'}
             </Txt>
-            <Txt variant="tiny">ingressos</Txt>
+            <Txt variant="tiny">{wallet ? 'disponíveis' : 'saldo indisponível'}</Txt>
           </View>
           <Badge tone="lime">COMPRAR</Badge>
         </Row>
@@ -297,7 +298,7 @@ function Home() {
           },
           {
             icon: 'wallet' as const,
-            title: 'Carteira',
+            title: 'Ingressos',
             sub: 'Ingressos, passe e reembolsos',
             go: 'wallet',
           },
@@ -601,7 +602,7 @@ function QueueSearch() {
       <Card tone="flat">
         <Row between>
           <Txt variant="tiny">Enquanto isso</Txt>
-          <TextBtn go="lobby-open">Ver lobbies abertos</TextBtn>
+          <TextBtn go="queue-casual">Ver lobbies em formação</TextBtn>
         </Row>
       </Card>
     </Page>
@@ -719,7 +720,7 @@ function LobbyDetail() {
         toastError(nav, error);
       }
     } else {
-      nav.toast('T4 aberto no protótipo');
+      nav.toast('Escolha uma partida para cancelar a participação.');
     }
   };
   return (
@@ -741,10 +742,10 @@ function LobbyDetail() {
             marginBottom: 4,
           }}
         >
-          {start ? `${shortDate(start)} · ${timeOnly(start)}` : 'Ter, 17 nov · 20:00'}
+          {start ? `${shortDate(start)} · ${timeOnly(start)}` : 'Horário a confirmar'}
         </Text>
         <Txt variant="tiny" color="softOnInk">
-          Arena Sul · Rua das Palmeiras, 240 · 4,2 km
+          {current?.state ?? 'Partida'} · local definido na reserva
         </Txt>
       </Card>
       <View style={{ flexDirection: 'row', gap: 7 }}>
@@ -755,9 +756,9 @@ function LobbyDetail() {
         <Row between wrap style={{ rowGap: 8 }}>
           <View style={{ flexGrow: 1, flexShrink: 1, flexBasis: '60%', minWidth: 0 }}>
             <Txt variant="label">Ingressos</Txt>
-            <Txt variant="h3">7 consumidos por jogador</Txt>
+            <Txt variant="h3">Consumo definido na reserva</Txt>
           </View>
-          <Badge tone="lime">CONSUMIDOS</Badge>
+          <Badge tone="lime">CONGELADO</Badge>
         </Row>
       </Card>
       <Row between>
@@ -797,56 +798,9 @@ function LobbyDetail() {
             />
           </>
         ) : (
-          <>
-            <TeamCard
-              name="Time A"
-              badge={<Badge>3/5</Badge>}
-              players={[
-                {
-                  name: 'Susan',
-                  role: 'ala',
-                  avatar: { skin: '#A6ABB1', hair: '#383D43', shirt: '#62686E', style: 2 },
-                },
-                {
-                  name: 'Rafa',
-                  role: 'ala',
-                  avatar: { skin: '#A6ABB1', hair: '#17191B', shirt: '#62686E', style: 1 },
-                },
-                {
-                  name: 'Bia',
-                  role: 'fixa',
-                  avatar: { skin: '#D5D9D6', hair: '#62686E', shirt: '#62686E', style: 3 },
-                },
-              ]}
-            />
-            <TeamCard
-              name="Time B"
-              badge={<Badge>2/5</Badge>}
-              players={[
-                {
-                  name: 'Marcus_rise',
-                  role: 'ala',
-                  avatar: {
-                    skin: '#62686E',
-                    hair: '#17191B',
-                    shirt: '#62686E',
-                    style: 2,
-                    glasses: true,
-                  },
-                },
-                {
-                  name: 'Jo',
-                  role: 'ala',
-                  avatar: { skin: '#A6ABB1', hair: '#17191B', shirt: '#62686E', style: 1 },
-                },
-                {
-                  name: 'Léo',
-                  role: 'fixo',
-                  avatar: { skin: '#D5D9D6', hair: '#383D43', shirt: '#62686E', style: 3 },
-                },
-              ]}
-            />
-          </>
+          <Notice tone="blue" icon="users">
+            Os participantes aparecem quando a partida for carregada pelo servidor.
+          </Notice>
         )}
       </View>
       <BtnRow>
@@ -881,8 +835,8 @@ function LobbyDetail() {
         >
           Chat
         </Btn>
-        <Btn tone="ghost" go="lobby-vote">
-          Votar quadra
+        <Btn tone="ghost" go="support">
+          Suporte
         </Btn>
       </BtnRow>
       <Btn tone="ghost" onPress={() => nav.openModal('cancel', cancel)}>
@@ -896,6 +850,7 @@ function LobbyT1() {
   const nav = useNav();
   const { session, matches } = useApp();
   const matchId = typeof nav.params.matchId === 'string' ? nav.params.matchId : matches[0]?.id;
+  const match = matches.find((item) => item.id === matchId) ?? null;
   const confirm = async () => {
     if (session && matchId) {
       try {
@@ -911,18 +866,26 @@ function LobbyT1() {
     <Page title="Confirme sua participação">
       <TimerCard
         label="T1 · confirmação de participação"
-        value="42 min"
-        note="até 18:00"
+        value={match ? countdown(match.confirmation_deadline) : '--'}
+        note={match ? `até ${timeOnly(match.confirmation_deadline)}` : 'aguardando partida'}
         tone="on"
       />
       <Card>
-        <Kv label="Partida" value="Futebol 5x5" />
-        <Kv label="Horário" value="Ter, 17 nov · 20:00" />
-        <Kv label="Local" value="Arena Sul · Rua das Palmeiras, 240" />
-        <Kv label="Custo" value="7 ingressos" />
+        <Kv label="Partida" value={match ? `Partida ${match.id.slice(0, 4).toUpperCase()}` : '—'} />
+        <Kv
+          label="Horário"
+          value={
+            match
+              ? `${shortDate(match.scheduled_start_at)} · ${timeOnly(match.scheduled_start_at)}`
+              : '—'
+          }
+        />
+        <Kv label="Local" value="Definido na reserva da quadra" />
+        <Kv label="Ingressos" value="Definidos pela faixa e formato" />
       </Card>
       <Notice tone="lime" icon="wallet">
-        Ao confirmar, 7 ingressos são consumidos para esta partida.
+        Ao confirmar, o servidor consome os ingressos da faixa congelada na reserva. O app não
+        calcula o preço.
       </Notice>
       <Btn tone="primary" onPress={confirm}>
         Confirmar participação
@@ -1090,40 +1053,48 @@ function LobbyInvite() {
   const { friends, session, loadSocial } = useApp();
   const lobbyId = typeof nav.params.lobbyId === 'string' ? nav.params.lobbyId : null;
   const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
   useEffect(() => {
     loadSocial().catch(() => undefined);
   }, [loadSocial]);
-  const list = friends.length
-    ? friends.map((friend) => ({
-        id: friend.user_id,
-        name: friend.display_name ?? 'Jogador',
-        tag: '',
-      }))
-    : [
-        { id: 'rafa', name: 'Rafa', tag: '#2210' },
-        { id: 'bia', name: 'Bia', tag: '#7781' },
-        { id: 'jo', name: 'Jo', tag: '#1904' },
-      ];
+  const list = friends
+    .filter((friend) =>
+      (friend.display_name ?? 'Jogador').toLowerCase().includes(query.trim().toLowerCase()),
+    )
+    .map((friend) => ({
+      id: friend.user_id,
+      name: friend.display_name ?? 'Jogador',
+      tag: '',
+    }));
   const send = async () => {
-    if (lobbyId && session) {
-      try {
-        await Promise.all(
-          selected.map((userId) => api.social.inviteToLobby(session.accessToken, lobbyId, userId)),
-        );
-        nav.toast('Convites enviados no protótipo');
-        nav.back();
-      } catch (error) {
-        toastError(nav, error);
-      }
+    if (!lobbyId || !session) {
+      nav.toast('Escolha um lobby para enviar convites.');
       return;
     }
-    nav.toast('Convites enviados no protótipo');
-    nav.back();
+    try {
+      await Promise.all(
+        selected.map((userId) => api.social.inviteToLobby(session.accessToken, lobbyId, userId)),
+      );
+      nav.toast('Convites enviados.');
+      nav.back();
+    } catch (error) {
+      toastError(nav, error);
+    }
   };
   return (
     <Page title="Convidar para a partida">
-      <Txt variant="lead">Ter, 17 nov · 20:00 · Arena Sul · Futebol 5x5</Txt>
-      <Input placeholder="Buscar amigo por nome#tag" maxLength={60} />
+      <Txt variant="lead">Convide amigos para este lobby. Só quem participa pode entrar.</Txt>
+      <Input
+        placeholder="Buscar amigo por nome"
+        maxLength={60}
+        value={query}
+        onChangeText={setQuery}
+      />
+      {list.length === 0 ? (
+        <Notice tone="blue" icon="users">
+          Nenhum amigo disponível para convidar. A amizade é criada fora deste fluxo.
+        </Notice>
+      ) : null}
       <CardList>
         {list.map((friend, index) => {
           const checked = selected.includes(friend.id);
@@ -1138,14 +1109,11 @@ function LobbyInvite() {
                   ) : null}
                 </Text>
                 <Text style={{ fontSize: 13, color: palette.muted, marginTop: 2 }}>
-                  {friend.id === 'jo' ? 'Solicitação pendente' : 'Amizade aceita'}
+                  Amizade aceita
                 </Text>
               </View>
               <View
                 onTouchEnd={() => {
-                  if (friend.id === 'jo') {
-                    return;
-                  }
                   setSelected((current) =>
                     current.includes(friend.id)
                       ? current.filter((value) => value !== friend.id)
@@ -1180,45 +1148,70 @@ function LobbyInvite() {
 }
 
 function LobbyInviteReceived() {
-  const { palette } = useTheme();
+  const nav = useNav();
+  const { invites, session, loadSocial } = useApp();
+  const [busy, setBusy] = useState(false);
+  const inviteId = typeof nav.params.inviteId === 'string' ? nav.params.inviteId : null;
+  const invite = invites.find((item) => item.id === inviteId) ?? invites[0] ?? null;
+  const decide = async (decision: 'accept' | 'decline') => {
+    if (!session || !invite || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      if (decision === 'accept') {
+        const updated = await api.social.acceptInvite(session.accessToken, invite.id);
+        await loadSocial();
+        nav.replace('lobby-detail', { lobbyId: updated.lobby_id });
+      } else {
+        await api.social.declineInvite(session.accessToken, invite.id);
+        await loadSocial();
+        nav.back();
+      }
+    } catch (error) {
+      toastError(nav, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!invite) {
+    return (
+      <Page title="Convite de partida">
+        <EmptyState
+          title="Nenhum convite ativo"
+          text="Convites de lobby aparecem aqui e nas notificações enquanto não expiram."
+          actions={
+            <Btn tone="primary" go="notifications">
+              Ver notificações
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
   return (
     <Page title="Convite de partida">
       <Card>
         <Row between>
           <Badge tone="lime">CONVITE</Badge>
-          <Txt variant="tiny">expira em 22 min</Txt>
-        </Row>
-        <Row style={{ marginTop: 12 }}>
-          <Avatar
-            size={86}
-            skin="#A6ABB1"
-            hair="#383D43"
-            shirt="#62686E"
-            style={2}
-            palette={palette}
-          />
-          <View style={{ flex: 1 }}>
-            <Txt variant="h2">Susan</Txt>
-            <Txt variant="tiny">#4821 · Alpha Squad</Txt>
-          </View>
+          <Txt variant="tiny">expira em {dateOnly(invite.expires_at)}</Txt>
         </Row>
         <Txt variant="display" style={{ fontSize: 26, marginTop: 14, marginBottom: 4 }}>
-          Futebol 5x5{'\n'}ter, 17 nov · 20:00
+          Convite para{'\n'}um lobby
         </Txt>
-        <Txt variant="tiny">Arena Sul · Centro · 4,2 km</Txt>
+        <Txt variant="tiny">Remetente: {invite.inviter_id.slice(0, 8)}…</Txt>
       </Card>
       <Card tone="flat">
-        <Kv label="Vagas" value="2 de 10" />
-        <Kv label="Custo" value="7 ingressos" />
-        <Kv label="Seu saldo" value="18 ingressos" />
+        <Kv label="Status" value={invite.status} />
+        <Kv label="Recebido em" value={dateOnly(invite.created_at)} />
       </Card>
       <Notice tone="blue" icon="info">
-        Aceitar não garante vaga até o lobby validar lotação e estado.
+        Aceitar não garante vaga até o lobby validar lotação, bloqueio e estado no servidor.
       </Notice>
-      <Btn tone="primary" go="lobby-detail">
-        Aceitar convite
+      <Btn tone="primary" onPress={() => decide('accept')} disabled={busy}>
+        {busy ? 'Respondendo…' : 'Aceitar convite'}
       </Btn>
-      <Btn tone="ghost" go="notifications">
+      <Btn tone="ghost" onPress={() => decide('decline')} disabled={busy}>
         Recusar
       </Btn>
     </Page>
@@ -1416,7 +1409,7 @@ function LobbyFull() {
             <Btn tone="primary" toast="Você entrou na espera no protótipo">
               Entrar na espera
             </Btn>
-            <Btn tone="ghost" go="lobby-open">
+            <Btn tone="ghost" go="queue-casual">
               Ver outras partidas
             </Btn>
           </>
@@ -1609,7 +1602,7 @@ function ProfileMe() {
         {[
           {
             icon: 'wallet' as const,
-            title: 'Carteira',
+            title: 'Ingressos',
             sub: 'Ingressos, passe e extrato',
             go: 'wallet',
           },
@@ -1911,6 +1904,12 @@ function ProfileEdit() {
             title: 'E-mail para pagamento',
             sub: email ?? 'Não informado',
             go: 'payment-email',
+          },
+          {
+            icon: 'shield' as const,
+            title: 'CPF para nota fiscal',
+            sub: 'Usado na NFS-e do espaço e da intermediação',
+            go: 'cpf',
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
@@ -2334,11 +2333,11 @@ export const coreScreens: ScreenDef[] = [
   { id: 'lobby-chat', tab: 'jogar', render: () => <LobbyChat /> },
   { id: 'lobby-invite', tab: 'jogar', render: () => <LobbyInvite /> },
   { id: 'lobby-invite-received', tab: 'social', render: () => <LobbyInviteReceived /> },
-  { id: 'lobby-open', tab: 'jogar', render: () => <LobbyOpen /> },
-  { id: 'lobby-create', tab: 'jogar', render: () => <LobbyCreate /> },
-  { id: 'lobby-vote', tab: 'jogar', render: () => <LobbyVote /> },
+  { id: 'lobby-open', tab: 'jogar', hidden: true, render: () => <LobbyOpen /> },
+  { id: 'lobby-create', tab: 'jogar', hidden: true, render: () => <LobbyCreate /> },
+  { id: 'lobby-vote', tab: 'jogar', hidden: true, render: () => <LobbyVote /> },
   { id: 'lobby-canceled', tab: 'jogar', render: () => <LobbyCanceled /> },
-  { id: 'lobby-full', tab: 'jogar', render: () => <LobbyFull /> },
+  { id: 'lobby-full', tab: 'jogar', hidden: true, render: () => <LobbyFull /> },
   { id: 'profile-me', tab: 'perfil', render: () => <ProfileMe /> },
   { id: 'profile-other', tab: 'social', render: () => <ProfileOther /> },
   { id: 'profile-edit', tab: 'perfil', render: () => <ProfileEdit /> },

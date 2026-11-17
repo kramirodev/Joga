@@ -966,5 +966,5 @@ export const seasonScreens: ScreenDef[] = [
   { id: 'inventory', tab: 'temporada', render: () => <Inventory /> },
   { id: 'retrospective', tab: 'temporada', render: () => <Retrospective /> },
   { id: 'season-closing', tab: 'temporada', render: () => <SeasonClosing /> },
-  { id: 'season-ended', tab: 'temporada', render: () => <SeasonEnded /> },
+  { id: 'season-ended', tab: 'temporada', hidden: true, render: () => <SeasonEnded /> },
 ];

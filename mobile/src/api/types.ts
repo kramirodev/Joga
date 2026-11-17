@@ -291,6 +291,7 @@ export type Mission = {
 
 export type Wallet = {
   balance: number;
+  source: string;
   lots: TicketLot[];
   entries: {
     id: string;
@@ -307,6 +308,7 @@ export type TicketLot = {
   source: string;
   original_amount: number;
   remaining: number;
+  period: string | null;
   expires_at: string | null;
   ref_type: string | null;
   ref_id: string | null;
@@ -425,9 +427,12 @@ export type BookingParticipant = {
   seat: number;
   active: boolean;
   contribution_cents: number;
+  space_charge_cents: number;
+  fee_charge_cents: number;
+  funding_source: string | null;
   payment_status: string;
   settled_with: string | null;
-  tickets_consumed: number | null;
+  tickets_consumed: number;
   confirmed_at: string | null;
   declined_at: string | null;
   replaced_by_user_id: string | null;
@@ -493,6 +498,11 @@ export type Booking = {
   starts_at: string;
   ends_at: string;
   price_cents: number;
+  venue_price_cents: number;
+  fee_cents: number;
+  fee_percent_applied: number;
+  total_cents: number;
+  pricing_version: string;
   currency: string;
   seats: number;
   policy_version: string;
@@ -511,6 +521,7 @@ export type Booking = {
   cancellation_reason: string | null;
   created_at: string;
   updated_at: string;
+  timezone: string | null;
   participants: BookingParticipant[];
   timers: BookingTimer[];
   hold: {
@@ -677,4 +688,26 @@ export type PasskeyOptions = {
   challenge_id: string;
   public_key: Record<string, unknown>;
   expires_at: string;
+};
+
+export type CpfStatus = {
+  cpf_present: boolean;
+  cpf_masked: string | null;
+};
+
+export type TermsVersion = {
+  id: string;
+  version: string;
+  content: string;
+  published_at: string;
+  terms_hash: string;
+};
+
+export type TermsAcceptance = {
+  id: string;
+  terms_version_id: string;
+  version: string;
+  context: string;
+  accepted_at: string;
+  terms_hash: string;
 };

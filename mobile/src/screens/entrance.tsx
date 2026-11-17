@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState, type ElementRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError } from '../api/client';
+import type { TermsVersion } from '../api/types';
 import { createPasskey, getPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
@@ -943,14 +944,66 @@ function Terms() {
   const nav = useNav();
   const { palette } = useTheme();
   const readOnly = nav.params.readOnly === 1;
+  const [terms, setTerms] = useState<TermsVersion | null>(null);
+  const [termsReady, setTermsReady] = useState(!readOnly);
+  useEffect(() => {
+    if (!readOnly) {
+      return;
+    }
+    let active = true;
+    api.legal
+      .currentTerms()
+      .then((result) => {
+        if (active) {
+          setTerms(result.terms);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setTermsReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [readOnly]);
   const items = [
     ['O JOGA intermedeia a reserva', 'A quadra é a fornecedora; o ingresso é crédito de serviço.'],
     ['Cancelamento tem cutoff', 'Antes do cutoff, T4; depois, no-show.'],
-    ['Devolução é em ingressos', 'O saldo volta para a carteira quando a reserva não se completa.'],
+    [
+      'Devolução é em ingressos',
+      'O saldo volta para seus ingressos quando a reserva não se completa.',
+    ],
     ['Sem fotos de pessoas', 'Avatar de catálogo fechado; fotos só de quadras.'],
   ];
   return (
     <Page title={readOnly ? 'Termos e privacidade' : 'Antes de começar'}>
+      {readOnly && termsReady ? (
+        terms ? (
+          <Card>
+            <Row between>
+              <Txt variant="h3">Termos de uso</Txt>
+              <Badge tone="blue">v{terms.version}</Badge>
+            </Row>
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                lineHeight: 20,
+                color: palette.ink,
+              }}
+            >
+              {terms.content}
+            </Text>
+          </Card>
+        ) : (
+          <Notice tone="orange" icon="info">
+            Nenhuma versão dos Termos foi aprovada e publicada pelo servidor ainda. Quando existir,
+            o texto vigente aparece aqui e a compra de crédito exige o aceite.
+          </Notice>
+        )
+      ) : null}
       <Card>
         <Txt variant="h3">O que você precisa saber</Txt>
         <View style={{ marginTop: 6 }}>
