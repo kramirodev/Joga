@@ -1116,28 +1116,11 @@ function BookingT1T2() {
         <>
           <PriceBreakdown {...bookingPrice(booking)} tickets={tickets} />
           {ownPrice ? (
-            <Card>
-              <Txt variant="h3">Sua vaga</Txt>
-              <Row between style={{ marginTop: 8 }}>
-                <Txt variant="tiny">Valor da quadra</Txt>
-                <Txt variant="num">{cents(ownPrice.venueCents)}</Txt>
-              </Row>
-              <Row between style={{ marginTop: 6 }}>
-                <Txt variant="tiny">
-                  {ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
-                </Txt>
-                <Txt variant="num">{cents(ownPrice.jogaCents)}</Txt>
-              </Row>
-              <Row between style={{ marginTop: 6 }}>
-                <Txt variant="h3">Total</Txt>
-                <Txt variant="num">{cents(ownPrice.totalCents)}</Txt>
-              </Row>
-              {ownParticipant?.tickets_consumed ? (
-                <Txt variant="tiny" style={{ marginTop: 6 }}>
-                  {ownParticipant.tickets_consumed} ingressos consumidos
-                </Txt>
-              ) : null}
-            </Card>
+            <PriceBreakdown
+              {...ownPrice}
+              tickets={ownParticipant?.tickets_consumed ?? null}
+              feeLabel={ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
+            />
           ) : null}
         </>
       ) : null}
@@ -1220,30 +1203,23 @@ function BookingConfirmed() {
         <>
           <PriceBreakdown {...bookingPrice(booking)} tickets={booking.tickets_per_seat} />
           {ownPrice ? (
-            <Card tone="lime">
-              <Row between>
-                <Txt variant="h3">Sua vaga</Txt>
-                <Badge tone="lime">
-                  {ownParticipant?.tickets_consumed
-                    ? `${ownParticipant.tickets_consumed} ingressos`
-                    : 'quitada'}
-                </Badge>
-              </Row>
-              <Row between style={{ marginTop: 8 }}>
-                <Txt variant="tiny">Valor da quadra</Txt>
-                <Txt variant="num">{cents(ownPrice.venueCents)}</Txt>
-              </Row>
-              <Row between style={{ marginTop: 6 }}>
-                <Txt variant="tiny">
-                  {ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
-                </Txt>
-                <Txt variant="num">{cents(ownPrice.jogaCents)}</Txt>
-              </Row>
-              <Row between style={{ marginTop: 6 }}>
-                <Txt variant="h3">Total</Txt>
-                <Txt variant="num">{cents(ownPrice.totalCents)}</Txt>
-              </Row>
-            </Card>
+            <>
+              <Card tone="lime">
+                <Row between>
+                  <Txt variant="h3">Sua vaga</Txt>
+                  <Badge tone="lime">
+                    {ownParticipant?.tickets_consumed
+                      ? `${ownParticipant.tickets_consumed} ingressos`
+                      : 'quitada'}
+                  </Badge>
+                </Row>
+              </Card>
+              <PriceBreakdown
+                {...ownPrice}
+                tickets={ownParticipant?.tickets_consumed ?? null}
+                feeLabel={ownPrice.fundingSource === 'pix' ? 'Taxa de 20%' : 'Valor do JOGA'}
+              />
+            </>
           ) : null}
           <Card>
             <Txt variant="h3">Documento fiscal</Txt>

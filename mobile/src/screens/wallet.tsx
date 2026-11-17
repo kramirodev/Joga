@@ -321,6 +321,19 @@ function WalletBreakdown() {
   const { wallet, loadWallet } = useApp();
   const [loading, setLoading] = useState(!wallet);
   const [failure, setFailure] = useState<'unavailable' | 'network' | null>(null);
+  const reload = () => {
+    setFailure(null);
+    setLoading(true);
+    return loadWallet()
+      .catch((error) => {
+        setFailure(
+          error instanceof ApiError && error.code === 'balance_unavailable'
+            ? 'unavailable'
+            : 'network',
+        );
+      })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => {
     if (wallet) {
       return;
@@ -357,7 +370,7 @@ function WalletBreakdown() {
           }
           text="O servidor não confirmou o saldo agora. Não mostramos zero porque o saldo real pode ser diferente."
           actions={
-            <Btn tone="primary" onPress={() => loadWallet().catch(() => undefined)}>
+            <Btn tone="primary" onPress={reload}>
               Tentar novamente
             </Btn>
           }

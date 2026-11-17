@@ -21,12 +21,14 @@ export function PriceBreakdown({
   totalCents,
   tickets,
   fundingSource,
+  feeLabel,
 }: {
   venueCents: number;
   jogaCents: number;
   totalCents: number;
   tickets?: number | null;
   fundingSource?: string | null;
+  feeLabel?: string;
 }) {
   const { palette } = useTheme();
   const courtesy =
@@ -39,19 +41,23 @@ export function PriceBreakdown({
           {cents(venueCents)}
         </Txt>
       </Row>
-      <Row between style={{ marginTop: 8 }}>
-        <Txt variant="tiny">{courtesy ? 'Cobertura da fonte' : 'Valor do JOGA'}</Txt>
-        <Txt variant="num" style={{ fontSize: 17 }}>
-          {cents(jogaCents)}
-        </Txt>
-      </Row>
-      <View style={{ height: 1, backgroundColor: palette.line, marginVertical: 10 }} />
-      <Row between>
-        <Txt variant="h3">Total</Txt>
-        <Txt variant="num" style={{ fontSize: 24 }}>
-          {cents(totalCents)}
-        </Txt>
-      </Row>
+      {!courtesy ? (
+        <>
+          <Row between style={{ marginTop: 8 }}>
+            <Txt variant="tiny">{feeLabel ?? 'Valor do JOGA'}</Txt>
+            <Txt variant="num" style={{ fontSize: 17 }}>
+              {cents(jogaCents)}
+            </Txt>
+          </Row>
+          <View style={{ height: 1, backgroundColor: palette.line, marginVertical: 10 }} />
+          <Row between>
+            <Txt variant="h3">Total</Txt>
+            <Txt variant="num" style={{ fontSize: 24 }}>
+              {cents(totalCents)}
+            </Txt>
+          </Row>
+        </>
+      ) : null}
       {tickets != null ? (
         <Txt variant="tiny" style={{ marginTop: 6 }}>
           {tickets} ingressos consumidos nesta vaga
@@ -60,9 +66,9 @@ export function PriceBreakdown({
       {courtesy ? (
         <Notice tone="blue" icon="info">
           {fundingSource === 'pass'
-            ? 'Cota do passe: a franquia mensal cobre a vaga.'
+            ? 'Cota do passe: a franquia mensal cobre a vaga. O JOGA não cobra a taxa do jogador.'
             : fundingSource === 'free_level'
-              ? 'Ingresso grátis de nível: a temporada cobre a vaga.'
+              ? 'Ingresso grátis de nível: a temporada cobre a vaga. O JOGA não cobra a taxa do jogador.'
               : 'Cortesia: o JOGA não cobra a taxa do jogador.'}
         </Notice>
       ) : null}
