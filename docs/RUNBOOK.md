@@ -537,7 +537,7 @@ $env:JOGA_REVIEW_OPERATORS = "operador-1"
 .venv\Scripts\python.exe -m scripts.ledger_opening
 # aplica opening:{user} = Σ remaining × unit_price_cents contra opening_equity
 .venv\Scripts\python.exe -m scripts.ledger_opening --apply
-# health check: exit 1 e contador de divergência de tickets e caixa
+# health check: exit 1 e contador de divergência de tickets, caixa e 6b
 .venv\Scripts\python.exe -m scripts.reconcile_ledger --json
 ```
 

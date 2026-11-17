@@ -22,6 +22,7 @@ from app.modules.ledger.accounts import (
     PASS_DEFERRED_REVENUE,
     PASS_REVENUE,
     PLAYER_CREDIT_PREFIX,
+    PROMO_EXPENSE,
     PSP_CLEARING,
     VENUE_PAYABLE_PREFIX,
     VENUE_RECEIVABLE_PREFIX,
@@ -133,27 +134,38 @@ def post_booking_confirmed(
     *,
     now: datetime | None = None,
 ) -> None:
-    """Regra 4: debita a cota e credita quadra + taxa, na confirmação."""
+    """Regra 4 + 6b: quadra/taxa por crédito, Pix, passe e cortesia."""
+
+    if booking.pricing_version == "legacy_v0":
+        # Reserva anterior ao cutover não é relançada.
+        return
 
     debit_by_user: dict[uuid.UUID, int] = {}
     psp_total = 0
+    pass_total = 0
+    promo_total = 0
     space_total = 0
     fee_total = 0
     for participant in participants:
-        if participant.funding_source == "credit":
+        source = participant.funding_source
+        if source == "credit":
             debit_by_user[participant.user_id] = (
                 debit_by_user.get(participant.user_id, 0) + participant.contribution_cents
             )
-        elif participant.funding_source == "pix":
+            fee_total += participant.fee_charge_cents
+        elif source == "pix":
             psp_total += participant.contribution_cents
+            fee_total += participant.fee_charge_cents
+        elif source == "pass":
+            pass_total += participant.space_charge_cents
+        elif source in {"free_level", "admin"}:
+            promo_total += participant.space_charge_cents
         else:
-            # Passe/grátis/admin: Etapa 6b. Fica fora deste lançamento e o
-            # reconciliador lista a vaga como excluída.
+            # Legado anterior ao cutover: não relança.
             continue
         space_total += participant.space_charge_cents
-        fee_total += participant.fee_charge_cents
 
-    if not debit_by_user and psp_total == 0:
+    if not debit_by_user and psp_total == 0 and pass_total == 0 and promo_total == 0:
         return
 
     service = LedgerService(session)
@@ -173,6 +185,12 @@ def post_booking_confirmed(
     ]
     if psp_total:
         postings.append(LedgerPosting(_account(service, PSP_CLEARING, "asset"), "D", psp_total))
+    if pass_total:
+        postings.append(LedgerPosting(_account(service, PASS_REVENUE, "revenue"), "D", pass_total))
+    if promo_total:
+        postings.append(
+            LedgerPosting(_account(service, PROMO_EXPENSE, "expense"), "D", promo_total)
+        )
     if space_total:
         postings.append(
             LedgerPosting(
@@ -211,20 +229,33 @@ def post_booking_refund(
     *,
     now: datetime | None = None,
 ) -> None:
-    """Regras 6/7: devolve a cota e estorna quadra + taxa."""
+    """Regras 6/7 + 6b: devolve a cota e estorna quadra/taxa/passe/cortesia."""
+
+    if booking.pricing_version == "legacy_v0":
+        return
 
     credit_by_user: dict[uuid.UUID, int] = {}
     space_total = 0
     fee_total = 0
+    pass_total = 0
+    promo_total = 0
     for participant in participants:
-        if participant.funding_source != "credit" or participant.tickets_consumed <= 0:
+        if participant.tickets_consumed <= 0:
             continue
-        credit_by_user[participant.user_id] = (
-            credit_by_user.get(participant.user_id, 0) + participant.contribution_cents
-        )
+        source = participant.funding_source
+        if source == "credit":
+            credit_by_user[participant.user_id] = (
+                credit_by_user.get(participant.user_id, 0) + participant.contribution_cents
+            )
+            fee_total += participant.fee_charge_cents
+        elif source == "pass":
+            pass_total += participant.space_charge_cents
+        elif source in {"free_level", "admin"}:
+            promo_total += participant.space_charge_cents
+        else:
+            continue
         space_total += participant.space_charge_cents
-        fee_total += participant.fee_charge_cents
-    if not credit_by_user:
+    if not credit_by_user and pass_total == 0 and promo_total == 0:
         return
 
     service = LedgerService(session)
@@ -266,6 +297,12 @@ def post_booking_refund(
         )
         for user_id, amount in credit_by_user.items()
     )
+    if pass_total:
+        postings.append(LedgerPosting(_account(service, PASS_REVENUE, "revenue"), "C", pass_total))
+    if promo_total:
+        postings.append(
+            LedgerPosting(_account(service, PROMO_EXPENSE, "expense"), "C", promo_total)
+        )
     service.post(
         kind="booking_refund",
         ref_type="booking",

@@ -54,7 +54,7 @@ def main() -> int:
             }
             for item in report.balance_mismatches
         ],
-        "excluded_seats": [
+        "non_credit_seats": [
             {
                 "booking_id": str(item.booking_id),
                 "participant_id": str(item.participant_id),
@@ -62,8 +62,9 @@ def main() -> int:
                 "source": item.source,
                 "contribution_cents": item.contribution_cents,
             }
-            for item in report.excluded_seats
+            for item in report.non_credit_seats
         ],
+        "missing_non_credit_postings": [str(item) for item in report.missing_non_credit_postings],
     }
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -71,7 +72,7 @@ def main() -> int:
         print(
             f"Reconciliação limpa: {report.checked_users} usuários; "
             f"{report.divergence_count} divergências; "
-            f"{len(report.excluded_seats)} vagas excluídas (Etapa 6b)."
+            f"{len(report.non_credit_seats)} vagas de passe/grátis/admin lançadas."
         )
     else:
         print(
@@ -81,7 +82,7 @@ def main() -> int:
         for item in report.mismatches:
             print(
                 f"divergência user={item.user_id} "
-                f"ledger={item.ledger_cents} lotes={item.lots_cents} "
+                f"ledger={item.ledger_cents} esperado={item.expected_cents} "
                 f"diferença={item.difference}"
             )
     return 0 if report.clean else 1

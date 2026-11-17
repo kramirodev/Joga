@@ -249,7 +249,7 @@ def _paid_lots_tickets(session: Session, user_id: uuid.UUID) -> int:
 def expected_player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
     """Caixa das compras + abertura − consumo por tickets (ADR 0049 §13.7)."""
 
-    from app.modules.bookings.models import BookingParticipant
+    from app.modules.bookings.models import Booking, BookingParticipant
     from app.modules.ledger.models import LedgerEntry, LedgerTransaction
     from app.modules.pricing.service import TICKET_CALIBRATION_CENTS
 
@@ -271,10 +271,13 @@ def expected_player_credit_cents(session: Session, user_id: uuid.UUID) -> int:
         )
     )
     consumed_tickets = session.scalar(
-        select(func.coalesce(func.sum(BookingParticipant.tickets_consumed), 0)).where(
+        select(func.coalesce(func.sum(BookingParticipant.tickets_consumed), 0))
+        .join(Booking, Booking.id == BookingParticipant.booking_id)
+        .where(
             BookingParticipant.user_id == user_id,
             BookingParticipant.funding_source == "credit",
             BookingParticipant.payment_status != "REFUNDED",
+            Booking.pricing_version != "legacy_v0",
         )
     )
     return (

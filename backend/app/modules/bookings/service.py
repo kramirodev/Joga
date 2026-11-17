@@ -881,17 +881,17 @@ class BookingService:
             )
             participant.payment_status = "REFUNDED"
 
-        credit_participants = [
+        refunded_participants = [
             participant
             for participant in self._active_participants(booking.id)
-            if participant.funding_source in {None, "credit"}
-            and participant.tickets_consumed > 0
+            if participant.tickets_consumed > 0
+            and participant.funding_source in {"credit", "pass", "free_level", "admin"}
             and (exclude_user_id is None or participant.user_id != exclude_user_id)
         ]
-        if credit_participants:
+        if refunded_participants:
             from app.modules.ledger.flow import post_booking_refund
 
-            post_booking_refund(self.session, booking, credit_participants)
+            post_booking_refund(self.session, booking, refunded_participants)
 
     def _tickets_per_seat(self, booking: Booking) -> int:
         """Resolve a tabela 2D: snapshot da criação ou fallback pela agenda."""
@@ -978,14 +978,20 @@ class BookingService:
         post_booking_confirmed(self.session, booking, active, now=now)
         notifications = NotificationService(self.session)
         for participant in active:
+            if participant.funding_source in {"credit", "pix"}:
+                body = (
+                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
+                    f"JOGA: R$ {participant.fee_charge_cents / 100:.2f}"
+                )
+            elif participant.funding_source == "pass":
+                body = f"Cota do passe · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
+            else:
+                body = f"Cortesia · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
             notifications.create(
                 user_id=participant.user_id,
                 kind="booking_confirmed",
                 title="Reserva confirmada",
-                body=(
-                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
-                    f"JOGA: R$ {participant.fee_charge_cents / 100:.2f}"
-                ),
+                body=body,
                 idempotency_key=f"booking_confirmed:{booking.id}:{participant.user_id}",
                 data={
                     "booking_id": str(booking.id),

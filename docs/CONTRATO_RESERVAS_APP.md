@@ -192,6 +192,8 @@ Regras:
 
 No caminho por tickets, `contribution_cents = k × 310`, `space_charge_cents` é a cota exata da quadra e `fee_charge_cents = contribution_cents − space_charge_cents` (o valor do JOGA, não 20% fixo). No Pix, `contribution_cents` é o preço congelado e `fee_charge_cents` é a taxa de 20%. `Σ space_charge_cents == venue_price_cents`.
 
+Quando a vaga é paga por passe/grátis/admin, `funding_source` identifica a fonte, `player_credit` não é debitado e a confirmação lança a quadra contra `pass_revenue` (passe) ou `promo_expense` (grátis/admin). Nesse caso a notificação mostra a linha da quadra e a fonte (“Cota do passe”/“Cortesia”), sem sugerir que o JOGA cobrou a taxa do jogador.
+
 ### 4.1 Crédito e franquia
 
 - Crédito comprado (`ticket_lots.source = "purchase"`) **não expira** e não é afetado pelo job de expiração. Os lotes continuam em tickets.

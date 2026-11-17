@@ -5,7 +5,8 @@ Dois saldos independentes:
 - caixa: `player_credit` == compras pagas + abertura − Σ k×310 das reservas
   quitadas por tickets.
 
-Não corrige nada. Lista vagas de passe/grátis/admin como excluídas da Etapa 6b.
+Não corrige nada. Também confere que toda vaga de passe/grátis/admin tem o
+lançamento de confirmação da Etapa 6b.
 """
 
 from __future__ import annotations
@@ -16,9 +17,9 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.modules.bookings.models import BookingParticipant
+from app.modules.bookings.models import Booking, BookingParticipant
 from app.modules.ledger.accounts import PLAYER_CREDIT_PREFIX, player_credit_code
-from app.modules.ledger.models import LedgerAccount
+from app.modules.ledger.models import LedgerAccount, LedgerTransaction
 from app.modules.ledger.service import LedgerError, LedgerService
 from app.modules.tickets.models import TicketBalance, TicketLot
 from app.modules.tickets.service import expected_player_credit_cents
@@ -62,11 +63,16 @@ class ReconciliationReport:
     checked_users: int = 0
     mismatches: list[CreditMismatch] = field(default_factory=list)
     balance_mismatches: list[BalanceMismatch] = field(default_factory=list)
-    excluded_seats: list[ExcludedSeat] = field(default_factory=list)
+    non_credit_seats: list[ExcludedSeat] = field(default_factory=list)
+    missing_non_credit_postings: list[uuid.UUID] = field(default_factory=list)
 
     @property
     def divergence_count(self) -> int:
-        return len(self.mismatches) + len(self.balance_mismatches)
+        return (
+            len(self.mismatches)
+            + len(self.balance_mismatches)
+            + len(self.missing_non_credit_postings)
+        )
 
     @property
     def clean(self) -> bool:
@@ -131,13 +137,15 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
                 )
             )
 
-    excluded = session.execute(
-        select(BookingParticipant).where(
-            BookingParticipant.funding_source.in_(EXCLUDED_SOURCES),
-            BookingParticipant.tickets_consumed > 0,
-        )
-    ).scalars()
-    report.excluded_seats = [
+    non_credit = list(
+        session.scalars(
+            select(BookingParticipant).where(
+                BookingParticipant.funding_source.in_(EXCLUDED_SOURCES),
+                BookingParticipant.tickets_consumed > 0,
+            )
+        ).all()
+    )
+    report.non_credit_seats = [
         ExcludedSeat(
             booking_id=participant.booking_id,
             participant_id=participant.id,
@@ -145,8 +153,20 @@ def reconcile_credit(session: Session) -> ReconciliationReport:
             source=participant.funding_source or "unknown",
             contribution_cents=participant.contribution_cents,
         )
-        for participant in excluded
+        for participant in non_credit
     ]
+    booking_ids = {participant.booking_id for participant in non_credit}
+    for booking_id in booking_ids:
+        booking = session.get(Booking, booking_id)
+        if booking is None or booking.pricing_version == "legacy_v0":
+            continue
+        posted = session.scalar(
+            select(LedgerTransaction.id).where(
+                LedgerTransaction.idempotency_key == f"booking:{booking_id}:confirm"
+            )
+        )
+        if posted is None:
+            report.missing_non_credit_postings.append(booking_id)
     return report
 
 
@@ -160,7 +180,8 @@ def ledger_health(session: Session) -> dict[str, object]:
         "divergence_count": report.divergence_count,
         "credit_mismatches": len(report.mismatches),
         "balance_mismatches": len(report.balance_mismatches),
-        "excluded_seats": len(report.excluded_seats),
+        "non_credit_seats": len(report.non_credit_seats),
+        "missing_non_credit_postings": len(report.missing_non_credit_postings),
     }
 
 

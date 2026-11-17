@@ -127,7 +127,7 @@
 
 **Constraints relevantes:** webhook único por `(provider, event_id)`; reembolso único por pagamento; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado.
 
-**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapa 6). A leitura do saldo usa `JOGA_TICKET_BALANCE_SOURCE` e valida caixa + tickets. `payment_refunds` ainda não permite reembolso parcial. `fiscal_documents` e `terms_versions` não têm chamador. A Etapa 6b (passe/grátis/admin) e a Etapa 9 (aposentadoria dos ledgers legados) estão pendentes.
+**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b). A leitura do saldo usa `JOGA_TICKET_BALANCE_SOURCE` e valida caixa + tickets. `payment_refunds` ainda não permite reembolso parcial. `fiscal_documents` e `terms_versions` não têm chamador. A Etapa 9 (aposentadoria dos ledgers legados) está pendente.
 
 ---
 
@@ -250,7 +250,7 @@
 ## 12. Lacunas que a Fase 14E deve fechar
 
 - ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
-- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse e passe — **feita na Etapa 6** (`n8e9f0a1b2c3` + `ledger/flow.py`). A leitura pública usa `JOGA_TICKET_BALANCE_SOURCE` (`cache`/`ledger`); em `ledger`, conta ausente ou divergência falha alto. Vagas pagas por passe/grátis/admin ficam na Etapa 6b e o reconciliador as lista como excluídas.
+- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse, passe e vagas por passe/grátis/admin — **feita nas Etapas 6/6b** (`n8e9f0a1b2c3`, `o9f0a1b2c3d4`, `p0a1b2c3d4e5` + `ledger/flow.py`). A leitura pública usa `JOGA_TICKET_BALANCE_SOURCE` (`cache`/`ledger`); em `ledger`, conta ausente ou divergência falha alto.
 - Migração de saldo monetário legado — **feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`. Os lotes continuam em tickets; não existe `remaining_cents`. Passe, grátis e admin ficam fora da abertura.
 - ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
 - `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots` guarda tickets e `unit_price_cents` (só abertura/reembolso). A tabela 2D é a unidade de consumo.

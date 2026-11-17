@@ -21,6 +21,7 @@ from app.modules.ledger.accounts import (
     FEE_REVENUE,
     PASS_DEFERRED_REVENUE,
     PASS_REVENUE,
+    PROMO_EXPENSE,
     VENUE_PAYABLE_PREFIX,
     player_credit_code,
 )
@@ -250,7 +251,56 @@ def test_pass_sale_and_month_posts(
     assert month[(PASS_REVENUE, "C")] == monthly
 
 
-def test_reconciler_lists_non_credit_seat_as_excluded(
+def test_free_level_seat_posts_promo_expense(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    user_id = context["users"][0]
+    from app.modules.tickets.models import TicketLot
+
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None
+    lot.remaining = 0
+    balance = db_session.get(TicketBalance, user_id)
+    assert balance is not None
+    balance.balance = 0
+    grant(
+        db_session,
+        user_id,
+        TICKETS_PER_SEAT,
+        source="free_level",
+        idempotency_key=f"free:test:{user_id}",
+    )
+    db_session.flush()
+    open_ledger(db_session, dry_run=False)
+    booking = open_booking(api, context)
+    for token in context["tokens"]:
+        response = api.post(
+            f"/api/v1/bookings/{booking['id']}/settle-with-tickets",
+            headers=bearer(token),
+        )
+        assert response.status_code == 200, response.text
+
+    participant = db_session.scalar(
+        select(BookingParticipant).where(
+            BookingParticipant.booking_id == uuid.UUID(booking["id"]),
+            BookingParticipant.user_id == user_id,
+        )
+    )
+    assert participant is not None
+    assert participant.funding_source == "free_level"
+    posted = entries(
+        db_session,
+        transaction(db_session, f"booking:{booking['id']}:confirm"),
+    )
+    assert posted[(PROMO_EXPENSE, "D")] == participant.space_charge_cents
+    assert posted[(f"{VENUE_PAYABLE_PREFIX}{context['venue'].id}", "C")] == PRICE_CENTS
+    assert reconcile_credit(db_session).clean
+
+
+def test_reconciler_covers_non_credit_seat(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -286,7 +336,8 @@ def test_reconciler_lists_non_credit_seat_as_excluded(
 
     report = reconcile_credit(db_session)
     assert report.clean, (report.mismatches, report.balance_mismatches)
-    excluded = {item.participant_id for item in report.excluded_seats}
+    assert report.missing_non_credit_postings == []
+    non_credit = {item.participant_id for item in report.non_credit_seats}
     participant = db_session.scalar(
         select(BookingParticipant).where(
             BookingParticipant.booking_id == uuid.UUID(booking["id"]),
@@ -295,7 +346,14 @@ def test_reconciler_lists_non_credit_seat_as_excluded(
     )
     assert participant is not None
     assert participant.funding_source == "pass"
-    assert participant.id in excluded
+    assert participant.id in non_credit
+
+    posted = entries(
+        db_session,
+        transaction(db_session, f"booking:{booking['id']}:confirm"),
+    )
+    assert posted[(PASS_REVENUE, "D")] == participant.space_charge_cents
+    assert posted[(f"{VENUE_PAYABLE_PREFIX}{context['venue'].id}", "C")] == PRICE_CENTS
 
 
 def test_opening_is_idempotent(db_session: Session) -> None:

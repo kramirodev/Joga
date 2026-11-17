@@ -1273,3 +1273,14 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **API:** `BookingView.participants[]` ganhou `space_charge_cents`, `fee_charge_cents` e `funding_source`; notificacao `booking_confirmed` leva os dois valores por participante.
 - **Testes:** **566 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff.
 - **Pendente:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).
+
+### 2026-11-17 - 14E.4 / 6b: passe, gratis e admin no ledger
+
+- **Conta nova:** `promo_expense` (despesa) semeada pela migracao `p0a1b2c3d4e5`; `pass_revenue` ja existia.
+- **Confirmacao:** `post_booking_confirmed` passou a cobrir as tres fontes nao-credito. Para passe: D `pass_revenue` space_charge / C `venue_payable` space_charge. Para gratis/admin: D `promo_expense` / C `venue_payable`. Nenhuma delas debita `player_credit` nem credita `fee_revenue`.
+- **Devolucao:** `post_booking_refund` tambem estorna passe (C `pass_revenue`) e gratis/admin (C `promo_expense`), com D `venue_payable` ou `venue_receivable`.
+- **Notificacao:** `booking_confirmed` mostra "Cota do passe" ou "Cortesia" e a linha da quadra, sem apresentar a taxa como cobranca do jogador.
+- **Reconciliador:** `non_credit_seats` lista as vagas cobertas e `missing_non_credit_postings` acusa reserva sem o lancamento de confirmacao; `divergence_count` inclui essa checagem.
+- **Testes:** vaga por passe (`pass_revenue`) e por gratis (`promo_expense`), com quadra exata e reconciliação limpa. Suite **568 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos.
+- **Migracao:** `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL.
+- **Fora do escopo:** Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).

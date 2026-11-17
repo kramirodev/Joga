@@ -240,10 +240,14 @@ def _load_migration(filename: str):
 
 
 def test_seed_migration_matches_chart_of_accounts() -> None:
-    """A migração de seed e o módulo de contas não podem divergir."""
+    """As migrações de seed e o módulo de contas não podem divergir."""
 
     seed = _load_migration("l6c7d8e9f0a1_seed_ledger_accounts.py")
-    assert dict(seed.ACCOUNTS) == SINGLETON_ACCOUNTS
+    promo = _load_migration("p0a1b2c3d4e5_add_promo_expense.py")
+    accounts = dict(seed.ACCOUNTS)
+    code, kind = promo.PROMO_ACCOUNT
+    accounts[code] = kind
+    assert accounts == SINGLETON_ACCOUNTS
 
 
 def test_every_owner_prefix_has_a_declared_kind() -> None:
