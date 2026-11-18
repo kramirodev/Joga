@@ -1,0 +1,54 @@
+name: Email cleanup (Outbox)
+
+# Remove o payload efêmero de e-mail já despachado e o log de entrega antigo.
+# Roda uma vez por dia, fora do web service do Render.
+#
+# Perfil do demo: development + PSP simulator, sem credenciais de Mercado Pago.
+#
+# Secret obrigatório:
+#   JOGA_DATABASE_URL          (postgresql+psycopg://... pelo Session pooler IPv4)
+#
+# Este job não envia e-mail: não precisa de JOGA_EMAIL_API_KEY.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: email-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Limpar Outbox e log de entrega
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      JOGA_ENVIRONMENT: ${{ vars.JOGA_ENVIRONMENT || 'development' }}
+      JOGA_LOG_LEVEL: INFO
+      JOGA_DATABASE_URL: ${{ secrets.JOGA_DATABASE_URL }}
+      JOGA_AUTH_EMAIL_ENABLED: "false"
+      JOGA_AUTH_PHONE_ENABLED: "true"
+      JOGA_ALLOW_PHONE_REGISTRATION: "true"
+      JOGA_PHONE_REQUIRED_FOR_BOOKING: "false"
+      JOGA_SIGNUP_MODE: open
+      JOGA_EMAIL_PROVIDER: none
+      JOGA_PSP_PROVIDER: ${{ vars.JOGA_PSP_PROVIDER || 'simulator' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Instalar dependências fixadas
+        run: python -m pip install -r requirements.lock
+      - name: Limpar payload despachado e log antigo
+        run: python -m scripts.cleanup_email --outbox-hours 1 --delivery-days 90
