@@ -1465,7 +1465,9 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   SameSite=Strict; `/organizations` com `Arena Demo` e papel `OWNER`; reset 202;
   worker com sender fake marcou `email_deliveries.status='sent'`.
 - **Verificações:** `ruff check .`, `ruff format --check .`, `mypy app` e
-  `alembic check` limpos; `alembic current` em `y8b9c0d1e2f3`.
+  `alembic check` limpos; `alembic current` em `y8b9c0d1e2f3`; suíte completa
+  com `pytest`: 709 passed, 33 skipped.
+- **Commit:** artefatos publicados na `main` em `e47c750`.
 - **Caddy:** Caddyfile validado com o binário oficial 2.11.9 para Windows
   (SHA512 conferido) e executado com SPA stub: health 200 sem basic auth, `/`
   401 sem credencial, `/` 200 com `demo:<senha>` e fallback do SPA 200. A
