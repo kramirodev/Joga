@@ -251,9 +251,11 @@ export function refreshSession(): Promise<WebSessionPayload | null> {
   return refreshInFlight;
 }
 
+export type EmailCodePurpose = "registration" | "password_reset";
+
 export async function requestEmailCode(
   email: string,
-  purpose: "login" | "registration",
+  purpose: EmailCodePurpose,
 ): Promise<ChallengeResponse> {
   return publicRequest<ChallengeResponse>("/auth/email/code", {
     method: "POST",
@@ -273,16 +275,11 @@ export async function verifyEmailChallenge(
 
 async function webEmailSession(
   path: "/auth/web/email/login" | "/auth/web/email/registration",
-  challengeId: string,
-  email: string,
+  body: { email: string; password: string; challenge_id?: string },
 ): Promise<WebSessionPayload> {
   const payload = await publicRequest<WebSessionPayload>(path, {
     method: "POST",
-    body: JSON.stringify({
-      challenge_id: challengeId,
-      email,
-      device_name: "Painel",
-    }),
+    body: JSON.stringify({ ...body, device_name: "Painel" }),
   });
   setAuthTokens({
     accessToken: payload.access_token,
@@ -291,15 +288,45 @@ async function webEmailSession(
   return payload;
 }
 
-export function webEmailLogin(challengeId: string, email: string): Promise<WebSessionPayload> {
-  return webEmailSession("/auth/web/email/login", challengeId, email);
+export function webEmailLogin(email: string, password: string): Promise<WebSessionPayload> {
+  return webEmailSession("/auth/web/email/login", { email, password });
 }
 
 export function webEmailRegistration(
   challengeId: string,
   email: string,
+  password: string,
 ): Promise<WebSessionPayload> {
-  return webEmailSession("/auth/web/email/registration", challengeId, email);
+  return webEmailSession("/auth/web/email/registration", {
+    challenge_id: challengeId,
+    email,
+    password,
+  });
+}
+
+export function resetEmailPassword(
+  challengeId: string,
+  email: string,
+  newPassword: string,
+): Promise<void> {
+  return publicRequest<void>("/auth/email/password/reset", {
+    method: "POST",
+    body: JSON.stringify({
+      challenge_id: challengeId,
+      email,
+      new_password: newPassword,
+    }),
+  });
+}
+
+export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  return request<void>("/me/password", {
+    method: "POST",
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
 }
 
 export async function webLogout(): Promise<void> {

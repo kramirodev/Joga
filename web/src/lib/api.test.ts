@@ -4,10 +4,14 @@ import {
   ApiError,
   SESSION_EXPIRED_EVENT,
   api,
+  changePassword,
   clearAuthTokens,
   refreshSession,
   requestEmailCode,
+  resetEmailPassword,
   setAuthTokens,
+  webEmailLogin,
+  webEmailRegistration,
 } from "./api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -210,7 +214,7 @@ describe("cliente HTTP do painel", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestEmailCode("operador@example.com", "login")).rejects.toMatchObject({
+    await expect(requestEmailCode("operador@example.com", "password_reset")).rejects.toMatchObject({
       status: 429,
       code: "rate_limited",
       retryAfterSeconds: 45,
@@ -220,7 +224,57 @@ describe("cliente HTTP do painel", () => {
     expect(new URL(url, "http://joga.local").pathname).toBe("/api/v1/auth/email/code");
     expect(JSON.parse(String(init.body))).toEqual({
       email: "operador@example.com",
-      purpose: "login",
+      purpose: "password_reset",
+    });
+  });
+
+  it("envia e-mail e senha nos fluxos web e de senha", async () => {
+    const sessionBody = {
+      access_token: "access-1",
+      access_expires_at: "2026-11-19T13:00:00Z",
+      csrf_token: "csrf-1",
+      user: { id: "user-1", status: "active" },
+      capabilities: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(sessionBody))
+      .mockResolvedValueOnce(jsonResponse(sessionBody))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await webEmailLogin("operador@example.com", "senha-segura-123");
+    await webEmailRegistration("receipt-1", "operador@example.com", "senha-segura-123");
+    await resetEmailPassword("receipt-2", "operador@example.com", "outra-senha-123");
+    await changePassword("senha-atual-123", "nova-senha-123");
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => new URL(url, "http://joga.local").pathname)).toEqual([
+      "/api/v1/auth/web/email/login",
+      "/api/v1/auth/web/email/registration",
+      "/api/v1/auth/email/password/reset",
+      "/api/v1/me/password",
+    ]);
+    expect(JSON.parse(String(calls[0][1].body))).toEqual({
+      email: "operador@example.com",
+      password: "senha-segura-123",
+      device_name: "Painel",
+    });
+    expect(JSON.parse(String(calls[1][1].body))).toEqual({
+      challenge_id: "receipt-1",
+      email: "operador@example.com",
+      password: "senha-segura-123",
+      device_name: "Painel",
+    });
+    expect(JSON.parse(String(calls[2][1].body))).toEqual({
+      challenge_id: "receipt-2",
+      email: "operador@example.com",
+      new_password: "outra-senha-123",
+    });
+    expect(JSON.parse(String(calls[3][1].body))).toEqual({
+      current_password: "senha-atual-123",
+      new_password: "nova-senha-123",
     });
   });
 

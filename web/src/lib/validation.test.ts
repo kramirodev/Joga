@@ -4,12 +4,15 @@ import {
   cnpjError,
   coordinateError,
   dateRangeError,
+  emailError,
   formatCnpj,
   isValidCnpj,
   moneyError,
   moneyInputFromCents,
   moneyToCents,
   normalizeMoneyInput,
+  passwordConfirmationError,
+  passwordError,
   pixKeyError,
   photoFileError,
   textError,
@@ -23,6 +26,24 @@ describe("validation", () => {
     expect(textError("a", { label: "o nome", min: 2, max: 120 })).toMatch(/pelo menos 2/);
     expect(textError("a".repeat(121), { label: "o nome", max: 120 })).toMatch(/no máximo 120/);
     expect(textError("  Arena  ", { label: "o nome", min: 2, max: 120 })).toBeNull();
+  });
+
+  it("valida e-mail e senha antes do envio", () => {
+    expect(emailError("")).toBe("Informe o e-mail.");
+    expect(emailError("sem-arroba")).toMatch(/e-mail válido/);
+    expect(emailError("operador@example.com")).toBeNull();
+    expect(passwordError("")).toBe("Informe uma senha.");
+    expect(passwordError("curta")).toMatch(/pelo menos 10/);
+    expect(passwordError("a".repeat(129))).toMatch(/no máximo 128/);
+    expect(passwordError("operador@example.com", "operador@example.com")).toMatch(
+      /igual ao e-mail/,
+    );
+    expect(passwordError("senha-segura-123", "operador@example.com")).toBeNull();
+    expect(passwordConfirmationError("senha-segura-123", "")).toBe("Confirme a senha.");
+    expect(passwordConfirmationError("senha-segura-123", "outra-senha-123")).toBe(
+      "As senhas não coincidem.",
+    );
+    expect(passwordConfirmationError("senha-segura-123", "senha-segura-123")).toBeNull();
   });
 
   it("valida e formata CNPJ pelos dígitos verificadores", () => {

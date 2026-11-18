@@ -5,7 +5,8 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 
 ## Escopo atual
 
-- Login/registro por código de e-mail (OTP) com a mesma identidade do aplicativo; o telefone não é oferecido no beta.
+- Login por e-mail + senha; o código de seis dígitos fica restrito ao cadastro e à recuperação de senha.
+- Troca de senha autenticada no cabeçalho, com senha atual e nova; a senha não é armazenada no navegador.
 - Refresh token em cookie `HttpOnly`; access token apenas em memória.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
@@ -42,9 +43,10 @@ pnpm dev
 
 Em PowerShell: `$env:JOGA_API_PROXY_TARGET = "http://127.0.0.1:8001"`.
 
-O login do painel usa código de e-mail (ADR 0050). A resposta `202` apenas
-enfileira o envio; o worker entrega em lotes de 5 em 5 minutos. Com o backend
-local e `JOGA_EMAIL_PROVIDER=brevo` no `.env`, processe a fila em outro terminal:
+O cadastro de operador e a recuperação de senha usam código de e-mail (ADR 0050).
+A resposta `202` apenas enfileira o envio; o worker entrega em lotes de 5 em 5
+minutos. Com o backend local e `JOGA_EMAIL_PROVIDER=brevo` no `.env`, processe a
+fila em outro terminal:
 
 ```powershell
 cd backend
@@ -137,9 +139,12 @@ cabeçalhos da hospedagem.
   site da API.
 - Em 401/refresh inválido, o painel limpa os tokens e redireciona para `/login`
   preservando o destino em `state.from`; o login devolve ao caminho original.
-- No beta, o login do painel é somente por e-mail. As rotas de telefone continuam
-  no backend, mas o painel não as oferece enquanto `JOGA_AUTH_PHONE_ENABLED=false`.
-  `PUT /me/email` não é credencial de login; é o e-mail do pagador.
+- No beta, o login do painel é e-mail + senha; o código de e-mail só é usado no
+  cadastro e na recuperação de senha. A senha tem de 10 a 128 caracteres, é
+  validada no servidor e não é gravada em `localStorage`/`sessionStorage`.
+- As rotas de telefone continuam no backend, mas o painel não as oferece enquanto
+  `JOGA_AUTH_PHONE_ENABLED=false`. `PUT /me/email` não é credencial de login; é o
+  e-mail do pagador.
 - A direção visual é um design system dark alinhado à marca JOGA (lime/coral), com
   tipografia de sistema. Assets próprios, fontes licenciadas e testes com usuários
   continuam pendentes.

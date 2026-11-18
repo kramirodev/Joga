@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth-context";
 import { MODERATION_NOTIFICATIONS_ENABLED } from "../lib/features";
 import { NotificationCenter } from "./NotificationCenter";
+import { PasswordDialog } from "./PasswordDialog";
 import { LogoutIcon, ShieldIcon } from "./ui/Icons";
 
 export function AppHeader() {
@@ -11,6 +13,7 @@ export function AppHeader() {
   const location = useLocation();
   const moderationArea = location.pathname.startsWith("/moderation");
   const canModerate = capabilities.includes("moderation.read");
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function handleSignOut() {
     await signOut();
@@ -53,6 +56,15 @@ export function AppHeader() {
           <button
             type="button"
             className="button button--ghost button--compact"
+            aria-label="Alterar senha"
+            onClick={() => setPasswordOpen(true)}
+          >
+            <ShieldIcon size={16} />
+            <span>Senha</span>
+          </button>
+          <button
+            type="button"
+            className="button button--ghost button--compact"
             onClick={handleSignOut}
           >
             <LogoutIcon size={16} />
@@ -60,6 +72,7 @@ export function AppHeader() {
           </button>
         </div>
       </div>
+      <PasswordDialog open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </header>
   );
 }

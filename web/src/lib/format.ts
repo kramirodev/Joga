@@ -355,8 +355,20 @@ export function formatError(error: unknown): string {
       return "E-mail inválido. Confira o endereço e tente novamente.";
     case "email_domain_not_allowed":
       return "Não aceitamos esse domínio de e-mail. Use outro endereço.";
+    case "invalid_credentials":
     case "invalid_email_login":
-      return "Este e-mail não consegue entrar. Confira o endereço ou crie uma conta.";
+      return "E-mail ou senha inválidos.";
+    case "invalid_current_password":
+      return "A senha atual está incorreta.";
+    case "invalid_password":
+    case "weak_password":
+      return "A senha não atende aos requisitos. Use de 10 a 128 caracteres.";
+    case "password_too_short":
+      return "A senha deve ter pelo menos 10 caracteres.";
+    case "password_too_long":
+      return "A senha deve ter no máximo 128 caracteres.";
+    case "password_equals_email":
+      return "A senha não pode ser igual ao e-mail.";
     case "email_already_registered":
       return "Esse e-mail já está vinculado a uma conta. Use a opção Entrar.";
     case "signup_closed":
@@ -378,6 +390,8 @@ export function formatError(error: unknown): string {
       return "Código inválido ou expirado. Solicite um novo código.";
     case "invalid_receipt":
       return "A verificação expirou. Solicite um novo código.";
+    case "invalid_password_reset":
+      return "A verificação da senha expirou. Solicite um novo código.";
     case "forbidden":
       return "Seu papel não permite esta ação.";
     case "refund_failed":
