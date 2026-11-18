@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -66,9 +66,11 @@ class OutboxService:
         error: str,
         *,
         now: datetime | None = None,
+        retry_in_seconds: int = 0,
     ) -> None:
+        moment = ensure_utc(now or utcnow())
         event.status = "FAILED"
         event.attempts += 1
         event.last_error = error[:500]
-        event.available_at = ensure_utc(now or utcnow())
+        event.available_at = moment + timedelta(seconds=max(0, retry_in_seconds))
         self._session.flush()

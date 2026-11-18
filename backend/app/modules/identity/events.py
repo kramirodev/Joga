@@ -29,6 +29,27 @@ PASSKEY_FAILED = "passkey.failed"
 PASSKEY_RATE_LIMITED = "passkey.rate_limited"
 AUTH_DEVICE_REVOKED = "auth.device_revoked"
 
+# Credencial de e-mail no beta (ADR 0050). Nenhum evento carrega endereço,
+# código ou hash; apenas tipo, finalidade e motivo.
+EMAIL_CHALLENGE_REQUESTED = "email.challenge_requested"
+EMAIL_CHALLENGE_VERIFIED = "email.challenge_verified"
+EMAIL_VERIFICATION_FAILED = "email.verification_failed"
+EMAIL_RATE_LIMITED = "email.rate_limited"
+EMAIL_REGISTRATION_COMPLETED = "auth.email_registration_completed"
+EMAIL_LOGIN_COMPLETED = "auth.email_login_completed"
+EMAIL_LOGIN_FAILED = "auth.email_login_failed"
+EMAIL_PASSWORD_RESET_COMPLETED = "auth.email_password_reset_completed"
+EMAIL_PASSWORD_RESET_FAILED = "auth.email_password_reset_failed"
+EMAIL_PASSWORD_CHANGED = "auth.email_password_changed"
+EMAIL_CHANGE_REQUESTED = "auth.email_change_requested"
+EMAIL_CHANGE_COMPLETED = "auth.email_change_completed"
+EMAIL_CHANGE_FAILED = "auth.email_change_failed"
+EMAIL_SIGNUP_BLOCKED = "email.signup_blocked"
+EMAIL_BUDGET_WARNING = "email.budget_warning"
+EMAIL_BUDGET_EXHAUSTED = "email.budget_exhausted"
+EMAIL_BOUNCE = "email.bounce"
+EMAIL_DELIVERY_FAILED = "email.delivery_failed"
+
 
 def record_security_event(
     session: Session,
