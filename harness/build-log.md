@@ -1481,3 +1481,46 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   inventado e nenhum segredo entrou no Git.
 - **Fora do escopo:** produção, domínio pago, PSP/NFS-e/escrow/KYC/SMS,
   alteração de CORS/cookies/CSP e deploy fora do free tier.
+
+
+### 2026-11-18 - Deploy de demonstração: execução remota
+
+- **Supabase:** projeto `cdleiwxqmlawaaadsxhe`, região `us-east-2`. A URL
+  fornecida apontava para a conexão direta IPv6; foi trocada pelo Session
+  pooler `aws-1-us-east-2.pooler.supabase.com:5432`. PostGIS `3.3.7` em
+  `public`; `alembic upgrade head`, `current` e `check` aplicados até
+  `y8b9c0d1e2f3` sem divergências.
+- **Seed remoto:** duas execuções; a segunda preservou IDs e criou 0 janelas.
+  IDs: operador `9f556105-a328-4a6a-bc8d-6276c6b3f1ba`, jogador
+  `7767af50-d2e0-4cc5-b095-8d2e96210432`, organização
+  `ad5dc6fb-1029-432e-aa1a-b6fa87e21c6a`, estabelecimento
+  `52c7a0db-684b-46b7-9512-b29664e68eff`, quadra
+  `14ee4dc5-1cd3-4c38-988f-dc1877ac2356`. Login remoto por senha validado
+  contra o hash Argon2id.
+- **Render:** serviço `joga-demo` (`srv-dbv1gmek1f9s73b4m4rg`), Docker,
+  `plan=free`, região `ohio`, health check `/api/v1/health/ready`, 26
+  variáveis, deploy `dep-dbv1gmmk1f9s73b4m6cg` em `live`. Nenhum cartão,
+  upgrade, trial ou recurso pago foi criado. O build remoto validou o
+  `Dockerfile`; o build local não rodou porque Docker/Node não existem neste
+  host.
+- **Smoke público:** health live/ready 200 sem credencial; `/` 401 sem basic
+  auth e 200 com `demo`; login do painel 200 com `Arena Demo`/`OWNER`; login do
+  jogador 200; senha errada 401 `invalid_credentials`; `/auth/emails` só com a
+  credencial da própria conta; discovery com `Arena Demo Centro`; `/me/tickets`
+  com `source=ledger`; `PUT /me/email` não alterou a credencial; cadastro 403
+  `signup_closed`; reset 202. Cookies `HttpOnly`, `Secure` e
+  `SameSite=strict`.
+- **UptimeRobot:** monitor `804728291` em `/api/v1/health/live`, intervalo
+  300 s, contato de e-mail `9051684`; criado sem tocar nos demais monitores.
+- **GitHub:** o repositório está público e ainda tem 0 secrets. O
+  `GITHUB_TOKEN` lê o repositório, mas a escrita de secrets retornou
+  `403 Resource not accessible by personal access token`; a Outbox remota tem
+  `password_reset` e `security_alert` em `queued`. Falta um token com
+  `Secrets: Read and write` e `Actions: Read and write`, ou configurar os três
+  secrets pela UI.
+- **Segredos/URL:** nenhum segredo entrou no Git. A URL real não é versionada a
+  partir deste commit (`render.yaml` usa `sync: false` para a origem WebAuthn;
+  docs usam `<url-do-demo>`). O commit anterior `e47c750` ainda contém a URL no
+  histórico; não houve force push nem reescrita.
+- **Fora do escopo:** produção, PSP/NFS-e/escrow/KYC/SMS, CORS/cookies/CSP e
+  qualquer recurso pago.

@@ -69,7 +69,9 @@ services:
           name: joga-demo
           envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: JOGA_WEBAUTHN_ORIGIN_WEB
-        value: https://joga-demo.onrender.com
+        # Preenchido no dashboard/API com https://<host-do-demo>. Nao versionar
+        # a URL real do ambiente de demonstracao em repositorio publico.
+        sync: false
       - key: JOGA_MEDIA_ROOT
         value: /app/backend/var/media
       - key: DEMO_BASIC_AUTH_HASH

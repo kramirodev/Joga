@@ -1,8 +1,9 @@
 # Deploy de demonstração (Render + Supabase)
 
-**Status:** artefatos de container criados e validados localmente; deploy remoto
-**bloqueado** por ausência das credenciais de Supabase/Render/GitHub no ambiente
-de execução. Não há URL pública ainda.
+**Status:** ambiente de demonstração **no ar** no Render free + Supabase. A URL
+real não é versionada (repositório público); consulte o dashboard do Render. O
+worker de e-mail do GitHub ainda está **bloqueado** por permissão do token (403
+ao gravar secrets); a Outbox remota está `queued`.
 
 **Data:** 2026-11-18
 
@@ -145,7 +146,7 @@ remoto, use a variável inline na sessão — não edite o `.env`:
 
 ```powershell
 cd backend
-$env:JOGA_DATABASE_URL="postgresql+psycopg://postgres.<ref>:<senha>@aws-0-<região>.pooler.supabase.com:5432/postgres?sslmode=require"
+$env:JOGA_DATABASE_URL="postgresql+psycopg://postgres.<ref>:<senha>@aws-1-<região>.pooler.supabase.com:5432/postgres?sslmode=require"
 .venv\Scripts\python.exe -m alembic upgrade head
 .venv\Scripts\python.exe -m alembic current
 .venv\Scripts\python.exe -m alembic check
@@ -158,7 +159,11 @@ Regras:
 - `alembic check` precisa dizer "No new upgrade operations detected".
 - Head esperado: `y8b9c0d1e2f3`.
 
-**Estado remoto:** não migrado nesta execução (sem credencial do Supabase).
+**Estado remoto (2026-11-18):** projeto `cdleiwxqmlawaaadsxhe`, região
+`us-east-2`; PostGIS `3.3.7` habilitado em `public`; migrações aplicadas até
+`y8b9c0d1e2f3` pelo Session pooler
+`aws-1-us-east-2.pooler.supabase.com:5432`. `alembic current` e `alembic check`
+limpos.
 
 ## 7. Seed de demonstração
 
@@ -187,31 +192,46 @@ Dados criados:
 | Agenda | Todos os dias, 06:00–22:00, R$ 120,00, slot de 60 min |
 | Faixas | Tabela 2D padrão via `pricing.service` |
 
-### IDs do ensaio local (NÃO são do Supabase)
+### IDs do seed remoto
 
-Estes IDs foram criados no PostgreSQL local durante a validação. O seed remoto
-vai gerar IDs novos:
+O seed foi executado duas vezes no Supabase. A segunda execução preservou os
+mesmos IDs e criou 0 janelas de agenda:
 
-| Item | ID local |
+| Item | ID |
 |---|---|
-| Operador | `44a5bb57-4a16-49b1-a2a5-e80002ce777c` |
-| Jogador | `e017739a-a6a8-4b12-bb5e-15a4923e4274` |
-| Organização | `3aa07dcb-f421-4902-afb3-da8f3e6119f2` |
-| Estabelecimento | `5780f0ad-1d29-411c-a326-9b4baf3d88f8` |
-| Quadra | `3d78f2df-e428-4c92-bee6-c8580897d720` |
+| Operador | `9f556105-a328-4a6a-bc8d-6276c6b3f1ba` |
+| Jogador | `7767af50-d2e0-4cc5-b095-8d2e96210432` |
+| Organização | `ad5dc6fb-1029-432e-aa1a-b6fa87e21c6a` |
+| Estabelecimento | `52c7a0db-684b-46b7-9512-b29664e68eff` |
+| Quadra | `14ee4dc5-1cd3-4c38-988f-dc1877ac2356` |
 
-## 8. Passo a passo pendente no Render
+## 8. Render (executado)
 
-1. Abrir Blueprint ou criar web service Docker na raiz do repositório.
-2. Confirmar `plan: free` e health check `/api/v1/health/ready`.
-3. Preencher as variáveis da §5; segredos somente no dashboard.
-4. Se o Render pedir cartão ou oferecer upgrade, **parar e reportar**.
-5. Anotar a URL `https://<serviço>.onrender.com` e ajustar
-   `JOGA_WEBAUTHN_RP_ID` / `JOGA_WEBAUTHN_ORIGIN_WEB` se o nome do serviço não
-   for `joga-demo`.
-6. Gerar `DEMO_BASIC_AUTH_HASH` com o comando da §5 e reiniciar o serviço.
+O web service foi criado pela API do Render, somente para o demo:
 
-**URL pública:** pendente (deploy não executado).
+| Item | Valor |
+|---|---|
+| Serviço | `joga-demo` (`srv-dbv1gmek1f9s73b4m4rg`) |
+| Runtime | Docker, contexto na raiz, `./Dockerfile` |
+| Plano | `free` (sem cartão, sem upgrade, sem trial) |
+| Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
+| Health check | `/api/v1/health/ready` |
+| Variáveis | 26, nomes conferidos na API; valores secretos só no Render |
+| Deploy | `dep-dbv1gmmk1f9s73b4m6cg`, status **live** |
+| URL | `<url-do-demo>` (intencionalmente não versionada) |
+
+O build Docker foi executado pelo Render a partir do commit `b3dd739`; o
+container subiu, as migrações rodaram no boot e o health check ficou 200. O
+`Dockerfile`/`deploy/start.sh` não foram testados localmente porque Docker não
+está instalado neste host, mas o build remoto validou o caminho.
+
+**Basic auth do painel:** usuário `demo`; a senha está em
+`DEMO_BASIC_AUTH_PASSWORD` no `.env.deploy` (arquivo ignorado pelo Git). O hash
+bcrypt correspondente está em `DEMO_BASIC_AUTH_HASH` no Render.
+
+Observação: `render.yaml` usa `sync: false` para `JOGA_WEBAUTHN_ORIGIN_WEB`; o
+host real foi definido no serviço criado pela API. Se o Blueprint for usado no
+futuro, preencha essa variável com `https://<url-do-demo>`.
 
 ## 9. GitHub (worker de e-mail)
 
@@ -220,6 +240,16 @@ Secrets do repositório:
 - `JOGA_DATABASE_URL` (Session pooler)
 - `JOGA_EMAIL_API_KEY`
 - `JOGA_EMAIL_FROM`
+
+**Estado (2026-11-18):** o repositório ainda tem 0 secrets. O `GITHUB_TOKEN`
+fornecido consegue ler o repositório e a lista de secrets, mas a API recusou a
+escrita com `403 Resource not accessible by personal access token`. A Outbox
+remota tem `password_reset` e `security_alert` em `queued`, aguardando o worker.
+
+Para concluir, o token precisa de `Secrets: Read and write` e
+`Actions: Read and write` no repositório `kramirodev/Joga` (fine-grained PAT).
+Depois de atualizar `GITHUB_TOKEN` no `.env.deploy`, os três secrets podem ser
+gravados pela API e o workflow disparado.
 
 Depois do merge na `main`, em Actions → "Email worker (Outbox)" → *Run
 workflow* (`workflow_dispatch`), conferir no log `enviados` > 0 e, no banco,
@@ -230,59 +260,61 @@ Lembretes: o cron do GitHub é best-effort (5–15 min), só roda no branch padr
 
 ## 10. UptimeRobot
 
-Monitor HTTP(s) em `https://<serviço>.onrender.com/api/v1/health/live`,
-intervalo de 5 minutos, alerta por e-mail. Sem basic auth (o health é aberto).
-Isso também reduz o sleep do Render.
+Monitor HTTP(s) criado em `<url-do-demo>/api/v1/health/live`, intervalo de 5
+minutos, alerta no contato de e-mail já existente na conta. Sem basic auth (o
+health é aberto). Isso também reduz o sleep do Render.
 
-**Estado:** pendente (sem URL pública).
+| Item | Valor |
+|---|---|
+| Monitor | `804728291` |
+| Tipo | HTTP(s) |
+| Intervalo | 300 s |
+| Contato | `9051684` (e-mail, ativo) |
+| Status inicial | criado, aguardando o primeiro check |
 
 ## 11. Smoke test
 
-### Executado localmente (API + Postgres local, sem Caddy)
+### Ambiente público (Render + Supabase)
 
 | Verificação | Resultado |
 |---|---|
-| `GET /api/v1/health/live` | 200 `{"status":"ok"}` |
-| `GET /api/v1/health/ready` | 200 `{"status":"ok","database":"ok"}` |
+| `GET /api/v1/health/live` sem credencial | 200 `{"status":"ok"}` |
+| `GET /api/v1/health/ready` sem credencial | 200 `{"status":"ok","database":"ok"}` |
+| `GET /` sem basic auth | 401 |
+| `GET /` com `demo:<senha>` | 200, SPA carrega |
+| Login do painel (`/auth/web/email/login`) | 200; organização `Arena Demo` visível |
+| `GET /organizations` com sessão do painel | 200, papel `OWNER` |
+| Cookies do painel | `joga_web_refresh` HttpOnly/Secure/SameSite=strict/Path=`/api/v1/auth/web`; `joga_web_csrf` Secure/SameSite=strict/Path=`/` |
 | `POST /auth/email/login` com senha errada | 401 `invalid_credentials` |
-| Login do jogador (e-mail + senha) | 200, access + refresh emitidos |
+| Login do jogador | 200, access + refresh emitidos |
 | `GET /auth/emails` | 200, apenas `jogador@demo.joga.test` |
 | `GET /discovery/bookable-venues` | 200, `Arena Demo Centro` |
 | `GET /me/tickets` | 200, `source=ledger`, saldo 0 |
 | `PUT /me/email` | 200, altera só o pagador |
 | `GET /auth/emails` após o PUT | continua apenas `jogador@demo.joga.test` |
 | `POST /auth/email/code` (`registration`) | 403 `signup_closed` |
-| Login do painel (`/auth/web/email/login`) | 200; cookies `joga_web_refresh` (HttpOnly) e `joga_web_csrf`, ambos `SameSite=Strict`, `Path=/` |
-| `GET /organizations` com sessão do painel | 200, `Arena Demo`, papel `OWNER` |
-| `POST /auth/email/code` (`password_reset`) | 202 com `challenge_id` |
-| Worker `scripts.deliver_emails --once` com sender fake | `enviados=2`; `email_deliveries.status='sent'` |
+| `POST /auth/email/code` (`password_reset`) | 202 com `challenge_id`; `email_deliveries` remoto em `queued` |
 
-### Caddy validado com o binário oficial (SPA stub, porta 8090)
+O `SameSite=strict` é o valor emitido pelo Starlette; equivale semanticamente a
+`SameSite=Strict`. Nenhum cookie, CSP ou CORS foi alterado.
 
-O Caddyfile real foi executado com o Caddy 2.11.9 oficial para Windows,
-substituindo apenas o `root` por um diretório temporário com um `index.html`
-stub. O restante (proxy, basic auth, fallback) é o mesmo do container:
+### Ensaio local
 
 | Verificação | Resultado |
 |---|---|
-| `GET /api/v1/health/live` sem basic auth | 200 |
-| `GET /api/v1/health/ready` sem basic auth | 200 |
-| `GET /` sem basic auth | 401 |
-| `GET /` com `demo:<senha>` | 200, corpo do SPA |
-| `GET /painel/rota` com basic auth | 200, fallback para `index.html` |
-| `caddy validate --config deploy/Caddyfile --adapter caddyfile` | `Valid configuration` |
+| Seed no Postgres local, 2 execuções | idempotente; segunda preservou IDs e criou 0 janelas |
+| Caddy 2.11.9 oficial com SPA stub | health 200 sem basic auth; `/` 401 sem auth; `/` 200 com `demo`; fallback do SPA 200 |
+| `caddy validate` | `Valid configuration` |
+| Backend | `ruff`, `ruff format --check`, `mypy app` e `alembic check` limpos |
+| Testes | 709 passed, 33 skipped |
+| Docker local | não executado (Docker/Node ausentes neste host); o build remoto do Render ficou **live** |
 
-### Ainda não executado (bloqueado)
+### Pendente
 
 | Verificação | Motivo |
 |---|---|
-| `docker build -t joga-demo .` | Docker não está instalado neste host |
-| `docker run ...` e smoke na porta 8080 do container | depende do build Docker |
-| SPA real compilado (pnpm/Vite) | Node/pnpm não estão instalados neste host |
-| `GET /` com basic auth no Render | sem deploy |
-| Migração/seed no Supabase | sem URL/senha do Session pooler |
-| Reset com e-mail real no Brevo | sem API key e sem worker remoto |
-| UptimeRobot | sem URL pública |
+| Worker do GitHub e envio Brevo | `GITHUB_TOKEN` sem `Secrets: write`; Outbox remota em `queued` |
+| Reset completo (código recebido → nova senha) | depende de uma caixa de entrada real; os e-mails do seed são `@demo.joga.test` e não recebem mensagens |
 
 ## 12. Limitações do free tier
 
