@@ -67,7 +67,8 @@ def hermetic_test_settings() -> Iterator[None]:
     """
     overrides = {
         "JOGA_ENVIRONMENT": "test",
-        "JOGA_DATABASE_URL": "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga",
+        "JOGA_DATABASE_URL": os.environ.get("JOGA_TEST_DATABASE_URL")
+        or "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga",
         "JOGA_AUTH_EMAIL_ENABLED": "false",
         "JOGA_AUTH_PHONE_ENABLED": "true",
         "JOGA_ALLOW_EMAIL_REGISTRATION": "true",

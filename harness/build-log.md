@@ -1524,3 +1524,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   histórico; não houve force push nem reescrita.
 - **Fora do escopo:** produção, PSP/NFS-e/escrow/KYC/SMS, CORS/cookies/CSP e
   qualquer recurso pago.
+
+
+### 2026-11-18 - Correção do CI (backend e mobile)
+
+- **Backend:** `tests/conftest.py` passou a usar `JOGA_TEST_DATABASE_URL`
+  quando definido (no CI, `...:5432/joga_test`) e mantém o fallback local em
+  `...:5434/joga`. Corrige o teste de access log que tentava 5434 no runner.
+- **Mobile:** `expo` de `~58.0.25` para `~58.0.26`; `pnpm-lock.yaml` atualizado
+  com pnpm 11.25.0. `expo install --check`, lint, Prettier, TypeScript e
+  `pnpm install --frozen-lockfile` verdes.
+- **Gates backend:** `ruff check .`, `ruff format --check .` e
+  `pytest`: 709 passed, 33 skipped.
+- **Fora do escopo:** produção, PSP/dinheiro real, CORS/cookies/CSP.
