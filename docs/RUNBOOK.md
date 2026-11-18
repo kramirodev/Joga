@@ -331,6 +331,153 @@ docker exec joga-postgres-1 psql -U joga -d joga_restore_test -tAc "SELECT versi
 
 Depois de validar, remova o banco temporário e o arquivo de dump. Produção exige storage externo, criptografia, retenção e teste de restore documentado.
 
+### E-mail transacional (beta por e-mail)
+
+Perfil beta (ADR 0050): login é **e-mail + senha**; telefone fica
+desabilitado por flag. O código de 6 dígitos serve apenas para verificar o
+e-mail no cadastro, trocar o e-mail e redefinir a senha. O `.env` local não
+deve ser versionado.
+
+```dotenv
+JOGA_EMAIL_PROVIDER=brevo
+JOGA_EMAIL_API_KEY=<secret>
+JOGA_EMAIL_FROM=<remetente verificado no Brevo>
+JOGA_EMAIL_DAILY_BUDGET=250
+```
+
+Validar o boot (falha em vez de degradar):
+
+```powershell
+.venv\Scripts\python.exe -c "from app.core.config import get_settings; get_settings()"
+```
+
+Entregar a fila (a API nunca espera o provedor):
+
+```powershell
+# Execução agendada (uma passada; é o modo usado pelo GitHub Actions)
+.venv\Scripts\python.exe -m scripts.deliver_emails --once
+
+# Desenvolvimento local contínuo
+.venv\Scripts\python.exe -m scripts.deliver_emails --loop --interval 30
+```
+
+**Sem worker no Render free.** O serviço web dorme e não mantém `--loop`.
+A entrega é feita por workflows agendados fora do web service:
+
+- `.github/workflows/email-worker.yml`: `*/5 * * * *` (a cada 5 min) chama
+  `python -m scripts.deliver_emails --once`;
+- `.github/workflows/email-cleanup.yml`: `17 3 * * *` (1x/dia) chama
+  `python -m scripts.cleanup_email --outbox-hours 1 --delivery-days 90`.
+
+**Perfil do demo.** Os workflows usam `JOGA_ENVIRONMENT=development` e
+`JOGA_PSP_PROVIDER=simulator` por padrão, sem credenciais de Mercado Pago. O
+demo não tem PSP real; o boot em `production` exigiria token, webhook e URL
+HTTPS e falharia antes de drenar a fila. Para um ambiente com PSP real, defina
+as repository variables `JOGA_ENVIRONMENT=production` e
+`JOGA_PSP_PROVIDER=mercadopago` e configure os secrets do PSP (ver abaixo).
+
+Secrets do worker: `JOGA_DATABASE_URL`, `JOGA_EMAIL_API_KEY` e
+`JOGA_EMAIL_FROM` (opcional `JOGA_EMAIL_REPLY_TO`). O cleanup precisa apenas de
+`JOGA_DATABASE_URL`. Nenhum job de demo usa `JOGA_MERCADO_PAGO_*`. Para um
+ambiente `production`, além das vars do PSP, adicione ao workflow os secrets
+`JOGA_PHONE_HASH_SECRET` e `JOGA_TOKEN_HASH_SECRET` (o boot de produção recusa
+os valores padrão).
+
+**Supabase e IPv4.** Com `JOGA_DATABASE_URL` no Supabase, use a URL do
+**Session pooler** (IPv4), no formato
+`postgresql+psycopg://postgres.<project-ref>:<senha>@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+O host direto do Supabase é IPv6 e não é alcançável pelo runner do GitHub nem
+pelo Render free. A URL precisa começar com `postgresql+psycopg://`.
+
+**Quando o workflow passa a existir.** O arquivo só é registrado no GitHub
+depois do merge no branch padrão (`main`). Antes disso, `workflow_dispatch` não
+aparece na aba Actions e o cron não roda. Depois do merge, o cron é
+best-effort: na prática, 5–15 min (pode atrasar mais em pico). Dispare
+manualmente em **Actions → Email worker → Run workflow** para validar.
+
+`POST /auth/email/code` responde `202` quando o desafio e a entrega foram
+enfileirados; o código chega em condições normais dentro desse intervalo. O
+GitHub desativa schedules após 60 dias sem atividade no repositório; reative o
+workflow ou dispare manualmente.
+
+Conferir atraso da Outbox e estado das entregas (PostgreSQL):
+
+```sql
+SELECT status, count(*), min(created_at), max(created_at)
+FROM outbox_events
+WHERE event_type = 'email.delivery_requested'
+GROUP BY status;
+
+SELECT status, count(*), min(created_at)
+FROM email_deliveries
+WHERE created_at >= now() - interval '1 day'
+GROUP BY status;
+```
+
+Atraso da fila (evento mais antigo ainda pendente/falho):
+
+```sql
+SELECT min(created_at) AS oldest_pending,
+       now() - min(created_at) AS queue_delay
+FROM outbox_events
+WHERE event_type = 'email.delivery_requested'
+  AND status IN ('PENDING', 'FAILED');
+```
+
+Aceite do `workflow_dispatch` no demo:
+
+1. Dispare **Actions → Email worker → Run workflow**.
+2. O log termina com `enviados=1` (ou mais) e exit code 0.
+3. Confirme no banco:
+
+```sql
+SELECT id, kind, status, attempts, provider_message_id, last_error_code
+FROM email_deliveries
+ORDER BY created_at DESC
+LIMIT 5;
+
+SELECT status, count(*)
+FROM outbox_events
+WHERE event_type = 'email.delivery_requested'
+GROUP BY status;
+```
+
+O aceite é `email_deliveries.status = 'sent'` com `provider_message_id`
+preenchido e o evento correspondente `DISPATCHED` na Outbox. Se ficar
+`FAILED`, o `last_error_code` indica o motivo (sem corpo do provedor).
+
+Operação:
+
+- Login: `POST /auth/email/login` com e-mail + senha. Não existe login por
+  código. O rate limit é 10/15 min por e-mail e 30/15 min por IP; ajuste com
+  `JOGA_EMAIL_LOGIN_MAX_PER_EMAIL`/`JOGA_EMAIL_LOGIN_MAX_PER_IP`.
+- Senha: Argon2id com 64 MiB, 3 iterações e paralelismo 4. O banco guarda
+  apenas a string PHC; nunca logue senha/hash. A política é mínimo 10, máximo
+  128, com bloqueio de senhas comuns e do próprio e-mail.
+- Cadastro: o código verifica o e-mail; a senha é definida no `register`.
+  Recuperação: `purpose=password_reset` → `verify` →
+  `POST /auth/email/password/reset` (revoga todas as sessões e envia aviso).
+- Troca autenticada: `POST /me/password` (revoga as outras sessões).
+- `email_deliveries` é o log de entrega; não contém corpo, código, senha nem
+  endereço.
+- A Outbox guarda o destinatário e o código apenas até o despacho. Agende a
+  limpeza para reduzir a retenção do payload:
+  `python -m scripts.cleanup_email --outbox-hours 1 --delivery-days 90`.
+- Consumo em 80% do orçamento gera `email.budget_warning`; em 100% o envio novo
+  é bloqueado com `email.budget_exhausted` e a resposta pública continua
+  genérica (`202`). Verifique a fila e a cota do provedor.
+- Falha transitória vai para a fila com backoff. Falha permanente
+  (`provider_rejected`) marca a credencial como não entregável após
+  `JOGA_EMAIL_BOUNCE_THRESHOLD`; o jogador precisa de passkey/suporte.
+- `JOGA_SIGNUP_MODE=closed` é o kill switch imediato de cadastro, sem deploy.
+- Para voltar ao telefone no lançamento, troque as flags (e-mail continua
+  ligado como secundário):
+  `JOGA_AUTH_PHONE_ENABLED=true`, `JOGA_ALLOW_PHONE_REGISTRATION=true`,
+  `JOGA_PHONE_REQUIRED_FOR_BOOKING=true`.
+- Testes nunca usam o provedor real: `JOGA_EMAIL_PROVIDER=fake` e o fixture
+  hermético de `tests/conftest.py` ignora o `.env` do desenvolvedor.
+
+
 ## 5. Mobile
 
 ```powershell

@@ -3,7 +3,7 @@
 **Versão:** 2.0<br>
 **Data:** 17 de novembro de 2026<br>
 **Fonte:** migrations Alembic em `backend/migrations/versions/` e modelos SQLAlchemy em `backend/app/modules/`.<br>
-**Head de migrations:** `s3d4e5f6a7b8` (cadeia linear, 62 revisões).<br>
+**Head de migrations:** `y8b9c0d1e2f3` (cadeia linear, 67 revisões).<br>
 **Natureza:** este documento substitui a versão incremental das Fases 3–4. Ele descreve o schema **existente**, não o alvo. O alvo financeiro da ADR 0049 está na Fase 14E.
 
 > **Regra de leitura.** O banco é a fonte da verdade. Este resumo existe para orientar leitura e revisão; a definição exata de colunas, tipos e constraints está nos modelos e migrations. Não usar este documento para `alembic revision --autogenerate`.
@@ -25,19 +25,22 @@
 
 | Tabela | Papel |
 |---|---|
-| `users` | Identidade central, status, e-mail, `suspended_until` |
+| `users` | Identidade central, status, `suspended_until`; `email` é legado do pagador e não autentica (ADR 0050) |
+| `user_emails` | Credencial de e-mail normalizada, verificação, primária, liberação e bounce (ADR 0050) |
+| `user_passwords` | Credencial de senha Argon2id/PHC, data da troca e marca de comprometimento (ADR 0050) |
 | `user_phones` | Telefone protegido, hash de busca, verificação e estado |
-| `phone_challenges` | Desafios OTP, hash, tentativas, expiração e recibo |
+| `phone_challenges` | Desafios OTP genéricos (`subject_type` phone/email), hash, tentativas, expiração e recibo |
 | `devices` | Dispositivos vinculados e sinais mínimos |
 | `passkey_credentials` | Credenciais WebAuthn, contador e revogação |
 | `passkey_challenges` | Desafios de registro/autenticação, uso único |
 | `sessions` | Access/refresh hashes, família, rotação e revogação |
 | `security_events` | Eventos de autenticação e abuso |
+| `email_deliveries` | Log de entrega por hash, tipo, status, tentativas, provedor e erro interno (sem corpo/código) |
 | `audit_logs` | Ator, ação, recurso, motivo e timestamp |
 
-**Constraints relevantes:** telefone ativo único por hash; `credential_id` único; refresh hash único; sessão revogada não autentica; conta suspensa só acessa rotas de recurso.
+**Constraints relevantes:** telefone ativo único por hash; e-mail ativo único por endereço normalizado; no máximo uma credencial primária ativa por usuário; `credential_id` único; refresh hash único; sessão revogada não autentica; conta suspensa só acessa rotas de recurso.
 
-**Lacunas conhecidas:** não há endpoint de recuperação de conta; `ChallengePurpose.recovery` existe no modelo, mas não é aceito pela API. Não há limite por dispositivo em refresh/passkey/WS.
+**Lacunas conhecidas:** não há endpoint de recuperação de conta; `ChallengePurpose.recovery` existe no modelo, mas não é aceito pela API. Não há limite por dispositivo em refresh/passkey/WS. A Outbox guarda destinatário/código temporariamente até a rotina de limpeza. Senhas nunca são retornadas; a recuperação usa o mesmo código de e-mail e não reativa conta suspensa.
 
 ---
 
@@ -284,5 +287,6 @@ receivable + evidência + prazo, sem clawback) e execução real na 14B.
 - Reservas/pagamentos: `26b70fd0fbc7`, `c97807d1b140`, `bb4083b7b697`, `c15a1b2c3d4e`, `f4b5c6d7e8f9`, `e4a1c9d7b203`.
 - Crédito/temporada: `d3e4f5061927`, `e4f5061a2838`, `c9f0a1b2d3e4`, `b7c8394d5162`, `c8d94a5e6273`, `d9e95b6f7384`, `f5b2d8e4c310`.
 - Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`, `m7d8e9f0a1b2`, `n8e9f0a1b2c3`, `o9f0a1b2c3d4`, `p0a1b2c3d4e5`, `q1b2c3d4e5f6`, `r2c3d4e5f6a7`, `s3d4e5f6a7b8`, `t4e5f6a7b8c9`, `u5f6a7b8c9d0`, `v6a7b8c9d0e1`.
+- E-mail e senha (ADR 0050): `x7a8b9c0d1e2` (`user_emails`, `email_deliveries`, `subject_type`) e `y8b9c0d1e2f3` (`user_passwords`, `password_reset`, `password_changed`).
 
-O head atual é `v6a7b8c9d0e1`. A Fase 15 sobre o ledger em reais adicionou apenas o snapshot de prazo (`v6a7b8c9d0e1`). A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.
+O head atual é `y8b9c0d1e2f3`. A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.

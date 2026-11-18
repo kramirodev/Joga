@@ -1360,3 +1360,76 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **CPF, termos e NFS-e:** `GET/PUT/DELETE /me/cpf`, `GET /legal/terms/current` e `POST /legal/terms/accept` consumidos; compra de pacote exige `terms_version_id` quando há versão aprovada. A confirmação mostra o placeholder da NFS-e sem inventar número.
 - **Verificação real:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android --clear` concluídos com exit 0. Bundle Android gerado (758 módulos).
 - **Pendências:** aceite de termos no passe não é exigido pelo endpoint atual; NFS-e real e referência não são devolvidas em `BookingView`; CPF não é obrigatório na criação da reserva; passkey iOS e build nativo de produção continuam fora do escopo.
+
+### 2026-11-18 - Credencial de login por e-mail no beta (ADR 0050)
+
+- **Decisao:** ADR 0050 registra a fase 1 (e-mail primario, telefone dormente
+  por flag, cadastro aberto) e a fase 2 (telefone obrigatorio no lancamento,
+  so flags). ADR 0015/0016 e `AGENTS.md` §4 continuam validos; a exigencia de
+  telefone foi adiada, nao revogada.
+- **Dados:** `user_emails` (autoridade da credencial) e `email_deliveries`
+  (log sem corpo/codigo/endereco). `phone_challenges` ganhou `subject_type` e
+  as finalidades `email_verification`, `email_login` e `email_change`.
+  `users.email` continua legado do pagador e nao autentica.
+- **Migracao:** `x7a8b9c0d1e2`. Ciclo upgrade/downgrade/upgrade e
+  `alembic check` limpos em PostgreSQL descartavel (`joga_email_migration`).
+- **API:** `/auth/email/code|verify|register|login`, `/auth/emails`,
+  `/me/account/email/challenges` e `PATCH /me/account/email`; rotas web
+  `/auth/web/email/registration|login`. Rotas de telefone sob flag. Passkey
+  aceita e-mail informado sem enumerar contas.
+- **Entrega:** Outbox existente, `EmailSender` com Brevo/Resend/fake, sete
+  templates PT-BR, idempotencia por chave, backoff, bounce e orcamento diario
+  (alerta em 80%, bloqueio em 100%). Brevo ja validado manualmente pelo dono
+  em `.env`; os testes usam `fake` e zero rede.
+- **Testes:** 619 passed, 33 skipped na suite completa (sem
+  `JOGA_TEST_DATABASE_URL`); testes PostgreSQL de e-mail executados a parte
+  com 3 passed (indice unico parcial e concorrencia de cadastro).
+  `ruff check`, `ruff format --check` e `mypy app` limpos.
+- **Infra de teste:** `tests/conftest.py` passou a isolar a suite do `.env` real
+  (segredos/placeholders, telefone habilitado por padrao e banco local),
+  evitando que credenciais reais do desenvolvedor entrem em testes.
+- **Fora do escopo:** OAuth social, SMS real, PSP/dinheiro, marketing, edicao
+  de `mobile/` e `web/`, gatilho automatico de alerta em suspensao/exclusao e
+  UI nova nos dois clientes.
+- **Correcoes de aceite:** credencial movida para `PATCH /me/account/email`
+  (e desafio para `/me/account/email/challenges`), deixando `/me/email` apenas
+  como pagador; testes provam que `PUT /me/email` nao altera a credencial.
+  Workflows `email-worker.yml` (5 min) e `email-cleanup.yml` (diario) drenam
+  a Outbox sem depender de worker no Render. `conftest.py` neutraliza
+  `JOGA_CPF_KEY`, `JOGA_CPF_KEY_ID`, `JOGA_DEV_FIXED_OTP` e
+  `JOGA_WEB_COOKIE_SECURE`, com teste de isolamento. Limites de beta por IP
+  passam a 50/h e 20 cadastros/dia, separados do limite por endereco.
+- **Correcao do demo:** workflows usam `JOGA_ENVIRONMENT=development` e
+  `JOGA_PSP_PROVIDER=simulator` por padrao, sem `JOGA_MERCADO_PAGO_*`; o
+  perfil de producao fica por repository variables. RUNBOOK documenta o
+  Session pooler IPv4 do Supabase, o merge no branch padrao e o cron
+  best-effort de 5-15 min. Simulacao local de `--once` com sender fake
+  resultou em `email_deliveries.status=sent` e Outbox `DISPATCHED`.
+- **Proximo:** handoff mobile/web; agendar `scripts.cleanup_email`; avaliar
+  dominio proprio/DMARC antes do lancamento.
+
+### 2026-11-19 - Login por e-mail e senha (ADR 0050, revisao 2)
+
+- **Nota:** registrado inicialmente como uma ADR separada; consolidado na ADR
+  0050 por decisao do dono do produto, para nao haver duas ADRs para a mesma
+  decisao.
+- **Decisao:** login passa a ser e-mail + senha na ADR 0050. Codigo de 6
+  digitos fica restrito a verificacao de e-mail no cadastro, troca de e-mail e
+  reset de senha. Login por codigo foi removido do contrato, sem flag de
+  reativacao.
+- **Dados:** `user_passwords` (user_id PK, PHC Argon2id, `password_changed_at`,
+  `compromised_at`); `phone_challenges` ganhou `password_reset`;
+  `email_deliveries` ganhou `password_reset` e `password_changed`.
+- **Hash:** `argon2-cffi==25.1.0`, Argon2id com 64 MiB, 3 iteracoes,
+  paralelismo 4; versao fixada em `pyproject.toml` e `requirements.lock`.
+- **API:** registro com senha; login sem challenge; reset com revogacao de
+  todas as sessoes; troca autenticada com revogacao das demais; erros
+  `invalid_credentials`, `weak_password` e `invalid_password_reset`.
+- **Rate limit:** 10/15 min por e-mail e 30/15 min por IP; e-mail inexistente
+  executa hash descartavel para equalizar o custo.
+- **Testes:** hash/politica, login generico, rate limit, reset/replay/expiracao,
+  troca de senha, passkey sem senha e prova de que codigo nao autentica.
+- **Migracao:** `y8b9c0d1e2f3`; ciclo upgrade/downgrade/upgrade e
+  `alembic check` no banco descartavel.
+- **Fora do escopo:** MFA obrigatoria, fluxo para marcar `compromised_at`,
+  recalibracao do Argon2 com carga real, edicao de `mobile/`/`web/`.

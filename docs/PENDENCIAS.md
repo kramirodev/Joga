@@ -227,6 +227,29 @@ Itens descobertos na auditoria integral e ainda não implementados. São bloquea
 | Retry de checkout no-op | P1 | `wallet.tsx:638,699-704` | Correção mobile |
 | Documentação normativa desatualizada | P0 | técnica/DATA_MODEL/README/GOALS/RUNBOOK | Revisão 16/11 |
 
+## Pendências da credencial de e-mail no beta (ADR 0050)
+
+| Pendência | Fase | Estado/ação |
+|---|---|---|
+| Domínio próprio, SPF/DKIM/DMARC | Lançamento | Beta usa remetente verificado no Brevo; reputação de domínio pendente |
+| E-mail descartável | Beta contínuo | Lista embutida + `JOGA_EMAIL_DISPOSABLE_DOMAINS`; sem serviço pago |
+| Recuperação sem telefone | Beta | Mesmo código de e-mail + passkey; suporte manual documentado no RUNBOOK |
+| Alerta de novo dispositivo/sessão | 10/19 | **Implementado** para login por e-mail com `device_name` novo e passkey criada; suspensão/exclusão ainda não disparam |
+| Alerta de segurança em suspensão/exclusão | 17/19 | Template `security_alert` pronto; gatilho de suspensão/exclusão ainda não envia |
+| Rotina de limpeza da Outbox de e-mail | Operação | **Workflow diário** em `.github/workflows/email-cleanup.yml`; confirmar secrets e retenção |
+| Limite por IP em CGNAT | Beta | Limite por endereço (`5/h`) separado do IP (`50/h`, `20` cadastros/dia) para não bloquear testadores na mesma rede; evoluir para limite por dispositivo/id de instalação |
+| Renomear `phone_challenges`/`phone_hash` | Futuro | Nome histórico mantido para não quebrar dados; renomear para desafio/sujeito quando houver janela de migração |
+| Monitoramento de bounce e cota | Operação | Alerta em 80% e bloqueio em 100% via evento `email.budget_*`; falta painel/alerta externo |
+| `users.email` legado | 14E/19 | Continua como e-mail do pagador, sem autoridade de login; unificar ou aposentar exige migração |
+| UI mobile de e-mail | Mobile | Implementada: código, cadastro, login, reset, troca de senha e troca de e-mail |
+| UI web de e-mail | Web | Implementada: login/cadastro por e-mail, reset e troca de senha no painel |
+| Provedor real e cota | Operação | Brevo free (300/dia) escolhido; Resend alternativa com domínio verificado |
+| Passkey iOS | 1/10 | Continua pendente de build iOS; e-mail não depende de passkey |
+| Marcação de senha comprometida | 17/19 | Coluna `user_passwords.compromised_at` existe; falta fluxo para marcá-la e forçar reset |
+| Recalibrar Argon2id | 19B | Parâmetros atuais (64 MiB, 3 iterações, p=4) serão medidos com carga real |
+| MFA/passkey obrigatória | 19B | Passkey é preferencial, não obrigatória no beta |
+
+
 ## Regra de avanço
 
 - Não iniciar 14B, 15 ou 19 antes da 14E e dos pareceres da ADR 0049.

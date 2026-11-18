@@ -690,3 +690,329 @@ Resposta: `{"email": "pagador@example.com"}` ou `{"email": null}`.
   `ticket_url`, `expires_at`, `amount_cents` e `external_reference`.
 - `external_reference` é o ID interno da cobrança na reserva e
   `kind:reference_id` na compra/passe; é o mesmo valor enviado ao PSP.
+
+## 11. Login por e-mail e senha (ADR 0050) — contrato v2026-11-19
+
+**Status:** backend implementado em 2026-11-19. O login usa **e-mail + senha**.
+O código de 6 dígitos existe apenas para verificar o e-mail no cadastro, trocar
+o e-mail e redefinir a senha. O login por código foi removido do contrato. O
+caminho de telefone continua existindo e fica dormente por flag.
+
+### 11.1 Flags que o app e o painel devem ler
+
+O backend falha no boot em combinação inválida. O perfil é definido no
+ambiente/build; o app não deve presumir flags a partir de dados do usuário.
+Rotas desligadas respondem `503` com código estável, e cadastro fechado
+responde `403 signup_closed`.
+
+| Flag | Beta | Lançamento | Efeito no cliente |
+|---|---|---|---|
+| `JOGA_AUTH_EMAIL_ENABLED` | `true` | `true` | Rotas `/auth/email/*`, `/auth/emails` e `/me/account/email*` disponíveis |
+| `JOGA_AUTH_PHONE_ENABLED` | `false` | `true` | Rotas de telefone disponíveis (senão `503 phone_auth_disabled`) |
+| `JOGA_ALLOW_EMAIL_REGISTRATION` | `true` | `true` | Cadastro por e-mail aberto |
+| `JOGA_ALLOW_PHONE_REGISTRATION` | `false` | `true` | Cadastro por telefone aberto |
+| `JOGA_PHONE_REQUIRED_FOR_BOOKING` | `false` | `true` | Criar reserva exige telefone verificado |
+| `JOGA_SIGNUP_MODE` | `open` | `open` | `closed` bloqueia cadastro público (kill switch) |
+
+No beta, o app deve esconder a entrada por telefone e mostrar e-mail + senha.
+No lançamento, deve mostrar telefone como obrigatório e manter e-mail + senha
+para login/recuperação.
+
+### 11.2 Cadastro (código verifica o e-mail; senha é definida aqui)
+
+```http
+POST /api/v1/auth/email/code
+Content-Type: application/json
+
+{"email":"jogador@example.com","purpose":"registration"}
+```
+
+Resposta `202`:
+
+```json
+{
+  "challenge_id": "uuid",
+  "expires_at": "2026-11-19T12:10:00Z",
+  "resend_after_seconds": 60
+}
+```
+
+- `purpose`: `registration` ou `password_reset` (não existe mais `login`).
+- `202` significa **enfileirado**, não entregue. A entrega roda em workflow a
+  cada 5 min; em condições normais o código chega nesse intervalo.
+- A resposta é idêntica para e-mail existente e inexistente.
+
+```http
+POST /api/v1/auth/email/verify
+
+{"challenge_id":"uuid","code":"123456"}
+```
+
+Resposta `200` com `challenge_id`, `purpose`, `verified_at` e
+`receipt_expires_at`. O recibo é curto, de uso único e não é token de sessão.
+
+```http
+POST /api/v1/auth/email/register
+
+{
+  "challenge_id": "uuid",
+  "email": "jogador@example.com",
+  "password": "uma frase longa e fácil de lembrar",
+  "display_name": "Jogador",
+  "device_name": "Moto G",
+  "platform": "android"
+}
+```
+
+Resposta `201` = `TokenResponse` (`access_token`, `refresh_token`,
+`access_expires_at`, `refresh_expires_at`, `user`). O recibo é consumido uma
+única vez; repetir responde `400 invalid_receipt`.
+
+- Senha fora da política responde `400 weak_password` (o código **não** é
+  consumido, permitindo corrigir e reenviar).
+- `409 email_already_registered` só é devolvido depois que o cliente provou
+  controle do endereço (código verificado).
+- `429 rate_limited` quando o limite diário de cadastros por IP é atingido.
+- `403 signup_closed`/`403 email_registration_disabled` quando o cadastro está
+  fechado.
+
+### 11.3 Login por senha (sem código, sem challenge)
+
+```http
+POST /api/v1/auth/email/login
+
+{
+  "email": "jogador@example.com",
+  "password": "uma frase longa e fácil de lembrar",
+  "device_name": "Moto G",
+  "platform": "android"
+}
+```
+
+Resposta `200` = `TokenResponse`. Erros:
+
+- `401 invalid_credentials` para e-mail inexistente, senha errada, conta
+  suspensa, credencial não verificada ou senha não definida. A resposta é
+  **idêntica** em todos os casos; não inferir existência de conta.
+- `429 rate_limited` com `Retry-After` (10 tentativas/15 min por e-mail e
+  30/15 min por IP).
+- `400 invalid_email` para formato inválido.
+
+O login **não** aceita `challenge_id` e **não** existe mais rota de login por
+código. `401 invalid_email_login` sai do contrato.
+
+### 11.4 Redefinição de senha
+
+```http
+POST /api/v1/auth/email/code
+
+{"email":"jogador@example.com","purpose":"password_reset"}
+```
+
+O código usa os mesmos limites, cooldown e fila. A resposta é sempre `202`
+para e-mail existente ou não.
+
+```http
+POST /api/v1/auth/email/password/reset
+
+{
+  "challenge_id": "uuid",
+  "email": "jogador@example.com",
+  "new_password": "outra frase longa e fácil de lembrar"
+}
+```
+
+Resposta `200`:
+
+```json
+{"status": "ok"}
+```
+
+- Código de uso único, TTL curto e invalidação após uso.
+- `400 weak_password` para senha fora da política.
+- `400 invalid_password_reset` para código/recibo/e-mail/conta inválidos.
+- Revoga **todas** as sessões.
+- Envia aviso `password_changed` ao e-mail.
+- Não reativa conta suspensa.
+
+### 11.5 Troca de senha autenticada
+
+```http
+POST /api/v1/me/password
+Authorization: Bearer <access_token>
+
+{
+  "current_password": "senha atual",
+  "new_password": "nova frase longa e fácil de lembrar"
+}
+```
+
+Resposta `204`. Revoga as **outras** sessões e mantém a atual. Erros:
+`401 invalid_credentials` (senha atual errada), `400 weak_password`.
+
+### 11.6 Credencial e troca de e-mail
+
+```http
+GET /api/v1/auth/emails
+Authorization: Bearer <access_token>
+```
+
+Devolve apenas as credenciais da própria conta, sem qualquer detalhe de senha:
+
+```json
+{
+  "emails": [
+    {
+      "email": "jogador@example.com",
+      "is_primary": true,
+      "verified_at": "2026-11-19T12:00:00Z",
+      "created_at": "2026-11-19T12:00:00Z"
+    }
+  ]
+}
+```
+
+```http
+POST /api/v1/me/account/email/challenges
+Authorization: Bearer <access_token>
+
+{"new_email":"novo@example.com"}
+```
+
+Resposta `202` com `challenge_id`, `expires_at` e `resend_after_seconds`. O
+código vai para o **endereço novo**.
+
+```http
+PATCH /api/v1/me/account/email
+Authorization: Bearer <access_token>
+
+{
+  "new_email": "novo@example.com",
+  "challenge_id": "uuid",
+  "code": "123456"
+}
+```
+
+Resposta `200` com `email`, `is_primary`, `verified_at` e `created_at`.
+
+- Exige código correto no endereço novo.
+- Um aviso é enviado ao endereço antigo.
+- O endereço antigo nunca mais autentica (nem com a senha antiga).
+- As outras sessões são revogadas; a sessão atual continua válida.
+- Nova troca só após 24 h: `429 email_change_cooldown` com `Retry-After`.
+- Endereço igual: `400 email_unchanged`.
+- Endereço usado por outra conta: `409 email_already_registered`.
+- Recibo/código inválido: `400 invalid_email_change`.
+
+**Atenção:** `GET/PUT /api/v1/me/email` continuam sendo o e-mail legado do
+pagador (`users.email`). Não são credencial de login e **não alteram a
+credencial**. A credencial de login é `GET /api/v1/auth/emails` e a troca é
+`PATCH /api/v1/me/account/email`. Não existe alias: um caminho, um significado.
+
+### 11.7 Painel web
+
+```http
+POST /api/v1/auth/web/email/registration
+
+{
+  "challenge_id": "uuid",
+  "email": "operador@example.com",
+  "password": "uma frase longa e fácil de lembrar",
+  "display_name": "Operador",
+  "device_name": "Painel"
+}
+```
+
+```http
+POST /api/v1/auth/web/email/login
+
+{
+  "email": "operador@example.com",
+  "password": "uma frase longa e fácil de lembrar",
+  "device_name": "Painel"
+}
+```
+
+Resposta = `WebSessionResponse` (`access_token`, `access_expires_at`,
+`csrf_token`, `user`, `capabilities`) e cookies `joga_web_refresh` (HttpOnly) e
+`joga_web_csrf`. O restante do contrato web (`/auth/web/refresh`,
+`/auth/web/logout`, CSRF) não muda. Login errado responde
+`401 invalid_credentials`; rate limit responde `429 rate_limited`.
+
+### 11.8 Códigos de erro estáveis
+
+| HTTP | `detail.code` | Quando |
+|---|---|---|
+| `400` | `invalid_email` | Formato/domínio inválido |
+| `400` | `email_domain_not_allowed` | Domínio descartável bloqueado |
+| `400` | `invalid_code_or_challenge` | Código/desafio inválido, expirado ou reutilizado |
+| `400` | `invalid_receipt` | Recibo inválido, expirado, reutilizado ou de outro endereço |
+| `400` | `weak_password` | Senha fora da política |
+| `400` | `invalid_password_reset` | Reset inválido (código, recibo, e-mail ou conta) |
+| `400` | `invalid_email_change` | Falha genérica de troca de e-mail |
+| `400` | `email_unchanged` | Novo endereço igual ao atual |
+| `401` | `invalid_credentials` | Login/troca de senha com credenciais inválidas |
+| `403` | `signup_closed` | Kill switch de cadastro |
+| `403` | `email_registration_disabled` | Cadastro por e-mail desligado |
+| `403` | `phone_registration_disabled` | Cadastro por telefone desligado |
+| `403` | `phone_required` | Reserva exige telefone verificado (lançamento) |
+| `409` | `email_already_registered` | Endereço já vinculado a outra conta ativa |
+| `429` | `rate_limited` | Cooldown/limite por endereço, IP ou login |
+| `429` | `email_change_cooldown` | Troca recente; aguardar 24 h |
+| `503` | `email_auth_disabled` | Credencial de e-mail desligada |
+| `503` | `phone_auth_disabled` | Credencial de telefone desligada |
+
+### 11.9 Handoff mobile
+
+- Substituir a tela de telefone por e-mail + senha quando
+  `AUTH_PHONE_ENABLED=false`.
+- Fluxo de cadastro: e-mail → código (`registration`) → `verify` → criar senha
+  no `register`.
+- Fluxo de login: e-mail + senha em `POST /auth/email/login`; **não** pedir
+  código.
+- Fluxo “esqueci minha senha”: `POST /auth/email/code` com
+  `purpose=password_reset` → `verify` → `POST /auth/email/password/reset`.
+- Troca de senha autenticada: `POST /me/password`.
+- Troca de credencial: `POST /me/account/email/challenges` e
+  `PATCH /me/account/email`. **Nunca** use `PUT /me/email`: esse caminho é o
+  e-mail do pagador e não altera a credencial de login.
+- Reutilizar Keychain/Keystore e a rotação de refresh existentes.
+- Tratar `503` de telefone como credencial indisponível, não como erro fatal.
+- Passkey continua disponível depois do primeiro login e **não pede senha**.
+  `email` em `POST /auth/passkeys/authentication/options` é dica opcional e não
+  filtra credenciais antes da assinatura.
+- Não diferenciar erro de login: mostre a mesma mensagem para
+  `invalid_credentials`.
+- Enquanto `202` do código estiver pendente, mostre “código enviado”; a entrega
+  pode levar até o próximo ciclo do workflow.
+
+### 11.10 Handoff painel web
+
+- Trocar a tela de login/cadastro por telefone pelo fluxo e-mail + senha:
+  - cadastro: `/auth/email/code` (`registration`) → `/auth/email/verify` →
+    `/auth/web/email/registration` com `password`;
+  - login: `/auth/web/email/login` com `email` + `password`;
+  - recuperação: `/auth/email/code` (`password_reset`) → `verify` →
+    `/auth/email/password/reset`.
+- Manter cookies/CSRF atuais (`joga_web_refresh`, `joga_web_csrf`).
+- `GET/PUT /me/email` do pagador continua separado e não autentica; a
+  credencial usa `/me/account/email`.
+- Login errado responde `401 invalid_credentials`; não exibir “e-mail não
+  cadastrado”.
+
+## 12. Política de senha e rate limit (ADR 0050)
+
+- Senha: mínimo **10** e máximo **128** caracteres; passphrase permitida; sem
+  exigência de símbolo/maiúscula e sem rotação periódica obrigatória.
+- Bloqueio de senhas comuns (lista local) e de senha igual ao e-mail/nome
+  local; senha fora da política responde `400 weak_password`.
+- Hash: Argon2id, `memory_cost=65536` (64 MiB), `time_cost=3`,
+  `parallelism=4`; a string PHC completa é armazenada. Nunca retornar hash,
+  `password_changed_at` ou qualquer detalhe de senha.
+- Login: 10 tentativas/15 min por e-mail e 30/15 min por IP, com `Retry-After`;
+  erro sempre `401 invalid_credentials` e custo de verificação equalizado com
+  hash descartável para e-mail inexistente.
+- O código de e-mail não autentica: só verifica endereço no cadastro e
+  redefine senha. Não há flag para reativar login por código.
+- Passkey continua preferencial e não exige senha. Telefone segue dormente por
+  flag até o lançamento.
