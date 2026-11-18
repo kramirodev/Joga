@@ -339,6 +339,23 @@ function EmailCode() {
   const expiresRemaining = secondsUntil(expiresAt);
   const canResend = !resending && resendRemaining === 0;
 
+  if (!challengeId || !email) {
+    return (
+      <Page title="Digite o código">
+        <StateScreen
+          icon="mail"
+          title="Solicite um código"
+          text="O desafio expirou ou a tela foi aberta sem um pedido de código."
+          actions={
+            <Btn tone="primary" go={purpose === 'login' ? 'login-email' : 'signup-email'}>
+              Pedir código
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
   const verify = async () => {
     if (!challengeId || busy) {
       return;
@@ -477,6 +494,23 @@ function EmailName() {
       setBusy(false);
     }
   };
+
+  if (!challengeId || !email) {
+    return (
+      <Page title="Como você aparece?">
+        <StateScreen
+          icon="mail"
+          title="Verificação expirada"
+          text="Recomece o cadastro para confirmar o e-mail antes de escolher o nome."
+          actions={
+            <Btn tone="primary" go="signup-email">
+              Recomeçar
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
 
   return (
     <Page title="Como você aparece?">
