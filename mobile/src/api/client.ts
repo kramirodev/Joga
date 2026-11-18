@@ -13,6 +13,8 @@ import type {
   ClanRanking,
   CpfStatus,
   Device,
+  EmailCredential,
+  EmailVerification,
   Friend,
   LobbyInvite,
   MatchSummary,
@@ -68,6 +70,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(code);
   }
@@ -157,9 +160,28 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
         code = detail[0].msg;
       }
     }
-    throw new ApiError(response.status, code);
+    throw new ApiError(
+      response.status,
+      code,
+      retryAfterSeconds(response.headers.get('Retry-After')),
+    );
   }
   return body as T;
+}
+
+function retryAfterSeconds(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds);
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 1000));
 }
 
 function qs(params: Record<string, string | number | boolean | null | undefined>): string {
@@ -223,6 +245,61 @@ export const api = {
     },
     logoutAll(token: string) {
       return call<void>('/auth/logout-all', { method: 'POST', token });
+    },
+    emailRequestCode(email: string, purpose: 'registration' | 'login') {
+      return call<Challenge>('/auth/email/code', {
+        method: 'POST',
+        body: { email, purpose },
+      });
+    },
+    emailVerify(challengeId: string, code: string) {
+      return call<EmailVerification>('/auth/email/verify', {
+        method: 'POST',
+        body: { challenge_id: challengeId, code },
+      });
+    },
+    emailRegister(
+      challengeId: string,
+      email: string,
+      displayName: string | null,
+      device?: { name: string; platform: string },
+    ) {
+      return call<Tokens>('/auth/email/register', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          email,
+          ...(displayName?.trim() ? { display_name: displayName.trim() } : {}),
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
+    emailLogin(challengeId: string, email: string, device?: { name: string; platform: string }) {
+      return call<Tokens>('/auth/email/login', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          email,
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
+    emails(token: string) {
+      return call<{ emails: EmailCredential[] }>('/auth/emails', { token });
+    },
+    emailChangeChallenge(token: string, newEmail: string) {
+      return call<Challenge>('/me/account/email/challenges', {
+        method: 'POST',
+        body: { new_email: newEmail },
+        token,
+      });
+    },
+    emailChangeConfirm(token: string, newEmail: string, challengeId: string, code: string) {
+      return call<EmailCredential>('/me/account/email', {
+        method: 'PATCH',
+        body: { new_email: newEmail, challenge_id: challengeId, code },
+        token,
+      });
     },
     phoneChangeChallenge(token: string, newPhone: string) {
       return call<Challenge>('/auth/phone-change/challenges', {

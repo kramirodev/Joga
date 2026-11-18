@@ -15,6 +15,7 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fontScaleFactor } from './src/accessibility';
+import { authConfig } from './src/auth/config';
 import { AppProvider, useApp } from './src/state/app';
 import { Text } from './src/ui/text';
 import {
@@ -26,6 +27,7 @@ import {
   type TabKey,
 } from './src/state/context';
 import { entranceScreens } from './src/screens/entrance';
+import { emailScreens } from './src/screens/email';
 import { coreScreens } from './src/screens/core';
 import { venueScreens } from './src/screens/venues';
 import { walletScreens } from './src/screens/wallet';
@@ -57,6 +59,7 @@ import { Icon } from './src/ui/icons';
 
 const ALL_SCREENS: ScreenDef[] = [
   ...entranceScreens,
+  ...emailScreens,
   ...coreScreens,
   ...venueScreens,
   ...walletScreens,
@@ -259,7 +262,9 @@ function Sheet({
     },
     logout: {
       title: 'Sair da conta?',
-      text: 'Você precisará da passkey ou do telefone para entrar de novo.',
+      text: authConfig.emailEnabled
+        ? 'Você precisará da passkey ou do e-mail para entrar de novo.'
+        : 'Você precisará da passkey ou do telefone para entrar de novo.',
       cancel: 'Ficar',
       confirm: 'Sair',
       danger: true,

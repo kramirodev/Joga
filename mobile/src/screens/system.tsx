@@ -3,6 +3,7 @@ import { Platform, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
 import type { CpfStatus, Device, Passkey } from '../api/types';
+import { authConfig } from '../auth/config';
 import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
@@ -38,7 +39,7 @@ function Settings() {
     {
       icon: 'user' as const,
       title: 'Conta e perfil',
-      sub: 'Nome, tag, e-mail, telefone',
+      sub: 'Nome, tag e e-mail',
       go: 'profile-edit',
     },
     {
@@ -70,6 +71,12 @@ function Settings() {
       title: 'Segurança',
       sub: 'Passkeys, dispositivos e sessões',
       go: 'security',
+    },
+    {
+      icon: 'mail' as const,
+      title: 'Credenciais de login',
+      sub: 'E-mail que autentica a conta',
+      go: 'credentials',
     },
     {
       icon: 'download' as const,
@@ -370,7 +377,7 @@ function Security() {
         <View style={{ marginTop: 6 }}>
           {list.length === 0 ? (
             <Txt variant="tiny" style={{ paddingVertical: 10 }}>
-              Nenhuma passkey cadastrada. Adicione uma para entrar sem SMS.
+              Nenhuma passkey cadastrada. Adicione uma para entrar sem código.
             </Txt>
           ) : null}
           {list.map((item, index) => (
@@ -407,11 +414,21 @@ function Security() {
       <CardList>
         {[
           {
-            icon: 'user' as const,
-            title: 'Trocar telefone',
-            sub: 'Confirme por código no telefone atual',
-            go: 'phone-change',
+            icon: 'mail' as const,
+            title: 'Credenciais de login',
+            sub: 'E-mail ativo e troca de endereço',
+            go: 'credentials',
           },
+          ...(authConfig.phoneEnabled
+            ? [
+                {
+                  icon: 'user' as const,
+                  title: 'Trocar telefone',
+                  sub: 'Confirme por código no telefone atual',
+                  go: 'phone-change',
+                },
+              ]
+            : []),
           {
             icon: 'eye' as const,
             title: 'Dispositivos e sessões',
@@ -438,7 +455,9 @@ function Security() {
         ))}
       </CardList>
       <Notice tone="orange" icon="lock">
-        Trocar o telefone encerra todas as sessões.
+        {authConfig.phoneEnabled
+          ? 'Trocar o telefone encerra todas as sessões.'
+          : 'A troca de e-mail encerra as outras sessões e mantém esta ativa.'}
       </Notice>
     </Page>
   );

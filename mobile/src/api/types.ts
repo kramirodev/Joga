@@ -4,6 +4,20 @@ export type Challenge = {
   resend_after_seconds: number;
 };
 
+export type EmailVerification = {
+  challenge_id: string;
+  purpose: string;
+  verified_at: string;
+  receipt_expires_at: string;
+};
+
+export type EmailCredential = {
+  email: string;
+  is_primary: boolean;
+  verified_at: string | null;
+  created_at: string;
+};
+
 export type Tokens = {
   access_token: string;
   refresh_token: string;

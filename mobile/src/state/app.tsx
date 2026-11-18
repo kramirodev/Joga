@@ -73,6 +73,7 @@ export type OnboardingState = {
 export type AuthState = {
   purpose: 'registration' | 'login';
   phone: string;
+  email: string;
   challengeId: string | null;
   verifiedChallengeId: string | null;
 };
@@ -159,6 +160,7 @@ const AppContext = createContext<AppValue | null>(null);
 const initialAuth: AuthState = {
   purpose: 'registration',
   phone: '',
+  email: '',
   challengeId: null,
   verifiedChallengeId: null,
 };
