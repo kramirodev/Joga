@@ -6,7 +6,7 @@ import {
   api,
   clearAuthTokens,
   refreshSession,
-  requestPhoneChallenge,
+  requestEmailCode,
   setAuthTokens,
 } from "./api";
 
@@ -210,10 +210,17 @@ describe("cliente HTTP do painel", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestPhoneChallenge("+5511900000001", "login")).rejects.toMatchObject({
+    await expect(requestEmailCode("operador@example.com", "login")).rejects.toMatchObject({
       status: 429,
       code: "rate_limited",
       retryAfterSeconds: 45,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url, "http://joga.local").pathname).toBe("/api/v1/auth/email/code");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "operador@example.com",
+      purpose: "login",
     });
   });
 

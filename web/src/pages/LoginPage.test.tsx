@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
-  requestPhoneChallenge,
-  verifyPhoneChallenge,
-  webLogin,
-  webRegister,
+  requestEmailCode,
+  verifyEmailChallenge,
+  webEmailLogin,
+  webEmailRegistration,
 } from "../lib/api";
 import { AuthContext } from "../lib/auth-context";
 import type { WebSessionPayload } from "../types";
@@ -18,10 +18,10 @@ vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
   return {
     ...actual,
-    requestPhoneChallenge: vi.fn(),
-    verifyPhoneChallenge: vi.fn(),
-    webLogin: vi.fn(),
-    webRegister: vi.fn(),
+    requestEmailCode: vi.fn(),
+    verifyEmailChallenge: vi.fn(),
+    webEmailLogin: vi.fn(),
+    webEmailRegistration: vi.fn(),
   };
 });
 
@@ -58,34 +58,37 @@ function renderLogin(state?: { from?: unknown; expired?: unknown }) {
   return { signIn };
 }
 
-async function requestCode(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Telefone"), "11987654321");
+async function requestCode(
+  user: ReturnType<typeof userEvent.setup>,
+  email = "operador@example.com",
+) {
+  await user.type(screen.getByLabelText("E-mail"), email);
   await user.click(screen.getByRole("button", { name: "Receber código" }));
-  await screen.findByText(/Enviamos um código/);
+  await screen.findByLabelText("Código de verificação");
   await user.type(screen.getByLabelText("Código de verificação"), "123456");
 }
 
 describe("LoginPage", () => {
   beforeEach(() => {
-    vi.mocked(requestPhoneChallenge).mockReset();
-    vi.mocked(verifyPhoneChallenge).mockReset();
-    vi.mocked(webLogin).mockReset();
-    vi.mocked(webRegister).mockReset();
+    vi.mocked(requestEmailCode).mockReset();
+    vi.mocked(verifyEmailChallenge).mockReset();
+    vi.mocked(webEmailLogin).mockReset();
+    vi.mocked(webEmailRegistration).mockReset();
   });
 
-  it("faz login por OTP e navega para o painel", async () => {
-    vi.mocked(requestPhoneChallenge).mockResolvedValue({
+  it("faz login por código de e-mail e navega para o painel", async () => {
+    vi.mocked(requestEmailCode).mockResolvedValue({
       challenge_id: "challenge-1",
       expires_at: "2026-11-07T12:10:00Z",
       resend_after_seconds: 60,
     });
-    vi.mocked(verifyPhoneChallenge).mockResolvedValue({
+    vi.mocked(verifyEmailChallenge).mockResolvedValue({
       challenge_id: "receipt-1",
-      purpose: "login",
+      purpose: "email_login",
       verified_at: "2026-11-07T12:01:00Z",
       receipt_expires_at: "2026-11-07T12:11:00Z",
     });
-    vi.mocked(webLogin).mockResolvedValue(session);
+    vi.mocked(webEmailLogin).mockResolvedValue(session);
     const user = userEvent.setup();
     const { signIn } = renderLogin();
 
@@ -94,25 +97,28 @@ describe("LoginPage", () => {
     expect(form).not.toBeNull();
     await user.click(within(form!).getByRole("button", { name: "Entrar" }));
 
-    await waitFor(() => expect(webLogin).toHaveBeenCalledWith("receipt-1"));
-    expect(requestPhoneChallenge).toHaveBeenCalledWith("+5511987654321", "login");
+    await waitFor(() =>
+      expect(webEmailLogin).toHaveBeenCalledWith("receipt-1", "operador@example.com"),
+    );
+    expect(requestEmailCode).toHaveBeenCalledWith("operador@example.com", "login");
+    expect(verifyEmailChallenge).toHaveBeenCalledWith("challenge-1", "123456");
     expect(signIn).toHaveBeenCalledWith(session);
     expect(await screen.findByText("Painel autenticado")).toBeInTheDocument();
   });
 
-  it("cria conta quando o modo é registro", async () => {
-    vi.mocked(requestPhoneChallenge).mockResolvedValue({
+  it("cria conta de operador por e-mail quando o modo é registro", async () => {
+    vi.mocked(requestEmailCode).mockResolvedValue({
       challenge_id: "challenge-2",
       expires_at: "2026-11-07T12:10:00Z",
       resend_after_seconds: 60,
     });
-    vi.mocked(verifyPhoneChallenge).mockResolvedValue({
+    vi.mocked(verifyEmailChallenge).mockResolvedValue({
       challenge_id: "receipt-2",
-      purpose: "registration",
+      purpose: "email_verification",
       verified_at: "2026-11-07T12:01:00Z",
       receipt_expires_at: "2026-11-07T12:11:00Z",
     });
-    vi.mocked(webRegister).mockResolvedValue(session);
+    vi.mocked(webEmailRegistration).mockResolvedValue(session);
     const user = userEvent.setup();
     const { signIn } = renderLogin();
 
@@ -121,25 +127,91 @@ describe("LoginPage", () => {
     const form = document.querySelector("form");
     await user.click(within(form!).getByRole("button", { name: "Criar conta" }));
 
-    await waitFor(() => expect(webRegister).toHaveBeenCalledWith("receipt-2"));
-    expect(requestPhoneChallenge).toHaveBeenCalledWith("+5511987654321", "registration");
-    expect(webLogin).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(webEmailRegistration).toHaveBeenCalledWith("receipt-2", "operador@example.com"),
+    );
+    expect(requestEmailCode).toHaveBeenCalledWith("operador@example.com", "registration");
+    expect(webEmailLogin).not.toHaveBeenCalled();
     expect(signIn).toHaveBeenCalledWith(session);
   });
 
-  it("muda para registro quando a conta não existe", async () => {
-    vi.mocked(requestPhoneChallenge).mockResolvedValue({
+  it("avisa que o 202 é enfileirado e pode levar alguns minutos", async () => {
+    vi.mocked(requestEmailCode).mockResolvedValue({
       challenge_id: "challenge-3",
       expires_at: "2026-11-07T12:10:00Z",
       resend_after_seconds: 60,
     });
-    vi.mocked(verifyPhoneChallenge).mockResolvedValue({
-      challenge_id: "receipt-3",
-      purpose: "login",
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("E-mail"), "operador@example.com");
+    await user.click(screen.getByRole("button", { name: "Receber código" }));
+
+    expect(await screen.findByText(/Enviamos um código de seis dígitos para/)).toBeInTheDocument();
+    expect(screen.getByText(/pode levar alguns minutos/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Telefone")).not.toBeInTheDocument();
+    expect(screen.queryByText(/SMS/)).not.toBeInTheDocument();
+  });
+
+  it("mostra o Retry-After de 429 e mantém o usuário no passo de e-mail", async () => {
+    vi.mocked(requestEmailCode).mockRejectedValue(
+      new ApiError(429, "rate_limited", undefined, null, [], 45),
+    );
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("E-mail"), "operador@example.com");
+    await user.click(screen.getByRole("button", { name: "Receber código" }));
+
+    expect(
+      await screen.findByText("Muitas tentativas. Tente novamente em 45 segundos."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("E-mail")).toBeInTheDocument();
+  });
+
+  it("explica cadastro fechado no registro", async () => {
+    vi.mocked(requestEmailCode).mockRejectedValue(new ApiError(403, "signup_closed"));
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByRole("tab", { name: "Criar conta" }));
+    await user.type(screen.getByLabelText("E-mail"), "operador@example.com");
+    await user.click(screen.getByRole("button", { name: "Receber código" }));
+
+    expect(
+      await screen.findByText("O cadastro está fechado no momento. Entre com uma conta existente."),
+    ).toBeInTheDocument();
+  });
+
+  it("trata 503 de e-mail desabilitado sem falar em telefone", async () => {
+    vi.mocked(requestEmailCode).mockRejectedValue(new ApiError(503, "email_auth_disabled"));
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("E-mail"), "operador@example.com");
+    await user.click(screen.getByRole("button", { name: "Receber código" }));
+
+    expect(
+      await screen.findByText(
+        "O acesso por e-mail está indisponível no momento. Tente novamente mais tarde.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/telefone/i)).not.toBeInTheDocument();
+  });
+
+  it("informa credencial inválida no login sem dizer que o e-mail não está cadastrado", async () => {
+    vi.mocked(requestEmailCode).mockResolvedValue({
+      challenge_id: "challenge-7",
+      expires_at: "2026-11-07T12:10:00Z",
+      resend_after_seconds: 60,
+    });
+    vi.mocked(verifyEmailChallenge).mockResolvedValue({
+      challenge_id: "receipt-7",
+      purpose: "email_login",
       verified_at: "2026-11-07T12:01:00Z",
       receipt_expires_at: "2026-11-07T12:11:00Z",
     });
-    vi.mocked(webLogin).mockRejectedValue(new ApiError(404, "account_not_found"));
+    vi.mocked(webEmailLogin).mockRejectedValue(new ApiError(401, "invalid_email_login"));
     const user = userEvent.setup();
     renderLogin();
 
@@ -147,33 +219,58 @@ describe("LoginPage", () => {
     const form = document.querySelector("form");
     await user.click(within(form!).getByRole("button", { name: "Entrar" }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: "Criar conta" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
     expect(
-      screen.getByText(
-        "Não encontramos uma conta com esse telefone. Crie uma conta para continuar.",
+      await screen.findByText(
+        "Este e-mail não consegue entrar. Confira o endereço ou crie uma conta.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Telefone")).toBeInTheDocument();
+    expect(screen.queryByText(/não cadastrad/i)).not.toBeInTheDocument();
+  });
+
+  it("reenvia o código respeitando o intervalo do servidor", async () => {
+    vi.mocked(requestEmailCode).mockResolvedValue({
+      challenge_id: "challenge-8",
+      expires_at: "2026-11-07T12:10:00Z",
+      resend_after_seconds: 0,
+    });
+    const user = userEvent.setup();
+    renderLogin();
+
+    await requestCode(user);
+    await user.click(screen.getByRole("button", { name: "Reenviar código" }));
+
+    await waitFor(() => expect(requestEmailCode).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByText("Novo código solicitado. Use apenas o código mais recente."),
+    ).toBeInTheDocument();
+  });
+
+  it("valida o formato do e-mail antes de chamar o servidor", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("E-mail"), "sem-arroba");
+    await user.click(screen.getByRole("button", { name: "Receber código" }));
+
+    expect(
+      await screen.findByText("Informe um e-mail válido, como nome@exemplo.com."),
+    ).toBeInTheDocument();
+    expect(requestEmailCode).not.toHaveBeenCalled();
   });
 
   it("avisa sessão expirada e retorna ao destino original", async () => {
-    vi.mocked(requestPhoneChallenge).mockResolvedValue({
-      challenge_id: "challenge-4",
+    vi.mocked(requestEmailCode).mockResolvedValue({
+      challenge_id: "challenge-9",
       expires_at: "2026-11-07T12:10:00Z",
       resend_after_seconds: 60,
     });
-    vi.mocked(verifyPhoneChallenge).mockResolvedValue({
-      challenge_id: "receipt-4",
-      purpose: "login",
+    vi.mocked(verifyEmailChallenge).mockResolvedValue({
+      challenge_id: "receipt-9",
+      purpose: "email_login",
       verified_at: "2026-11-07T12:01:00Z",
       receipt_expires_at: "2026-11-07T12:11:00Z",
     });
-    vi.mocked(webLogin).mockResolvedValue(session);
+    vi.mocked(webEmailLogin).mockResolvedValue(session);
     const user = userEvent.setup();
     renderLogin({ from: "/organizations/org-1?tab=bookings", expired: true });
 

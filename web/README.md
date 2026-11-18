@@ -5,7 +5,7 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 
 ## Escopo atual
 
-- Login/registro por OTP com a mesma identidade do aplicativo.
+- Login/registro por código de e-mail (OTP) com a mesma identidade do aplicativo; o telefone não é oferecido no beta.
 - Refresh token em cookie `HttpOnly`; access token apenas em memória.
 - CSRF de duplo envio para refresh/logout.
 - Seleção de organização, membros/papéis, estabelecimentos e auditoria.
@@ -42,14 +42,17 @@ pnpm dev
 
 Em PowerShell: `$env:JOGA_API_PROXY_TARGET = "http://127.0.0.1:8001"`.
 
-Para testar o OTP sem provedor real, configure no backend:
+O login do painel usa código de e-mail (ADR 0050). A resposta `202` apenas
+enfileira o envio; o worker entrega em lotes de 5 em 5 minutos. Com o backend
+local e `JOGA_EMAIL_PROVIDER=brevo` no `.env`, processe a fila em outro terminal:
 
-```bash
-export JOGA_DEV_FIXED_OTP=123456
+```powershell
+cd backend
+.venv\Scripts\python.exe -m scripts.deliver_emails --loop --interval 30
 ```
 
-O código fixo só deve ser usado em ambiente local/teste. Nunca configure isso em
-produção.
+Sem o worker, o `202` não entrega o código. O código expira em poucos minutos e
+nunca deve ser compartilhado.
 
 ## Verificações
 
@@ -134,6 +137,9 @@ cabeçalhos da hospedagem.
   site da API.
 - Em 401/refresh inválido, o painel limpa os tokens e redireciona para `/login`
   preservando o destino em `state.from`; o login devolve ao caminho original.
+- No beta, o login do painel é somente por e-mail. As rotas de telefone continuam
+  no backend, mas o painel não as oferece enquanto `JOGA_AUTH_PHONE_ENABLED=false`.
+  `PUT /me/email` não é credencial de login; é o e-mail do pagador.
 - A direção visual é um design system dark alinhado à marca JOGA (lime/coral), com
   tipografia de sistema. Assets próprios, fontes licenciadas e testes com usuários
   continuam pendentes.

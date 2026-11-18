@@ -251,38 +251,37 @@ export function refreshSession(): Promise<WebSessionPayload | null> {
   return refreshInFlight;
 }
 
-export async function requestPhoneChallenge(
-  phone: string,
+export async function requestEmailCode(
+  email: string,
   purpose: "login" | "registration",
 ): Promise<ChallengeResponse> {
-  return publicRequest<ChallengeResponse>("/auth/phone/challenges", {
+  return publicRequest<ChallengeResponse>("/auth/email/code", {
     method: "POST",
-    body: JSON.stringify({ phone, purpose }),
+    body: JSON.stringify({ email, purpose }),
   });
 }
 
-export async function verifyPhoneChallenge(
+export async function verifyEmailChallenge(
   challengeId: string,
   code: string,
 ): Promise<VerifyResponse> {
-  return publicRequest<VerifyResponse>(
-    `/auth/phone/challenges/${encodeURIComponent(challengeId)}/verify`,
-    {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    },
-  );
+  return publicRequest<VerifyResponse>("/auth/email/verify", {
+    method: "POST",
+    body: JSON.stringify({ challenge_id: challengeId, code }),
+  });
 }
 
-async function webSession(
-  path: "/auth/web/login" | "/auth/web/registration",
+async function webEmailSession(
+  path: "/auth/web/email/login" | "/auth/web/email/registration",
   challengeId: string,
+  email: string,
 ): Promise<WebSessionPayload> {
   const payload = await publicRequest<WebSessionPayload>(path, {
     method: "POST",
     body: JSON.stringify({
       challenge_id: challengeId,
-      device_name: "JOGA y GESTÃO",
+      email,
+      device_name: "Painel",
     }),
   });
   setAuthTokens({
@@ -292,12 +291,15 @@ async function webSession(
   return payload;
 }
 
-export function webLogin(challengeId: string): Promise<WebSessionPayload> {
-  return webSession("/auth/web/login", challengeId);
+export function webEmailLogin(challengeId: string, email: string): Promise<WebSessionPayload> {
+  return webEmailSession("/auth/web/email/login", challengeId, email);
 }
 
-export function webRegister(challengeId: string): Promise<WebSessionPayload> {
-  return webSession("/auth/web/registration", challengeId);
+export function webEmailRegistration(
+  challengeId: string,
+  email: string,
+): Promise<WebSessionPayload> {
+  return webEmailSession("/auth/web/email/registration", challengeId, email);
 }
 
 export async function webLogout(): Promise<void> {

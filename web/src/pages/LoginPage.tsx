@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { ErrorNotice } from "../components/Feedback";
-import { PhoneField } from "../components/ui/PhoneField";
 import { TextField } from "../components/ui/Field";
 import {
   ArrowRightIcon,
@@ -13,23 +12,32 @@ import {
   SparkIcon,
 } from "../components/ui/Icons";
 import {
-  requestPhoneChallenge,
-  verifyPhoneChallenge,
-  webLogin,
-  webRegister,
+  requestEmailCode,
+  verifyEmailChallenge,
+  webEmailLogin,
+  webEmailRegistration,
   ApiError,
 } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { formatError, requestIdOf } from "../lib/format";
-import { DEFAULT_COUNTRY, findCountry, formatNational, phoneError, toE164 } from "../lib/phone";
 import { safeReturnPath } from "../lib/redirect";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 type Mode = "login" | "register";
-type Step = "phone" | "code";
+type Step = "email" | "code";
 
 function nowMs(): number {
   return new Date().getTime();
+}
+
+function emailError(value: string): string | null {
+  const clean = value.trim();
+  if (!clean) return "Informe o e-mail da sua conta.";
+  if (clean.length > 254) return "O e-mail deve ter no máximo 254 caracteres.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+    return "Informe um e-mail válido, como nome@exemplo.com.";
+  }
+  return null;
 }
 
 export function LoginPage() {
@@ -41,10 +49,9 @@ export function LoginPage() {
   const returnTo = safeReturnPath(navigationState?.from);
   const reasonExpired = navigationState?.expired === true;
   const [mode, setMode] = useState<Mode>("login");
-  const [step, setStep] = useState<Step>("phone");
-  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY.code);
-  const [phoneDigits, setPhoneDigits] = useState("");
-  const [phoneFieldError, setPhoneFieldError] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("email");
+  const [email, setEmail] = useState("");
+  const [emailFieldError, setEmailFieldError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [codeFieldError, setCodeFieldError] = useState<string | null>(null);
   const [challengeId, setChallengeId] = useState<string | null>(null);
@@ -55,8 +62,8 @@ export function LoginPage() {
   const [error, setError] = useState<unknown>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const country = findCountry(countryCode);
-  const e164 = toE164(country, phoneDigits);
+  const cleanEmail = email.trim();
+  const purpose = mode === "login" ? "login" : "registration";
   const resendSeconds = Math.max(0, Math.ceil((resendAt - now) / 1000));
 
   useEffect(() => {
@@ -71,41 +78,38 @@ export function LoginPage() {
 
   function switchMode(next: Mode) {
     setMode(next);
-    setStep("phone");
+    setStep("email");
     setChallengeId(null);
     setCode("");
     setCodeFieldError(null);
     setError(null);
     setInfo(null);
-    setPhoneFieldError(null);
+    setEmailFieldError(null);
   }
 
-  function resetToPhone() {
-    setStep("phone");
+  function resetToEmail() {
+    setStep("email");
     setChallengeId(null);
     setCode("");
     setCodeFieldError(null);
     setError(null);
     setInfo(null);
-    window.setTimeout(() => document.getElementById("login-phone")?.focus(), 0);
+    window.setTimeout(() => document.getElementById("login-email")?.focus(), 0);
   }
 
   async function startChallenge(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    const validation = phoneError(country, phoneDigits);
+    const validation = emailError(email);
     if (validation) {
-      setPhoneFieldError(validation);
-      document.getElementById("login-phone")?.focus();
+      setEmailFieldError(validation);
+      document.getElementById("login-email")?.focus();
       return;
     }
     setBusy(true);
     setError(null);
     setInfo(null);
     try {
-      const challenge = await requestPhoneChallenge(
-        e164,
-        mode === "login" ? "login" : "registration",
-      );
+      const challenge = await requestEmailCode(cleanEmail, purpose);
       setChallengeId(challenge.challenge_id);
       setResendAt(nowMs() + challenge.resend_after_seconds * 1000);
       setNow(nowMs());
@@ -124,16 +128,13 @@ export function LoginPage() {
     setResending(true);
     setError(null);
     try {
-      const challenge = await requestPhoneChallenge(
-        e164,
-        mode === "login" ? "login" : "registration",
-      );
+      const challenge = await requestEmailCode(cleanEmail, purpose);
       setChallengeId(challenge.challenge_id);
       setResendAt(nowMs() + challenge.resend_after_seconds * 1000);
       setNow(nowMs());
       setCode("");
       setCodeFieldError(null);
-      setInfo("Novo código enviado. Use apenas o código mais recente.");
+      setInfo("Novo código solicitado. Use apenas o código mais recente.");
     } catch (caught) {
       if (caught instanceof ApiError && caught.retryAfterSeconds) {
         setResendAt(nowMs() + caught.retryAfterSeconds * 1000);
@@ -157,19 +158,14 @@ export function LoginPage() {
     setError(null);
     setInfo(null);
     try {
-      const receipt = await verifyPhoneChallenge(challengeId, code);
+      const receipt = await verifyEmailChallenge(challengeId, code);
       const session =
         mode === "login"
-          ? await webLogin(receipt.challenge_id)
-          : await webRegister(receipt.challenge_id);
+          ? await webEmailLogin(receipt.challenge_id, cleanEmail)
+          : await webEmailRegistration(receipt.challenge_id, cleanEmail);
       signIn(session);
       navigate(returnTo, { replace: true });
     } catch (caught) {
-      if (caught instanceof ApiError && caught.code === "account_not_found") {
-        switchMode("register");
-      } else if (caught instanceof ApiError && caught.code === "phone_already_registered") {
-        switchMode("login");
-      }
       setError(caught);
     } finally {
       setBusy(false);
@@ -223,13 +219,13 @@ export function LoginPage() {
 
       <section className="card login-card" aria-labelledby="login-title">
         <div className="login-card__heading">
-          <p className="step-label">{step === "phone" ? "Passo 1 de 2" : "Passo 2 de 2"}</p>
-          <h2 id="login-title">{step === "phone" ? "Acessar o painel" : "Confirmar código"}</h2>
+          <p className="step-label">{step === "email" ? "Passo 1 de 2" : "Passo 2 de 2"}</p>
+          <h2 id="login-title">{step === "email" ? "Acessar o painel" : "Confirmar código"}</h2>
           <p>
             {step === "code"
-              ? "Digite o código de seis dígitos enviado por SMS."
+              ? "Digite o código de seis dígitos enviado por e-mail."
               : mode === "login"
-                ? "Entre com o telefone da sua conta JOGA."
+                ? "Entre com o e-mail da sua conta JOGA."
                 : "Crie a conta do responsável pelo estabelecimento."}
           </p>
         </div>
@@ -269,50 +265,56 @@ export function LoginPage() {
           </div>
         ) : null}
 
-        {step === "phone" ? (
+        {step === "email" ? (
           <form className="form" onSubmit={startChallenge} noValidate aria-busy={busy || undefined}>
-            <PhoneField
-              id="login-phone"
-              label="Telefone"
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              value={phoneDigits}
-              onChange={(digits) => {
-                setPhoneDigits(digits);
-                if (phoneFieldError) setPhoneFieldError(null);
+            <TextField
+              id="login-email"
+              label="E-mail"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={254}
+              placeholder="voce@exemplo.com"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailFieldError) setEmailFieldError(null);
               }}
-              error={phoneFieldError}
+              error={emailFieldError}
+              hint="Use o e-mail vinculado à sua conta JOGA."
               disabled={busy}
+              autoFocus
+              required
             />
             <button type="submit" className="button button--primary button--block" disabled={busy}>
               {busy ? "Enviando código..." : "Receber código"}
               {!busy ? <ArrowRightIcon size={17} /> : null}
             </button>
             <p className="hint hint--center">
-              O código chega por SMS e expira em poucos minutos. Não compartilhe o código.
+              Enviamos um código de seis dígitos. A entrega é feita em lotes a cada 5 minutos e pode
+              levar alguns minutos.
             </p>
-            {import.meta.env.DEV ? (
-              <p className="hint hint--center">
-                Ambiente local: o OTP pode estar fixado por <code>JOGA_DEV_FIXED_OTP</code>.
-              </p>
-            ) : null}
           </form>
         ) : (
           <form className="form" onSubmit={confirmCode} noValidate aria-busy={busy || undefined}>
             <div className="otp-target">
               <span>Enviamos um código de seis dígitos para</span>
-              <strong>
-                +{country.dialCode} {formatNational(country, phoneDigits)}
-              </strong>
+              <strong>{cleanEmail}</strong>
               <button
                 type="button"
                 className="button button--link button--inline"
-                onClick={resetToPhone}
+                onClick={resetToEmail}
                 disabled={busy}
               >
-                Trocar telefone
+                Trocar e-mail
               </button>
             </div>
+            <p className="hint">
+              A entrega é feita em lotes a cada 5 minutos; o código pode levar alguns minutos para
+              chegar.
+            </p>
             <TextField
               id="login-code"
               label="Código de verificação"
@@ -358,7 +360,7 @@ export function LoginPage() {
 
         <p className="login-card__security">
           <ShieldIcon size={15} />
-          Sessão protegida por cookie HttpOnly e verificação em duas etapas.
+          Sessão protegida por cookie HttpOnly e código de uso único.
         </p>
       </section>
     </main>

@@ -351,6 +351,22 @@ export function formatError(error: unknown): string {
   switch (error.code) {
     case "invalid_phone":
       return "Telefone inválido. Confira o país, o DDD e o número.";
+    case "invalid_email":
+      return "E-mail inválido. Confira o endereço e tente novamente.";
+    case "email_domain_not_allowed":
+      return "Não aceitamos esse domínio de e-mail. Use outro endereço.";
+    case "invalid_email_login":
+      return "Este e-mail não consegue entrar. Confira o endereço ou crie uma conta.";
+    case "email_already_registered":
+      return "Esse e-mail já está vinculado a uma conta. Use a opção Entrar.";
+    case "signup_closed":
+      return "O cadastro está fechado no momento. Entre com uma conta existente.";
+    case "email_registration_disabled":
+      return "O cadastro por e-mail está indisponível no momento.";
+    case "email_auth_disabled":
+      return "O acesso por e-mail está indisponível no momento. Tente novamente mais tarde.";
+    case "phone_auth_disabled":
+      return "O acesso por telefone está indisponível. Use o acesso por e-mail.";
     case "rate_limited": {
       const wait = error.retryAfterSeconds;
       if (wait === null || wait <= 0) {
@@ -362,10 +378,6 @@ export function formatError(error: unknown): string {
       return "Código inválido ou expirado. Solicite um novo código.";
     case "invalid_receipt":
       return "A verificação expirou. Solicite um novo código.";
-    case "account_not_found":
-      return "Não encontramos uma conta com esse telefone. Crie uma conta para continuar.";
-    case "phone_already_registered":
-      return "Esse telefone já possui conta. Use a opção Entrar.";
     case "forbidden":
       return "Seu papel não permite esta ação.";
     case "refund_failed":
