@@ -461,12 +461,13 @@ function EmailCode() {
 
 function EmailName() {
   const nav = useNav();
-  const { setSession, loadProfile, setOnboarding } = useApp();
+  const { setAuth, setSession, loadProfile, setOnboarding } = useApp();
   const email = typeof nav.params.email === 'string' ? nav.params.email : '';
   const challengeId = typeof nav.params.challengeId === 'string' ? nav.params.challengeId : null;
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
 
   const create = async () => {
     if (!challengeId || !email || busy) {
@@ -490,6 +491,9 @@ function EmailName() {
     } catch (error) {
       const info = emailError(error);
       setFeedback(info);
+      if (error instanceof ApiError && error.code === 'email_already_registered') {
+        setAlreadyRegistered(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -535,21 +539,35 @@ function EmailName() {
           {feedback.message}
         </Notice>
       ) : null}
-      <Btn tone="primary" onPress={create} disabled={busy || !challengeId}>
-        {busy ? 'Criando conta…' : 'Criar conta'}
-      </Btn>
-      <TextBtn
-        muted
-        onPress={() =>
-          nav.replace('email-code', {
-            email,
-            purpose: 'registration',
-            challengeId,
-          })
-        }
-      >
-        Voltar ao código
-      </TextBtn>
+      {alreadyRegistered ? (
+        <Btn
+          tone="primary"
+          onPress={() => {
+            setAuth({ purpose: 'login', email });
+            nav.replace('login-email');
+          }}
+        >
+          Entrar com este e-mail
+        </Btn>
+      ) : (
+        <Btn tone="primary" onPress={create} disabled={busy || !challengeId}>
+          {busy ? 'Criando conta…' : 'Criar conta'}
+        </Btn>
+      )}
+      {!alreadyRegistered ? (
+        <TextBtn
+          muted
+          onPress={() =>
+            nav.replace('email-code', {
+              email,
+              purpose: 'registration',
+              challengeId,
+            })
+          }
+        >
+          Voltar ao código
+        </TextBtn>
+      ) : null}
     </Page>
   );
 }
