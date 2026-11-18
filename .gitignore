@@ -7,6 +7,8 @@ __pycache__/
 *.py[cod]
 backend/.venv/
 backend/.env
+backend/.env.*
+!backend/.env.example
 backend/var/
 .pytest_cache/
 .mypy_cache/
