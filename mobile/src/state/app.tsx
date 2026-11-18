@@ -71,7 +71,7 @@ export type OnboardingState = {
 };
 
 export type AuthState = {
-  purpose: 'registration' | 'login';
+  purpose: 'registration' | 'login' | 'password_reset';
   phone: string;
   email: string;
   challengeId: string | null;

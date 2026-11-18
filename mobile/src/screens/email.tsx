@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ElementRef } from 'react';
 import { Platform, TextInput, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
-import type { EmailCredential } from '../api/types';
+import type { EmailCredential, Tokens } from '../api/types';
 import { authConfig } from '../auth/config';
+import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import {
@@ -27,7 +28,7 @@ import {
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
-type EmailPurpose = 'registration' | 'login';
+type EmailPurpose = 'registration' | 'password_reset';
 
 type EmailErrorInfo = { message: string; unavailable: boolean };
 
@@ -50,8 +51,11 @@ function emailError(error: unknown): EmailErrorInfo {
     email_domain_not_allowed: 'Este domínio de e-mail não é aceito.',
     invalid_code_or_challenge: 'Código inválido ou expirado.',
     invalid_receipt: 'A verificação expirou. Recomece o fluxo.',
-    invalid_email_login:
-      'Esta credencial não serve para entrar. Confira o endereço ou use outro método.',
+    invalid_email_login: 'E-mail ou senha inválidos.',
+    invalid_credentials: 'E-mail ou senha inválidos.',
+    invalid_password: 'Senha inválida.',
+    invalid_current_password: 'Senha atual inválida.',
+    password_too_short: 'A senha é curta demais.',
     signup_closed: 'O cadastro está fechado neste beta.',
     email_registration_disabled: 'O cadastro por e-mail está indisponível nesta versão.',
     phone_registration_disabled: 'O cadastro por telefone está indisponível nesta versão.',
@@ -176,7 +180,55 @@ function CodeInput({
   );
 }
 
-function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
+function PasswordInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  autoComplete,
+  textContentType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  autoComplete: 'current-password' | 'new-password';
+  textContentType: 'password' | 'newPassword';
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <Field label={label}>
+      <Input
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!visible}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete={autoComplete}
+        textContentType={textContentType}
+        maxLength={128}
+        placeholder={placeholder}
+        accessibilityLabel={label}
+      />
+      <TextBtn muted onPress={() => setVisible((current) => !current)}>
+        {visible ? 'Ocultar senha' : 'Mostrar senha'}
+      </TextBtn>
+    </Field>
+  );
+}
+
+function PasswordHint({ password }: { password: string }) {
+  if (!password || password.length >= 10) {
+    return null;
+  }
+  return (
+    <Notice tone="orange" icon="info">
+      A senha é curta. Use pelo menos 10 caracteres. O aviso não bloqueia o envio.
+    </Notice>
+  );
+}
+
+function EmailEntry() {
   const nav = useNav();
   const { palette } = useTheme();
   const { auth, setAuth } = useApp();
@@ -187,7 +239,6 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const now = useNow(cooldownUntil > 0);
   const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
-  const registration = purpose === 'registration';
 
   const request = async () => {
     const normalized = email.trim();
@@ -195,18 +246,18 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
       setFeedback({ message: 'Informe seu e-mail.', unavailable: false });
       return;
     }
-    if (registration && !accepted) {
+    if (!accepted) {
       setFeedback({ message: 'Aceite os termos para continuar.', unavailable: false });
       return;
     }
     setBusy(true);
     setFeedback(null);
     try {
-      const challenge = await api.auth.emailRequestCode(normalized, purpose);
-      setAuth({ purpose, email: normalized, challengeId: challenge.challenge_id });
+      const challenge = await api.auth.emailRequestCode(normalized, 'registration');
+      setAuth({ purpose: 'registration', email: normalized, challengeId: challenge.challenge_id });
       nav.go('email-code', {
         email: normalized,
-        purpose,
+        purpose: 'registration',
         challengeId: challenge.challenge_id,
         expiresAt: challenge.expires_at,
         resendAfter: challenge.resend_after_seconds,
@@ -223,15 +274,15 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
 
   if (feedback?.unavailable) {
     return (
-      <Page title={registration ? 'Criar conta' : 'Entrar'}>
+      <Page title="Criar conta">
         <StateScreen
           icon="mail"
           title="E-mail indisponível nesta versão"
-          text="O método por e-mail está desligado no servidor. Use a passkey para entrar ou tente novamente quando o método estiver disponível."
+          text="O cadastro por e-mail está desligado no servidor. Tente novamente quando o método estiver disponível."
           actions={
             <>
               <Btn tone="primary" go="login">
-                Usar passkey
+                Já tenho conta
               </Btn>
               <Btn tone="ghost" go="welcome">
                 Voltar
@@ -244,11 +295,10 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
   }
 
   return (
-    <Page title={registration ? 'Criar conta' : 'Entrar'}>
+    <Page title="Criar conta">
       <Txt variant="lead">
-        {registration
-          ? 'Vamos confirmar seu e-mail com um código de 6 dígitos. Depois você escolhe o nome de exibição.'
-          : 'Informe o e-mail da sua conta. Vamos enviar um código de 6 dígitos.'}
+        Vamos confirmar seu e-mail com um código de 6 dígitos. Depois você define sua senha e o nome
+        de exibição.
       </Txt>
       <Field label="E-mail">
         <Input
@@ -257,17 +307,16 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="email"
           textContentType="emailAddress"
           maxLength={254}
           placeholder="voce@exemplo.com"
         />
       </Field>
-      {registration ? (
-        <Check checked={accepted} onChange={setAccepted}>
-          Aceito os <Text style={{ fontWeight: '800', color: palette.ink }}>Termos de uso</Text> e a{' '}
-          <Text style={{ fontWeight: '800', color: palette.ink }}>Política de privacidade</Text>.
-        </Check>
-      ) : null}
+      <Check checked={accepted} onChange={setAccepted}>
+        Aceito os <Text style={{ fontWeight: '800', color: palette.ink }}>Termos de uso</Text> e a{' '}
+        <Text style={{ fontWeight: '800', color: palette.ink }}>Política de privacidade</Text>.
+      </Check>
       <TextBtn muted onPress={() => nav.go('terms', { readOnly: 1 })}>
         Ler termos de uso e política de privacidade
       </TextBtn>
@@ -293,17 +342,17 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
       <TextBtn
         muted
         onPress={() => {
-          setAuth({ purpose: registration ? 'login' : 'registration' });
-          nav.replace(registration ? 'login-email' : 'signup-email');
+          setAuth({ purpose: 'login' });
+          nav.replace('login-email');
         }}
       >
-        {registration ? 'Já tenho conta' : 'Criar conta com e-mail'}
+        Já tenho conta
       </TextBtn>
       {authConfig.phoneEnabled ? (
         <TextBtn
           muted
           onPress={() => {
-            setAuth({ purpose });
+            setAuth({ purpose: 'registration' });
             nav.go('signup-phone');
           }}
         >
@@ -317,9 +366,10 @@ function EmailEntry({ purpose }: { purpose: EmailPurpose }) {
 function EmailCode() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { setAuth, setSession, loadProfile } = useApp();
+  const { setAuth } = useApp();
   const email = typeof nav.params.email === 'string' ? nav.params.email : '';
-  const purpose: EmailPurpose = nav.params.purpose === 'login' ? 'login' : 'registration';
+  const purpose: EmailPurpose =
+    nav.params.purpose === 'password_reset' ? 'password_reset' : 'registration';
   const initialChallenge =
     typeof nav.params.challengeId === 'string' ? nav.params.challengeId : null;
   const initialExpires = typeof nav.params.expiresAt === 'string' ? nav.params.expiresAt : null;
@@ -347,7 +397,10 @@ function EmailCode() {
           title="Solicite um código"
           text="O desafio expirou ou a tela foi aberta sem um pedido de código."
           actions={
-            <Btn tone="primary" go={purpose === 'login' ? 'login-email' : 'signup-email'}>
+            <Btn
+              tone="primary"
+              go={purpose === 'password_reset' ? 'forgot-password' : 'signup-email'}
+            >
               Pedir código
             </Btn>
           }
@@ -368,14 +421,11 @@ function EmailCode() {
     setFeedback(null);
     try {
       await api.auth.emailVerify(challengeId, code);
-      if (purpose === 'login') {
-        const tokens = await api.auth.emailLogin(challengeId, email, deviceInfo());
-        await setSession(tokens);
-        await loadProfile();
-        nav.reset('home');
+      setAuth({ purpose, email, verifiedChallengeId: challengeId, challengeId });
+      if (purpose === 'password_reset') {
+        nav.replace('reset-password', { email, challengeId });
       } else {
-        setAuth({ purpose, email, verifiedChallengeId: challengeId, challengeId });
-        nav.replace('email-name', { email, challengeId });
+        nav.replace('signup-password', { email, challengeId });
       }
     } catch (error) {
       const info = emailError(error);
@@ -451,7 +501,9 @@ function EmailCode() {
       </Btn>
       <TextBtn
         muted
-        onPress={() => nav.replace(purpose === 'registration' ? 'signup-email' : 'login-email')}
+        onPress={() =>
+          nav.replace(purpose === 'password_reset' ? 'forgot-password' : 'signup-email')
+        }
       >
         Trocar e-mail
       </TextBtn>
@@ -459,18 +511,37 @@ function EmailCode() {
   );
 }
 
-function EmailName() {
+function SignupPassword() {
   const nav = useNav();
-  const { setAuth, setSession, loadProfile, setOnboarding } = useApp();
+  const { setSession, loadProfile, setOnboarding } = useApp();
   const email = typeof nav.params.email === 'string' ? nav.params.email : '';
   const challengeId = typeof nav.params.challengeId === 'string' ? nav.params.challengeId : null;
   const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
-  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const [pendingTokens, setPendingTokens] = useState<Tokens | null>(null);
+
+  const finish = async (tokens: Tokens) => {
+    await setSession(tokens);
+    if (displayName.trim()) {
+      setOnboarding({ displayName: displayName.trim() });
+    }
+    await loadProfile();
+    nav.reset('onboarding-1');
+  };
 
   const create = async () => {
     if (!challengeId || !email || busy) {
+      return;
+    }
+    if (!password) {
+      setFeedback({ message: 'Defina uma senha para continuar.', unavailable: false });
+      return;
+    }
+    if (password !== confirmation) {
+      setFeedback({ message: 'As senhas não conferem.', unavailable: false });
       return;
     }
     setBusy(true);
@@ -479,20 +550,24 @@ function EmailName() {
       const tokens = await api.auth.emailRegister(
         challengeId,
         email,
+        password,
         displayName.trim() || null,
         deviceInfo(),
       );
-      await setSession(tokens);
-      if (displayName.trim()) {
-        setOnboarding({ displayName: displayName.trim() });
+      const keys = await api.auth.passkeys(tokens.access_token).catch(() => null);
+      if (keys && keys.credentials.length === 0 && passkeyAvailable()) {
+        setPendingTokens(tokens);
+        return;
       }
-      await loadProfile();
-      nav.reset('onboarding-1');
+      await finish(tokens);
     } catch (error) {
       const info = emailError(error);
       setFeedback(info);
       if (error instanceof ApiError && error.code === 'email_already_registered') {
-        setAlreadyRegistered(true);
+        setFeedback({
+          message: 'Este e-mail já tem conta. Entre com sua senha.',
+          unavailable: false,
+        });
       }
     } finally {
       setBusy(false);
@@ -501,11 +576,11 @@ function EmailName() {
 
   if (!challengeId || !email) {
     return (
-      <Page title="Como você aparece?">
+      <Page title="Defina sua senha">
         <StateScreen
           icon="mail"
           title="Verificação expirada"
-          text="Recomece o cadastro para confirmar o e-mail antes de escolher o nome."
+          text="Recomece o cadastro para confirmar o e-mail antes de definir a senha."
           actions={
             <Btn tone="primary" go="signup-email">
               Recomeçar
@@ -516,11 +591,24 @@ function EmailName() {
     );
   }
 
+  if (pendingTokens) {
+    return (
+      <PasskeyPrompt
+        accessToken={pendingTokens.access_token}
+        nextLabel="Continuar sem passkey"
+        onDone={() => {
+          const tokens = pendingTokens;
+          setPendingTokens(null);
+          void finish(tokens);
+        }}
+      />
+    );
+  }
+
   return (
-    <Page title="Como você aparece?">
+    <Page title="Defina sua senha">
       <Txt variant="lead">
-        Seu e-mail já foi confirmado. Escolha um nome de exibição ou deixe em branco para decidir
-        depois.
+        Seu e-mail foi confirmado. Crie a senha que você usará para entrar nas próximas vezes.
       </Txt>
       <Field label="Nome de exibição (opcional)">
         <Input
@@ -531,43 +619,581 @@ function EmailName() {
           placeholder="Como os outros te veem"
         />
       </Field>
+      <PasswordInput
+        label="Senha"
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Sua senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordInput
+        label="Repetir senha"
+        value={confirmation}
+        onChangeText={setConfirmation}
+        placeholder="Repita a senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordHint password={password} />
       <Notice tone="blue" icon="shield">
-        Seu e-mail de login não aparece no perfil público.
+        A senha fica só no servidor. O app guarda apenas os tokens de sessão no Keychain/Keystore.
       </Notice>
       {feedback ? (
         <Notice tone="orange" icon="alert">
           {feedback.message}
         </Notice>
       ) : null}
-      {alreadyRegistered ? (
-        <Btn
-          tone="primary"
-          onPress={() => {
-            setAuth({ purpose: 'login', email });
-            nav.replace('login-email');
-          }}
-        >
-          Entrar com este e-mail
+      <Btn tone="primary" onPress={create} disabled={busy}>
+        {busy ? 'Criando conta…' : 'Criar conta'}
+      </Btn>
+      {feedback?.message.startsWith('Este e-mail já tem conta') ? (
+        <Btn tone="ghost" go="login-email">
+          Entrar com e-mail e senha
         </Btn>
       ) : (
-        <Btn tone="primary" onPress={create} disabled={busy || !challengeId}>
-          {busy ? 'Criando conta…' : 'Criar conta'}
-        </Btn>
-      )}
-      {!alreadyRegistered ? (
         <TextBtn
           muted
-          onPress={() =>
-            nav.replace('email-code', {
-              email,
-              purpose: 'registration',
-              challengeId,
-            })
-          }
+          onPress={() => nav.replace('email-code', { email, purpose: 'registration', challengeId })}
         >
           Voltar ao código
         </TextBtn>
+      )}
+    </Page>
+  );
+}
+
+function PasskeyPrompt({
+  accessToken,
+  onDone,
+  nextLabel,
+}: {
+  accessToken: string;
+  onDone: () => void;
+  nextLabel: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const create = async () => {
+    if (busy) {
+      return;
+    }
+    if (!passkeyAvailable()) {
+      onDone();
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const options = await api.auth.passkeyRegistrationOptions(accessToken);
+      const credential = await createPasskey(options.public_key);
+      await api.auth.passkeyRegistrationVerify(
+        accessToken,
+        options.challenge_id,
+        credential,
+        Platform.OS === 'ios' ? 'iPhone' : 'Android',
+      );
+      onDone();
+    } catch {
+      setFeedback('Não foi possível criar a passkey agora. Você pode tentar depois em Segurança.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Page title="Entrar sem senha">
+      <StateScreen
+        icon="shield"
+        title="Criar uma passkey?"
+        text="Use a biometria ou o bloqueio do aparelho para entrar mais rápido nas próximas vezes. A senha continua valendo."
+      />
+      {!passkeyAvailable() ? (
+        <Notice tone="orange" icon="info">
+          Este ambiente não suporta passkey. Você pode criar depois em Segurança no development
+          build.
+        </Notice>
       ) : null}
+      {feedback ? (
+        <Notice tone="orange" icon="alert">
+          {feedback}
+        </Notice>
+      ) : null}
+      <Btn tone="primary" onPress={create} disabled={busy || !passkeyAvailable()}>
+        {busy ? 'Criando…' : 'Criar passkey'}
+      </Btn>
+      <Btn tone="ghost" onPress={onDone} disabled={busy}>
+        {nextLabel}
+      </Btn>
+    </Page>
+  );
+}
+
+function EmailLogin() {
+  const nav = useNav();
+  const { auth, setAuth, setSession, loadProfile } = useApp();
+  const [email, setEmail] = useState(auth.email);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [pendingTokens, setPendingTokens] = useState<Tokens | null>(null);
+  const now = useNow(cooldownUntil > 0);
+  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+
+  const finish = async (tokens: Tokens) => {
+    await setSession(tokens);
+    setAuth({ email: email.trim() });
+    await loadProfile();
+    nav.reset('home');
+  };
+
+  const login = async () => {
+    if (busy) {
+      return;
+    }
+    if (!email.trim() || !password) {
+      setFeedback({ message: 'Informe e-mail e senha.', unavailable: false });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const tokens = await api.auth.emailPasswordLogin(email.trim(), password, deviceInfo());
+      const keys = await api.auth.passkeys(tokens.access_token).catch(() => null);
+      if (keys && keys.credentials.length === 0 && passkeyAvailable()) {
+        setPendingTokens(tokens);
+        return;
+      }
+      await finish(tokens);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          setFeedback({ message: 'E-mail ou senha inválidos.', unavailable: false });
+        } else if (error.retryAfterSeconds != null) {
+          setCooldownUntil(Date.now() + error.retryAfterSeconds * 1000);
+          setFeedback({
+            message: `Muitas tentativas. Aguarde ${error.retryAfterSeconds}s.`,
+            unavailable: false,
+          });
+        } else {
+          setFeedback(emailError(error));
+        }
+      } else {
+        setFeedback(emailError(error));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (feedback?.unavailable) {
+    return (
+      <Page title="Entrar">
+        <StateScreen
+          icon="mail"
+          title="E-mail indisponível nesta versão"
+          text="O login por e-mail está desligado no servidor. Use a passkey para entrar ou tente mais tarde."
+          actions={
+            <Btn tone="primary" go="login">
+              Usar passkey
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (pendingTokens) {
+    return (
+      <PasskeyPrompt
+        accessToken={pendingTokens.access_token}
+        nextLabel="Entrar sem passkey"
+        onDone={() => {
+          const tokens = pendingTokens;
+          setPendingTokens(null);
+          void finish(tokens);
+        }}
+      />
+    );
+  }
+
+  return (
+    <Page title="Entrar">
+      <Txt variant="lead">
+        Entre com o e-mail e a senha da sua conta. A passkey continua disponível na tela anterior.
+      </Txt>
+      <Field label="E-mail">
+        <Input
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          maxLength={254}
+          placeholder="voce@exemplo.com"
+        />
+      </Field>
+      <PasswordInput
+        label="Senha"
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Sua senha"
+        autoComplete="current-password"
+        textContentType="password"
+      />
+      {feedback ? (
+        <Notice tone="orange" icon="alert">
+          {feedback.message}
+        </Notice>
+      ) : null}
+      <Btn
+        tone="primary"
+        onPress={login}
+        disabled={busy || cooldownRemaining > 0 || !email.trim() || !password}
+      >
+        {busy ? 'Entrando…' : cooldownRemaining > 0 ? `Aguarde ${cooldownRemaining}s` : 'Entrar'}
+      </Btn>
+      <TextBtn muted go="forgot-password">
+        Esqueci minha senha
+      </TextBtn>
+      <TextBtn
+        muted
+        onPress={() => {
+          setAuth({ purpose: 'registration' });
+          nav.go('signup-email');
+        }}
+      >
+        Criar conta
+      </TextBtn>
+      <Row between style={{ marginTop: 4 }}>
+        <Txt variant="tiny" color="soft">
+          Sua senha não fica salva no aparelho.
+        </Txt>
+        <TextBtn muted go="login">
+          Usar passkey
+        </TextBtn>
+      </Row>
+      <View style={{ height: 1 }} />
+      <TextBtn muted go="support">
+        Falar com suporte
+      </TextBtn>
+    </Page>
+  );
+}
+
+function ForgotPassword() {
+  const nav = useNav();
+  const { setAuth } = useApp();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const now = useNow(cooldownUntil > 0);
+  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+
+  const request = async () => {
+    if (!email.trim() || busy) {
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const challenge = await api.auth.emailRequestCode(email.trim(), 'password_reset');
+      setAuth({
+        purpose: 'password_reset',
+        email: email.trim(),
+        challengeId: challenge.challenge_id,
+      });
+      nav.go('email-code', {
+        email: email.trim(),
+        purpose: 'password_reset',
+        challengeId: challenge.challenge_id,
+        expiresAt: challenge.expires_at,
+        resendAfter: challenge.resend_after_seconds,
+      });
+    } catch (error) {
+      setFeedback(emailError(error));
+      if (error instanceof ApiError && error.retryAfterSeconds != null) {
+        setCooldownUntil(Date.now() + error.retryAfterSeconds * 1000);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (feedback?.unavailable) {
+    return (
+      <Page title="Esqueci minha senha">
+        <StateScreen
+          icon="mail"
+          title="E-mail indisponível nesta versão"
+          text="A recuperação por e-mail está desligada no servidor. Use a passkey ou fale com o suporte."
+          actions={
+            <Btn tone="primary" go="login">
+              Voltar para entrar
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  return (
+    <Page title="Esqueci minha senha">
+      <Txt variant="lead">
+        Informe o e-mail da conta. Se ele existir, enviaremos um código para redefinir a senha.
+      </Txt>
+      <Field label="E-mail">
+        <Input
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          maxLength={254}
+          placeholder="voce@exemplo.com"
+        />
+      </Field>
+      <Notice tone="blue" icon="mail">
+        A entrega é assíncrona e pode levar alguns minutos. Não feche a próxima tela.
+      </Notice>
+      {feedback ? (
+        <Notice tone="orange" icon="alert">
+          {feedback.message}
+        </Notice>
+      ) : null}
+      <Btn
+        tone="primary"
+        onPress={request}
+        disabled={busy || cooldownRemaining > 0 || !email.trim()}
+      >
+        {busy
+          ? 'Solicitando…'
+          : cooldownRemaining > 0
+            ? `Aguarde ${cooldownRemaining}s`
+            : 'Enviar código'}
+      </Btn>
+      <Btn tone="ghost" go="login-email">
+        Voltar para entrar
+      </Btn>
+    </Page>
+  );
+}
+
+function ResetPassword() {
+  const nav = useNav();
+  const { session, signOut } = useApp();
+  const email = typeof nav.params.email === 'string' ? nav.params.email : '';
+  const challengeId = typeof nav.params.challengeId === 'string' ? nav.params.challengeId : null;
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const now = useNow(cooldownUntil > 0);
+  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+
+  const reset = async () => {
+    if (!challengeId || !email || busy) {
+      return;
+    }
+    if (!password) {
+      setFeedback({ message: 'Defina a nova senha.', unavailable: false });
+      return;
+    }
+    if (password !== confirmation) {
+      setFeedback({ message: 'As senhas não conferem.', unavailable: false });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await api.auth.passwordReset(challengeId, email, password);
+      if (session) {
+        await signOut();
+      }
+      nav.reset('login-email');
+      nav.toast('Senha redefinida. Entre com a nova senha.');
+    } catch (error) {
+      setFeedback(emailError(error));
+      if (error instanceof ApiError && error.retryAfterSeconds != null) {
+        setCooldownUntil(Date.now() + error.retryAfterSeconds * 1000);
+        setFeedback({
+          message: `Muitas tentativas. Aguarde ${error.retryAfterSeconds}s.`,
+          unavailable: false,
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!challengeId || !email) {
+    return (
+      <Page title="Nova senha">
+        <StateScreen
+          icon="mail"
+          title="Verificação expirada"
+          text="Solicite um novo código para redefinir a senha."
+          actions={
+            <Btn tone="primary" go="forgot-password">
+              Solicitar código
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  return (
+    <Page title="Nova senha">
+      <Txt variant="lead">
+        Crie a nova senha para <Text style={{ fontWeight: '800' }}>{email}</Text>.
+      </Txt>
+      <PasswordInput
+        label="Nova senha"
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Nova senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordInput
+        label="Repetir nova senha"
+        value={confirmation}
+        onChangeText={setConfirmation}
+        placeholder="Repita a nova senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordHint password={password} />
+      <Notice tone="orange" icon="shield">
+        Ao redefinir a senha, as outras sessões serão encerradas. Você precisará entrar de novo.
+      </Notice>
+      {feedback ? (
+        <Notice tone="orange" icon="alert">
+          {feedback.message}
+        </Notice>
+      ) : null}
+      <Btn tone="primary" onPress={reset} disabled={busy || cooldownRemaining > 0}>
+        {busy
+          ? 'Salvando…'
+          : cooldownRemaining > 0
+            ? `Aguarde ${cooldownRemaining}s`
+            : 'Redefinir senha'}
+      </Btn>
+      <Btn tone="ghost" go="forgot-password">
+        Pedir outro código
+      </Btn>
+    </Page>
+  );
+}
+
+function ChangePassword() {
+  const nav = useNav();
+  const { session, signOut } = useApp();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const now = useNow(cooldownUntil > 0);
+  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
+
+  const change = async () => {
+    if (!session || busy) {
+      return;
+    }
+    if (!currentPassword || !password) {
+      setFeedback({ message: 'Informe a senha atual e a nova senha.', unavailable: false });
+      return;
+    }
+    if (password !== confirmation) {
+      setFeedback({ message: 'As senhas não conferem.', unavailable: false });
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await api.auth.changePassword(session.accessToken, currentPassword, password);
+      nav.back();
+      nav.toast('Senha alterada.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        await signOut();
+        nav.reset('login-email');
+        nav.toast('Sessão encerrada. Entre novamente com a nova senha.');
+      } else {
+        setFeedback(emailError(error));
+        if (error instanceof ApiError && error.retryAfterSeconds != null) {
+          setCooldownUntil(Date.now() + error.retryAfterSeconds * 1000);
+          setFeedback({
+            message: `Muitas tentativas. Aguarde ${error.retryAfterSeconds}s.`,
+            unavailable: false,
+          });
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!session) {
+    return <EmailLogin />;
+  }
+
+  return (
+    <Page title="Trocar senha">
+      <PasswordInput
+        label="Senha atual"
+        value={currentPassword}
+        onChangeText={setCurrentPassword}
+        placeholder="Senha atual"
+        autoComplete="current-password"
+        textContentType="password"
+      />
+      <PasswordInput
+        label="Nova senha"
+        value={password}
+        onChangeText={setPassword}
+        placeholder="Nova senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordInput
+        label="Repetir nova senha"
+        value={confirmation}
+        onChangeText={setConfirmation}
+        placeholder="Repita a nova senha"
+        autoComplete="new-password"
+        textContentType="newPassword"
+      />
+      <PasswordHint password={password} />
+      <Notice tone="orange" icon="shield">
+        Ao trocar a senha, as outras sessões serão encerradas. Esta continua válida.
+      </Notice>
+      {feedback ? (
+        <Notice tone="orange" icon="alert">
+          {feedback.message}
+        </Notice>
+      ) : null}
+      <Btn tone="primary" onPress={change} disabled={busy || cooldownRemaining > 0}>
+        {busy
+          ? 'Salvando…'
+          : cooldownRemaining > 0
+            ? `Aguarde ${cooldownRemaining}s`
+            : 'Salvar nova senha'}
+      </Btn>
+      <Btn tone="ghost" back>
+        Cancelar
+      </Btn>
     </Page>
   );
 }
@@ -666,9 +1292,12 @@ function Credentials() {
         Trocar e-mail de login
       </Btn>
       <Notice tone="orange" icon="clock">
-        Uma troca só pode ser feita a cada 24 h. As outras sessões são encerradas; esta continua
-        válida.
+        Uma troca de e-mail só pode ser feita a cada 24 h. As outras sessões são encerradas; esta
+        continua válida.
       </Notice>
+      <Btn tone="ghost" go="change-password">
+        Trocar senha
+      </Btn>
       <Btn tone="ghost" onPress={() => load()}>
         Atualizar
       </Btn>
@@ -911,10 +1540,13 @@ function EmailChangeCode() {
 }
 
 export const emailScreens: ScreenDef[] = [
-  { id: 'signup-email', render: () => <EmailEntry purpose="registration" /> },
-  { id: 'login-email', render: () => <EmailEntry purpose="login" /> },
+  { id: 'signup-email', render: () => <EmailEntry /> },
+  { id: 'login-email', render: () => <EmailLogin /> },
   { id: 'email-code', render: () => <EmailCode /> },
-  { id: 'email-name', render: () => <EmailName /> },
+  { id: 'signup-password', render: () => <SignupPassword /> },
+  { id: 'forgot-password', render: () => <ForgotPassword /> },
+  { id: 'reset-password', render: () => <ResetPassword /> },
+  { id: 'change-password', tab: 'perfil', render: () => <ChangePassword /> },
   { id: 'credentials', tab: 'perfil', render: () => <Credentials /> },
   { id: 'email-change', tab: 'perfil', render: () => <EmailChange /> },
   { id: 'email-change-code', tab: 'perfil', render: () => <EmailChangeCode /> },

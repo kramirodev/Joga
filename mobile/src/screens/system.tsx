@@ -419,6 +419,12 @@ function Security() {
             sub: 'E-mail ativo e troca de endereço',
             go: 'credentials',
           },
+          {
+            icon: 'lock' as const,
+            title: 'Trocar senha',
+            sub: 'Senha atual e nova senha',
+            go: 'change-password',
+          },
           ...(authConfig.phoneEnabled
             ? [
                 {

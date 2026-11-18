@@ -246,7 +246,7 @@ export const api = {
     logoutAll(token: string) {
       return call<void>('/auth/logout-all', { method: 'POST', token });
     },
-    emailRequestCode(email: string, purpose: 'registration' | 'login') {
+    emailRequestCode(email: string, purpose: 'registration' | 'password_reset') {
       return call<Challenge>('/auth/email/code', {
         method: 'POST',
         body: { email, purpose },
@@ -261,6 +261,7 @@ export const api = {
     emailRegister(
       challengeId: string,
       email: string,
+      password: string,
       displayName: string | null,
       device?: { name: string; platform: string },
     ) {
@@ -269,19 +270,44 @@ export const api = {
         body: {
           challenge_id: challengeId,
           email,
+          password,
           ...(displayName?.trim() ? { display_name: displayName.trim() } : {}),
           ...(device ? { device_name: device.name, platform: device.platform } : {}),
         },
       });
     },
-    emailLogin(challengeId: string, email: string, device?: { name: string; platform: string }) {
+    emailPasswordLogin(
+      email: string,
+      password: string,
+      device?: { name: string; platform: string },
+    ) {
       return call<Tokens>('/auth/email/login', {
+        method: 'POST',
+        body: {
+          email,
+          password,
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
+    passwordReset(challengeId: string, email: string, newPassword: string) {
+      return call<{ status: string }>('/auth/email/password/reset', {
         method: 'POST',
         body: {
           challenge_id: challengeId,
           email,
-          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+          new_password: newPassword,
         },
+      });
+    },
+    changePassword(token: string, currentPassword: string, newPassword: string) {
+      return call<{ status: string }>('/me/password', {
+        method: 'POST',
+        body: {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+        token,
       });
     },
     emails(token: string) {

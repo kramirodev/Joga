@@ -617,7 +617,10 @@ function SignupPhone() {
     }
     setBusy(true);
     try {
-      const challenge = await api.auth.requestChallenge(phoneE164(phone), auth.purpose);
+      const challenge = await api.auth.requestChallenge(
+        phoneE164(phone),
+        auth.purpose === 'login' ? 'login' : 'registration',
+      );
       setAuth({ phone, challengeId: challenge.challenge_id });
       nav.go('otp');
     } catch (error) {
@@ -926,8 +929,7 @@ function Login() {
   return (
     <Page title="Entrar">
       <Txt variant="lead">
-        Use passkey ou receba um código no seu e-mail. A passkey é mais rápida e não depende de
-        código.
+        Use sua senha ou uma passkey. A passkey é mais rápida nas próximas vezes.
       </Txt>
       <Btn tone="primary" icon="shield" onPress={enterWithPasskey} disabled={busy}>
         {busy ? 'Abrindo…' : 'Usar passkey'}
@@ -956,6 +958,9 @@ function Login() {
           Entrar com telefone
         </Btn>
       ) : null}
+      <TextBtn go="forgot-password" muted>
+        Esqueci minha senha
+      </TextBtn>
       <TextBtn go="recovery" muted>
         Recuperar conta
       </TextBtn>
@@ -977,9 +982,9 @@ function Recovery() {
       ? [
           {
             icon: 'mail' as const,
-            title: 'Receber código no e-mail',
-            sub: 'Entre no endereço principal',
-            go: 'login-email',
+            title: 'Redefinir senha por e-mail',
+            sub: 'Código no endereço principal',
+            go: 'forgot-password',
           },
         ]
       : []),
