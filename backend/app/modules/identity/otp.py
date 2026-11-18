@@ -25,12 +25,16 @@ CODE_WHITESPACE = re.compile(r"\s+")
 
 
 class ChallengePurpose(StrEnum):
-    """Finalidades permitidas para um desafio de telefone."""
+    """Finalidades permitidas para um desafio de curta duração."""
 
     registration = "registration"
     login = "login"
     phone_change = "phone_change"
     recovery = "recovery"
+    email_verification = "email_verification"
+    email_login = "email_login"
+    email_change = "email_change"
+    password_reset = "password_reset"
 
 
 @dataclass(frozen=True)
@@ -147,6 +151,13 @@ class PhoneChallengeService:
         user_id: uuid.UUID | None = None,
     ) -> IssuedChallenge:
         """Cria o desafio, persiste o HMAC e entrega o código ao adaptador."""
+        if purpose not in {
+            ChallengePurpose.registration,
+            ChallengePurpose.login,
+            ChallengePurpose.phone_change,
+            ChallengePurpose.recovery,
+        }:
+            raise ValueError("finalidade não pertence ao fluxo de telefone")
         normalized = normalize_phone(phone)
         phone_hash = hash_phone(normalized, self._secret)
         ip_hash = hash_ip(request_ip, self._secret) if request_ip else None
@@ -168,6 +179,7 @@ class PhoneChallengeService:
         challenge = PhoneChallenge(
             id=challenge_id,
             phone_hash=phone_hash,
+            subject_type="phone",
             user_id=user_id,
             purpose=purpose.value,
             code_hash=hash_otp(challenge_id, code, self._secret),
@@ -200,6 +212,8 @@ class PhoneChallengeService:
         """Valida o código e marca o desafio como consumido."""
         challenge = self._session.get(PhoneChallenge, challenge_id, with_for_update=True)
         if challenge is None or challenge.consumed_at is not None:
+            raise InvalidChallenge("desafio inválido")
+        if challenge.subject_type != "phone":
             raise InvalidChallenge("desafio inválido")
 
         moment = ensure_utc(now or utcnow())

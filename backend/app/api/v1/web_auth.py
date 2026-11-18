@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import (
@@ -17,8 +19,22 @@ from app.api.v1.auth import (
     get_device_service,
     get_session_service,
 )
+from app.api.v1.auth_guards import (
+    require_email_auth_enabled,
+    require_email_registration_allowed,
+    require_phone_auth_enabled,
+    require_phone_registration_allowed,
+)
+from app.api.v1.email_auth import (
+    enforce_login_limits,
+    get_email_account_service,
+    get_email_delivery_service,
+)
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.email.addresses import InvalidEmail, normalize_email
+from app.modules.email.alerts import queue_security_alert
+from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryService
 from app.modules.identity.accounts import (
     AccountNotFound,
     AccountService,
@@ -28,15 +44,27 @@ from app.modules.identity.accounts import (
     PhoneAlreadyRegistered as AccountPhoneAlreadyRegistered,
 )
 from app.modules.identity.devices import DeviceService
+from app.modules.identity.email_accounts import (
+    EmailAccountService,
+    EmailAlreadyRegistered,
+    InvalidCredentials,
+    InvalidEmailReceipt,
+)
 from app.modules.identity.events import (
     AUTH_LOGIN_COMPLETED,
     AUTH_LOGOUT,
     AUTH_REFRESH_REUSE_DETECTED,
     AUTH_REFRESH_ROTATED,
     AUTH_REGISTRATION_COMPLETED,
+    EMAIL_LOGIN_COMPLETED,
+    EMAIL_LOGIN_FAILED,
+    EMAIL_RATE_LIMITED,
+    EMAIL_REGISTRATION_COMPLETED,
     record_security_event,
 )
 from app.modules.identity.models import User
+from app.modules.identity.passwords import PasswordPolicyError
+from app.modules.identity.phone import hash_ip
 from app.modules.identity.sessions import (
     InvalidRefreshToken,
     IssuedTokens,
@@ -44,6 +72,7 @@ from app.modules.identity.sessions import (
     SessionService,
 )
 from app.modules.moderation.service import ModerationService
+from app.modules.ratelimit.service import RateLimitExceeded
 
 router = APIRouter(prefix="/auth/web", tags=["web-auth"])
 
@@ -58,6 +87,18 @@ class WebReceiptRequest(BaseModel):
     device_name: str | None = Field(default=None, max_length=80)
 
 
+class WebEmailRegisterRequest(WebReceiptRequest):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+    display_name: str | None = Field(default=None, max_length=60)
+
+
+class WebEmailLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+    device_name: str | None = Field(default=None, max_length=80)
+
+
 class WebSessionResponse(BaseModel):
     access_token: str
     access_expires_at: datetime
@@ -66,8 +107,14 @@ class WebSessionResponse(BaseModel):
     capabilities: list[str]
 
 
-def _error(status_code: int, code: str) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"code": code})
+def _error(
+    status_code: int,
+    code: str,
+    *,
+    retry_after_seconds: int | None = None,
+) -> HTTPException:
+    headers = {"Retry-After": str(retry_after_seconds)} if retry_after_seconds is not None else None
+    return HTTPException(status_code=status_code, detail={"code": code}, headers=headers)
 
 
 def _issue_session(
@@ -170,6 +217,10 @@ def _session_response(
     "/registration",
     status_code=status.HTTP_201_CREATED,
     response_model=WebSessionResponse,
+    dependencies=[
+        Depends(require_phone_auth_enabled),
+        Depends(require_phone_registration_allowed),
+    ],
 )
 def web_register(
     payload: WebReceiptRequest,
@@ -209,7 +260,11 @@ def web_register(
     )
 
 
-@router.post("/login", response_model=WebSessionResponse)
+@router.post(
+    "/login",
+    response_model=WebSessionResponse,
+    dependencies=[Depends(require_phone_auth_enabled)],
+)
 def web_login(
     payload: WebReceiptRequest,
     response: Response,
@@ -237,6 +292,168 @@ def web_login(
     session.commit()
 
     record = session.get(User, user.id)
+    if record is None:
+        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token")
+    return _session_response(
+        response,
+        tokens,
+        record,
+        settings,
+        _capabilities(session, record.id),
+    )
+
+
+@router.post(
+    "/email/registration",
+    status_code=status.HTTP_201_CREATED,
+    response_model=WebSessionResponse,
+    dependencies=[
+        Depends(require_email_auth_enabled),
+        Depends(require_email_registration_allowed),
+    ],
+)
+def web_register_email(
+    payload: WebEmailRegisterRequest,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+    accounts: Annotated[EmailAccountService, Depends(get_email_account_service)],
+    deliveries: Annotated[EmailDeliveryService, Depends(get_email_delivery_service)],
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    devices: Annotated[DeviceService, Depends(get_device_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WebSessionResponse:
+    """Cria conta por e-mail/senha e entrega a sessão do painel em cookies."""
+    try:
+        account = accounts.register(
+            payload.challenge_id,
+            payload.email,
+            payload.password,
+            display_name=payload.display_name,
+        )
+    except PasswordPolicyError:
+        raise _error(status.HTTP_400_BAD_REQUEST, "weak_password") from None
+    except InvalidEmailReceipt:
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_receipt") from None
+    except InvalidEmail:
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_email") from None
+    except EmailAlreadyRegistered:
+        raise _error(status.HTTP_409_CONFLICT, "email_already_registered") from None
+    except IntegrityError:
+        session.rollback()
+        raise _error(status.HTTP_409_CONFLICT, "email_already_registered") from None
+
+    tokens = _issue_session(
+        sessions,
+        devices,
+        account.id,
+        device_name=payload.device_name,
+    )
+    try:
+        welcome_email = normalize_email(payload.email)
+    except InvalidEmail:  # pragma: no cover - já validado no serviço
+        welcome_email = payload.email
+    try:
+        deliveries.enqueue(
+            "welcome",
+            to=welcome_email,
+            user_id=account.id,
+            reference=str(account.id),
+            context={"display_name": payload.display_name},
+        )
+    except EmailBudgetExhausted:
+        pass
+    record_security_event(session, EMAIL_REGISTRATION_COMPLETED, user_id=account.id)
+    session.commit()
+
+    record = session.get(User, account.id)
+    if record is None:
+        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token")
+    return _session_response(
+        response,
+        tokens,
+        record,
+        settings,
+        _capabilities(session, record.id),
+    )
+
+
+@router.post(
+    "/email/login",
+    response_model=WebSessionResponse,
+    dependencies=[Depends(require_email_auth_enabled)],
+)
+def web_login_email(
+    payload: WebEmailLoginRequest,
+    request: Request,
+    response: Response,
+    session: Annotated[Session, Depends(get_session)],
+    accounts: Annotated[EmailAccountService, Depends(get_email_account_service)],
+    deliveries: Annotated[EmailDeliveryService, Depends(get_email_delivery_service)],
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    devices: Annotated[DeviceService, Depends(get_device_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WebSessionResponse:
+    """Autentica por e-mail + senha no painel, com rate limit e erro genérico."""
+    request_ip = request.client.host if request.client else None
+    ip_hash = (
+        hash_ip(request_ip, settings.phone_hash_secret.get_secret_value()) if request_ip else None
+    )
+    try:
+        normalized, _ = enforce_login_limits(
+            session,
+            settings,
+            email=payload.email,
+            request_ip=request_ip,
+        )
+    except InvalidEmail:
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_email") from None
+    except RateLimitExceeded as error:
+        record_security_event(
+            session,
+            EMAIL_RATE_LIMITED,
+            ip_hash=ip_hash,
+            details={"operation": "web_login", "reason": "rate_limit"},
+        )
+        session.commit()
+        raise _error(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "rate_limited",
+            retry_after_seconds=error.retry_after_seconds,
+        ) from None
+
+    try:
+        account = accounts.authenticate(normalized, payload.password)
+    except InvalidCredentials:
+        record_security_event(
+            session,
+            EMAIL_LOGIN_FAILED,
+            ip_hash=ip_hash,
+            details={"reason": "credentials", "surface": "web"},
+        )
+        session.commit()
+        raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_credentials") from None
+
+    new_device = bool(payload.device_name) and not devices.has_named_device(
+        account.id, payload.device_name or ""
+    )
+    tokens = _issue_session(
+        sessions,
+        devices,
+        account.id,
+        device_name=payload.device_name,
+    )
+    if new_device:
+        queue_security_alert(
+            session,
+            deliveries,
+            user_id=account.id,
+            reference=f"web-login:{uuid.uuid4()}",
+            device_label=payload.device_name,
+        )
+    record_security_event(session, EMAIL_LOGIN_COMPLETED, user_id=account.id)
+    session.commit()
+
+    record = session.get(User, account.id)
     if record is None:
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token")
     return _session_response(

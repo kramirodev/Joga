@@ -6,12 +6,21 @@ from datetime import date
 from functools import lru_cache
 from typing import Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_PHONE_HASH_SECRET = "local-development-only-change-me"
 DEFAULT_TOKEN_HASH_SECRET = "local-token-development-only-change-me"
 LOCAL_ENVIRONMENTS = {"local", "test", "development", "ci"}
+
+# Cotas diárias dos planos usados pelo beta. O orçamento configurado precisa
+# ficar abaixo da cota para não esgotá-la sem margem operacional.
+EMAIL_PROVIDER_QUOTAS = {
+    "brevo": 300,
+    "resend": 3_000,
+    "fake": 10_000,
+    "none": 10_000,
+}
 
 
 class Settings(BaseSettings):
@@ -39,6 +48,41 @@ class Settings(BaseSettings):
     otp_max_per_hour: int = Field(default=5, ge=1, le=20)
     otp_max_per_ip_per_hour: int = Field(default=20, ge=1, le=200)
     otp_receipt_ttl_seconds: int = Field(default=600, ge=60, le=1800)
+
+    # Fase de autenticação (ADR 0050). O padrão do código preserva o caminho de
+    # telefone já existente; o perfil beta é aplicado por variável de ambiente
+    # em `.env.example`. Nunca habilitar e-mail sem provedor configurado.
+    auth_email_enabled: bool = False
+    auth_phone_enabled: bool = True
+    allow_email_registration: bool = True
+    allow_phone_registration: bool = True
+    phone_required_for_booking: bool = False
+    signup_mode: str = Field(default="open", pattern="^(open|closed)$")
+
+    # E-mail transacional (ADR 0050). Nenhum segredo tem valor padrão.
+    email_provider: str = Field(default="none", pattern="^(brevo|resend|none|fake)$")
+    email_api_key: SecretStr | None = None
+    email_from: str | None = Field(default=None, max_length=254)
+    email_from_name: str = Field(default="JOGA", min_length=1, max_length=80)
+    email_reply_to: str | None = Field(default=None, max_length=254)
+    email_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    email_daily_budget: int = Field(default=250, ge=1, le=10_000)
+    email_code_ttl_seconds: int = Field(default=600, ge=60, le=1800)
+    email_max_per_address_per_hour: int = Field(default=5, ge=1, le=20)
+    email_max_per_ip_per_hour: int = Field(default=50, ge=1, le=200)
+    email_resend_cooldown_seconds: int = Field(default=60, ge=0, le=300)
+    # Beta: rede móvel/CGNAT compartilha IP. O limite por endereço continua
+    # separado; a evolução para limite por dispositivo está em PENDENCIAS.
+    signup_max_per_ip_per_day: int = Field(default=20, ge=1, le=100)
+    # Lista adicional, separada por vírgula. A lista embutida cobre provedores
+    # descartáveis conhecidos e não depende de serviço pago.
+    email_disposable_domains: str = ""
+    email_max_delivery_attempts: int = Field(default=5, ge=1, le=20)
+    email_bounce_threshold: int = Field(default=3, ge=1, le=20)
+    email_change_cooldown_hours: int = Field(default=24, ge=1, le=168)
+    # Login por senha (ADR 0050). Janela fixa de 15 min.
+    email_login_max_per_email: int = Field(default=10, ge=1, le=100)
+    email_login_max_per_ip: int = Field(default=30, ge=1, le=300)
 
     # Segredo de hash de access/refresh tokens. O padrão só vale para
     # desenvolvimento e testes; ambientes reais precisam definir JOGA_TOKEN_HASH_SECRET.
@@ -187,6 +231,21 @@ class Settings(BaseSettings):
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
 
+    @property
+    def email_disposable_domain_set(self) -> frozenset[str]:
+        return frozenset(
+            item.strip().lower().rstrip(".")
+            for item in self.email_disposable_domains.split(",")
+            if item.strip()
+        )
+
+    @property
+    def email_provider_quota(self) -> int | None:
+        """Cota diária do plano do provedor usado no boot."""
+        if self.email_provider in {"brevo", "resend"}:
+            return EMAIL_PROVIDER_QUOTAS[self.email_provider]
+        return None
+
     # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
     moderation_operators: str = ""
     moderation_admin_user_ids: str = ""
@@ -210,6 +269,14 @@ class Settings(BaseSettings):
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @field_validator("dev_fixed_otp", mode="before")
+    @classmethod
+    def blank_dev_fixed_otp_is_disabled(cls, value: object) -> object:
+        """Permite ``JOGA_DEV_FIXED_OTP=`` no ambiente sem quebrar o boot."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def webauthn_origins(self) -> list[str]:
@@ -287,6 +354,65 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} não pode ser o placeholder de desenvolvimento")
         if self.environment.lower() not in LOCAL_ENVIRONMENTS and self.cpf_key is None:
             raise ValueError("JOGA_CPF_KEY é obrigatório fora do ambiente local")
+        return self
+
+    @model_validator(mode="after")
+    def validate_auth_phase_flags(self) -> Self:
+        """Falha no boot em combinações de credencial inválidas (ADR 0050)."""
+        local = self.environment.lower() in LOCAL_ENVIRONMENTS
+
+        if not (self.auth_email_enabled or self.auth_phone_enabled):
+            raise ValueError("pelo menos uma credencial deve estar habilitada")
+
+        if not self.auth_phone_enabled:
+            if self.allow_phone_registration:
+                raise ValueError("JOGA_ALLOW_PHONE_REGISTRATION exige JOGA_AUTH_PHONE_ENABLED=true")
+            if self.phone_required_for_booking:
+                raise ValueError(
+                    "JOGA_PHONE_REQUIRED_FOR_BOOKING exige JOGA_AUTH_PHONE_ENABLED=true"
+                )
+
+        if self.email_provider == "fake" and not local:
+            raise ValueError("JOGA_EMAIL_PROVIDER=fake só pode ser usado em ambiente local")
+
+        if self.email_provider != "none":
+            api_key = (
+                self.email_api_key.get_secret_value().strip()
+                if self.email_api_key is not None
+                else ""
+            )
+            if not api_key:
+                raise ValueError("JOGA_EMAIL_API_KEY é obrigatório com provedor de e-mail")
+            if not (self.email_from or "").strip():
+                raise ValueError("JOGA_EMAIL_FROM é obrigatório com provedor de e-mail")
+            if not (self.email_from_name or "").strip():
+                raise ValueError("JOGA_EMAIL_FROM_NAME é obrigatório com provedor de e-mail")
+
+        if self.auth_email_enabled and self.email_provider == "none":
+            raise ValueError(
+                "JOGA_AUTH_EMAIL_ENABLED=true exige JOGA_EMAIL_PROVIDER diferente de none"
+            )
+
+        from app.modules.email.addresses import InvalidEmail, normalize_email
+
+        for name, value in (
+            ("JOGA_EMAIL_FROM", self.email_from),
+            ("JOGA_EMAIL_REPLY_TO", self.email_reply_to),
+        ):
+            if value is None or not value.strip():
+                continue
+            try:
+                normalize_email(value)
+            except InvalidEmail as error:
+                raise ValueError(f"{name} inválido: {error}") from error
+
+        quota = self.email_provider_quota
+        if quota is not None and self.email_daily_budget >= quota:
+            raise ValueError(
+                f"JOGA_EMAIL_DAILY_BUDGET deve ser menor que a cota do plano "
+                f"({quota}/dia para {self.email_provider})"
+            )
+
         return self
 
     @model_validator(mode="after")

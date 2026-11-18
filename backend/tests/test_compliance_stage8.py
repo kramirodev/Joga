@@ -106,7 +106,7 @@ def test_cpf_rotation_reads_previous_key() -> None:
     )
     assert decrypt_cpf(ciphertext, user_id, key_id, rotated) == TEST_CPF
     with pytest.raises(CpfKeyUnavailable):
-        encrypt_cpf(TEST_CPF, user_id, Settings(_env_file=None))
+        encrypt_cpf(TEST_CPF, user_id, Settings(_env_file=None, cpf_key=None, cpf_key_id=None))
 
 
 @pytest.mark.parametrize(
@@ -127,7 +127,12 @@ def test_cpf_accepts_formatting_and_masks() -> None:
 
 def test_cpf_key_is_required_outside_local_and_rejects_placeholder() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production")
+        Settings(
+            _env_file=None,
+            environment="production",
+            cpf_key=None,
+            cpf_key_id=None,
+        )
 
     zero_key = base64.b64encode(b"\x00" * 32).decode("ascii")
     with pytest.raises(ValidationError):
@@ -143,7 +148,7 @@ def test_cpf_key_is_required_outside_local_and_rejects_placeholder() -> None:
             cpf_key_id="short",
         )
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, cpf_key=SecretStr(TEST_CPF_KEY))
+        Settings(_env_file=None, cpf_key=SecretStr(TEST_CPF_KEY), cpf_key_id=None)
 
 
 def test_cpf_api_returns_only_mask_and_isolates_users(

@@ -266,6 +266,31 @@ class SessionService:
         self._session.flush()
         return count
 
+    def revoke_others(
+        self,
+        user_id: uuid.UUID,
+        *,
+        keep_session_id: uuid.UUID,
+        reason: str = "credential_change",
+        now: datetime | None = None,
+    ) -> int:
+        """Revoga as demais sessões do usuário, preservando a atual."""
+        moment = ensure_utc(now or utcnow())
+        rows = self._session.scalars(
+            select(SessionRecord).where(
+                SessionRecord.user_id == user_id,
+                SessionRecord.revoked_at.is_(None),
+                SessionRecord.id != keep_session_id,
+            )
+        )
+        count = 0
+        for row in rows:
+            row.revoked_at = moment
+            row.revoked_reason = reason
+            count += 1
+        self._session.flush()
+        return count
+
     def _revoke_family(self, family_id: uuid.UUID, moment: datetime, reason: str) -> None:
         rows = self._session.scalars(
             select(SessionRecord).where(

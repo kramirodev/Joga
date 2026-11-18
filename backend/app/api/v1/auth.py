@@ -7,10 +7,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.v1.auth_guards import (
+    require_phone_auth_enabled,
+    require_phone_registration_allowed,
+)
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.email.addresses import InvalidEmail, normalize_email
+from app.modules.email.alerts import queue_security_alert
+from app.modules.email.deliveries import EmailDeliveryService
+from app.modules.email.models import UserEmail
 from app.modules.identity.accounts import (
     AccountNotFound,
     AccountService,
@@ -166,8 +175,15 @@ class PasskeyRegistrationResponse(BaseModel):
 class PasskeyAuthenticationVerifyRequest(BaseModel):
     challenge_id: UUID
     credential: dict[str, Any]
+    email: str | None = Field(default=None, max_length=254)
     device_name: str | None = Field(default=None, max_length=80)
     platform: Literal["android", "ios", "web", "unknown"] = "unknown"
+
+
+class PasskeyAuthenticationOptionsRequest(BaseModel):
+    """Dica opcional do cliente; não filtra credenciais antes da assinatura."""
+
+    email: str | None = Field(default=None, max_length=254)
 
 
 class DeviceSummary(BaseModel):
@@ -283,6 +299,41 @@ def get_device_service(
     return DeviceService(session)
 
 
+def get_email_alerts_service(
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> EmailDeliveryService:
+    """Serviço de alertas; não envia nada por rede na request."""
+    return EmailDeliveryService(
+        session,
+        provider=settings.email_provider,
+        daily_budget=settings.email_daily_budget,
+        secret=settings.phone_hash_secret.get_secret_value(),
+        max_attempts=settings.email_max_delivery_attempts,
+        bounce_threshold=settings.email_bounce_threshold,
+    )
+
+
+def _credential_matches_email(session: Session, user_id: UUID, email: str) -> bool:
+    """Confere o e-mail depois da assinatura, sem revelá-lo antes."""
+    try:
+        normalized = normalize_email(email)
+    except InvalidEmail:
+        return False
+    return (
+        session.scalar(
+            select(UserEmail.id)
+            .where(
+                UserEmail.user_id == user_id,
+                UserEmail.email_normalized == normalized,
+                UserEmail.released_at.is_(None),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def _bearer_token(
     authorization: Annotated[str | None, Header()] = None,
 ) -> str:
@@ -392,6 +443,7 @@ def _error(
     "/phone/challenges",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=ChallengeResponse,
+    dependencies=[Depends(require_phone_auth_enabled)],
 )
 def request_phone_challenge(
     payload: ChallengeRequest,
@@ -401,6 +453,12 @@ def request_phone_challenge(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ChallengeResponse:
     """Cria um desafio. A resposta não revela se o telefone já tem conta."""
+    if payload.purpose == "registration":
+        if settings.signup_mode == "closed":
+            raise _error(status.HTTP_403_FORBIDDEN, "signup_closed")
+        if not settings.allow_phone_registration:
+            raise _error(status.HTTP_403_FORBIDDEN, "phone_registration_disabled")
+
     ip_hash = _ip_hash(request, settings)
 
     try:
@@ -456,6 +514,7 @@ def request_phone_challenge(
 @router.post(
     "/phone/challenges/{challenge_id}/verify",
     response_model=VerifyResponse,
+    dependencies=[Depends(require_phone_auth_enabled)],
 )
 def verify_phone_challenge(
     challenge_id: UUID,
@@ -531,6 +590,10 @@ def verify_phone_challenge(
     "/registration",
     status_code=status.HTTP_201_CREATED,
     response_model=TokenResponse,
+    dependencies=[
+        Depends(require_phone_auth_enabled),
+        Depends(require_phone_registration_allowed),
+    ],
 )
 def register_with_phone(
     payload: ReceiptRequest,
@@ -755,7 +818,11 @@ def request_phone_change(
     )
 
 
-@router.post("/phone-change", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/phone-change",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_phone_auth_enabled)],
+)
 def confirm_phone_change(
     payload: PhoneChangeConfirmRequest,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
@@ -862,6 +929,7 @@ def passkey_registration_verify(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[PasskeyService, Depends(get_passkey_service)],
+    alerts: Annotated[EmailDeliveryService, Depends(get_email_alerts_service)],
 ) -> PasskeyRegistrationResponse:
     """Verifica a atestação e adiciona a credencial."""
     try:
@@ -887,6 +955,13 @@ def passkey_registration_verify(
             "passkey_already_registered",
         ) from None
 
+    queue_security_alert(
+        session,
+        alerts,
+        user_id=current.user_id,
+        reference=f"passkey:{result.credential_id}",
+        device_label=payload.name,
+    )
     record_security_event(
         session,
         PASSKEY_REGISTERED,
@@ -909,8 +984,15 @@ def passkey_authentication_options(
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[PasskeyService, Depends(get_passkey_service)],
     settings: Annotated[Settings, Depends(get_settings)],
+    payload: PasskeyAuthenticationOptionsRequest | None = None,
 ) -> PasskeyOptionsResponse:
-    """Gera opções de login por passkey (credencial descobrível)."""
+    """Gera opções de login por passkey sem enumerar contas.
+
+    O e-mail informado é apenas uma dica do cliente: ele NÃO filtra
+    ``allowCredentials`` antes da assinatura, porque isso revelaria a
+    existência da conta. A descoberta usa a credencial residente; o vínculo do
+    e-mail é conferido somente depois da verificação da assinatura.
+    """
     try:
         options = service.begin_authentication(
             request_ip_hash=_ip_hash(http_request, settings),
@@ -961,6 +1043,17 @@ def passkey_authentication_verify(
             session,
             PASSKEY_FAILED,
             details={"operation": "authentication"},
+        )
+        session.commit()
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_passkey") from None
+
+    if payload.email and not _credential_matches_email(
+        session, authenticated.user_id, payload.email
+    ):
+        record_security_event(
+            session,
+            PASSKEY_FAILED,
+            details={"operation": "authentication", "reason": "email_mismatch"},
         )
         session.commit()
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_passkey") from None
