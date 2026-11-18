@@ -1,0 +1,76 @@
+# Blueprint do ambiente de DEMONSTRACAO no Render.
+#
+# - um unico web service Docker (Caddy + uvicorn + SPA);
+# - plano free; nenhum disco persistente, banco ou recurso pago;
+# - health check aberto em /api/v1/health/ready;
+# - segredos ficam no dashboard (sync: false), nunca neste arquivo.
+#
+# O host publico e <nome-do-servico>.onrender.com. Se o Render atribuir outro
+# nome porque "joga-demo" ja existe, ajuste JOGA_WEBAUTHN_ORIGIN_WEB depois da
+# criacao (JOGA_WEBAUTHN_RP_ID se auto-referencia por RENDER_EXTERNAL_HOSTNAME).
+
+services:
+  - type: web
+    name: joga-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health/ready
+    autoDeploy: true
+    envVars:
+      - key: JOGA_ENVIRONMENT
+        value: development
+      - key: JOGA_DATABASE_URL
+        sync: false
+      - key: JOGA_PHONE_HASH_SECRET
+        sync: false
+      - key: JOGA_TOKEN_HASH_SECRET
+        sync: false
+      - key: JOGA_CPF_KEY
+        sync: false
+      - key: JOGA_CPF_KEY_ID
+        value: k1
+      - key: JOGA_AUTH_EMAIL_ENABLED
+        value: "true"
+      - key: JOGA_AUTH_PHONE_ENABLED
+        value: "false"
+      - key: JOGA_ALLOW_EMAIL_REGISTRATION
+        value: "true"
+      - key: JOGA_ALLOW_PHONE_REGISTRATION
+        value: "false"
+      - key: JOGA_PHONE_REQUIRED_FOR_BOOKING
+        value: "false"
+      - key: JOGA_SIGNUP_MODE
+        value: closed
+      - key: JOGA_EMAIL_PROVIDER
+        value: brevo
+      - key: JOGA_EMAIL_API_KEY
+        sync: false
+      - key: JOGA_EMAIL_FROM
+        value: kramirodev@gmail.com
+      - key: JOGA_EMAIL_FROM_NAME
+        value: JOGA
+      - key: JOGA_EMAIL_DAILY_BUDGET
+        value: "250"
+      - key: JOGA_WEB_COOKIE_SECURE
+        value: "true"
+      - key: JOGA_PSP_PROVIDER
+        value: simulator
+      - key: JOGA_MONEY_MODE
+        value: simulated
+      - key: JOGA_FISCAL_MODE
+        value: disabled
+      - key: JOGA_CUSTODY_MODEL
+        value: B
+      - key: JOGA_WEBAUTHN_RP_ID
+        fromService:
+          type: web
+          name: joga-demo
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: JOGA_WEBAUTHN_ORIGIN_WEB
+        value: https://joga-demo.onrender.com
+      - key: JOGA_MEDIA_ROOT
+        value: /app/backend/var/media
+      - key: DEMO_BASIC_AUTH_HASH
+        sync: false

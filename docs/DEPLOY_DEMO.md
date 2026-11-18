@@ -1,7 +1,8 @@
 # Deploy de demonstração (Render + Supabase)
 
-**Status:** planejado. Os artefatos de container ainda **não existem** no repositório
-(ver §3). Este documento é a checklist de execução, não o registro de um deploy feito.
+**Status:** artefatos de container criados e validados localmente; deploy remoto
+**bloqueado** por ausência das credenciais de Supabase/Render/GitHub no ambiente
+de execução. Não há URL pública ainda.
 
 **Data:** 2026-11-18
 
@@ -16,51 +17,56 @@ dinheiro real, PSP real, NFS-e, escrow/modelo C, KYC/MED e SMS real.
 ## 2. Arquitetura obrigatória: uma origem
 
 O painel usa `API_BASE="/api/v1"` e `credentials: "same-origin"`
-(`web/src/lib/api.ts:50,183`), e a API usa cookies `SameSite=Strict`. Painel e API
-em domínios diferentes **quebram o login**.
+(`web/src/lib/api.ts`), e a API usa cookies `SameSite=Strict`. Painel e API em
+domínios diferentes **quebram o login**.
 
 | Camada | Escolha | Motivo |
 |---|---|---|
 | API + painel | Um único container no Render (Caddy serve `/srv/web` e faz proxy de `/api/*` para o uvicorn) | Mesma origem, sem CORS |
 | Banco | Supabase free (Postgres + PostGIS) | PostGIS pronto, sem cartão |
-| E-mail | Brevo free (300/dia) | Unico free tier que envia para qualquer destinatário sem domínio verificado |
+| E-mail | Brevo free (300/dia) | Envia para qualquer destinatário sem domínio verificado |
 | Worker | GitHub Actions agendado | Render free não mantém worker |
 | Redis | Nenhum | O código não usa |
 
-Não adicionar CORS. Se optar por Vercel para o painel, é obrigatório um `rewrite`
-de `/api/*` para o Render e o teste de cookie/CSRF; a opção de um container é mais
-simples e menos frágil.
+Não adicionar CORS.
 
-## 3. Artefatos pendentes
+### Roteamento no Caddy
+
+| Caminho | Destino | Basic auth |
+|---|---|---|
+| `/api/*` (inclui `/api/v1/health/live` e `/ready`) | `127.0.0.1:8000` | **não** (app mobile e monitores não enviam credencial HTTP) |
+| `/` e assets do SPA | `/srv/web` com fallback `index.html` | **sim** |
+
+## 3. Artefatos
 
 | Artefato | Estado | Observação |
 |---|---|---|
-| `Dockerfile` (multi-stage: web build + runtime Python + Caddy) | **Pendente** | Nenhum Dockerfile no repo |
-| `deploy/Caddyfile` | **Pendente** | Basic auth, `/api/*` proxy, fallback do SPA |
-| `deploy/start.sh` | **Pendente** | `alembic upgrade head`, uvicorn em background, `caddy run` |
-| `.dockerignore` | **Pendente** | Excluir `.git`, `node_modules`, `.venv`, `mobile`, `telas` |
-| `render.yaml` | **Pendente** | `plan: free`, health check `/api/v1/health/ready` |
-| `backend/scripts/seed_demo.py` | **Pendente** | Sem seed, o painel abre vazio |
-| `.github/workflows/email-worker.yml` | Existe, **não commitado** | Precisa de correção de ambiente (§7) |
-| `.github/workflows/email-cleanup.yml` | Existe, **não commitado** | Idem |
+| `Dockerfile` (raiz) | **Pronto** | Multi-stage: Node 22 + pnpm 9.15.4; Python 3.12 + `requirements.lock`; Caddy oficial >= 2.8 validado no build |
+| `deploy/Caddyfile` | **Pronto** | `handle /api/*` sem basic auth; SPA com `basic_auth`; `try_files` |
+| `deploy/start.sh` | **Pronto** | `alembic upgrade head` com 3 tentativas; uvicorn em loopback; `exec caddy run` |
+| `.dockerignore` | **Pronto** | Exclui `.git`, `node_modules`, `.venv`, `__pycache__`, `web/dist`, `mobile`, `telas`, `backend/var`, `.env*`, `dist` |
+| `render.yaml` | **Pronto** | Web service Docker, `plan: free`, health check `/api/v1/health/ready` |
+| `backend/scripts/seed_demo.py` | **Pronto** | Idempotente; usa `pricing.service`, `EmailAccountService`, `OrganizationService` e `VenueService` |
+| `.github/workflows/email-worker.yml` | **Já existia** | `development` + `simulator`; roda no branch padrão |
+| `.github/workflows/email-cleanup.yml` | **Já existia** | Limpeza diária |
 
-## 4. Contas e chaves
+## 4. Contas e chaves necessárias
 
 | Conta | O que pegar | Vai para | Custo |
 |---|---|---|---|
-| Supabase | Connection string do **Session pooler** | `JOGA_DATABASE_URL` | Free (500 MB) |
-| Render | Nada obrigatório | — | Free (750 h/mês) |
-| Brevo | API key `xkeysib-...` e remetente verificado | `JOGA_EMAIL_API_KEY`, `JOGA_EMAIL_FROM` | Free (300/dia) |
-| GitHub | Secrets do repositório (§7) | Workflows | Free |
-| UptimeRobot ou cron-job.org | URL de ping | — | Free |
+| Supabase | URL do **Session pooler** + senha do banco + região | `JOGA_DATABASE_URL` | Free (500 MB) |
+| Render | Acesso ao dashboard/API | Deploy do serviço | Free (750 h/mês) |
+| Brevo | API key e remetente verificado | `JOGA_EMAIL_API_KEY`, `JOGA_EMAIL_FROM` | Free (300/dia) |
+| GitHub | Permissão para secrets e workflow_dispatch | Workflows | Free |
+| UptimeRobot | Monitor HTTP(S) | Ping do health | Free |
 
 ### Supabase: o que pegar e o que **não** pegar
 
 - **Pegue** `Settings → Database → Connection string`. Use o **Session pooler**
   (porta 5432, host `aws-0-<região>.pooler.supabase.com`, usuário
   `postgres.<ref>`).
-- **Não use** as chaves `anon` e `service_role` de `Settings → API`. Elas são do
-  SDK/PostgREST; o JOGA fala Postgres direto.
+- **Não use** as chaves `anon` e `service_role` de `Settings → API`. O JOGA fala
+  Postgres direto.
 - **Não use** o Transaction pooler (6543) para migração.
 - Habilite a extensão antes das migrações:
 
@@ -74,42 +80,63 @@ O host `db.<ref>.supabase.co` é IPv6-only na maioria dos projetos. O Render fre
 e os runners do GitHub Actions não têm saída IPv6 confiável. O Session pooler é
 IPv4 e mantém compatibilidade com migração.
 
-## 5. Variáveis de ambiente (perfil beta)
+## 5. Variáveis de ambiente (nomes, sem valores)
 
-Nomes e valores do demo. Tudo marcado como **segredo** vai no dashboard, nunca no Git.
+Tudo marcado como **segredo** vai no dashboard, nunca no Git.
 
 ```text
-JOGA_ENVIRONMENT=development          # obrigatório para liberar o simulador
-JOGA_DATABASE_URL=<segredo>           # Session pooler + ?sslmode=require
-JOGA_PHONE_HASH_SECRET=<segredo>
-JOGA_TOKEN_HASH_SECRET=<segredo>
-JOGA_CPF_KEY=<segredo base64 32 bytes>
-JOGA_CPF_KEY_ID=<id>
+JOGA_ENVIRONMENT=development
+JOGA_DATABASE_URL                      # segredo: Session pooler + ?sslmode=require
+JOGA_PHONE_HASH_SECRET                 # segredo
+JOGA_TOKEN_HASH_SECRET                 # segredo
+JOGA_CPF_KEY                           # segredo: base64 de 32 bytes
+JOGA_CPF_KEY_ID=k1
 JOGA_AUTH_EMAIL_ENABLED=true
 JOGA_AUTH_PHONE_ENABLED=false
 JOGA_ALLOW_EMAIL_REGISTRATION=true
 JOGA_ALLOW_PHONE_REGISTRATION=false
 JOGA_PHONE_REQUIRED_FOR_BOOKING=false
-JOGA_SIGNUP_MODE=open
+JOGA_SIGNUP_MODE=closed                # decisão do demo: cadastro fechado
 JOGA_EMAIL_PROVIDER=brevo
-JOGA_EMAIL_API_KEY=<segredo>
-JOGA_EMAIL_FROM=<remetente verificado no Brevo>
+JOGA_EMAIL_API_KEY                     # segredo
+JOGA_EMAIL_FROM=kramirodev@gmail.com
 JOGA_EMAIL_FROM_NAME=JOGA
 JOGA_EMAIL_DAILY_BUDGET=250
-JOGA_WEB_COOKIE_SECURE=true           # HTTPS no Render
+JOGA_WEB_COOKIE_SECURE=true            # HTTPS no Render
 JOGA_PSP_PROVIDER=simulator
 JOGA_MONEY_MODE=simulated
 JOGA_FISCAL_MODE=disabled
 JOGA_CUSTODY_MODEL=B
 JOGA_WEBAUTHN_RP_ID=<host do Render, sem https>
 JOGA_WEBAUTHN_ORIGIN_WEB=https://<host do Render>
-DEMO_BASIC_AUTH_HASH=<segredo bcrypt>
+JOGA_MEDIA_ROOT=/app/backend/var/media
+DEMO_BASIC_AUTH_HASH                   # segredo: hash bcrypt do Caddy
 ```
 
 `JOGA_ENVIRONMENT=development` é deliberado: fora de
 `local/test/development/ci` o boot exige Mercado Pago com token e webhook
-(`backend/app/core/config.py`). Por isso o demo é `development` e o acesso precisa
-ficar atrás de basic auth.
+(`backend/app/core/config.py`). Por isso o demo é `development` e o acesso fica
+atrás de basic auth.
+
+### Cadastro fechado
+
+`JOGA_SIGNUP_MODE=closed` impede que qualquer pessoa crie conta e consuma a cota
+de 300 e-mails/dia. As contas de teste entram pelo seed. Para liberar
+autoatendimento, troque para `open` sabendo do risco.
+
+### Hash do basic auth
+
+O usuário é fixo `demo`; o que varia é a senha. Gerar dentro da imagem (a senha
+não é versionada):
+
+```bash
+docker run --rm joga-demo caddy hash-password --plaintext '<senha-do-demo>'
+```
+
+No Render, cole o hash em `DEMO_BASIC_AUTH_HASH` (secret). O Caddyfile lê a
+variável em tempo de execução; sem ela, o Caddy falha fechado. A diretiva
+`basic_auth` do Caddy exige o par `<usuário> <hash>` — por isso o Caddyfile tem
+`demo {$DEMO_BASIC_AUTH_HASH}` e não apenas o hash.
 
 ## 6. Banco: migração e cuidados
 
@@ -120,113 +147,173 @@ remoto, use a variável inline na sessão — não edite o `.env`:
 cd backend
 $env:JOGA_DATABASE_URL="postgresql+psycopg://postgres.<ref>:<senha>@aws-0-<região>.pooler.supabase.com:5432/postgres?sslmode=require"
 .venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m alembic current
 .venv\Scripts\python.exe -m alembic check
 Remove-Item Env:JOGA_DATABASE_URL
 ```
 
 Regras:
 
-- Nunca executar `alembic downgrade base` contra o Supabase. É drop de schema.
+- Nunca executar `alembic downgrade` contra o Supabase. É drop de schema.
 - `alembic check` precisa dizer "No new upgrade operations detected".
-- O banco local pode estar em revisão órfã; para recriar:
+- Head esperado: `y8b9c0d1e2f3`.
+
+**Estado remoto:** não migrado nesta execução (sem credencial do Supabase).
+
+## 7. Seed de demonstração
 
 ```powershell
-docker compose -f infra/compose.yaml down -v
-docker compose -f infra/compose.yaml up -d
+cd backend
+$env:JOGA_DATABASE_URL="postgresql+psycopg://..."
+$env:JOGA_DEMO_SEED_PASSWORD="<senha-forte>"
+.venv\Scripts\python.exe -m scripts.seed_demo
+Remove-Item Env:JOGA_DATABASE_URL, Env:JOGA_DEMO_SEED_PASSWORD
 ```
 
-## 7. Worker de e-mail — bloqueio conhecido
+O script é idempotente: na segunda execução reaproveita usuários, organização,
+estabelecimento e quadra, e só cria janelas de agenda que faltam. A senha vem
+somente de `JOGA_DEMO_SEED_PASSWORD`; o hash é Argon2id produzido pelo
+`PasswordService`.
 
-O código enfileira o e-mail e responde `202`; sem worker, o código **não chega**.
+Dados criados:
 
-Os workflows agendados existem, mas como estão hoje **falham no demo**:
-
-```yaml
-JOGA_ENVIRONMENT: production
-JOGA_PSP_PROVIDER: mercadopago
-JOGA_MERCADO_PAGO_ACCESS_TOKEN: ${{ secrets... }}
-```
-
-Em `production`, o boot exige Mercado Pago com token, webhook e URL HTTPS. Sem
-credenciais reais (que estão bloqueadas), o job morre antes de drenar a Outbox.
-
-Correção necessária, feita pelo agente de backend:
-
-- usar `JOGA_ENVIRONMENT=development` e `JOGA_PSP_PROVIDER=simulator` no demo, ou
-  parametrizar por `vars.JOGA_ENVIRONMENT` / `vars.JOGA_PSP_PROVIDER`; e
-- remover os segredos de Mercado Pago dos jobs do demo.
-
-Outras limitações do agendador:
-
-- Workflows agendados só rodam a partir do **branch padrão** (`main`). Nada roda
-  enquanto os arquivos estiverem fora dele.
-- O cron do GitHub é best-effort: atraso típico de 5 a 15 minutos.
-- Agendamentos são desativados após ~60 dias sem atividade no repositório.
-- Os runners não têm IPv6: use o Session pooler (§4).
-
-Alternativa sem GitHub Actions: um ping externo (cron-job.org) para um endpoint
-interno autenticado de drenagem. Esse endpoint **não existe** hoje.
-
-## 8. Passo a passo
-
-1. Criar o projeto no Supabase; habilitar PostGIS; copiar a URL do Session pooler.
-2. Rodar `alembic upgrade head` e `alembic check` no remoto (§6).
-3. Criar o seed de demonstração (organização, quadra, operador, jogador).
-4. Construir a imagem e testar localmente:
-
-```powershell
-docker build -t joga-demo .
-docker run --rm -p 8080:8080 --env-file .env.demo.local joga-demo
-```
-
-5. Criar o web service no Render (Docker, `plan: free`, health check
-   `/api/v1/health/ready`), configurar as variáveis de §5.
-6. Confirmar `Live` e os health checks.
-7. Configurar os secrets do GitHub e corrigir o ambiente dos workflows (§7).
-8. Rodar o smoke test (§9).
-9. Configurar o ping do UptimeRobot para evitar o sleep do Render.
-
-## 9. Smoke test
-
-| Verificação | Esperado |
+| Item | Valor |
 |---|---|
-| `GET /api/v1/health/live` | 200 |
-| `GET /api/v1/health/ready` | 200 |
+| Operador | `operador@demo.joga.test` (OWNER da organização) |
+| Jogador | `jogador@demo.joga.test` |
+| Organização | `Arena Demo` (CNPJ fictício `11222333000181`) |
+| Estabelecimento | `Arena Demo Centro`, São Paulo/SP |
+| Quadra | `Quadra 1` |
+| Agenda | Todos os dias, 06:00–22:00, R$ 120,00, slot de 60 min |
+| Faixas | Tabela 2D padrão via `pricing.service` |
+
+### IDs do ensaio local (NÃO são do Supabase)
+
+Estes IDs foram criados no PostgreSQL local durante a validação. O seed remoto
+vai gerar IDs novos:
+
+| Item | ID local |
+|---|---|
+| Operador | `44a5bb57-4a16-49b1-a2a5-e80002ce777c` |
+| Jogador | `e017739a-a6a8-4b12-bb5e-15a4923e4274` |
+| Organização | `3aa07dcb-f421-4902-afb3-da8f3e6119f2` |
+| Estabelecimento | `5780f0ad-1d29-411c-a326-9b4baf3d88f8` |
+| Quadra | `3d78f2df-e428-4c92-bee6-c8580897d720` |
+
+## 8. Passo a passo pendente no Render
+
+1. Abrir Blueprint ou criar web service Docker na raiz do repositório.
+2. Confirmar `plan: free` e health check `/api/v1/health/ready`.
+3. Preencher as variáveis da §5; segredos somente no dashboard.
+4. Se o Render pedir cartão ou oferecer upgrade, **parar e reportar**.
+5. Anotar a URL `https://<serviço>.onrender.com` e ajustar
+   `JOGA_WEBAUTHN_RP_ID` / `JOGA_WEBAUTHN_ORIGIN_WEB` se o nome do serviço não
+   for `joga-demo`.
+6. Gerar `DEMO_BASIC_AUTH_HASH` com o comando da §5 e reiniciar o serviço.
+
+**URL pública:** pendente (deploy não executado).
+
+## 9. GitHub (worker de e-mail)
+
+Secrets do repositório:
+
+- `JOGA_DATABASE_URL` (Session pooler)
+- `JOGA_EMAIL_API_KEY`
+- `JOGA_EMAIL_FROM`
+
+Depois do merge na `main`, em Actions → "Email worker (Outbox)" → *Run
+workflow* (`workflow_dispatch`), conferir no log `enviados` > 0 e, no banco,
+`email_deliveries.status = 'sent'`.
+
+Lembretes: o cron do GitHub é best-effort (5–15 min), só roda no branch padrão e
+é desativado após ~60 dias sem atividade.
+
+## 10. UptimeRobot
+
+Monitor HTTP(s) em `https://<serviço>.onrender.com/api/v1/health/live`,
+intervalo de 5 minutos, alerta por e-mail. Sem basic auth (o health é aberto).
+Isso também reduz o sleep do Render.
+
+**Estado:** pendente (sem URL pública).
+
+## 11. Smoke test
+
+### Executado localmente (API + Postgres local, sem Caddy)
+
+| Verificação | Resultado |
+|---|---|
+| `GET /api/v1/health/live` | 200 `{"status":"ok"}` |
+| `GET /api/v1/health/ready` | 200 `{"status":"ok","database":"ok"}` |
+| `POST /auth/email/login` com senha errada | 401 `invalid_credentials` |
+| Login do jogador (e-mail + senha) | 200, access + refresh emitidos |
+| `GET /auth/emails` | 200, apenas `jogador@demo.joga.test` |
+| `GET /discovery/bookable-venues` | 200, `Arena Demo Centro` |
+| `GET /me/tickets` | 200, `source=ledger`, saldo 0 |
+| `PUT /me/email` | 200, altera só o pagador |
+| `GET /auth/emails` após o PUT | continua apenas `jogador@demo.joga.test` |
+| `POST /auth/email/code` (`registration`) | 403 `signup_closed` |
+| Login do painel (`/auth/web/email/login`) | 200; cookies `joga_web_refresh` (HttpOnly) e `joga_web_csrf`, ambos `SameSite=Strict`, `Path=/` |
+| `GET /organizations` com sessão do painel | 200, `Arena Demo`, papel `OWNER` |
+| `POST /auth/email/code` (`password_reset`) | 202 com `challenge_id` |
+| Worker `scripts.deliver_emails --once` com sender fake | `enviados=2`; `email_deliveries.status='sent'` |
+
+### Caddy validado com o binário oficial (SPA stub, porta 8090)
+
+O Caddyfile real foi executado com o Caddy 2.11.9 oficial para Windows,
+substituindo apenas o `root` por um diretório temporário com um `index.html`
+stub. O restante (proxy, basic auth, fallback) é o mesmo do container:
+
+| Verificação | Resultado |
+|---|---|
+| `GET /api/v1/health/live` sem basic auth | 200 |
+| `GET /api/v1/health/ready` sem basic auth | 200 |
 | `GET /` sem basic auth | 401 |
-| Login do painel por e-mail + senha | 200 e organização demo visível |
-| `POST /auth/email/code` (`purpose=registration` ou `password_reset`) | 202 genérico |
-| Código chega no e-mail | sim, em até ~5 min |
-| `GET /auth/emails` | só a credencial da própria conta |
-| `PUT /me/email` | altera só o e-mail do pagador |
-| `PATCH /me/account/email` | exige código no endereço novo |
-| `GET /discovery/bookable-venues` | quadra demo |
-| Carteira | `source=ledger`; indisponibilidade retorna 503 sem zerar |
-| Nenhuma tela | saldo em reais como carteira |
+| `GET /` com `demo:<senha>` | 200, corpo do SPA |
+| `GET /painel/rota` com basic auth | 200, fallback para `index.html` |
+| `caddy validate --config deploy/Caddyfile --adapter caddyfile` | `Valid configuration` |
 
-## 10. Limitações do free tier
+### Ainda não executado (bloqueado)
 
-- Render: dorme após ~15 min; primeiro acesso leva 30–60 s. 512 MB de RAM.
+| Verificação | Motivo |
+|---|---|
+| `docker build -t joga-demo .` | Docker não está instalado neste host |
+| `docker run ...` e smoke na porta 8080 do container | depende do build Docker |
+| SPA real compilado (pnpm/Vite) | Node/pnpm não estão instalados neste host |
+| `GET /` com basic auth no Render | sem deploy |
+| Migração/seed no Supabase | sem URL/senha do Session pooler |
+| Reset com e-mail real no Brevo | sem API key e sem worker remoto |
+| UptimeRobot | sem URL pública |
+
+## 12. Limitações do free tier
+
+- Render: dorme após ~15 min; primeiro acesso leva 30–60 s; 512 MB de RAM;
+  750 h/mês.
 - Supabase: pausa após ~7 dias sem uso.
 - Brevo: 300 e-mails/dia, compartilhados entre código, boas-vindas e avisos.
-- `JOGA_MEDIA_ROOT` é disco efêmero: fotos de quadra somem no redeploy. Storage
-  de objetos fica para depois.
+- `JOGA_MEDIA_ROOT` é disco efêmero: fotos de quadra somem no redeploy.
 - Sem backup automático confiável.
 - Sem observabilidade além de log.
+- O cron do GitHub é best-effort e desativado após ~60 dias sem atividade.
 
-## 11. Segredos: rotação
+## 13. Como revogar / encerrar o demo
 
-Duas credenciais já circularam em texto puro durante a preparação. Rotacionar
-antes de abrir o beta para terceiros:
-
-- **Brevo**: `SMTP & API → API Keys` → revogar e gerar nova.
-- **Supabase**: `Settings → Database → Reset database password` e atualizar
-  `JOGA_DATABASE_URL` no Render e nos secrets do GitHub.
+1. **Render:** Dashboard → serviço → *Suspend* ou *Delete*. Não há recurso pago.
+2. **Supabase:** `Settings → Database → Reset database password`; depois
+   atualizar `JOGA_DATABASE_URL` no Render e nos secrets do GitHub. Para
+   encerrar, pausar/remover o projeto.
+3. **Brevo:** `SMTP & API → API Keys` → revogar a chave usada.
+4. **GitHub:** Settings → Secrets and variables → Actions → remover
+   `JOGA_DATABASE_URL`, `JOGA_EMAIL_API_KEY`, `JOGA_EMAIL_FROM`.
+5. **UptimeRobot:** remover o monitor.
+6. **Basic auth:** trocar `DEMO_BASIC_AUTH_HASH` por um hash novo e reiniciar.
+7. **Contas do seed:** são contas de demonstração. Ao encerrar, remova o serviço
+   e rotacione a senha do banco; não há admin de usuários no painel.
 
 Nunca commitar `.env`. O `.gitignore` cobre `backend/.env`, `backend/.env.*` e
 mantém `backend/.env.example` versionado.
 
-## 12. O que falta para produção (não é este documento)
+## 14. O que falta para produção (não é este documento)
 
 Pareceres fiscal e jurídico, PSP real homologado, NFS-e, escrow, domínio próprio
 com SPF/DKIM/DMARC, backups, observabilidade, worker dedicado, storage de objetos
-e revisão de segurança (§ADR 0049 e `docs/PENDENCIAS.md`).
+e revisão de segurança (ADR 0049 e `docs/PENDENCIAS.md`).

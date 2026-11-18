@@ -1433,3 +1433,49 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   `alembic check` no banco descartavel.
 - **Fora do escopo:** MFA obrigatoria, fluxo para marcar `compromised_at`,
   recalibracao do Argon2 com carga real, edicao de `mobile/`/`web/`.
+
+### 2026-11-18 - Deploy de demonstração: artefatos e ensaio local
+
+- **Objetivo:** preparar um único container (painel + API em `/api/v1`) para o
+  Render free, com Supabase/PostGIS e Brevo; publicar somente depois de validar
+  o build e os smoke tests. Produção, PSP real, dinheiro real e recursos pagos
+  ficaram fora do escopo.
+- **Artefatos criados:** `Dockerfile` multi-stage (Node 22/pnpm 9.15.4 +
+  Python 3.12 + Caddy oficial >= 2.8), `deploy/Caddyfile` (API sem basic auth,
+  SPA com basic auth e fallback), `deploy/start.sh` (migração com 3 tentativas,
+  uvicorn em loopback e `exec caddy run`), `.dockerignore`, `render.yaml`
+  (`plan: free`, health check `/api/v1/health/ready`) e
+  `backend/scripts/seed_demo.py`.
+- **Seed:** idempotente; faixas/pacotes via `pricing.service`; contas via
+  `EmailAccountService` (Argon2id) e `PasswordService`; organização via
+  `OrganizationService`; quadra e agenda via `VenueService`. Senha apenas de
+  `JOGA_DEMO_SEED_PASSWORD`, nunca impressa.
+- **Ensaio local (Postgres local, head `y8b9c0d1e2f3`):** seed executado duas
+  vezes; a segunda preservou os mesmos IDs e criou 0 janelas. IDs: operador
+  `44a5bb57-4a16-49b1-a2a5-e80002ce777c`, jogador
+  `e017739a-a6a8-4b12-bb5e-15a4923e4274`, organização
+  `3aa07dcb-f421-4902-afb3-da8f3e6119f2`, estabelecimento
+  `5780f0ad-1d29-411c-a326-9b4baf3d88f8`, quadra
+  `3d78f2df-e428-4c92-bee6-c8580897d720`.
+- **Smoke local:** health live/ready 200; login errado 401
+  `invalid_credentials`; login do jogador 200; `/auth/emails` só com a
+  credencial da própria conta; discovery retornou `Arena Demo Centro`;
+  `/me/tickets` com `source=ledger`; `PUT /me/email` não alterou a credencial;
+  cadastro 403 `signup_closed`; login do painel 200 com cookies HttpOnly/
+  SameSite=Strict; `/organizations` com `Arena Demo` e papel `OWNER`; reset 202;
+  worker com sender fake marcou `email_deliveries.status='sent'`.
+- **Verificações:** `ruff check .`, `ruff format --check .`, `mypy app` e
+  `alembic check` limpos; `alembic current` em `y8b9c0d1e2f3`.
+- **Caddy:** Caddyfile validado com o binário oficial 2.11.9 para Windows
+  (SHA512 conferido) e executado com SPA stub: health 200 sem basic auth, `/`
+  401 sem credencial, `/` 200 com `demo:<senha>` e fallback do SPA 200. A
+  diretiva `basic_auth` exige `<usuario> <hash>`; o snippet do pedido trazia só
+  o hash, então o Caddyfile usa `demo {$DEMO_BASIC_AUTH_HASH}`. Desvio
+  registrado; o smoke test também usa o usuário `demo`.
+- **Bloqueios:** Docker/Node não estão instalados neste host, então o build da
+  imagem e o teste dentro do container não foram executados. Não há credenciais
+  de Supabase, Render, Brevo, GitHub ou UptimeRobot no ambiente; migração/seed
+  remotos, deploy, secrets e monitor ficaram pendentes. Nenhum valor foi
+  inventado e nenhum segredo entrou no Git.
+- **Fora do escopo:** produção, domínio pago, PSP/NFS-e/escrow/KYC/SMS,
+  alteração de CORS/cookies/CSP e deploy fora do free tier.

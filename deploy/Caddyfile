@@ -1,0 +1,29 @@
+# Uma origem so: API e painel no mesmo host.
+#
+# /api/*      -> uvicorn em 127.0.0.1:8000, sem basic auth. O app mobile usa a
+#                mesma URL e nao envia credencial HTTP; a API tem autenticacao
+#                propria (tokens/cookies SameSite=Strict).
+# /api/v1/health/* tambem fica aberto: Render e UptimeRobot nao enviam basic
+# auth.
+# /           -> SPA compilado em /srv/web, protegido por basic auth.
+#
+# DEMO_BASIC_AUTH_HASH e um hash bcrypt gerado por:
+#   caddy hash-password --plaintext '<senha-do-demo>'
+# Nunca coloque a senha em claro neste arquivo ou no Git.
+
+:{$PORT} {
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		# O nome de usuario e fixo ("demo"); a senha vem apenas do hash bcrypt.
+		# A diretiva exige o par <usuario> <hash>; um hash sozinho e invalido.
+		basic_auth {
+			demo {$DEMO_BASIC_AUTH_HASH}
+		}
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
