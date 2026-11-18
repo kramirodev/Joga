@@ -25,14 +25,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 
-LEDGER_ENTRY_TYPES = ("CHARGE_CREATED", "PAYMENT_CONFIRMED", "PAYMENT_REFUNDED", "VENUE_RELEASE")
 REFUND_STATUSES = ("PENDING", "PROCESSED", "FAILED")
 RELEASE_STATUSES = ("PENDING", "RELEASED", "FAILED", "REVERSED")
 DISPUTE_STATUSES = ("OPEN", "ACCEPTED", "REJECTED", "WITHDRAWN")
 
 
 class PaymentRefund(Base):
-    """Reembolso idempotente de uma cobrança Pix."""
+    """Reembolso de uma cobrança Pix, total ou parcial (Fase 14E-E).
+
+    O comportamento atual continua criando apenas ``FULL``. O schema aceita
+    ``PARTIAL`` sem alterar nenhum fluxo: a unicidade de reembolso integral é
+    garantida por índice parcial, e ``idempotency_key`` permite repetir um
+    pedido parcial sem duplicar.
+    """
 
     __tablename__ = "payment_refunds"
     __table_args__ = (
@@ -40,9 +45,17 @@ class PaymentRefund(Base):
             "status IN ('PENDING', 'PROCESSED', 'FAILED')",
             name="status_valid",
         ),
+        CheckConstraint("refund_type IN ('FULL', 'PARTIAL')", name="refund_type_valid"),
         CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        UniqueConstraint("booking_payment_id", name="uq_payment_refunds_payment"),
+        Index(
+            "uq_payment_refunds_full_payment",
+            "booking_payment_id",
+            unique=True,
+            postgresql_where=text("refund_type = 'FULL'"),
+            sqlite_where=text("refund_type = 'FULL'"),
+        ),
         Index("ix_payment_refunds_booking_created", "booking_id", "created_at"),
+        Index("uq_payment_refunds_idempotency_key", "idempotency_key", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -53,6 +66,10 @@ class PaymentRefund(Base):
         ForeignKey("booking_payments.id", ondelete="CASCADE"), nullable=False
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    refund_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="FULL", server_default="FULL"
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING", server_default="PENDING"
     )
@@ -178,46 +195,6 @@ class PurchasePayment(Base):
     )
 
 
-class LedgerEntry(Base):
-    """Registro append-only de direitos e obrigações financeiras internas."""
-
-    __tablename__ = "booking_ledger_entries"
-    __table_args__ = (
-        CheckConstraint(
-            "entry_type IN ("
-            "'CHARGE_CREATED', 'PAYMENT_CONFIRMED', 'PAYMENT_REFUNDED', 'VENUE_RELEASE'"
-            ")",
-            name="entry_type_valid",
-        ),
-        CheckConstraint("direction IN ('DEBIT', 'CREDIT')", name="direction_valid"),
-        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
-        Index("ix_booking_ledger_entries_booking_created", "booking_id", "created_at"),
-        UniqueConstraint(
-            "booking_payment_id",
-            "entry_type",
-            name="uq_booking_ledger_entries_payment_type",
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    booking_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bookings.id", ondelete="CASCADE"), nullable=False
-    )
-    booking_payment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("booking_payments.id", ondelete="SET NULL"), nullable=True
-    )
-    entry_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    direction: Mapped[str] = mapped_column(String(10), nullable=False)
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="POSTED", server_default="POSTED"
-    )
-    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
-    )
-
-
 class VenueRelease(Base):
     """Valor devido ao estabelecimento por uma reserva concluída (Fase 15)."""
 
@@ -244,6 +221,9 @@ class VenueRelease(Base):
         String(20), nullable=False, default="PENDING", server_default="PENDING"
     )
     eligible_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Snapshot da janela de contestação no instante da criação da liberação.
+    # Não recalcular quando a configuração mudar.
+    dispute_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -297,6 +277,8 @@ class FinancialDispute(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="OPEN", server_default="OPEN"
     )
+    # Cópia do prazo da liberação no instante da abertura; não recalcular.
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

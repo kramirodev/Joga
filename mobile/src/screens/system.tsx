@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, View } from 'react-native';
 
-import { api } from '../api/client';
-import type { Device, Passkey } from '../api/types';
+import { api, ApiError } from '../api/client';
+import type { CpfStatus, Device, Passkey } from '../api/types';
+import { authConfig } from '../auth/config';
+import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { Icon } from '../ui/icons';
@@ -17,6 +19,7 @@ import {
   Input,
   Kv,
   ListRow,
+  LoadingState,
   Notice,
   Page,
   Row,
@@ -26,6 +29,7 @@ import {
   Toggle,
   Txt,
 } from '../ui/kit';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function Settings() {
@@ -35,7 +39,7 @@ function Settings() {
     {
       icon: 'user' as const,
       title: 'Conta e perfil',
-      sub: 'Nome, tag, e-mail, telefone',
+      sub: 'Nome, tag e e-mail',
       go: 'profile-edit',
     },
     {
@@ -67,6 +71,12 @@ function Settings() {
       title: 'Segurança',
       sub: 'Passkeys, dispositivos e sessões',
       go: 'security',
+    },
+    {
+      icon: 'mail' as const,
+      title: 'Credenciais de login',
+      sub: 'E-mail que autentica a conta',
+      go: 'credentials',
     },
     {
       icon: 'download' as const,
@@ -129,9 +139,21 @@ function Settings() {
 }
 
 function Accessibility() {
-  const [size, setSize] = useState('AA');
-  const [motion, setMotion] = useState(false);
-  const [targets, setTargets] = useState(true);
+  const nav = useNav();
+  const { accessibility, setAccessibility } = useApp();
+  const [size, setSize] = useState(accessibility.fontScale);
+  const [motion, setMotion] = useState(accessibility.reducedMotion);
+  const [targets, setTargets] = useState(accessibility.largeTargets);
+
+  const save = async () => {
+    try {
+      await setAccessibility({ fontScale: size, reducedMotion: motion, largeTargets: targets });
+      nav.toast('Preferências de acessibilidade salvas.');
+    } catch {
+      nav.toast('Não foi possível salvar as preferências.');
+    }
+  };
+
   return (
     <Page title="Acessibilidade">
       <Card>
@@ -141,7 +163,11 @@ function Accessibility() {
         </Row>
         <Seg style={{ marginTop: 8 }}>
           {['A', 'AA', 'AAA'].map((item) => (
-            <SegBtn key={item} on={size === item} onPress={() => setSize(item)}>
+            <SegBtn
+              key={item}
+              on={size === item}
+              onPress={() => setSize(item as 'A' | 'AA' | 'AAA')}
+            >
               {item}
             </SegBtn>
           ))}
@@ -158,9 +184,10 @@ function Accessibility() {
         </Row>
       </Card>
       <Notice tone="green" icon="shield">
-        Essas preferências não são itens de catálogo e não dependem do passe.
+        Essas preferências não são itens de catálogo e não dependem do passe. Elas ficam salvas
+        neste aparelho.
       </Notice>
-      <Btn tone="primary" toast="Preferências salvas no protótipo">
+      <Btn tone="primary" onPress={save}>
         Salvar preferências
       </Btn>
     </Page>
@@ -260,11 +287,24 @@ function Customization() {
           <Toggle checked={animations} onChange={setAnimations} />
         </Row>
       </Card>
-      <Btn tone="primary" toast="Personalização salva no protótipo">
-        Salvar personalização
+      <Btn tone="primary" disabled>
+        Persistência da personalização em implantação
       </Btn>
     </Page>
   );
+}
+
+function passkeyError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const map: Record<string, string> = {
+      invalid_passkey: 'Não foi possível validar a passkey.',
+      passkey_already_registered: 'Esta passkey já está cadastrada.',
+      rate_limited: 'Muitas tentativas. Aguarde e tente novamente.',
+      invalid_token: 'Sua sessão expirou. Entre novamente.',
+    };
+    return map[error.code] ?? 'Não foi possível concluir a passkey.';
+  }
+  return 'Não foi possível concluir a passkey.';
 }
 
 function Security() {
@@ -272,6 +312,7 @@ function Security() {
   const { palette } = useTheme();
   const { session } = useApp();
   const [keys, setKeys] = useState<Passkey[]>([]);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (session) {
       api.auth
@@ -280,24 +321,50 @@ function Security() {
         .catch(() => undefined);
     }
   }, [session]);
-  const list = keys.length
-    ? keys.map((item) => ({
-        id: item.credential_id,
-        name: item.name ?? 'Passkey',
-        sub: item.last_used_at ? 'último uso recente' : 'sem uso',
-      }))
-    : [
-        { id: 'iphone', name: 'iPhone de Susan', sub: 'último uso hoje · Face ID' },
-        { id: 'notebook', name: 'Notebook', sub: 'último uso 12 nov' },
-      ];
+  const list = keys.map((item) => ({
+    id: item.credential_id,
+    name: item.name ?? 'Passkey',
+    sub: item.last_used_at
+      ? `último uso em ${item.last_used_at.slice(0, 10)}`
+      : `cadastrada em ${item.created_at.slice(0, 10)}`,
+  }));
   const revoke = async (id: string) => {
-    if (session && !['iphone', 'notebook'].includes(id)) {
-      try {
-        await api.auth.revokePasskey(session.accessToken, id);
-        setKeys((current) => current.filter((item) => item.credential_id !== id));
-      } catch {
-        return;
-      }
+    if (!session) {
+      return;
+    }
+    try {
+      await api.auth.revokePasskey(session.accessToken, id);
+      setKeys((current) => current.filter((item) => item.credential_id !== id));
+      nav.toast('Passkey revogada.');
+    } catch (error) {
+      nav.toast(passkeyError(error));
+    }
+  };
+  const addPasskey = async () => {
+    if (!session || busy) {
+      return;
+    }
+    if (!passkeyAvailable()) {
+      nav.toast('A passkey exige o development build Android; o módulo iOS ainda não existe.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const options = await api.auth.passkeyRegistrationOptions(session.accessToken);
+      const credential = await createPasskey(options.public_key);
+      await api.auth.passkeyRegistrationVerify(
+        session.accessToken,
+        options.challenge_id,
+        credential,
+        Platform.OS === 'ios' ? 'iPhone' : 'Android',
+      );
+      const refreshed = await api.auth.passkeys(session.accessToken);
+      setKeys(refreshed.credentials);
+      nav.toast('Passkey adicionada.');
+    } catch (error) {
+      nav.toast(passkeyError(error));
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -308,6 +375,11 @@ function Security() {
           <Badge tone="green">{list.length} ativas</Badge>
         </Row>
         <View style={{ marginTop: 6 }}>
+          {list.length === 0 ? (
+            <Txt variant="tiny" style={{ paddingVertical: 10 }}>
+              Nenhuma passkey cadastrada. Adicione uma para entrar sem código.
+            </Txt>
+          ) : null}
           {list.map((item, index) => (
             <View
               key={item.id}
@@ -327,34 +399,46 @@ function Security() {
                 </Text>
                 <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
               </View>
-              {index === 0 ? (
-                <Badge tone="lime">ATUAL</Badge>
-              ) : (
-                <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
-                  Revogar
-                </Btn>
-              )}
+              <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
+                Revogar
+              </Btn>
             </View>
           ))}
         </View>
         <View style={{ marginTop: 10 }}>
-          <Btn tone="primary" icon="plus" toast="Passkey adicionada no protótipo">
-            Adicionar passkey
+          <Btn tone="primary" icon="plus" onPress={addPasskey} disabled={busy}>
+            {busy ? 'Abrindo…' : 'Adicionar passkey'}
           </Btn>
         </View>
       </Card>
       <CardList>
         {[
           {
-            icon: 'user' as const,
-            title: 'Trocar telefone',
-            sub: '+55 (11) 9****-1234',
-            go: 'phone-change',
+            icon: 'mail' as const,
+            title: 'Credenciais de login',
+            sub: 'E-mail ativo e troca de endereço',
+            go: 'credentials',
           },
+          {
+            icon: 'lock' as const,
+            title: 'Trocar senha',
+            sub: 'Senha atual e nova senha',
+            go: 'change-password',
+          },
+          ...(authConfig.phoneEnabled
+            ? [
+                {
+                  icon: 'user' as const,
+                  title: 'Trocar telefone',
+                  sub: 'Confirme por código no telefone atual',
+                  go: 'phone-change',
+                },
+              ]
+            : []),
           {
             icon: 'eye' as const,
             title: 'Dispositivos e sessões',
-            sub: '2 dispositivos conectados',
+            sub: 'Sessões ativas da conta',
             go: 'devices',
           },
           {
@@ -377,13 +461,16 @@ function Security() {
         ))}
       </CardList>
       <Notice tone="orange" icon="lock">
-        Trocar o telefone encerra todas as sessões.
+        {authConfig.phoneEnabled
+          ? 'Trocar o telefone encerra todas as sessões.'
+          : 'A troca de e-mail encerra as outras sessões e mantém esta ativa.'}
       </Notice>
     </Page>
   );
 }
 
 function Devices() {
+  const nav = useNav();
   const { palette } = useTheme();
   const { session } = useApp();
   const [devices, setDevices] = useState<Device[]>([]);
@@ -395,58 +482,47 @@ function Devices() {
         .catch(() => undefined);
     }
   }, [session]);
-  const list = devices.length
-    ? devices.map((item, index) => ({
-        id: item.id,
-        name: `${item.name ?? item.platform} ${index === 0 ? '· este aparelho' : ''}`,
-        sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
-        current: index === 0,
-      }))
-    : [
-        {
-          id: 'iphone',
-          name: 'iPhone 15 · este aparelho',
-          sub: 'São Paulo · agora',
-          current: true,
-        },
-        { id: 'pixel', name: 'Pixel 8', sub: 'São Paulo · há 2 dias', current: false },
-        { id: 'chrome', name: 'Chrome · notebook', sub: 'São Paulo · há 8 dias', current: false },
-      ];
+  const list = devices.map((item) => ({
+    id: item.id,
+    name: item.name ?? item.platform,
+    sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
+  }));
   const revoke = async (id: string) => {
-    if (session && !['iphone', 'pixel', 'chrome'].includes(id)) {
-      try {
-        await api.auth.revokeDevice(session.accessToken, id);
-        setDevices((current) => current.filter((item) => item.id !== id));
-      } catch {
-        return;
-      }
+    if (!session) {
+      return;
+    }
+    try {
+      await api.auth.revokeDevice(session.accessToken, id);
+      setDevices((current) => current.filter((item) => item.id !== id));
+      nav.toast('Sessão revogada.');
+    } catch {
+      nav.toast('Não foi possível revogar esta sessão.');
     }
   };
   return (
     <Page title="Dispositivos">
-      <CardList>
-        {list.map((item, index) => (
-          <ListRow key={item.id} last={index === list.length - 1}>
-            <Text style={{ color: palette.ink }}>◉</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                {item.name}
-              </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
-            </View>
-            {item.current ? (
-              <Badge tone="lime">ATUAL</Badge>
-            ) : (
+      {list.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">Nenhuma sessão ativa encontrada.</Txt>
+        </Card>
+      ) : (
+        <CardList>
+          {list.map((item, index) => (
+            <ListRow key={item.id} last={index === list.length - 1}>
+              <Text style={{ color: palette.ink }}>◉</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.name}
+                </Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+              </View>
               <Btn tone="ghost" small block={false} onPress={() => revoke(item.id)}>
                 Revogar
               </Btn>
-            )}
-          </ListRow>
-        ))}
-      </CardList>
-      <Btn tone="ghost" modal="confirm">
-        Revogar todas as outras
-      </Btn>
+            </ListRow>
+          ))}
+        </CardList>
+      )}
     </Page>
   );
 }
@@ -493,9 +569,9 @@ function Privacy() {
         {[
           {
             icon: 'lock' as const,
-            title: 'Usuários bloqueados',
-            sub: '1 bloqueado',
-            go: 'block-user',
+            title: 'Bloqueios',
+            sub: 'Gerencie a partir do perfil do jogador',
+            go: 'friends',
           },
           {
             icon: 'chat' as const,
@@ -516,6 +592,125 @@ function Privacy() {
           </ListRow>
         ))}
       </CardList>
+    </Page>
+  );
+}
+
+function Cpf() {
+  const nav = useNav();
+  const { session } = useApp();
+  const [status, setStatus] = useState<CpfStatus | null>(null);
+  const [value, setValue] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    if (!session) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    api.profile
+      .cpf(session.accessToken)
+      .then(setStatus)
+      .catch(() => nav.toast('Não foi possível consultar o CPF.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  const save = async () => {
+    if (!session || busy) {
+      return;
+    }
+    const digits = value.replace(/\D/g, '');
+    if (digits.length !== 11) {
+      nav.toast('Informe um CPF com 11 dígitos.');
+      return;
+    }
+    setBusy(true);
+    try {
+      setStatus(await api.profile.updateCpf(session.accessToken, digits));
+      setValue('');
+      nav.toast('CPF salvo para a nota fiscal.');
+    } catch (error) {
+      nav.toast(
+        error instanceof ApiError && error.code === 'invalid_cpf'
+          ? 'CPF inválido.'
+          : 'Não foi possível salvar o CPF.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!session || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      setStatus(await api.profile.clearCpf(session.accessToken));
+      nav.toast('CPF removido do perfil.');
+    } catch {
+      nav.toast('Não foi possível remover o CPF.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Page title="CPF para nota fiscal">
+        <LoadingState label="Consultando o CPF do perfil." variant="cards" />
+      </Page>
+    );
+  }
+
+  return (
+    <Page title="CPF para nota fiscal">
+      <Card>
+        <Row between>
+          <Txt variant="h3">CPF no perfil</Txt>
+          <Badge tone={status?.cpf_present ? 'green' : 'orange'}>
+            {status?.cpf_present ? 'INFORMADO' : 'NÃO INFORMADO'}
+          </Badge>
+        </Row>
+        {status?.cpf_present ? (
+          <Kv label="CPF" value={status.cpf_masked ?? '•••'} />
+        ) : (
+          <Txt variant="tiny" style={{ marginTop: 6 }}>
+            O CPF é usado na NFS-e emitida pelo estabelecimento pelo uso da quadra. Ele não aparece
+            no perfil público.
+          </Txt>
+        )}
+      </Card>
+      <Field label={status?.cpf_present ? 'Substituir CPF' : 'Informar CPF'}>
+        <Input
+          value={value}
+          onChangeText={setValue}
+          keyboardType="number-pad"
+          maxLength={14}
+          placeholder="000.000.000-00"
+          autoCorrect={false}
+        />
+      </Field>
+      <Btn tone="primary" onPress={save} disabled={busy || value.replace(/\D/g, '').length !== 11}>
+        {busy ? 'Salvando…' : 'Salvar CPF'}
+      </Btn>
+      {status?.cpf_present ? (
+        <Btn tone="ghost" onPress={remove} disabled={busy}>
+          Remover CPF do perfil
+        </Btn>
+      ) : null}
+      <Notice tone="blue" icon="shield">
+        O CPF é armazenado de forma protegida. A NFS-e de intermediação é emitida pelo JOGA contra o
+        mesmo titular; o app não inventa número de documento.
+      </Notice>
     </Page>
   );
 }
@@ -552,10 +747,11 @@ function LgpdExport() {
         </View>
       </Card>
       <Notice tone="green" icon="shield">
-        A exportação é gratuita e não exige passe. Dados de terceiros são omitidos.
+        A exportação é gratuita e não exige passe. Dados de terceiros são omitidos. O pedido é
+        atendido pelo suporte enquanto não há fluxo automático no app.
       </Notice>
-      <Btn tone="primary" icon="download" toast="Exportação solicitada no protótipo">
-        Solicitar exportação
+      <Btn tone="primary" go="support" icon="chat">
+        Solicitar pelo suporte
       </Btn>
       <Btn tone="ghost" go="lgpd-delete">
         Excluir minha conta
@@ -573,7 +769,8 @@ function LgpdDelete() {
         <Txt variant="h3">O que acontece</Txt>
         <Txt variant="tiny" style={{ marginTop: 6 }}>
           Sua conta, perfil, avatar, mensagens e preferências são excluídos. Registros financeiros e
-          fiscais podem ser retidos pelo prazo legal. Ingressos não usados são perdidos.
+          fiscais podem ser retidos pelo prazo legal. O saldo de crédito comprado segue a política
+          de encerramento; a franquia do passe já disponibilizada não é reembolsada.
         </Txt>
       </Card>
       <Field label="Digite EXCLUIR para confirmar">
@@ -586,8 +783,12 @@ function LgpdDelete() {
           autoCorrect={false}
         />
       </Field>
-      <Btn tone="danger" modal="confirm" disabled={!canDelete}>
-        Excluir minha conta
+      <Notice tone="blue" icon="chat">
+        A exclusão automática ainda não está disponível no app. Envie o pedido pelo suporte para
+        preservar o contraditório e os prazos legais.
+      </Notice>
+      <Btn tone="danger" go="support" disabled={!canDelete}>
+        Solicitar exclusão pelo suporte
       </Btn>
       <Btn tone="ghost" back>
         Cancelar
@@ -599,11 +800,36 @@ function LgpdDelete() {
 function TermsPrivacy() {
   const nav = useNav();
   const { palette } = useTheme();
+  const [terms, setTerms] = useState<{ id: string; version: string } | null>(null);
+  const [termsReady, setTermsReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api.legal
+      .currentTerms()
+      .then((result) => {
+        if (active) {
+          setTerms(result.terms);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setTermsReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const items = [
     {
       icon: 'info' as const,
       title: 'Termos de uso',
-      sub: 'Versão 2026-11 · revisão jurídica pendente',
+      sub: termsReady
+        ? terms
+          ? `Versão ${terms.version} aprovada`
+          : 'Nenhuma versão aprovada publicada'
+        : 'Consultando a versão vigente…',
       readOnly: true,
     },
     {
@@ -637,7 +863,7 @@ function TermsPrivacy() {
                 nav.go('terms', { readOnly: 1 });
                 return;
               }
-              nav.toast(`${item.title} disponível no protótipo.`);
+              nav.toast('Conteúdo disponível pelo suporte.');
             }}
           >
             <IconBtn
@@ -645,7 +871,7 @@ function TermsPrivacy() {
               label={item.title}
               plain
               onPress={item.readOnly ? () => nav.go('terms', { readOnly: 1 }) : undefined}
-              toast={item.readOnly ? undefined : `${item.title} aberto no protótipo`}
+              toast={item.readOnly ? undefined : 'Conteúdo disponível pelo suporte'}
             />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -657,9 +883,9 @@ function TermsPrivacy() {
           </ListRow>
         ))}
       </CardList>
-      <Notice tone="orange" icon="alert">
-        O texto final depende de revisão jurídica. O protótipo mostra a estrutura e os pontos
-        obrigatórios.
+      <Notice tone="blue" icon="info">
+        A versão vigente é a aprovada e publicada pelo servidor. Quando uma nova versão exige
+        aceite, a compra de crédito mostra o texto antes de abrir o Pix.
       </Notice>
     </Page>
   );
@@ -673,7 +899,7 @@ function Support() {
       icon: 'clock' as const,
       title: 'Prazos, cutoff e no-show',
       sub: 'Como T1–T9 funcionam',
-      toast: 'Artigo aberto no protótipo',
+      toast: 'Conteúdo em implantação',
     },
     {
       icon: 'shield' as const,
@@ -728,8 +954,8 @@ function Support() {
           </ListRow>
         ))}
       </CardList>
-      <Btn tone="primary" icon="chat" toast="Atendimento aberto no protótipo">
-        Abrir atendimento
+      <Btn tone="primary" icon="chat" disabled>
+        Atendimento em implantação
       </Btn>
       <Notice tone="blue" icon="shield">
         Toda contestação gera registro e possibilidade de revisão humana.
@@ -740,6 +966,8 @@ function Support() {
 
 function About() {
   const { palette } = useTheme();
+  const { profile, session, progress } = useApp();
+  const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
   return (
     <Page title="Sobre">
       <Card tone="ink">
@@ -759,14 +987,23 @@ function About() {
           Futebol e vôlei, quadra de verdade.
         </Txt>
         <View style={{ marginTop: 10 }}>
-          <Badge tone="lime">PROTÓTIPO v3 · 2026-11-13</Badge>
+          <Badge tone="lime">BUILD LOCAL · EXPO 58</Badge>
         </View>
       </Card>
       <Card>
-        <Kv label="Versão" value="3.0.0-prototipo" />
+        <Kv label="Versão" value="1.0.0" />
         <Kv label="Ambiente" value="Local · sem dados reais" />
-        <Kv label="Conta" value="Susan #4821" />
-        <Kv label="Temporada" value="2026-Q4" />
+        <Kv
+          label="Conta"
+          value={
+            profile?.display_name
+              ? `${profile.display_name} #${tag}`
+              : session
+                ? `#${tag}`
+                : 'não autenticado'
+          }
+        />
+        <Kv label="Temporada" value={progress?.season.code ?? '—'} />
       </Card>
       <CardList>
         {[
@@ -779,8 +1016,8 @@ function About() {
           {
             icon: 'info' as const,
             title: 'Licenças',
-            sub: 'Sem bibliotecas externas',
-            toast: 'Licenças abertas no protótipo',
+            sub: 'Expo, React Native e SVG',
+            toast: 'Licenças em implantação',
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1}>
@@ -1008,14 +1245,15 @@ export const systemScreens: ScreenDef[] = [
   { id: 'security', tab: 'perfil', render: () => <Security /> },
   { id: 'devices', tab: 'perfil', render: () => <Devices /> },
   { id: 'privacy', tab: 'perfil', render: () => <Privacy /> },
+  { id: 'cpf', tab: 'perfil', render: () => <Cpf /> },
   { id: 'lgpd-export', tab: 'perfil', render: () => <LgpdExport /> },
   { id: 'lgpd-delete', tab: 'perfil', render: () => <LgpdDelete /> },
   { id: 'terms-privacy', tab: 'perfil', render: () => <TermsPrivacy /> },
   { id: 'support', tab: 'perfil', render: () => <Support /> },
   { id: 'about', tab: 'perfil', render: () => <About /> },
-  { id: 'offline', tab: 'jogar', render: () => <Offline /> },
-  { id: 'error-403', tab: 'jogar', render: () => <Error403 /> },
-  { id: 'error-generic', tab: 'jogar', render: () => <ErrorGeneric /> },
-  { id: 'loading', tab: 'jogar', render: () => <Loading /> },
+  { id: 'offline', tab: 'jogar', hidden: true, render: () => <Offline /> },
+  { id: 'error-403', tab: 'jogar', hidden: true, render: () => <Error403 /> },
+  { id: 'error-generic', tab: 'jogar', hidden: true, render: () => <ErrorGeneric /> },
+  { id: 'loading', tab: 'jogar', hidden: true, render: () => <Loading /> },
   { id: 'decisions', tab: 'perfil', render: () => <Decisions /> },
 ];

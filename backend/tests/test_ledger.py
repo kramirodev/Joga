@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import random
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
@@ -226,3 +228,37 @@ def test_chart_of_accounts_seed_is_idempotent(db_session: Session) -> None:
         ],
     )
     assert service.balance_cents(credit) == 1_000
+
+
+def _load_migration(filename: str):
+    path = Path(__file__).resolve().parents[1] / "migrations" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(f"migration_{filename}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_seed_migration_matches_chart_of_accounts() -> None:
+    """As migrações de seed e o módulo de contas não podem divergir."""
+
+    seed = _load_migration("l6c7d8e9f0a1_seed_ledger_accounts.py")
+    promo = _load_migration("p0a1b2c3d4e5_add_promo_expense.py")
+    accounts = dict(seed.ACCOUNTS)
+    code, kind = promo.PROMO_ACCOUNT
+    accounts[code] = kind
+    assert accounts == SINGLETON_ACCOUNTS
+
+
+def test_every_owner_prefix_has_a_declared_kind() -> None:
+    from app.modules.ledger import accounts
+
+    prefixes = {
+        accounts.PLAYER_CREDIT_PREFIX,
+        accounts.VENUE_PAYABLE_PREFIX,
+        accounts.CHARGEBACK_RECEIVABLE_PREFIX,
+        accounts.VENUE_RECEIVABLE_PREFIX,
+    }
+    assert prefixes == set(accounts.OWNER_ACCOUNT_KINDS)
+    assert not prefixes & set(SINGLETON_ACCOUNTS)
+    assert all(code.endswith(":") for code in prefixes)

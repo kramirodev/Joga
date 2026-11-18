@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
+from app.api.v1.request_context import request_ip_hash, request_user_agent_hash
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.idempotency import service as idempotency
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.legal import service as legal_service
 from app.modules.payments.adapter import PspAdapter, PspError
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import PurchasePayment
@@ -29,6 +34,8 @@ from app.modules.payments.purchase import (
 )
 from app.modules.tickets.models import TicketPack, TicketPurchase
 from app.modules.tickets.service import (
+    BalanceUnavailable,
+    LedgerInconsistency,
     PackNotFound,
     PurchaseNotFound,
     TicketError,
@@ -41,6 +48,8 @@ from app.modules.tickets.service import (
 )
 
 router = APIRouter(prefix="/me/tickets", tags=["tickets"])
+
+logger = logging.getLogger("joga.tickets.api")
 
 LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
@@ -59,6 +68,7 @@ class TicketLotView(BaseModel):
     source: str
     original_amount: int
     remaining: int
+    period: str | None
     expires_at: datetime | None
     ref_type: str | None
     ref_id: UUID | None
@@ -66,6 +76,7 @@ class TicketLotView(BaseModel):
 
 class TicketWalletView(BaseModel):
     balance: int
+    source: str
     entries: list[TicketEntryView]
     lots: list[TicketLotView]
 
@@ -80,8 +91,17 @@ def read_wallet(
 
     entries = list_entries(session, current.user_id, limit=limit)
     lots = list_lots(session, current.user_id)
+    try:
+        balance = get_balance(session, current.user_id)
+    except (BalanceUnavailable, LedgerInconsistency) as exc:
+        logger.error("wallet_balance_unavailable code=%s", exc.args[0] if exc.args else "")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "balance_unavailable"},
+        ) from exc
     return TicketWalletView(
-        balance=get_balance(session, current.user_id),
+        balance=balance,
+        source="ledger",
         entries=[
             TicketEntryView(
                 id=item.id,
@@ -99,6 +119,7 @@ def read_wallet(
                 source=item.source,
                 original_amount=item.original_amount,
                 remaining=item.remaining,
+                period=item.period,
                 expires_at=item.expires_at,
                 ref_type=item.ref_type,
                 ref_id=item.ref_id,
@@ -122,6 +143,7 @@ class PackListResponse(BaseModel):
 
 class PurchaseCreate(BaseModel):
     pack_code: str = Field(min_length=1, max_length=20)
+    terms_version_id: UUID | None = None
 
 
 class PurchaseView(BaseModel):
@@ -161,6 +183,14 @@ def _pack_view(pack: TicketPack) -> PackView:
 def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, (PackNotFound, PurchaseNotFound, PurchasePaymentNotFound)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "not_found"})
+    if isinstance(exc, idempotency.IdempotencyConflict):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_conflict"}
+        )
+    if isinstance(exc, idempotency.IdempotencyInProgress):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_in_progress"}
+        )
     if isinstance(exc, PurchasePaymentMismatch):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "payment_mismatch"}
@@ -169,6 +199,16 @@ def _handle(exc: Exception) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "payer_email_required"},
+        )
+    if isinstance(exc, legal_service.TermsNotApproved):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "terms_not_approved"},
+        )
+    if isinstance(exc, legal_service.TermsNotAccepted):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "terms_not_accepted"},
         )
     if isinstance(exc, PspError):
         return HTTPException(
@@ -194,13 +234,57 @@ def read_packs(
 @router.post("/purchases", response_model=PurchaseView, status_code=status.HTTP_201_CREATED)
 def create_ticket_purchase(
     payload: PurchaseCreate,
+    request: Request,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
-) -> PurchaseView:
-    """Cria a compra e abre a cobrança Pix. Os ingressos só entram quando pagos."""
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> PurchaseView | JSONResponse:
+    """Cria a compra e abre a cobrança Pix. Os ingressos só entram quando pagos.
 
+    Com ``Idempotency-Key``, o replay devolve a mesma resposta sem abrir uma
+    segunda cobrança; a mesma chave com outro pacote responde
+    ``409 idempotency_conflict``. Quando existe versão aprovada dos Termos, a
+    compra exige o aceite dela; sem versão aprovada, o fluxo atual é mantido.
+    """
+
+    key = idempotency_key.strip() if idempotency_key is not None else None
+    if idempotency_key is not None and (not key or len(key) > 120):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_idempotency_key"},
+        )
+    scope = f"me.tickets.purchases:{current.user_id}"
+    request_hash = idempotency.payload_hash(
+        {
+            "pack_code": payload.pack_code,
+            "terms_version_id": (
+                str(payload.terms_version_id) if payload.terms_version_id is not None else None
+            ),
+        }
+    )
     try:
+        stored = (
+            idempotency.begin(session, scope=scope, key=key, request_hash=request_hash)
+            if key is not None
+            else None
+        )
+        if stored is not None:
+            return JSONResponse(status_code=stored.status_code, content=stored.body)
+        ip_hash = request_ip_hash(request, settings)
+        if ip_hash is None and legal_service.latest_approved(session) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "terms_context_unavailable"},
+            )
+        legal_service.require_purchase_acceptance(
+            session,
+            user_id=current.user_id,
+            terms_version_id=payload.terms_version_id,
+            ip_hash=ip_hash or "",
+            user_agent_hash=request_user_agent_hash(request),
+        )
         purchase = create_purchase(session, current.user_id, payload.pack_code)
         pack = session.get(TicketPack, purchase.pack_id)
         payment = open_charge(
@@ -212,11 +296,20 @@ def create_ticket_purchase(
             amount_cents=purchase.amount_cents,
             description=f"JOGA · Pacote {pack.label if pack else purchase.tickets}",
         )
+        view = _purchase_view(purchase, payment)
+        if key is not None:
+            idempotency.finish(
+                session,
+                scope=scope,
+                key=key,
+                status_code=status.HTTP_201_CREATED,
+                body=view.model_dump(mode="json"),
+            )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _purchase_view(purchase, payment)
+    return view
 
 
 @router.get("/purchases/{purchase_id}", response_model=PurchaseView)

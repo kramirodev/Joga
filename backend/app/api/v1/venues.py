@@ -147,6 +147,12 @@ class BusinessHourCreate(BaseModel):
     closes_at: time
 
 
+class BusinessHourUpdate(BaseModel):
+    weekday: int | None = Field(default=None, ge=1, le=7)
+    opens_at: time | None = None
+    closes_at: time | None = None
+
+
 class BusinessHourView(BaseModel):
     id: UUID
     weekday: int
@@ -689,6 +695,39 @@ def create_business_hour(
             current.user_id,
             organization_id,
             venue_id,
+            weekday=payload.weekday,
+            opens_at=payload.opens_at,
+            closes_at=payload.closes_at,
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _business_hour_view(row)
+
+
+@router.patch(
+    "/business-hours/{business_hour_id}",
+    response_model=BusinessHourView,
+)
+def update_business_hour(
+    organization_id: UUID,
+    venue_id: UUID,
+    business_hour_id: UUID,
+    payload: BusinessHourUpdate,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    storage: Annotated[PhotoStorage, Depends(get_photo_storage)],
+) -> BusinessHourView:
+    """Edita uma janela de expediente existente, sem recriá-la."""
+
+    service = _service(session, storage)
+    try:
+        row = service.update_business_hour(
+            current.user_id,
+            organization_id,
+            venue_id,
+            business_hour_id,
             weekday=payload.weekday,
             opens_at=payload.opens_at,
             closes_at=payload.closes_at,

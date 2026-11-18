@@ -16,4 +16,14 @@ describe("rotas do painel", () => {
     expect(await screen.findByRole("tab", { name: "Entrar" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
   });
+
+  it("preserva o destino ao redirecionar por sessão ausente", async () => {
+    window.history.pushState({}, "", "/organizations/org-1?tab=bookings#top");
+    render(<App />);
+
+    expect(await screen.findByRole("tab", { name: "Entrar" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+    const state = window.history.state as { usr?: { from?: string } } | null;
+    expect(state?.usr?.from).toBe("/organizations/org-1?tab=bookings#top");
+  });
 });

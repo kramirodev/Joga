@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Time,
@@ -82,15 +83,27 @@ class SportFormat(Base):
 
 
 class UserProfile(Base):
-    """Dados básicos do perfil do jogador."""
+    """Dados básicos do perfil do jogador e CPF cifrado (ADR 0049 §9.3)."""
 
     __tablename__ = "user_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "(cpf_ciphertext IS NULL AND cpf_key_id IS NULL AND cpf_last2 IS NULL) "
+            "OR (cpf_ciphertext IS NOT NULL AND cpf_key_id IS NOT NULL AND cpf_last2 IS NOT NULL)",
+            name="cpf_present_consistent",
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     display_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     bio: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    # nonce(12) || ciphertext || tag(16). O texto claro nunca é persistido.
+    cpf_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    cpf_key_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    cpf_last2: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    cpf_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

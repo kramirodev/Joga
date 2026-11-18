@@ -803,6 +803,14 @@ A agenda deve considerar:
 - Reservas externas e bloqueios manuais.
 - Preço por faixa de horário, quando existir.
 
+O expediente semanal (`venue_business_hours`) pode ser lido, criado, editado e
+removido por endpoint próprio. A edição (`PATCH .../business-hours/{id}`) aceita
+`weekday`, `opens_at` e `closes_at`, rejeita sobreposição no mesmo dia com
+`409 business_hour_conflict` e grava auditoria com antes/depois. **Prazos T2 já
+gravados em `booking_timers` não são recalculados** por edição de expediente: o
+prazo é congelado quando o T2 começa e a alteração vale apenas para reservas
+futuras.
+
 ### 13.3 Fornecedor e repasse
 
 O fornecedor que recebe pagamento precisa de cadastro no JOGA, não de recebedor no PSP:
@@ -935,7 +943,7 @@ A implementação da ADR 0038 foi revertida. As fatias 1–6 da ADR 0039 entrega
 
 A reserva passa a `COMPLETED` quando a partida é realizada e confirmada conforme as regras do ciclo de partida.
 
-A liberação ao estabelecimento ocorre 2 h após o início da reserva (`starts_at + 2h`), conforme a ADR 0040, independentemente de a partida acontecer. `JOGA_RELEASE_DELAY_HOURS` tem padrão 2. A janela de contestação após a liberação continua pendente.
+A liberação ao estabelecimento ocorre 2 h após o início da reserva (`starts_at + 2h`), conforme a ADR 0040, independentemente de a partida acontecer. `JOGA_RELEASE_DELAY_HOURS` tem padrão 2. A janela de contestação é de 72 h (`JOGA_DISPUTE_WINDOW_HOURS`), persistida como snapshot na liberação e na contestação.
 
 ### 14.8 Fila de substitutos, presença e desfecho (alvo da ADR 0039)
 
@@ -967,9 +975,17 @@ Não construir processador próprio, carteira custodial ou custódia informal.
 
 **Fluxo de crédito:** uma compra de pacote ou passe gera um `purchase` e uma cobrança Pix; o crédito entra no ledger em reais e é exibido em tickets 1:1. O consumo é idempotente por reserva. Não há uma cobrança por participante na reserva.
 
+`POST /api/v1/me/tickets/purchases` e `POST /api/v1/me/pass/subscriptions` aceitam o cabeçalho opcional `Idempotency-Key` (até 120 caracteres). O replay com o mesmo corpo devolve a resposta original sem abrir uma segunda cobrança; a mesma chave com outro pacote/plano responde `409 idempotency_conflict`. Sem o cabeçalho, a proteção existente continua valendo: uma única compra pendente por jogador/pacote e uma assinatura pendente por jogador.
+
 **Fluxo avulso:** um `order` por reserva, uma cobrança Pix por participante, todas abertas simultaneamente após o bloqueio, com o mesmo prazo. O valor individual é calculado pelo backend e congelado.
 
 O `external_reference` do PSP associa a cobrança à compra ou reserva. O ledger registra a associação; `booking_payments` e `purchase_payments` não são o ledger.
+
+**Etapa 6/6b (sombra de escrita, ADR 0049 §13):** a tabela 2D é a unidade de consumo (`k = tickets_per_seat`); o preço em reais é a autoridade monetária. Os fluxos cobertos lançam no `ledger_*` na mesma transação: compra (`purchase:{id}`), confirmação (`booking:{id}:confirm`, débito `k × 310` ou `psp_clearing`, crédito da quadra e do JOGA; passe usa `pass_revenue` e grátis/admin usam `promo_expense`), devolução (`booking:{id}:refund`), repasse (`release:{id}`), passe (`pass:{id}:sale`, `pass:{id}:month:{n}`). A abertura legada (`opening:{user}`, `Σ remaining × unit_price_cents` contra `opening_equity`) e o reconciliador de tickets e caixa existem em `ledger/opening.py`, `ledger/reconciliation.py` e `scripts/`. O reconciliador confere que toda vaga de passe/grátis/admin tem o lançamento de confirmação.
+
+**Etapa 9 (aposentadoria dos ledgers legados):** o saldo é lido exclusivamente dos lotes + ledger, sem flag nem cache. `ticket_balances` virou **view** sobre `ticket_lots` (`t4e5f6a7b8c9`); o lock de carteira passou a ser a linha de `users`, e não há mais escrita de saldo. A conciliação de tickets reconstrói o saldo por `Σ original_amount` + débitos + devoluções que reabriram lote existente. O extrato do fornecedor e o `booking_ledger` são projeções de `ledger_transactions` + `ledger_entries`; `booking_ledger_entries` foi removido (`u5f6a7b8c9d0`) e `CHARGE_CREATED` deixou de existir. Sem fallback: conta ausente, caixa divergente ou saldo negativo responde `503 balance_unavailable` e registra alerta. O reconciliador (`scripts/reconcile_ledger.py`) tem contador de divergência e exit code diferente de zero.
+
+**Etapa 10 (Fase 15 sobre o ledger em reais):** o extrato por reserva e por repasse carrega `venue_price_cents`, `fee_cents`, `total_cents` e `release_id`; o relatório `financial/commission` separa `venue_price_cents` de `joga_fee_cents`. Recebíveis expõem `receipt_reference` (`simulated:<release_id>`), `dispute_deadline` e o preço congelado. O detalhe da reserva expõe `pricing`, `release`, `dispute` e `fiscal_document` (`pending_manual`). Contestação só em liberação `PENDING` e dentro de `JOGA_DISPUTE_WINDOW_HOURS`; a decisão exige `financial:manage` + `JOGA_REVIEW_OPERATORS` e gera auditoria. `block_for_chargeback` bloqueia/reverte sem tocar saldo. Nenhuma tabela ou migração nova.
 
 ### 15.3 Custódia e repasse
 
@@ -979,7 +995,7 @@ O `external_reference` do PSP associa a cobrança à compra ou reserva. O ledger
 
 Não há split: o valor do espaço não é receita do JOGA em nenhum momento; a comissão é a receita da intermediação. O repasse ao fornecedor ocorre em `starts_at + 2h` (ADR 0040), depois da confirmação e da quitação, e é idempotente no ledger em reais. Não existe mais a regra de `N` horas após a partida.
 
-O ledger de dupla entrada é a fonte da verdade. `booking_ledger_entries`, `ticket_ledger` e `payment_events` são registros auxiliares/legados e não podem substituir o ledger principal.
+O ledger de dupla entrada é a fonte da verdade. `ticket_ledger` e `payment_events` são registros auxiliares/legados e não podem substituir o ledger principal.
 
 ### 15.4 Eventos financeiros
 
@@ -1083,10 +1099,14 @@ O estabelecimento pode contestar valores, taxas e estados de liberação. A cont
 - Valor contestado.
 - Motivo.
 - Evidências.
+- Prazo (`venue_releases.dispute_deadline`, snapshot de 72 h).
 - Decisão e justificativa.
 - Ator e timestamp.
 
-A decisão é auditável e não pode ser apagada.
+A decisão é auditável e não pode ser apagada. Só a liberação `PENDING` é
+contestável; depois de `RELEASED`, `FAILED` ou `REVERSED` a API responde
+`409 release_not_contestable`. A decisão exige operador interno autorizado
+(`JOGA_REVIEW_OPERATORS`), não o próprio fornecedor.
 
 ### 16.4 Conciliação
 
@@ -1102,27 +1122,56 @@ Tarefas periódicas comparam:
 
 Divergências geram alerta e tarefa de investigação. Não corrigir saldo por edição manual silenciosa.
 
-### 16.5 Implementação local da 15A/15B — proposta técnica, não decisão aprovada
+### 16.5 Implementação local da Fase 15 sobre o ledger em reais
 
-A 15A mantém `venue_releases` por reserva concluída, com repasse em `starts_at + 2h`
+O backend da 15 foi refeito sobre o ledger de dupla entrada (Etapa 10), sem
+alterar tabelas: `venue_releases` guarda o valor do fornecedor
+(`venue_price_cents`) com repasse em `starts_at + 2h`
 (`JOGA_RELEASE_DELAY_HOURS`, padrão 2 conforme ADR 0040) e gravação idempotente
-de `VENUE_RELEASE` no ledger legado. A 14E substituirá esse lançamento pelo ledger
-de dupla entrada em reais. `financial_disputes` registra contestações do fornecedor;
-uma contestação `OPEN` suspende o repasse na proposta técnica. A decisão por CLI com
-`JOGA_REVIEW_OPERATORS` é provisória para testes e **não** é o modelo aprovado de moderação
-financeira.
+de `VENUE_RELEASE`. O extrato por reserva e por repasse é projeção de
+`ledger_transactions` + `ledger_entries` e carrega `venue_price_cents`,
+`fee_cents`, `total_cents` e `release_id`; `booking_payment_id` é nulo. O
+relatório `financial/commission` separa o valor do fornecedor da comissão do
+JOGA (`joga_fee_cents`); o valor do espaço nunca é somado como receita.
 
-A API expõe resumo, recebíveis, extrato e contestações em
-`/api/v1/organizations/{org}/financial/...`, sempre escopados pela organização e pelas
-capacidades `financial:read`/`financial:manage`. A 15B adiciona a aba Financeiro no painel.
-`scripts.reconcile_financials.py` compara pagamentos, reembolsos, repasses e ledger, sem
-corrigir saldos; o procedimento oficial para divergência não está definido. Nenhum split,
-transferência real, MED, chargeback ou comprovante fiscal é produzido nesta implementação;
-isso permanece na 14B e nas fases seguintes.
+`financial_disputes` registra contestações do fornecedor. A contestação só é
+aceita com liberação `PENDING` e antes do snapshot
+`venue_releases.dispute_deadline` (72 h aprovadas em 17/11/2026, copiadas para
+`financial_disputes.deadline_at`; não recalcular quando a configuração mudar). A
+decisão por endpoint exige `financial:manage` e usuário em
+`JOGA_REVIEW_OPERATORS`; grava ator, timestamp, justificativa e auditoria
+`financial.dispute_decided`. A CLI continua existindo para operação.
+`block_for_chargeback` é o hook de bloqueio/reversão para MED: marca `PENDING`
+como `FAILED` e `RELEASED` como `REVERSED`, sem tocar saldo. A política de MED
+aprovada em 17/11/2026 prevê bloquear repasse, criar receivable do jogador,
+evidência e prazo, sem clawback da quadra; o fluxo real fica na 14B. Reembolso
+normal reverte a liberação pela mesma trilha auditável. **Não existe reembolso
+parcial**: o rateio é integral por jogador.
 
-Os três relógios — pagamento (T3), contestação e repasse — continuam distintos. O repasse
-está definido em `starts_at + 2h` (ADR 0040); a janela de contestação e o tratamento de
-divergência ainda precisam de decisão de produto, ADR e revisão jurídica antes de dinheiro real.
+A matriz de cancelamento aprovada é: antes do cutoff, devolução integral e sem
+repasse; depois do cutoff e no no-show, sem devolução, a quadra recebe integral
+e o repasse continua; quadra que cancela devolve tudo e não recebe; contestação
+aberta congela o repasse. A substituição segue a ADR 0039.
+
+A API expõe resumo, recebíveis, extrato, comissão, detalhe da reserva e
+contestações em `/api/v1/organizations/{org}/financial/...`, sempre escopados
+pela organização e pelas capacidades `financial:read`/`financial:manage`. O
+comprovante real será `bank:<e2e_id>` + PDF do JOGA em storage privado;
+`simulated:<release_id>` só em teste. A NFS-e é a exibição de
+`fiscal_documents` (`pending_manual`); a emissão real terá duas notas por
+jogador (quadra e JOGA, esta no município do Rio), com provedor, código,
+alíquota e retenção em configuração. A 15B ainda precisa consumir os campos
+novos no painel. `scripts.reconcile_financials.py` compara pagamentos,
+reembolsos, repasses e ledger, sem corrigir saldos; o procedimento oficial para
+divergência não está definido. Nenhum split, transferência real, MED real ou
+comprovante fiscal real é produzido nesta implementação; isso permanece na 14B,
+19A e na fase comercial. A custódia atual é o modelo B com Inter PJ; escrow
+(modelo C) e KYC ficam para a fase comercial.
+
+Os três relógios — pagamento (T3), contestação e repasse — continuam distintos.
+O repasse está definido em `starts_at + 2h` (ADR 0040); a contestação tem 72 h
+persistidas como snapshot. O tratamento de divergência ainda precisa de
+procedimento oficial e revisão jurídica antes de dinheiro real.
 
 ---
 
@@ -1142,7 +1191,7 @@ Registrar impressões, cliques e conversões com minimização de dados e observ
 
 ## 18. Modelo de dados (referência; as-built em `DATA_MODEL.md`)
 
-O modelo **as-built** é `docs/DATA_MODEL.md`, gerado a partir das migrations. A tabela abaixo é uma referência lógica e **não é um inventário do schema atual**: nomes como `venue_payment_accounts`, `payment_orders`, `payment_charges`, `payment_ledger_entries`, `payouts`, `refunds`, `chat_rooms`, `chat_memberships`, `lobby_venue_votes`, `match_equipment`, `match_equipment_claims`, `moderation_cases` e `advertising_campaigns` não existem com esses nomes no código. O schema real usa `organizations.payout_*`, `venue_releases`, `payment_refunds`, `booking_ledger_entries`, `lobby_messages`, `clan_messages`, `moderation_reports` e o ledger `ledger_*`. Não usar esta tabela para autogenerate.
+O modelo **as-built** é `docs/DATA_MODEL.md`, gerado a partir das migrations. A tabela abaixo é uma referência lógica e **não é um inventário do schema atual**: nomes como `venue_payment_accounts`, `payment_orders`, `payment_charges`, `payment_ledger_entries`, `payouts`, `refunds`, `chat_rooms`, `chat_memberships`, `lobby_venue_votes`, `match_equipment`, `match_equipment_claims`, `moderation_cases` e `advertising_campaigns` não existem com esses nomes no código. O schema real usa `organizations.payout_*`, `venue_releases`, `payment_refunds`, `lobby_messages`, `clan_messages`, `moderation_reports` e o ledger `ledger_*`. Não usar esta tabela para autogenerate.
 
 Temporada, trilha, XP, passe e catálogo cosmético têm modelo detalhado em `docs/DATA_MODEL.md` e nas migrations (ADR 0043/0045).
 

@@ -41,9 +41,15 @@ from app.modules.organizations.service import (
     OrganizationService,
     payout_ready,
 )
+from app.modules.payments.money import compute_fee_cents
 from app.modules.pricing.models import PricingBand
+from app.modules.pricing.service import (
+    STANDARD_TEAM_SIZES,
+    TICKET_CALIBRATION_CENTS,
+    contingency_tickets,
+    tickets_for,
+)
 from app.modules.pricing.service import PricingBandError as PricingError
-from app.modules.pricing.service import tickets_for
 from app.modules.profile.models import SportFormat
 from app.modules.ratings.trust import TrustService
 from app.modules.season.service import (
@@ -54,7 +60,15 @@ from app.modules.season.service import (
     record_mission,
     week_start,
 )
-from app.modules.tickets.service import InsufficientTickets, consume, refund
+from app.modules.tickets.service import (
+    InsufficientTickets,
+    consume,
+    consume_paid_tickets,
+    non_paid_tickets_available,
+    paid_tickets_available,
+    player_credit_cents,
+    refund,
+)
 from app.modules.venues.business_hours import business_deadline
 from app.modules.venues.models import (
     VenueAvailability,
@@ -204,6 +218,11 @@ class BookingService:
         if now + t1 + t2_reserve + t3 + buffer >= starts_at:
             raise BookingConflict("insufficient_lead_time")
 
+        fee_cents = compute_fee_cents(
+            price_cents,
+            settings.fee_percent_bps,
+            settings.fee_min_cents,
+        )
         booking = Booking(
             lobby_id=lobby.id,
             organization_id=venue.organization_id,
@@ -214,6 +233,11 @@ class BookingService:
             starts_at=starts_at,
             ends_at=ends_at,
             price_cents=price_cents,
+            venue_price_cents=price_cents,
+            fee_cents=fee_cents,
+            fee_percent_applied=settings.fee_percent_bps,
+            total_cents=price_cents + fee_cents,
+            pricing_version="adr0049_v1",
             seats=seats,
             policy_version="v1",
             cancellation_policy="full_refund_until_confirmed",
@@ -221,12 +245,15 @@ class BookingService:
         availability = self._availability_for(booking, venue, space)
         booking.band_id = availability.band_id
         if availability.band_id is not None:
-            try:
-                booking.tickets_per_seat = tickets_for(
-                    self.session, availability.band_id, format_.team_size
-                )
-            except PricingError:
-                booking.tickets_per_seat = None
+            if format_.team_size in STANDARD_TEAM_SIZES:
+                try:
+                    booking.tickets_per_seat = tickets_for(
+                        self.session, availability.band_id, format_.team_size
+                    )
+                except PricingError as exc:
+                    raise BookingConflict("tickets_not_configured") from exc
+            else:
+                booking.tickets_per_seat = contingency_tickets(price_cents + fee_cents, seats)
         try:
             with self.session.begin_nested():
                 self.session.add(booking)
@@ -237,14 +264,19 @@ class BookingService:
                 return self._bundle(existing)
             raise BookingConflict("booking_conflict") from exc
 
-        contributions = _split_price(price_cents, seats)
+        space_charges = _split_price(price_cents, seats)
+        fee_charges = _split_price(fee_cents, seats)
         for seat, lobby_participant in enumerate(lobby_participants, start=1):
+            space_charge = space_charges[seat - 1]
+            fee_charge = fee_charges[seat - 1]
             self.session.add(
                 BookingParticipant(
                     booking_id=booking.id,
                     user_id=lobby_participant.user_id,
                     seat=seat,
-                    contribution_cents=contributions[seat - 1],
+                    contribution_cents=space_charge + fee_charge,
+                    space_charge_cents=space_charge,
+                    fee_charge_cents=fee_charge,
                 )
             )
         self.session.add(
@@ -382,6 +414,8 @@ class BookingService:
             user_id=new_user_id,
             seat=seat,
             contribution_cents=contribution,
+            space_charge_cents=outgoing.space_charge_cents,
+            fee_charge_cents=outgoing.fee_charge_cents,
         )
         self.session.add(new_participant)
         self.session.flush()
@@ -605,6 +639,7 @@ class BookingService:
         payment.status = "PAID"
         payment.paid_at = now
         participant.payment_status = "PAID"
+        participant.funding_source = "pix"
         self._event(booking, actor_user_id, "payment.simulated", booking.status, booking.status)
         self._confirm_if_all_paid(booking, actor_user_id, now)
         self.session.flush()
@@ -644,6 +679,7 @@ class BookingService:
         if status == "PAID":
             payment.paid_at = now
             participant.payment_status = "PAID"
+            participant.funding_source = "pix"
             self._event(booking, None, "payment.confirmed", booking.status, booking.status)
             self._confirm_if_all_paid(booking, None, now)
         elif status == "REFUNDED":
@@ -680,20 +716,45 @@ class BookingService:
         if booking.status != "PAYMENT_PENDING":
             raise BookingTransitionError
 
-        count = self._tickets_per_seat(booking)
+        tickets = self._tickets_per_seat(booking)
+        if tickets <= 0:
+            raise BookingInvalid
+        non_paid_tickets, non_paid_source = non_paid_tickets_available(self.session, actor_user_id)
         try:
-            consume(
-                self.session,
-                actor_user_id,
-                count,
-                ref_type="booking",
-                ref_id=booking.id,
-            )
+            if non_paid_tickets >= tickets:
+                # Vaga coberta por passe/grátis/admin: não debita player_credit.
+                # O lançamento da quadra/taxa para essas fontes é a Etapa 6b.
+                consume(
+                    self.session,
+                    actor_user_id,
+                    tickets,
+                    ref_type="booking",
+                    ref_id=booking.id,
+                )
+                participant.funding_source = non_paid_source
+            else:
+                ticket_value = tickets * TICKET_CALIBRATION_CENTS
+                if participant.space_charge_cents > ticket_value:
+                    raise BookingConflict("ticket_value_below_space")
+                if paid_tickets_available(self.session, actor_user_id) < tickets:
+                    raise BookingConflict("insufficient_tickets")
+                if player_credit_cents(self.session, actor_user_id) < ticket_value:
+                    raise BookingConflict("insufficient_credit")
+                consume_paid_tickets(
+                    self.session,
+                    actor_user_id,
+                    tickets,
+                    ref_type="booking",
+                    ref_id=booking.id,
+                )
+                participant.funding_source = "credit"
+                participant.contribution_cents = ticket_value
+                participant.fee_charge_cents = ticket_value - participant.space_charge_cents
         except InsufficientTickets as exc:
             raise BookingConflict("insufficient_tickets") from exc
 
         now = utcnow()
-        participant.tickets_consumed = count
+        participant.tickets_consumed = tickets
         participant.settled_with = "tickets"
         participant.payment_status = "PAID"
         self._cancel_pending_payments(booking, participant)
@@ -820,6 +881,18 @@ class BookingService:
             )
             participant.payment_status = "REFUNDED"
 
+        refunded_participants = [
+            participant
+            for participant in self._active_participants(booking.id)
+            if participant.tickets_consumed > 0
+            and participant.funding_source in {"credit", "pass", "free_level", "admin"}
+            and (exclude_user_id is None or participant.user_id != exclude_user_id)
+        ]
+        if refunded_participants:
+            from app.modules.ledger.flow import post_booking_refund
+
+            post_booking_refund(self.session, booking, refunded_participants)
+
     def _tickets_per_seat(self, booking: Booking) -> int:
         """Resolve a tabela 2D: snapshot da criação ou fallback pela agenda."""
 
@@ -834,17 +907,21 @@ class BookingService:
         if fmt is None:
             raise BookingInvalid
         if booking.band_id is not None:
-            try:
-                return tickets_for(self.session, booking.band_id, fmt.team_size)
-            except PricingError as exc:
-                raise BookingConflict("tickets_not_configured") from exc
+            if fmt.team_size in STANDARD_TEAM_SIZES:
+                try:
+                    return tickets_for(self.session, booking.band_id, fmt.team_size)
+                except PricingError as exc:
+                    raise BookingConflict("tickets_not_configured") from exc
+            return contingency_tickets(booking.total_cents, booking.seats)
         availability = self._availability_for(booking, venue, space)
         if availability.band_id is None:
             raise BookingConflict("band_missing")
-        try:
-            return tickets_for(self.session, availability.band_id, fmt.team_size)
-        except PricingError as exc:
-            raise BookingConflict("tickets_not_configured") from exc
+        if fmt.team_size in STANDARD_TEAM_SIZES:
+            try:
+                return tickets_for(self.session, availability.band_id, fmt.team_size)
+            except PricingError as exc:
+                raise BookingConflict("tickets_not_configured") from exc
+        return contingency_tickets(booking.total_cents, booking.seats)
 
     def _availability_for(
         self,
@@ -896,12 +973,96 @@ class BookingService:
         from app.modules.payments.financial import FinancialService
 
         FinancialService(self.session).ensure_release(booking.id)
-        self._notify_participants(
-            booking,
-            "booking_confirmed",
-            "Reserva confirmada",
-            "Todos os participantes quitaram a vaga. A reserva está confirmada.",
-            now,
+        from app.modules.ledger.flow import post_booking_confirmed
+
+        post_booking_confirmed(self.session, booking, active, now=now)
+        self._record_fiscal_intent(booking, active)
+        notifications = NotificationService(self.session)
+        for participant in active:
+            if participant.funding_source == "credit":
+                # k × 310 é o total pago em tickets; a quadra recebe o valor
+                # congelado e o resto é a taxa do JOGA. Não aplicar 20% sobre o
+                # total: o percentual é piso do cálculo da reserva, não a taxa
+                # efetiva do caminho por tickets.
+                total_cents = participant.tickets_consumed * TICKET_CALIBRATION_CENTS
+                joga_cents = total_cents - participant.space_charge_cents
+                body = (
+                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
+                    f"JOGA: R$ {joga_cents / 100:.2f} · "
+                    f"Total: R$ {total_cents / 100:.2f}"
+                )
+            elif participant.funding_source == "pix":
+                total_cents = participant.contribution_cents
+                joga_cents = participant.fee_charge_cents
+                body = (
+                    f"Quadra: R$ {participant.space_charge_cents / 100:.2f} · "
+                    f"JOGA: R$ {joga_cents / 100:.2f} · "
+                    f"Total: R$ {total_cents / 100:.2f}"
+                )
+            elif participant.funding_source == "pass":
+                total_cents = participant.space_charge_cents
+                joga_cents = 0
+                body = f"Cota do passe · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
+            else:
+                total_cents = participant.space_charge_cents
+                joga_cents = 0
+                body = f"Cortesia · Quadra: R$ {participant.space_charge_cents / 100:.2f}"
+            notifications.create(
+                user_id=participant.user_id,
+                kind="booking_confirmed",
+                title="Reserva confirmada",
+                body=body,
+                idempotency_key=f"booking_confirmed:{booking.id}:{participant.user_id}",
+                data={
+                    "booking_id": str(booking.id),
+                    "space_charge_cents": participant.space_charge_cents,
+                    "fee_charge_cents": joga_cents,
+                    "total_cents": total_cents,
+                    "tickets_consumed": participant.tickets_consumed,
+                },
+                now=now,
+            )
+
+    def _record_fiscal_intent(
+        self,
+        booking: Booking,
+        participants: list[BookingParticipant],
+    ) -> None:
+        """Registra a intenção de NFS-e da quadra contra cada jogador.
+
+        Placeholder: nenhuma chamada externa. O valor é o preço do espaço, sem a
+        taxa do JOGA. O CPF vai como snapshot cifrado do perfil; tomador sem CPF
+        fica registrado sem o campo e o painel fiscal sinaliza a pendência.
+        """
+        settings = get_settings()
+        if settings.fiscal_mode == "disabled" or not participants:
+            return
+        organization = self.session.get(Organization, booking.organization_id)
+        if organization is None or not organization.legal_document:
+            return
+
+        from app.modules.fiscal.service import TakerSnapshot, record_document_intent
+        from app.modules.profile.models import UserProfile
+
+        takers: list[TakerSnapshot] = []
+        for participant in participants:
+            profile = self.session.get(UserProfile, participant.user_id)
+            takers.append(
+                TakerSnapshot(
+                    user_id=participant.user_id,
+                    amount_cents=participant.space_charge_cents,
+                    cpf_ciphertext=profile.cpf_ciphertext if profile is not None else None,
+                    cpf_key_id=profile.cpf_key_id if profile is not None else None,
+                )
+            )
+        record_document_intent(
+            self.session,
+            booking_id=booking.id,
+            issuer_cnpj=organization.legal_document,
+            taker_user_id=booking.created_by or participants[0].user_id,
+            amount_cents=booking.venue_price_cents,
+            takers=takers,
+            settings=settings,
         )
 
     # -- cancelamento/conclusão --------------------------------------------
@@ -929,6 +1090,11 @@ class BookingService:
             raise BookingTransitionError
 
         now = utcnow()
+        cutoff = ensure_utc(booking.starts_at) - timedelta(
+            hours=get_settings().cancellation_cutoff_hours
+        )
+        if not by_venue and now >= cutoff:
+            raise BookingConflict("cancellation_closed")
         previous = booking.status
         booking.status = target
         booking.cancelled_at = now
@@ -943,12 +1109,17 @@ class BookingService:
             target,
             reason=booking.cancellation_reason,
         )
-        if by_venue:
-            # Falha do estabelecimento: todos recebem os ingressos de volta.
-            self._refund_tickets(booking)
-        else:
-            # ADR 0039: quem cancelou perde; os demais recebem.
-            self._refund_tickets(booking, exclude_user_id=actor_user_id)
+        # Antes do cutoff, todo mundo recebe integralmente; a quadra não recebe.
+        # Falha da quadra também devolve tudo. Depois do cutoff a API bloqueia
+        # o cancelamento do jogador, e o no-show não reembolsa.
+        self._refund_tickets(booking)
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).reverse_for_refund(
+            booking.id,
+            reason=booking.cancellation_reason or target,
+            now=now,
+        )
         self._audit(
             actor_user_id,
             booking,
@@ -1002,6 +1173,13 @@ class BookingService:
         )
         # Reserva que não se confirma: todos recebem os ingressos de volta.
         self._refund_tickets(booking)
+        from app.modules.payments.financial import FinancialService
+
+        FinancialService(self.session).reverse_for_refund(
+            booking.id,
+            reason=booking.cancellation_reason or "cancelled_by_system",
+            now=moment,
+        )
         self._audit(
             None,
             booking,

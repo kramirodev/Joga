@@ -46,11 +46,16 @@ export const queryKeys = {
     ["organizations", organizationId, "financial-statement"] as const,
   disputes: (organizationId: string) =>
     ["organizations", organizationId, "financial-disputes"] as const,
+  commission: (organizationId: string, from: string | null, to: string | null) =>
+    ["organizations", organizationId, "financial-commission", from, to] as const,
+  bookingFinancial: (organizationId: string, bookingId: string) =>
+    ["organizations", organizationId, "bookings", bookingId, "financial"] as const,
   sports: ["sports"] as const,
   bands: ["pricing-bands"] as const,
   presence: (bookingId: string) => ["bookings", bookingId, "presence"] as const,
   moderatorMe: ["moderator", "me"] as const,
-  moderationQueue: (status: string) => ["moderation", "queue", status] as const,
+  moderationQueue: (status: string, limit = 30, offset = 0) =>
+    ["moderation", "queue", status, limit, offset] as const,
   moderationAppeals: ["moderation", "appeals"] as const,
   moderationReport: (reportId: string) => ["moderation", "report", reportId] as const,
   moderationOperators: ["moderation", "operators"] as const,

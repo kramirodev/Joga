@@ -5,6 +5,15 @@ em 2026-11-09. Este arquivo **não registra aprovação** de prazo de liberaçã
 forma de moderação financeira nem tratamento de divergência.
 **Branch:** `feat/15-interface-financeira`
 
+> **Revisão 2026-11-17 (Etapa 10/11 da 14E):** o backend foi refeito sobre o
+> ledger de dupla entrada em reais. O extrato por reserva/repasse carrega
+> `venue_price_cents`/`fee_cents`/`total_cents`, há relatório de comissão
+> separado, `receipt_reference` simulado e `fiscal_document` placeholder. A
+> contestação passou a ter prazo de **72 h** (`JOGA_DISPUTE_WINDOW_HOURS=72`,
+> aprovado em 17/11/2026), persistido como snapshot, e decisão por endpoint com
+> `financial:manage` + `JOGA_REVIEW_OPERATORS`. A CLI permanece como operação
+> alternativa. As pendências de política abaixo continuam abertas.
+
 ## Fontes e contexto
 
 - `AGENTS.md`, `GOALS.md`, `PLANS.md` Fase 15
@@ -26,10 +35,10 @@ regra de produto, política financeira ou decisão de arquitetura aprovada.
 
 | Tema | Situação | Observação |
 |---|---|---|
-| `N = 24 h` para liberação | **Não aprovado** | Default técnico configurável; prazo comercial em aberto |
-| Liberação/repasse simulados no ledger | **Não aprovado** | Requisitos financeiros existem; modelo final não foi decidido |
-| Contestação decidida por CLI | **Não aprovado** | A CLI foi aceita provisoriamente para resultados esportivos, não para moderação financeira |
-| Divergência de valor marcada como `FAILED` | **Não aprovado** | Salvaguarda técnica; procedimento oficial de divergência não definido |
+| `N = 24 h` para liberação | **Substituído** | ADR 0040 define `starts_at + 2h` |
+| Liberação/repasse simulados no ledger | **Parcial** | Elegibilidade e ledger entregues; transferência real na 14B |
+| Contestação decidida por CLI | **Superado** | Endpoint com operador interno; CLI permanece como operação |
+| Divergência de valor marcada como `FAILED` | **Técnica** | Procedimento oficial de divergência não definido |
 | Ausência de PSP real/conciliação externa | **Parcialmente definido** | PSP e provedor continuam pendentes |
 | Sem alteração em mobile, MMR e Trust Factor | **Compatível** | Mantido o escopo já estabelecido |
 
@@ -40,12 +49,13 @@ Não misturar prazo de pagamento, prazo de contestação e prazo de repasse.
 | Relógio | O que mede | Estado atual |
 |---|---|---|
 | Pagamento (T3) | Janela para os participantes pagarem dentro do bloqueio da quadra | Definido como requisito (estimativa inicial de 60 min) |
-| Contestação | Janela para o estabelecimento contestar valores/repasse | **Não definido** |
-| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Não definido**; o default técnico de 24 h não é aprovação |
+| Contestação | Janela para o estabelecimento contestar valores/repasse | **72 h aprovadas e persistidas** |
+| Repasse/liberação | Quando o valor fica disponível e quando é transferido | **Definido**: `starts_at + 2h` (ADR 0040); transferência real na 14B |
 
-A implementação atual usa um único `eligible_at` derivado de `completed_at + N` e permite
-contestação enquanto a liberação está `PENDING`. Isso **não** substitui a definição dos três
-relógios e deve ser revisado quando a política for aprovada.
+A implementação usa `eligible_at = starts_at + release_delay_hours` e permite contestação enquanto a
+liberação está `PENDING`, dentro do snapshot de 72 h. A matriz de cancelamento foi decidida em
+17/11/2026: antes do cutoff, devolução integral e sem repasse; depois do cutoff/no-show, sem
+devolução, quadra integral e repasse; quadra que cancela devolve tudo e não recebe.
 
 ## Escopo 15A — backend (proposta técnica)
 

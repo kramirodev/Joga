@@ -127,6 +127,9 @@ def activate_subscription(
     subscription.starts_at = moment
     subscription.ends_at = add_months(moment, PASS_MONTHS)
     subscription.paid_at = moment
+    from app.modules.ledger.flow import post_pass_sale
+
+    post_pass_sale(session, subscription, now=moment)
     deliver_due(session, subscription, now=moment)
     session.flush()
     return subscription
@@ -155,8 +158,18 @@ def revoke_subscription(
     subscription = lock_subscription(session, subscription_id)
     if subscription.status in {"cancelled", "expired"}:
         return subscription
+    delivered = len(deliveries_for(session, subscription.id))
+    refundable_months = max(0, PASS_MONTHS - delivered)
     subscription.status = "cancelled"
     subscription.ends_at = now or utcnow()
+    from app.modules.ledger.flow import post_pass_refund
+
+    post_pass_refund(
+        session,
+        subscription,
+        amount_cents=(subscription.amount_cents // PASS_MONTHS) * refundable_months,
+        now=now,
+    )
     session.flush()
     return subscription
 
@@ -245,7 +258,16 @@ def deliver_due(
             idempotency_key=f"pass:{subscription.id}:{month_index}",
             ref_type="pass_delivery",
             ref_id=delivery.id,
-            expires_at=add_months(starts_at, month_index),
+            period=add_months(starts_at, month_index - 1).strftime("%Y-%m"),
+        )
+        from app.modules.ledger.flow import post_pass_month
+
+        post_pass_month(
+            session,
+            subscription,
+            month_index,
+            amount_cents=subscription.amount_cents // PASS_MONTHS,
+            now=moment,
         )
         created.append(delivery)
     return created

@@ -30,6 +30,40 @@ export function requiredError(value: string, label: string): string | null {
   return value.trim() ? null : `Informe ${label}.`;
 }
 
+export function emailError(value: string): string | null {
+  const clean = value.trim();
+  if (!clean) return "Informe o e-mail.";
+  if (clean.length > 254) return "O e-mail deve ter no máximo 254 caracteres.";
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(clean)) {
+    return "Informe um e-mail válido, como nome@exemplo.com.";
+  }
+  return null;
+}
+
+export const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MAX_LENGTH = 128;
+
+export function passwordError(value: string, email?: string): string | null {
+  if (!value) return "Informe uma senha.";
+  if (value.length < PASSWORD_MIN_LENGTH) {
+    return `A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`;
+  }
+  if (value.length > PASSWORD_MAX_LENGTH) {
+    return `A senha deve ter no máximo ${PASSWORD_MAX_LENGTH} caracteres.`;
+  }
+  const cleanEmail = email?.trim().toLowerCase();
+  if (cleanEmail && value.toLowerCase() === cleanEmail) {
+    return "A senha não pode ser igual ao e-mail.";
+  }
+  return null;
+}
+
+export function passwordConfirmationError(password: string, confirmation: string): string | null {
+  if (!confirmation) return "Confirme a senha.";
+  if (password !== confirmation) return "As senhas não coincidem.";
+  return null;
+}
+
 export function uuidError(value: string, label = "o UUID"): string | null {
   const trimmed = value.trim();
   if (!trimmed) return `Informe ${label}.`;

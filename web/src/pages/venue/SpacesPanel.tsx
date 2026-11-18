@@ -51,6 +51,33 @@ function clock(value: string): string {
   return value.slice(0, 5);
 }
 
+function minutesOf(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  return (hours ?? 0) * 60 + (minutes ?? 0);
+}
+
+function businessHourOverlapError(
+  hours: BusinessHour[],
+  weekday: number,
+  opensAt: string,
+  closesAt: string,
+  ignoreId?: string,
+): string | null {
+  const start = minutesOf(opensAt);
+  const end = minutesOf(closesAt);
+  const conflict = hours.find(
+    (item) =>
+      item.id !== ignoreId &&
+      item.weekday === weekday &&
+      start < minutesOf(clock(item.closes_at)) &&
+      end > minutesOf(clock(item.opens_at)),
+  );
+  if (!conflict) return null;
+  return `Conflito com o expediente de ${clock(conflict.opens_at)}–${clock(
+    conflict.closes_at,
+  )} na ${weekdayLabel(weekday).toLowerCase()}. Ajuste o horário ou remova a janela existente.`;
+}
+
 function bandForPrice(bands: PricingBand[], cents: number | null): PricingBand | null {
   if (cents === null || cents <= 0) return null;
   return (
@@ -112,6 +139,18 @@ export function SpacesPanel({
   const [priceTarget, setPriceTarget] = useState<VenueAvailability | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
   const [priceError, setPriceError] = useState<string | null>(null);
+
+  const [editSpaceTarget, setEditSpaceTarget] = useState<VenueSpace | null>(null);
+  const [editSpaceForm, setEditSpaceForm] = useState(INITIAL_SPACE);
+  const [editSpaceErrors, setEditSpaceErrors] = useState<Record<string, string>>({});
+
+  const [editWindowTarget, setEditWindowTarget] = useState<VenueAvailability | null>(null);
+  const [editWindowForm, setEditWindowForm] = useState(INITIAL_WINDOW);
+  const [editWindowErrors, setEditWindowErrors] = useState<Record<string, string>>({});
+
+  const [editHourTarget, setEditHourTarget] = useState<BusinessHour | null>(null);
+  const [editHourForm, setEditHourForm] = useState(INITIAL_HOURS);
+  const [editHourErrors, setEditHourErrors] = useState<Record<string, string>>({});
 
   const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<VenueSpace | null>(null);
   const [deleteWindowTarget, setDeleteWindowTarget] = useState<VenueAvailability | null>(null);
@@ -303,6 +342,51 @@ export function SpacesPanel({
     onError: fail,
   });
 
+  const editSpaceMutation = useMutation({
+    mutationFn: () =>
+      api.updateSpace(organization.id, venue.id, editSpaceTarget?.id ?? "", {
+        name: normalizeWhitespace(editSpaceForm.name),
+        description: editSpaceForm.description.trim()
+          ? normalizeWhitespace(editSpaceForm.description)
+          : null,
+        is_covered: editSpaceForm.covered,
+      }),
+    onSuccess: () => {
+      setEditSpaceTarget(null);
+      setEditSpaceErrors({});
+      toast.push({ title: "Quadra atualizada" });
+      invalidateSpaces();
+    },
+    onError: fail,
+  });
+
+  const editWindowMutation = useMutation({
+    mutationFn: () =>
+      api.updateAvailability(
+        organization.id,
+        venue.id,
+        editWindowTarget?.space_id ?? "",
+        editWindowTarget?.id ?? "",
+        {
+          weekday: editWindowForm.weekday,
+          start_time: `${editWindowForm.startTime}:00`,
+          end_time: `${editWindowForm.endTime}:00`,
+          price_cents: moneyToCents(editWindowForm.price) ?? 0,
+          slot_minutes: Number(editWindowForm.slotMinutes),
+        },
+      ),
+    onSuccess: () => {
+      setEditWindowTarget(null);
+      setEditWindowErrors({});
+      toast.push({
+        title: "Janela atualizada",
+        description: "Reservas existentes mantêm o valor congelado.",
+      });
+      invalidateSchedule();
+    },
+    onError: fail,
+  });
+
   const deleteAvailabilityMutation = useMutation({
     mutationFn: (item: VenueAvailability) =>
       api.deleteAvailability(organization.id, venue.id, item.space_id, item.id),
@@ -326,6 +410,26 @@ export function SpacesPanel({
       toast.push({
         title: "Expediente adicionado",
         description: "O prazo T2 passa a contar dentro deste horário.",
+      });
+      invalidateHours();
+    },
+    onError: fail,
+  });
+
+  const editBusinessHourMutation = useMutation({
+    mutationFn: () =>
+      api.updateBusinessHour(organization.id, venue.id, editHourTarget?.id ?? "", {
+        weekday: editHourForm.weekday,
+        opens_at: `${editHourForm.opensAt}:00`,
+        closes_at: `${editHourForm.closesAt}:00`,
+      }),
+    onSuccess: () => {
+      setEditHourTarget(null);
+      setEditHourErrors({});
+      setActionError(null);
+      toast.push({
+        title: "Expediente atualizado",
+        description: "Reservas em andamento mantêm o prazo T2 já calculado.",
       });
       invalidateHours();
     },
@@ -459,6 +563,41 @@ export function SpacesPanel({
     businessHourMutation.mutate();
   }
 
+  function openEditHour(item: BusinessHour) {
+    setActionError(null);
+    setEditHourTarget(item);
+    setEditHourForm({
+      weekday: item.weekday,
+      opensAt: clock(item.opens_at),
+      closesAt: clock(item.closes_at),
+    });
+    setEditHourErrors({});
+  }
+
+  function saveEditHour(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editHourTarget) return;
+    const next: Record<string, string> = {};
+    const timeError = timeRangeError(editHourForm.opensAt, editHourForm.closesAt);
+    if (timeError) next.time = timeError;
+    const overlap = businessHourOverlapError(
+      businessHours,
+      editHourForm.weekday,
+      editHourForm.opensAt,
+      editHourForm.closesAt,
+      editHourTarget.id,
+    );
+    if (overlap) next.overlap = overlap;
+    if (Object.keys(next).length > 0) {
+      setEditHourErrors(next);
+      document.getElementById(next.time ? "hours-edit-open" : "hours-edit-close")?.focus();
+      return;
+    }
+    setEditHourErrors({});
+    setActionError(null);
+    editBusinessHourMutation.mutate();
+  }
+
   function createClosure(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const next: Record<string, string> = {};
@@ -508,6 +647,80 @@ export function SpacesPanel({
     }
     setBlackoutErrors({});
     blackoutMutation.mutate();
+  }
+
+  function openEditSpace(space: VenueSpace) {
+    setActionError(null);
+    setEditSpaceTarget(space);
+    setEditSpaceForm({
+      name: space.name,
+      description: space.description ?? "",
+      covered: space.is_covered,
+    });
+    setEditSpaceErrors({});
+  }
+
+  function saveEditSpace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    const nameError = textError(editSpaceForm.name, {
+      label: "o nome da quadra",
+      min: 1,
+      max: 120,
+    });
+    if (nameError) next.name = nameError;
+    if (editSpaceForm.description.trim().length > 280) {
+      next.description = "A descrição deve ter no máximo 280 caracteres.";
+    }
+    if (Object.keys(next).length > 0) {
+      setEditSpaceErrors(next);
+      document.getElementById(next.name ? "space-edit-name" : "space-edit-description")?.focus();
+      return;
+    }
+    editSpaceMutation.mutate();
+  }
+
+  function openEditWindow(item: VenueAvailability) {
+    setActionError(null);
+    setEditWindowTarget(item);
+    setEditWindowForm({
+      weekday: item.weekday,
+      startTime: clock(item.start_time),
+      endTime: clock(item.end_time),
+      price: moneyInputFromCents(item.price_cents),
+      slotMinutes: String(item.slot_minutes),
+    });
+    setEditWindowErrors({});
+  }
+
+  function saveEditWindow(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next: Record<string, string> = {};
+    const timeError = timeRangeError(editWindowForm.startTime, editWindowForm.endTime);
+    if (timeError) next.time = timeError;
+    const priceError = moneyError(editWindowForm.price, {
+      label: "o preço",
+      maxCents: maxPriceCents,
+    });
+    if (priceError) next.price = priceError;
+    const slotError = positiveIntegerError(
+      Number(editWindowForm.slotMinutes),
+      15,
+      240,
+      "a duração da vaga",
+    );
+    if (slotError) next.slot = slotError;
+    if (Object.keys(next).length > 0) {
+      setEditWindowErrors(next);
+      const first = next.time
+        ? "window-edit-start"
+        : next.price
+          ? "window-edit-price"
+          : "window-edit-slot";
+      document.getElementById(first)?.focus();
+      return;
+    }
+    editWindowMutation.mutate();
   }
 
   function openPrice(item: VenueAvailability) {
@@ -661,6 +874,13 @@ export function SpacesPanel({
                     <button
                       type="button"
                       className="button button--small"
+                      onClick={() => openEditSpace(selectedSpace)}
+                    >
+                      Editar quadra
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--small"
                       disabled={updateSpaceMutation.isPending}
                       onClick={() => updateSpaceMutation.mutate(selectedSpace)}
                     >
@@ -748,6 +968,13 @@ export function SpacesPanel({
                         </small>
                       </span>
                       <div className="schedule-row__actions">
+                        <button
+                          type="button"
+                          className="button button--small"
+                          onClick={() => openEditWindow(item)}
+                        >
+                          Editar
+                        </button>
                         <button
                           type="button"
                           className="button button--small"
@@ -898,16 +1125,28 @@ export function SpacesPanel({
                           {clock(item.opens_at)}–{clock(item.closes_at)}
                         </small>
                       </span>
-                      <button
-                        type="button"
-                        className="button button--small button--danger"
-                        onClick={() => {
-                          setActionError(null);
-                          setDeleteHourTarget(item);
-                        }}
-                      >
-                        Remover
-                      </button>
+                      <div className="schedule-row__actions">
+                        <button
+                          type="button"
+                          className="button button--small"
+                          onClick={() => openEditHour(item)}
+                          aria-label={`Editar expediente de ${weekdayLabel(item.weekday)} (${clock(
+                            item.opens_at,
+                          )}–${clock(item.closes_at)})`}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--small button--danger"
+                          onClick={() => {
+                            setActionError(null);
+                            setDeleteHourTarget(item);
+                          }}
+                        >
+                          Remover
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -1242,6 +1481,291 @@ export function SpacesPanel({
             required
             autoFocus
           />
+          {actionFailed}
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(editSpaceTarget)}
+        title="Editar quadra"
+        description="Nome, descrição e cobertura aparecem na descoberta do aplicativo."
+        onClose={() => {
+          if (!editSpaceMutation.isPending) {
+            setEditSpaceTarget(null);
+            setEditSpaceErrors({});
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setEditSpaceTarget(null);
+                setEditSpaceErrors({});
+              }}
+              disabled={editSpaceMutation.isPending}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="space-edit-form"
+              className="button button--primary"
+              disabled={editSpaceMutation.isPending}
+              aria-busy={editSpaceMutation.isPending || undefined}
+            >
+              {editSpaceMutation.isPending ? "Salvando..." : "Salvar alterações"}
+            </button>
+          </>
+        }
+      >
+        <form id="space-edit-form" className="form" onSubmit={saveEditSpace} noValidate>
+          <TextField
+            id="space-edit-name"
+            label="Nome"
+            value={editSpaceForm.name}
+            onChange={(event) => {
+              setEditSpaceForm((current) => ({ ...current, name: event.target.value }));
+              if (editSpaceErrors.name) {
+                setEditSpaceErrors((current) => ({ ...current, name: "" }));
+              }
+            }}
+            error={editSpaceErrors.name}
+            hint="De 1 a 120 caracteres."
+            maxLength={120}
+            required
+          />
+          <TextField
+            id="space-edit-description"
+            label="Descrição"
+            value={editSpaceForm.description}
+            onChange={(event) => {
+              setEditSpaceForm((current) => ({ ...current, description: event.target.value }));
+              if (editSpaceErrors.description) {
+                setEditSpaceErrors((current) => ({ ...current, description: "" }));
+              }
+            }}
+            error={editSpaceErrors.description}
+            hint="Opcional. Até 280 caracteres."
+            maxLength={280}
+          />
+          <CheckboxField
+            id="space-edit-covered"
+            label="Quadra coberta"
+            checked={editSpaceForm.covered}
+            onChange={(checked) =>
+              setEditSpaceForm((current) => ({ ...current, covered: checked }))
+            }
+            hint="Ajuda o jogador a escolher em dia de chuva."
+          />
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(editWindowTarget)}
+        title="Editar janela da agenda"
+        description="Mudanças valem para novas reservas; reservas existentes mantêm o valor."
+        onClose={() => {
+          if (!editWindowMutation.isPending) {
+            setEditWindowTarget(null);
+            setEditWindowErrors({});
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setEditWindowTarget(null);
+                setEditWindowErrors({});
+              }}
+              disabled={editWindowMutation.isPending}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="window-edit-form"
+              className="button button--primary"
+              disabled={editWindowMutation.isPending}
+              aria-busy={editWindowMutation.isPending || undefined}
+            >
+              {editWindowMutation.isPending ? "Salvando..." : "Salvar janela"}
+            </button>
+          </>
+        }
+      >
+        <form id="window-edit-form" className="form" onSubmit={saveEditWindow} noValidate>
+          <SelectField
+            id="window-edit-weekday"
+            label="Dia"
+            value={editWindowForm.weekday}
+            onChange={(event) =>
+              setEditWindowForm((current) => ({
+                ...current,
+                weekday: Number(event.target.value),
+              }))
+            }
+          >
+            {WEEKDAYS.map((day) => (
+              <option key={day.value} value={day.value}>
+                {day.label}
+              </option>
+            ))}
+          </SelectField>
+          <div className="form-row">
+            <TextField
+              id="window-edit-start"
+              label="Início"
+              type="time"
+              value={editWindowForm.startTime}
+              onChange={(event) => {
+                setEditWindowForm((current) => ({ ...current, startTime: event.target.value }));
+                if (editWindowErrors.time) {
+                  setEditWindowErrors((current) => ({ ...current, time: "" }));
+                }
+              }}
+              error={editWindowErrors.time}
+              required
+            />
+            <TextField
+              id="window-edit-end"
+              label="Fim"
+              type="time"
+              value={editWindowForm.endTime}
+              onChange={(event) => {
+                setEditWindowForm((current) => ({ ...current, endTime: event.target.value }));
+                if (editWindowErrors.time) {
+                  setEditWindowErrors((current) => ({ ...current, time: "" }));
+                }
+              }}
+              required
+            />
+          </div>
+          <MoneyField
+            id="window-edit-price"
+            label="Preço da vaga"
+            value={editWindowForm.price}
+            onChange={(value) => {
+              setEditWindowForm((current) => ({ ...current, price: value }));
+              if (editWindowErrors.price) {
+                setEditWindowErrors((current) => ({ ...current, price: "" }));
+              }
+            }}
+            error={editWindowErrors.price}
+            hint={
+              maxPriceCents !== undefined
+                ? `Teto máximo da faixa: ${formatMoney(maxPriceCents)}.`
+                : undefined
+            }
+            required
+          />
+          <TextField
+            id="window-edit-slot"
+            label="Duração da vaga (min)"
+            value={editWindowForm.slotMinutes}
+            onChange={(event) => {
+              setEditWindowForm((current) => ({ ...current, slotMinutes: event.target.value }));
+              if (editWindowErrors.slot) {
+                setEditWindowErrors((current) => ({ ...current, slot: "" }));
+              }
+            }}
+            error={editWindowErrors.slot}
+            hint="Entre 15 e 240 minutos."
+            inputMode="numeric"
+            maxLength={3}
+            required
+          />
+          {actionFailed}
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(editHourTarget)}
+        title="Editar expediente"
+        description="Vale para os próximos prazos T2; reservas em andamento não são recalculadas."
+        onClose={() => {
+          if (!editBusinessHourMutation.isPending) {
+            setEditHourTarget(null);
+            setEditHourErrors({});
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setEditHourTarget(null);
+                setEditHourErrors({});
+              }}
+              disabled={editBusinessHourMutation.isPending}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="hours-edit-form"
+              className="button button--primary"
+              disabled={editBusinessHourMutation.isPending}
+              aria-busy={editBusinessHourMutation.isPending || undefined}
+            >
+              {editBusinessHourMutation.isPending ? "Salvando..." : "Salvar expediente"}
+            </button>
+          </>
+        }
+      >
+        <form id="hours-edit-form" className="form" onSubmit={saveEditHour} noValidate>
+          <SelectField
+            id="hours-edit-weekday"
+            label="Dia"
+            value={editHourForm.weekday}
+            onChange={(event) => {
+              setEditHourForm((current) => ({
+                ...current,
+                weekday: Number(event.target.value),
+              }));
+              setEditHourErrors({});
+            }}
+          >
+            {WEEKDAYS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </SelectField>
+          <div className="form-row">
+            <TextField
+              id="hours-edit-open"
+              label="Abre"
+              type="time"
+              value={editHourForm.opensAt}
+              onChange={(event) => {
+                setEditHourForm((current) => ({ ...current, opensAt: event.target.value }));
+                setEditHourErrors({});
+              }}
+              error={editHourErrors.time}
+              required
+            />
+            <TextField
+              id="hours-edit-close"
+              label="Fecha"
+              type="time"
+              value={editHourForm.closesAt}
+              onChange={(event) => {
+                setEditHourForm((current) => ({ ...current, closesAt: event.target.value }));
+                setEditHourErrors({});
+              }}
+              required
+            />
+          </div>
+          {editHourErrors.overlap ? (
+            <p className="field__error" role="alert">
+              {editHourErrors.overlap}
+            </p>
+          ) : null}
           {actionFailed}
         </form>
       </Modal>

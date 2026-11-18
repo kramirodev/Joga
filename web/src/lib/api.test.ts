@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  SESSION_EXPIRED_EVENT,
   api,
+  changePassword,
   clearAuthTokens,
   refreshSession,
-  requestPhoneChallenge,
+  requestEmailCode,
+  resetEmailPassword,
   setAuthTokens,
+  webEmailLogin,
+  webEmailRegistration,
 } from "./api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -209,10 +214,67 @@ describe("cliente HTTP do painel", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestPhoneChallenge("+5511900000001", "login")).rejects.toMatchObject({
+    await expect(requestEmailCode("operador@example.com", "password_reset")).rejects.toMatchObject({
       status: 429,
       code: "rate_limited",
       retryAfterSeconds: 45,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url, "http://joga.local").pathname).toBe("/api/v1/auth/email/code");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "operador@example.com",
+      purpose: "password_reset",
+    });
+  });
+
+  it("envia e-mail e senha nos fluxos web e de senha", async () => {
+    const sessionBody = {
+      access_token: "access-1",
+      access_expires_at: "2026-11-19T13:00:00Z",
+      csrf_token: "csrf-1",
+      user: { id: "user-1", status: "active" },
+      capabilities: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(sessionBody))
+      .mockResolvedValueOnce(jsonResponse(sessionBody))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await webEmailLogin("operador@example.com", "senha-segura-123");
+    await webEmailRegistration("receipt-1", "operador@example.com", "senha-segura-123");
+    await resetEmailPassword("receipt-2", "operador@example.com", "outra-senha-123");
+    await changePassword("senha-atual-123", "nova-senha-123");
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => new URL(url, "http://joga.local").pathname)).toEqual([
+      "/api/v1/auth/web/email/login",
+      "/api/v1/auth/web/email/registration",
+      "/api/v1/auth/email/password/reset",
+      "/api/v1/me/password",
+    ]);
+    expect(JSON.parse(String(calls[0][1].body))).toEqual({
+      email: "operador@example.com",
+      password: "senha-segura-123",
+      device_name: "Painel",
+    });
+    expect(JSON.parse(String(calls[1][1].body))).toEqual({
+      challenge_id: "receipt-1",
+      email: "operador@example.com",
+      password: "senha-segura-123",
+      device_name: "Painel",
+    });
+    expect(JSON.parse(String(calls[2][1].body))).toEqual({
+      challenge_id: "receipt-2",
+      email: "operador@example.com",
+      new_password: "outra-senha-123",
+    });
+    expect(JSON.parse(String(calls[3][1].body))).toEqual({
+      current_password: "senha-atual-123",
+      new_password: "nova-senha-123",
     });
   });
 
@@ -349,6 +411,26 @@ describe("cliente HTTP do painel", () => {
     expect(parsed.search).toBe("");
   });
 
+  it("dispara sessão expirada quando o refresh falha com 401", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/web/refresh")) {
+        return jsonResponse({ detail: { code: "invalid_refresh_token" } }, 401);
+      }
+      return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "expired", csrfToken: "csrf-1" });
+
+    const listener = vi.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+
+    await expect(api.getOrganization("org-1")).rejects.toMatchObject({ status: 401 });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
   it("captura o X-Request-ID para referência de suporte", async () => {
     const fetchMock = vi.fn().mockImplementation(
       async () =>
@@ -365,5 +447,65 @@ describe("cliente HTTP do painel", () => {
     await expect(api.getOrganization("org-1")).rejects.toMatchObject({
       requestId: "req-abc-123",
     });
+  });
+
+  it("envia status e paginação dos repasses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ receivables: [], total: 0, limit: 25, offset: 50 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listReceivables("org-1", { status: "RELEASED", limit: 25, offset: 50 });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url, "http://joga.local");
+    expect(parsed.pathname).toBe("/api/v1/organizations/org-1/financial/receivables");
+    expect(parsed.searchParams.get("status")).toBe("RELEASED");
+    expect(parsed.searchParams.get("limit")).toBe("25");
+    expect(parsed.searchParams.get("offset")).toBe("50");
+  });
+
+  it("envia o período da comissão como from/to", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        rows: [],
+        totals: { bookings: 0, venue_price_cents: 0, joga_fee_cents: 0, total_cents: 0 },
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.getFinancialCommission("org-1", {
+      from: "2026-11-01T00:00:00.000Z",
+      to: "2026-11-30T23:59:59.999Z",
+    });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url, "http://joga.local");
+    expect(parsed.pathname).toBe("/api/v1/organizations/org-1/financial/commission");
+    expect(parsed.searchParams.get("from")).toBe("2026-11-01T00:00:00.000Z");
+    expect(parsed.searchParams.get("to")).toBe("2026-11-30T23:59:59.999Z");
+  });
+
+  it("edita o expediente via PATCH no recurso existente", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: "hour-1",
+        weekday: 1,
+        opens_at: "10:00:00",
+        closes_at: "18:00:00",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    await api.updateBusinessHour("org-1", "venue-1", "hour-1", { opens_at: "10:00:00" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/organizations/org-1/venues/venue-1/business-hours/hour-1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ opens_at: "10:00:00" });
+    expect((init.headers as Headers).get("X-CSRF-Token")).toBe("csrf-1");
   });
 });

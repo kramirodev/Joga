@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Modal, Pressable, Text, View } from 'react-native';
+import { Modal, Pressable, View } from 'react-native';
 
 import { useTheme } from '../state/context';
 import { Btn, BtnRow, Chip, ChipRow, Field, Input, Txt } from './kit';
 import { WEEKDAY_NAMES } from './datetime';
+import { Text } from './text';
 
 const TIME_ZONE = 'America/Sao_Paulo';
 

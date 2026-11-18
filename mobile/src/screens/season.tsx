@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { api } from '../api/client';
 import type { TrackLevel } from '../api/types';
@@ -24,6 +24,7 @@ import {
   Txt,
 } from '../ui/kit';
 import { number } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 const MILESTONES = [4, 8, 12, 17, 21, 26, 30];
@@ -248,14 +249,9 @@ function Season() {
           Missões
         </Btn>
       </BtnRow>
-      <Btn tone="ghost" go="retrospective">
-        Retrospectiva da temporada
+      <Btn tone="ghost" go="stats">
+        Estatísticas da temporada
       </Btn>
-      {days <= 3 ? (
-        <Btn tone="ghost" go="season-closing">
-          Fechamento da temporada
-        </Btn>
-      ) : null}
     </Page>
   );
 }
@@ -841,8 +837,8 @@ function Inventory() {
       <Notice tone="blue" icon="info">
         Item de passe revogado não apaga o histórico: ele pode voltar se você reassinar.
       </Notice>
-      <Btn tone="primary" toast="Loadout aberto no protótipo">
-        Editar loadout
+      <Btn tone="primary" disabled>
+        Edição de loadout em implantação
       </Btn>
     </Page>
   );
@@ -963,7 +959,7 @@ export const seasonScreens: ScreenDef[] = [
   { id: 'streak', tab: 'temporada', render: () => <Streak /> },
   { id: 'badges', tab: 'temporada', render: () => <Badges /> },
   { id: 'inventory', tab: 'temporada', render: () => <Inventory /> },
-  { id: 'retrospective', tab: 'temporada', render: () => <Retrospective /> },
-  { id: 'season-closing', tab: 'temporada', render: () => <SeasonClosing /> },
-  { id: 'season-ended', tab: 'temporada', render: () => <SeasonEnded /> },
+  { id: 'retrospective', tab: 'temporada', hidden: true, render: () => <Retrospective /> },
+  { id: 'season-closing', tab: 'temporada', hidden: true, render: () => <SeasonClosing /> },
+  { id: 'season-ended', tab: 'temporada', hidden: true, render: () => <SeasonEnded /> },
 ];

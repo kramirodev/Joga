@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from app.api.v1.auth import get_current_session
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.idempotency import service as idempotency
 from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.passes.models import PassDelivery, PassSubscription
@@ -118,6 +120,14 @@ def _subscription_view(session: Session, subscription: PassSubscription) -> Pass
 def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, (PassNotFound, PassPlanNotFound, PurchasePaymentNotFound)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "not_found"})
+    if isinstance(exc, idempotency.IdempotencyConflict):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_conflict"}
+        )
+    if isinstance(exc, idempotency.IdempotencyInProgress):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "idempotency_in_progress"}
+        )
     if isinstance(exc, PassAlreadyActive):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "pass_already_active"}
@@ -194,10 +204,31 @@ def subscribe(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
-) -> PassSubscriptionView:
-    """Cria a assinatura pendente e abre o Pix do trimestre."""
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> PassSubscriptionView | JSONResponse:
+    """Cria a assinatura pendente e abre o Pix do trimestre.
 
+    Com ``Idempotency-Key``, o replay devolve a mesma assinatura sem abrir uma
+    segunda cobrança; a mesma chave com outro plano responde
+    ``409 idempotency_conflict``.
+    """
+
+    key = idempotency_key.strip() if idempotency_key is not None else None
+    if idempotency_key is not None and (not key or len(key) > 120):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_idempotency_key"},
+        )
+    scope = f"me.pass.subscriptions:{current.user_id}"
+    request_hash = idempotency.payload_hash({"plan_code": payload.plan_code})
     try:
+        stored = (
+            idempotency.begin(session, scope=scope, key=key, request_hash=request_hash)
+            if key is not None
+            else None
+        )
+        if stored is not None:
+            return JSONResponse(status_code=stored.status_code, content=stored.body)
         subscription = create_subscription(session, current.user_id, payload.plan_code)
         plan = next(item for item in list_plans() if item.code == subscription.plan_code)
         open_charge(
@@ -209,11 +240,20 @@ def subscribe(
             amount_cents=subscription.amount_cents,
             description=f"JOGA · Passe {plan.label} · trimestre",
         )
+        view = _subscription_view(session, subscription)
+        if key is not None:
+            idempotency.finish(
+                session,
+                scope=scope,
+                key=key,
+                status_code=status.HTTP_201_CREATED,
+                body=view.model_dump(mode="json"),
+            )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _subscription_view(session, subscription)
+    return view
 
 
 @router.get("/subscriptions/{subscription_id}", response_model=PassSubscriptionView)

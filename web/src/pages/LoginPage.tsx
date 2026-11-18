@@ -1,8 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { ErrorNotice } from "../components/Feedback";
-import { PhoneField } from "../components/ui/PhoneField";
 import { TextField } from "../components/ui/Field";
 import {
   ArrowRightIcon,
@@ -13,33 +12,53 @@ import {
   SparkIcon,
 } from "../components/ui/Icons";
 import {
-  requestPhoneChallenge,
-  verifyPhoneChallenge,
-  webLogin,
-  webRegister,
+  requestEmailCode,
+  resetEmailPassword,
+  verifyEmailChallenge,
+  webEmailLogin,
+  webEmailRegistration,
   ApiError,
+  type EmailCodePurpose,
 } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import { formatError, requestIdOf } from "../lib/format";
-import { DEFAULT_COUNTRY, findCountry, formatNational, phoneError, toE164 } from "../lib/phone";
+import { safeReturnPath } from "../lib/redirect";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
+import {
+  emailError,
+  passwordConfirmationError,
+  passwordError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "../lib/validation";
 
-type Mode = "login" | "register";
-type Step = "phone" | "code";
+type Mode = "login" | "register" | "reset";
+type Step = "credentials" | "email" | "code" | "password";
 
 function nowMs(): number {
   return new Date().getTime();
+}
+
+function codePurpose(mode: Mode): EmailCodePurpose {
+  return mode === "register" ? "registration" : "password_reset";
 }
 
 export function LoginPage() {
   useDocumentTitle("Entrar");
   const { user, signIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationState = location.state as { from?: unknown; expired?: unknown } | null;
+  const returnTo = safeReturnPath(navigationState?.from);
+  const reasonExpired = navigationState?.expired === true;
   const [mode, setMode] = useState<Mode>("login");
-  const [step, setStep] = useState<Step>("phone");
-  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY.code);
-  const [phoneDigits, setPhoneDigits] = useState("");
-  const [phoneFieldError, setPhoneFieldError] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("credentials");
+  const [email, setEmail] = useState("");
+  const [emailFieldError, setEmailFieldError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordFieldError, setPasswordFieldError] = useState<string | null>(null);
+  const [confirmFieldError, setConfirmFieldError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [codeFieldError, setCodeFieldError] = useState<string | null>(null);
   const [challengeId, setChallengeId] = useState<string | null>(null);
@@ -50,8 +69,7 @@ export function LoginPage() {
   const [error, setError] = useState<unknown>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const country = findCountry(countryCode);
-  const e164 = toE164(country, phoneDigits);
+  const cleanEmail = email.trim();
   const resendSeconds = Math.max(0, Math.ceil((resendAt - now) / 1000));
 
   useEffect(() => {
@@ -61,52 +79,88 @@ export function LoginPage() {
   }, [resendSeconds]);
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
+
+  const title =
+    step === "credentials"
+      ? "Acessar o painel"
+      : step === "code"
+        ? "Confirmar código"
+        : step === "password"
+          ? mode === "register"
+            ? "Definir senha"
+            : "Nova senha"
+          : mode === "register"
+            ? "Criar conta"
+            : "Recuperar acesso";
+
+  const description =
+    step === "credentials"
+      ? "Entre com o e-mail e a senha da sua conta JOGA."
+      : step === "code"
+        ? "Digite o código de seis dígitos enviado por e-mail."
+        : step === "password"
+          ? mode === "register"
+            ? "Crie uma senha de 10 a 128 caracteres. Em seguida você entra no painel."
+            : "Defina uma nova senha de 10 a 128 caracteres. Todas as sessões serão encerradas."
+          : mode === "register"
+            ? "Informe o e-mail que será verificado para criar a conta."
+            : "Informe o e-mail da sua conta para receber um código de recuperação.";
 
   function switchMode(next: Mode) {
     setMode(next);
-    setStep("phone");
+    setStep(next === "login" ? "credentials" : "email");
     setChallengeId(null);
     setCode("");
     setCodeFieldError(null);
+    setPassword("");
+    setPasswordConfirm("");
+    setPasswordFieldError(null);
+    setConfirmFieldError(null);
     setError(null);
     setInfo(null);
-    setPhoneFieldError(null);
+    setEmailFieldError(null);
   }
 
-  function resetToPhone() {
-    setStep("phone");
+  function resetToEmail() {
+    setStep("email");
     setChallengeId(null);
     setCode("");
     setCodeFieldError(null);
+    setPassword("");
+    setPasswordConfirm("");
+    setPasswordFieldError(null);
+    setConfirmFieldError(null);
     setError(null);
     setInfo(null);
-    window.setTimeout(() => document.getElementById("login-phone")?.focus(), 0);
+    window.setTimeout(() => document.getElementById("login-email")?.focus(), 0);
   }
 
   async function startChallenge(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    const validation = phoneError(country, phoneDigits);
+    if (mode === "login") return;
+    const validation = emailError(email);
     if (validation) {
-      setPhoneFieldError(validation);
-      document.getElementById("login-phone")?.focus();
+      setEmailFieldError(validation);
+      document.getElementById("login-email")?.focus();
       return;
     }
     setBusy(true);
     setError(null);
     setInfo(null);
     try {
-      const challenge = await requestPhoneChallenge(
-        e164,
-        mode === "login" ? "login" : "registration",
-      );
+      const challenge = await requestEmailCode(cleanEmail, codePurpose(mode));
       setChallengeId(challenge.challenge_id);
       setResendAt(nowMs() + challenge.resend_after_seconds * 1000);
       setNow(nowMs());
       setStep("code");
       setCode("");
       setCodeFieldError(null);
+      setPassword("");
+      setPasswordConfirm("");
+      setPasswordFieldError(null);
+      setConfirmFieldError(null);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -115,20 +169,17 @@ export function LoginPage() {
   }
 
   async function resendCode() {
-    if (resendSeconds > 0 || resending) return;
+    if (mode === "login" || resendSeconds > 0 || resending) return;
     setResending(true);
     setError(null);
     try {
-      const challenge = await requestPhoneChallenge(
-        e164,
-        mode === "login" ? "login" : "registration",
-      );
+      const challenge = await requestEmailCode(cleanEmail, codePurpose(mode));
       setChallengeId(challenge.challenge_id);
       setResendAt(nowMs() + challenge.resend_after_seconds * 1000);
       setNow(nowMs());
       setCode("");
       setCodeFieldError(null);
-      setInfo("Novo código enviado. Use apenas o código mais recente.");
+      setInfo("Novo código solicitado. Use apenas o código mais recente.");
     } catch (caught) {
       if (caught instanceof ApiError && caught.retryAfterSeconds) {
         setResendAt(nowMs() + caught.retryAfterSeconds * 1000);
@@ -152,19 +203,90 @@ export function LoginPage() {
     setError(null);
     setInfo(null);
     try {
-      const receipt = await verifyPhoneChallenge(challengeId, code);
-      const session =
-        mode === "login"
-          ? await webLogin(receipt.challenge_id)
-          : await webRegister(receipt.challenge_id);
-      signIn(session);
-      navigate("/", { replace: true });
+      const receipt = await verifyEmailChallenge(challengeId, code);
+      setChallengeId(receipt.challenge_id);
+      setStep("password");
+      setPassword("");
+      setPasswordConfirm("");
+      setPasswordFieldError(null);
+      setConfirmFieldError(null);
+      window.setTimeout(() => document.getElementById("login-password")?.focus(), 0);
     } catch (caught) {
-      if (caught instanceof ApiError && caught.code === "account_not_found") {
-        switchMode("register");
-      } else if (caught instanceof ApiError && caught.code === "phone_already_registered") {
-        switchMode("login");
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validation = emailError(email);
+    if (validation) {
+      setEmailFieldError(validation);
+      document.getElementById("login-email")?.focus();
+      return;
+    }
+    if (!password) {
+      setPasswordFieldError("Informe sua senha.");
+      document.getElementById("login-password")?.focus();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const session = await webEmailLogin(cleanEmail, password);
+      setPassword("");
+      signIn(session);
+      navigate(returnTo, { replace: true });
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!challengeId) return;
+    const validation = passwordError(password, cleanEmail);
+    if (validation) {
+      setPasswordFieldError(validation);
+      document.getElementById("login-password")?.focus();
+      return;
+    }
+    const confirmationError = passwordConfirmationError(password, passwordConfirm);
+    if (confirmationError) {
+      setConfirmFieldError(confirmationError);
+      document.getElementById("login-password-confirm")?.focus();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      if (mode === "register") {
+        const session = await webEmailRegistration(challengeId, cleanEmail, password);
+        setPassword("");
+        setPasswordConfirm("");
+        signIn(session);
+        navigate(returnTo, { replace: true });
+        return;
       }
+      await resetEmailPassword(challengeId, cleanEmail, password);
+      setMode("login");
+      setStep("credentials");
+      setChallengeId(null);
+      setCode("");
+      setCodeFieldError(null);
+      setPassword("");
+      setPasswordConfirm("");
+      setPasswordFieldError(null);
+      setConfirmFieldError(null);
+      setError(null);
+      setInfo("Senha alterada. Entre com a nova senha.");
+      window.setTimeout(() => document.getElementById("login-password")?.focus(), 0);
+    } catch (caught) {
       setError(caught);
     } finally {
       setBusy(false);
@@ -218,15 +340,17 @@ export function LoginPage() {
 
       <section className="card login-card" aria-labelledby="login-title">
         <div className="login-card__heading">
-          <p className="step-label">{step === "phone" ? "Passo 1 de 2" : "Passo 2 de 2"}</p>
-          <h2 id="login-title">{step === "phone" ? "Acessar o painel" : "Confirmar código"}</h2>
-          <p>
-            {step === "code"
-              ? "Digite o código de seis dígitos enviado por SMS."
-              : mode === "login"
-                ? "Entre com o telefone da sua conta JOGA."
-                : "Crie a conta do responsável pelo estabelecimento."}
-          </p>
+          {step !== "credentials" ? (
+            <p className="step-label">
+              {step === "email"
+                ? "Passo 1 de 3"
+                : step === "code"
+                  ? "Passo 2 de 3"
+                  : "Passo 3 de 3"}
+            </p>
+          ) : null}
+          <h2 id="login-title">{title}</h2>
+          <p>{description}</p>
         </div>
 
         <div className="tabs tabs--compact" role="tablist" aria-label="Acesso">
@@ -252,6 +376,11 @@ export function LoginPage() {
           </button>
         </div>
 
+        {reasonExpired ? (
+          <div className="notice notice--info" role="status" aria-live="polite">
+            Sua sessão expirou. Entre novamente para continuar de onde parou.
+          </div>
+        ) : null}
         {error ? <ErrorNotice message={formatError(error)} requestId={requestIdOf(error)} /> : null}
         {info ? (
           <div className="notice notice--success" role="status" aria-live="polite">
@@ -259,50 +388,118 @@ export function LoginPage() {
           </div>
         ) : null}
 
-        {step === "phone" ? (
-          <form className="form" onSubmit={startChallenge} noValidate aria-busy={busy || undefined}>
-            <PhoneField
-              id="login-phone"
-              label="Telefone"
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              value={phoneDigits}
-              onChange={(digits) => {
-                setPhoneDigits(digits);
-                if (phoneFieldError) setPhoneFieldError(null);
+        {step === "credentials" ? (
+          <form className="form" onSubmit={submitLogin} noValidate aria-busy={busy || undefined}>
+            <TextField
+              id="login-email"
+              label="E-mail"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={254}
+              placeholder="voce@exemplo.com"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailFieldError) setEmailFieldError(null);
               }}
-              error={phoneFieldError}
+              error={emailFieldError}
+              hint="Use o e-mail vinculado à sua conta JOGA."
               disabled={busy}
+              autoFocus
+              required
+            />
+            <TextField
+              id="login-password"
+              label="Senha"
+              type="password"
+              autoComplete="current-password"
+              maxLength={PASSWORD_MAX_LENGTH}
+              placeholder="Sua senha"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (passwordFieldError) setPasswordFieldError(null);
+              }}
+              error={passwordFieldError}
+              disabled={busy}
+              required
+            />
+            <button type="submit" className="button button--primary button--block" disabled={busy}>
+              {busy ? "Entrando..." : "Entrar"}
+              {!busy ? <ArrowRightIcon size={17} /> : null}
+            </button>
+            <p className="hint hint--center">
+              <button
+                type="button"
+                className="button button--link button--inline"
+                onClick={() => switchMode("reset")}
+                disabled={busy}
+              >
+                Esqueci minha senha
+              </button>
+            </p>
+          </form>
+        ) : null}
+
+        {step === "email" ? (
+          <form className="form" onSubmit={startChallenge} noValidate aria-busy={busy || undefined}>
+            <TextField
+              id="login-email"
+              label="E-mail"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={254}
+              placeholder="voce@exemplo.com"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailFieldError) setEmailFieldError(null);
+              }}
+              error={emailFieldError}
+              hint={
+                mode === "register"
+                  ? "O código confirma que o endereço é seu antes de criar a conta."
+                  : "Enviaremos um código para confirmar a recuperação."
+              }
+              disabled={busy}
+              autoFocus
+              required
             />
             <button type="submit" className="button button--primary button--block" disabled={busy}>
               {busy ? "Enviando código..." : "Receber código"}
               {!busy ? <ArrowRightIcon size={17} /> : null}
             </button>
             <p className="hint hint--center">
-              O código chega por SMS e expira em poucos minutos. Não compartilhe o código.
+              Enviamos um código de seis dígitos. A entrega é feita em lotes a cada 5 minutos e pode
+              levar alguns minutos.
             </p>
-            {import.meta.env.DEV ? (
-              <p className="hint hint--center">
-                Ambiente local: o OTP pode estar fixado por <code>JOGA_DEV_FIXED_OTP</code>.
-              </p>
-            ) : null}
           </form>
-        ) : (
+        ) : null}
+
+        {step === "code" ? (
           <form className="form" onSubmit={confirmCode} noValidate aria-busy={busy || undefined}>
             <div className="otp-target">
               <span>Enviamos um código de seis dígitos para</span>
-              <strong>
-                +{country.dialCode} {formatNational(country, phoneDigits)}
-              </strong>
+              <strong>{cleanEmail}</strong>
               <button
                 type="button"
                 className="button button--link button--inline"
-                onClick={resetToPhone}
+                onClick={resetToEmail}
                 disabled={busy}
               >
-                Trocar telefone
+                Trocar e-mail
               </button>
             </div>
+            <p className="hint">
+              A entrega é feita em lotes a cada 5 minutos; o código pode levar alguns minutos para
+              chegar.
+            </p>
             <TextField
               id="login-code"
               label="Código de verificação"
@@ -328,7 +525,7 @@ export function LoginPage() {
               className="button button--primary button--block"
               disabled={busy || code.length !== 6}
             >
-              {busy ? "Verificando..." : mode === "login" ? "Entrar" : "Criar conta"}
+              {busy ? "Verificando..." : "Continuar"}
               {!busy ? <ArrowRightIcon size={17} /> : null}
             </button>
             <button
@@ -344,11 +541,71 @@ export function LoginPage() {
                   : "Reenviar código"}
             </button>
           </form>
-        )}
+        ) : null}
+
+        {step === "password" ? (
+          <form className="form" onSubmit={submitPassword} noValidate aria-busy={busy || undefined}>
+            <div className="otp-target">
+              <span>{mode === "register" ? "Definindo a senha de" : "Redefinindo a senha de"}</span>
+              <strong>{cleanEmail}</strong>
+              <button
+                type="button"
+                className="button button--link button--inline"
+                onClick={resetToEmail}
+                disabled={busy}
+              >
+                Recomeçar
+              </button>
+            </div>
+            <TextField
+              id="login-password"
+              label={mode === "register" ? "Senha" : "Nova senha"}
+              type="password"
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN_LENGTH}
+              maxLength={PASSWORD_MAX_LENGTH}
+              placeholder={`${PASSWORD_MIN_LENGTH} a ${PASSWORD_MAX_LENGTH} caracteres`}
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (passwordFieldError) setPasswordFieldError(null);
+              }}
+              error={passwordFieldError}
+              hint="Evite senhas comuns e não use o próprio e-mail."
+              disabled={busy}
+              autoFocus
+              required
+            />
+            <TextField
+              id="login-password-confirm"
+              label={mode === "register" ? "Confirmar senha" : "Confirmar nova senha"}
+              type="password"
+              autoComplete="new-password"
+              maxLength={PASSWORD_MAX_LENGTH}
+              placeholder="Repita a senha"
+              value={passwordConfirm}
+              onChange={(event) => {
+                setPasswordConfirm(event.target.value);
+                if (confirmFieldError) setConfirmFieldError(null);
+              }}
+              error={confirmFieldError}
+              disabled={busy}
+              required
+            />
+            <button type="submit" className="button button--primary button--block" disabled={busy}>
+              {busy
+                ? "Salvando..."
+                : mode === "register"
+                  ? "Criar conta e entrar"
+                  : "Redefinir senha"}
+              {!busy ? <ArrowRightIcon size={17} /> : null}
+            </button>
+          </form>
+        ) : null}
 
         <p className="login-card__security">
           <ShieldIcon size={15} />
-          Sessão protegida por cookie HttpOnly e verificação em duas etapas.
+          Sessão protegida por cookie HttpOnly e CSRF. A senha não é armazenada no navegador.
         </p>
       </section>
     </main>

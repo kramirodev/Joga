@@ -1,8 +1,11 @@
-import { useMemo, useRef, useState, type ElementRef } from 'react';
-import { Platform, ScrollView, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { Platform, ScrollView, TextInput, View } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError } from '../api/client';
+import type { TermsVersion } from '../api/types';
+import { authConfig } from '../auth/config';
+import { createPasskey, getPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { AddWindowSheet } from '../ui/AddWindowSheet';
@@ -33,6 +36,7 @@ import {
   WelcomeCourt,
 } from '../ui/kit';
 import { courtFromLabel, levelFromLabel } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function errorText(error: unknown): string {
@@ -45,6 +49,20 @@ function errorText(error: unknown): string {
       invalid_receipt: 'Verificação expirada. Recomece o cadastro.',
       phone_already_registered: 'Este telefone já tem conta.',
       account_not_found: 'Conta não encontrada.',
+      invalid_email: 'Informe um e-mail válido.',
+      invalid_email_login: 'Esta credencial não serve para entrar.',
+      invalid_email_change: 'Código inválido ou expirado.',
+      email_already_registered: 'Este e-mail já está vinculado a uma conta.',
+      email_domain_not_allowed: 'Este domínio de e-mail não é aceito.',
+      email_unchanged: 'O novo e-mail é igual ao atual.',
+      signup_closed: 'O cadastro está fechado neste beta.',
+      email_registration_disabled: 'O cadastro por e-mail está indisponível nesta versão.',
+      phone_registration_disabled: 'O cadastro por telefone está indisponível nesta versão.',
+      phone_required: 'Esta ação exige telefone verificado no lançamento.',
+      email_auth_disabled: 'O login por e-mail está indisponível nesta versão.',
+      phone_auth_disabled: 'O login por telefone está indisponível nesta versão.',
+      invalid_passkey: 'Não foi possível validar a passkey. Tente novamente.',
+      passkey_already_registered: 'Esta passkey já está cadastrada.',
     };
     return messages[error.code] ?? 'Não foi possível concluir a ação.';
   }
@@ -65,6 +83,28 @@ function maskPhone(input: string): string {
     return '+55 (11) 9****-1234';
   }
   return `+55 (${digits.slice(0, 2)}) ${digits[2]}****-${digits.slice(7)}`;
+}
+
+function PhoneMethodUnavailable() {
+  return (
+    <Page title="Telefone indisponível">
+      <StateScreen
+        icon="lock"
+        title="Telefone indisponível nesta versão"
+        text="O beta usa e-mail para entrar. O caminho por telefone continua preservado para o lançamento e voltará quando a credencial for habilitada."
+        actions={
+          <>
+            <Btn tone="primary" go="login">
+              Voltar para entrar
+            </Btn>
+            <Btn tone="ghost" go="welcome">
+              Início
+            </Btn>
+          </>
+        }
+      />
+    </Page>
+  );
 }
 
 function Welcome() {
@@ -166,7 +206,7 @@ function Welcome() {
           icon="arrow"
           onPress={() => {
             setAuth({ purpose: 'registration' });
-            nav.go('signup-phone');
+            nav.go(authConfig.signupMethod === 'phone' ? 'signup-phone' : 'signup-email');
           }}
         >
           Criar conta
@@ -180,6 +220,17 @@ function Welcome() {
         >
           Já tenho conta
         </Btn>
+        {authConfig.signupMethod === 'phone' && authConfig.emailEnabled ? (
+          <TextBtn
+            muted
+            onPress={() => {
+              setAuth({ purpose: 'registration' });
+              nav.go('signup-email');
+            }}
+          >
+            Criar conta com e-mail
+          </TextBtn>
+        ) : null}
       </View>
       <TextBtn muted go="login">
         Entrar com passkey
@@ -390,7 +441,7 @@ function OnboardingThree() {
         );
         setProfile(updated);
       }
-      nav.toast('Localização aproximada ativada no protótipo');
+      nav.toast('Localização aproximada ativada.');
     } catch {
       nav.toast('Não foi possível obter a localização.');
     }
@@ -542,7 +593,7 @@ function OnboardingThree() {
         />
       </Field>
       <Notice tone="blue" icon="shield">
-        O telefone verifica a conta, mas nunca aparece no perfil.
+        Sua credencial de login verifica a conta, mas nunca aparece no perfil.
       </Notice>
       <Btn tone="primary" onPress={finish} disabled={busy}>
         {busy ? 'Salvando…' : 'Começar a jogar'}
@@ -566,7 +617,10 @@ function SignupPhone() {
     }
     setBusy(true);
     try {
-      const challenge = await api.auth.requestChallenge(phoneE164(phone), auth.purpose);
+      const challenge = await api.auth.requestChallenge(
+        phoneE164(phone),
+        auth.purpose === 'login' ? 'login' : 'registration',
+      );
       setAuth({ phone, challengeId: challenge.challenge_id });
       nav.go('otp');
     } catch (error) {
@@ -576,11 +630,15 @@ function SignupPhone() {
     }
   };
 
+  if (!authConfig.phoneEnabled) {
+    return <PhoneMethodUnavailable />;
+  }
+
   return (
     <Page title="Qual é o seu telefone?">
       <Txt variant="lead">
         Vamos enviar um código de 6 dígitos. Seu número não vira identidade pública.
-      </Txt>
+      </Txt>{' '}
       <Field label="Telefone">
         <InputPrefix
           input={
@@ -634,6 +692,10 @@ function Otp() {
   const inputRef = useRef<ElementRef<typeof TextInput>>(null);
   const effectiveChallenge = challengeParam ?? auth.challengeId;
   const masked = useMemo(() => maskPhone(auth.phone), [auth.phone]);
+
+  if (!authConfig.phoneEnabled) {
+    return <PhoneMethodUnavailable />;
+  }
 
   const verify = async () => {
     if (!effectiveChallenge) {
@@ -782,6 +844,23 @@ function Passkey() {
         platform: Platform.OS === 'ios' ? 'ios' : 'android',
       });
       await setSession(tokens);
+      try {
+        if (!passkeyAvailable()) {
+          throw new Error('passkey_unavailable');
+        }
+        const options = await api.auth.passkeyRegistrationOptions(tokens.access_token);
+        const credential = await createPasskey(options.public_key);
+        await api.auth.passkeyRegistrationVerify(
+          tokens.access_token,
+          options.challenge_id,
+          credential,
+          Platform.OS === 'ios' ? 'iPhone' : 'Android',
+        );
+      } catch {
+        nav.toast(
+          'Conta criada. A passkey pode ser adicionada depois em Configurações › Segurança.',
+        );
+      }
       await loadProfile();
       nav.reset('onboarding-1');
     } catch (error) {
@@ -799,7 +878,9 @@ function Passkey() {
         text="Use a biometria ou o bloqueio do aparelho. A passkey fica no dispositivo e pode ser revogada depois."
       />
       <Notice tone="blue" icon="info">
-        Você pode usar o telefone como alternativa, mas SMS sozinho não recupera a conta.
+        {authConfig.phoneEnabled
+          ? 'Você pode usar o telefone como alternativa, mas SMS sozinho não recupera a conta.'
+          : 'Você pode entrar também pelo código enviado ao seu e-mail.'}
       </Notice>
       <Btn tone="primary" icon="shield" onPress={complete} disabled={busy}>
         {busy ? 'Criando…' : 'Criar passkey'}
@@ -816,33 +897,70 @@ function Passkey() {
 
 function Login() {
   const nav = useNav();
-  const { setAuth } = useApp();
+  const { setAuth, setSession, loadProfile } = useApp();
+  const [busy, setBusy] = useState(false);
+
+  const enterWithPasskey = async () => {
+    if (busy) {
+      return;
+    }
+    if (!passkeyAvailable()) {
+      nav.toast('A passkey exige o development build Android; o módulo iOS ainda não existe.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const options = await api.auth.passkeyAuthenticationOptions();
+      const credential = await getPasskey(options.public_key);
+      const tokens = await api.auth.passkeyAuthenticationVerify(options.challenge_id, credential, {
+        name: Platform.OS === 'ios' ? 'iPhone' : 'Android',
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      });
+      await setSession(tokens);
+      await loadProfile();
+      nav.reset('home');
+    } catch (error) {
+      nav.toast(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Page title="Entrar">
       <Txt variant="lead">
-        Escolha como quer entrar. A passkey é mais rápida e não depende de SMS.
+        Use sua senha ou uma passkey. A passkey é mais rápida nas próximas vezes.
       </Txt>
-      <Btn
-        tone="primary"
-        icon="shield"
-        onPress={() => {
-          setAuth({ purpose: 'login' });
-          nav.toast('Passkey ainda não está conectada nesta versão. Entre com o telefone.');
-          nav.go('signup-phone');
-        }}
-      >
-        Usar passkey
+      <Btn tone="primary" icon="shield" onPress={enterWithPasskey} disabled={busy}>
+        {busy ? 'Abrindo…' : 'Usar passkey'}
       </Btn>
-      <Btn
-        tone="ghost"
-        icon="user"
-        onPress={() => {
-          setAuth({ purpose: 'login' });
-          nav.go('signup-phone');
-        }}
-      >
-        Entrar com telefone
-      </Btn>
+      {authConfig.emailEnabled ? (
+        <Btn
+          tone="ghost"
+          icon="mail"
+          onPress={() => {
+            setAuth({ purpose: 'login' });
+            nav.go('login-email');
+          }}
+        >
+          Entrar com e-mail
+        </Btn>
+      ) : null}
+      {authConfig.phoneEnabled ? (
+        <Btn
+          tone="ghost"
+          icon="user"
+          onPress={() => {
+            setAuth({ purpose: 'login' });
+            nav.go('signup-phone');
+          }}
+        >
+          Entrar com telefone
+        </Btn>
+      ) : null}
+      <TextBtn go="forgot-password" muted>
+        Esqueci minha senha
+      </TextBtn>
       <TextBtn go="recovery" muted>
         Recuperar conta
       </TextBtn>
@@ -853,31 +971,50 @@ function Login() {
 function Recovery() {
   const nav = useNav();
   const { palette } = useTheme();
-  return (
-    <Page title="Recuperar conta">
-      <Txt variant="lead">Se você perdeu o aparelho, ainda dá para voltar com segurança.</Txt>
-      <CardList>
-        {[
+  const items = [
+    {
+      icon: 'shield' as const,
+      title: 'Usar passkey de outro dispositivo',
+      sub: 'Recomendado',
+      go: 'login',
+    },
+    ...(authConfig.emailEnabled
+      ? [
           {
-            icon: 'shield' as const,
-            title: 'Usar passkey de outro dispositivo',
-            sub: 'Recomendado',
-            go: 'login',
+            icon: 'mail' as const,
+            title: 'Redefinir senha por e-mail',
+            sub: 'Código no endereço principal',
+            go: 'forgot-password',
           },
+        ]
+      : []),
+    ...(authConfig.phoneEnabled
+      ? [
           {
             icon: 'user' as const,
             title: 'Receber código no telefone',
             sub: 'Só não basta sozinho',
             go: 'otp',
           },
-          {
-            icon: 'chat' as const,
-            title: 'Falar com suporte',
-            sub: 'Análise de risco e auditoria',
-            go: 'support',
-          },
-        ].map((item, index) => (
-          <ListRow key={item.title} onPress={() => nav.go(item.go)} last={index === 2}>
+        ]
+      : []),
+    {
+      icon: 'chat' as const,
+      title: 'Falar com suporte',
+      sub: 'Análise de risco e auditoria',
+      go: 'support',
+    },
+  ];
+  return (
+    <Page title="Recuperar conta">
+      <Txt variant="lead">Se você perdeu o aparelho, ainda dá para voltar com segurança.</Txt>
+      <CardList>
+        {items.map((item, index) => (
+          <ListRow
+            key={item.title}
+            onPress={() => nav.go(item.go)}
+            last={index === items.length - 1}
+          >
             <View style={{ width: 46, alignItems: 'center' }}>
               <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
             </View>
@@ -892,7 +1029,7 @@ function Recovery() {
         ))}
       </CardList>
       <Notice tone="red" icon="alert">
-        Nunca pedimos código por telefone, chat ou e-mail.
+        Nunca pedimos código por telefone, chat ou e-mail fora do fluxo do app.
       </Notice>
     </Page>
   );
@@ -900,16 +1037,69 @@ function Recovery() {
 
 function Terms() {
   const nav = useNav();
+  const { setAuth } = useApp();
   const { palette } = useTheme();
   const readOnly = nav.params.readOnly === 1;
+  const [terms, setTerms] = useState<TermsVersion | null>(null);
+  const [termsReady, setTermsReady] = useState(!readOnly);
+  useEffect(() => {
+    if (!readOnly) {
+      return;
+    }
+    let active = true;
+    api.legal
+      .currentTerms()
+      .then((result) => {
+        if (active) {
+          setTerms(result.terms);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setTermsReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [readOnly]);
   const items = [
     ['O JOGA intermedeia a reserva', 'A quadra é a fornecedora; o ingresso é crédito de serviço.'],
     ['Cancelamento tem cutoff', 'Antes do cutoff, T4; depois, no-show.'],
-    ['Devolução é em ingressos', 'O saldo volta para a carteira quando a reserva não se completa.'],
+    [
+      'Devolução é em ingressos',
+      'O saldo volta para seus ingressos quando a reserva não se completa.',
+    ],
     ['Sem fotos de pessoas', 'Avatar de catálogo fechado; fotos só de quadras.'],
   ];
   return (
     <Page title={readOnly ? 'Termos e privacidade' : 'Antes de começar'}>
+      {readOnly && termsReady ? (
+        terms ? (
+          <Card>
+            <Row between>
+              <Txt variant="h3">Termos de uso</Txt>
+              <Badge tone="blue">v{terms.version}</Badge>
+            </Row>
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                lineHeight: 20,
+                color: palette.ink,
+              }}
+            >
+              {terms.content}
+            </Text>
+          </Card>
+        ) : (
+          <Notice tone="orange" icon="info">
+            Nenhuma versão dos Termos foi aprovada e publicada pelo servidor ainda. Quando existir,
+            o texto vigente aparece aqui e a compra de crédito exige o aceite.
+          </Notice>
+        )
+      ) : null}
       <Card>
         <Txt variant="h3">O que você precisa saber</Txt>
         <View style={{ marginTop: 6 }}>
@@ -951,7 +1141,13 @@ function Terms() {
           <Check checked>Li e aceito os Termos de uso.</Check>
           <Check checked>Li a Política de privacidade e o tratamento de localização.</Check>
           <Check>Aceito receber notificações de prazos e partidas.</Check>
-          <Btn tone="primary" go="signup-phone">
+          <Btn
+            tone="primary"
+            onPress={() => {
+              setAuth({ purpose: 'registration' });
+              nav.replace(authConfig.signupMethod === 'phone' ? 'signup-phone' : 'signup-email');
+            }}
+          >
             Aceitar e continuar
           </Btn>
           <TextBtn go="terms-privacy" muted>
@@ -984,6 +1180,10 @@ function PhoneChange() {
       setBusy(false);
     }
   };
+  if (!authConfig.phoneEnabled) {
+    return <PhoneMethodUnavailable />;
+  }
+
   return (
     <Page title="Trocar telefone">
       <Card tone="flat">
@@ -1026,7 +1226,11 @@ function SessionExpired() {
       <StateScreen
         icon="lock"
         title="Sessão encerrada"
-        text="Por segurança, sua sessão expirou. Entre novamente com passkey ou telefone."
+        text={
+          authConfig.emailEnabled
+            ? 'Por segurança, sua sessão expirou. Entre novamente com passkey ou e-mail.'
+            : 'Por segurança, sua sessão expirou. Entre novamente com passkey.'
+        }
         actions={
           <>
             <Btn tone="primary" go="login">
@@ -1048,11 +1252,15 @@ function PasskeyUnsupported() {
       <StateScreen
         icon="shield"
         title="Este aparelho não suporta passkey"
-        text="Você pode entrar com o telefone e configurar uma passkey em outro dispositivo depois. A recuperação não depende só de SMS."
+        text={
+          authConfig.emailEnabled
+            ? 'Você pode entrar com o e-mail e configurar uma passkey em outro dispositivo depois.'
+            : 'Você pode entrar com o telefone e configurar uma passkey em outro dispositivo depois.'
+        }
         actions={
           <>
-            <Btn tone="primary" go="signup-phone">
-              Entrar com telefone
+            <Btn tone="primary" go={authConfig.emailEnabled ? 'login-email' : 'login'}>
+              {authConfig.emailEnabled ? 'Entrar com e-mail' : 'Entrar'}
             </Btn>
             <Btn tone="ghost" go="support">
               Falar com suporte
@@ -1070,14 +1278,14 @@ function OtpError() {
       <StateScreen
         icon="alert"
         title="Código expirado"
-        text="O código anterior não vale mais. Você pode pedir um novo em 00:42. Não pedimos código por telefone ou chat."
+        text="O código anterior não vale mais. Peça um novo código. Não pedimos código por telefone ou chat."
         actions={
           <>
-            <Btn tone="ghost" disabled>
-              Reenviar em 00:42
-            </Btn>
             <Btn tone="primary" go="signup-phone">
-              Trocar número
+              Pedir novo código
+            </Btn>
+            <Btn tone="ghost" go="login">
+              Voltar para entrar
             </Btn>
           </>
         }

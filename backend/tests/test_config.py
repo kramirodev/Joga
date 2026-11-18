@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 
 from app.core.config import DEFAULT_PHONE_HASH_SECRET, Settings
 from app.infrastructure.database.engine import Database
+from tests.compliance_helpers import cpf_key_kwargs
 
 
 def production_psp_kwargs(**overrides: object) -> dict[str, object]:
@@ -14,6 +15,7 @@ def production_psp_kwargs(**overrides: object) -> dict[str, object]:
         "mercado_pago_access_token": SecretStr("mp-access-token"),
         "mercado_pago_webhook_secret": SecretStr("mp-webhook-secret"),
         "mercado_pago_notification_url": "https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     }
     values.update(overrides)
     return values

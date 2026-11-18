@@ -191,7 +191,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 14E — Realinhamento da ADR 0049
 
-**Status:** não iniciada. Depende da estabilização do repositório e da migração dos P0 financeiros. **Bloqueada para dinheiro real** até os pareceres da ADR 0049; as faixas 1 e 2 do documento `docs/DECISOES_BACKEND_ADR_0049.md` podem ser implementadas com parâmetros.
+**Status:** **implementada, pendente de revisão/commit**. Etapas 0–11 e 6b concluídas em 2026-11-17: plano de contas, preço em duas linhas, ledger de dupla entrada, tabela 2D como unidade de consumo, passe/grátis/admin, CPF/NFS-e placeholder/termos, aposentadoria dos ledgers legados, extrato/comissão e janela de contestação. Suíte de referência: **595 passed, 30 skipped** antes das correções finais; head `v6a7b8c9d0e1`. **Bloqueada para dinheiro real** até 14B e pareceres; pareceres jurídico/fiscal permanecem ignorados no protótipo por decisão de 17/11/2026. 14B e 18 não iniciadas.
 
 **Depende de:** 14 e 14D congeladas. Alimenta 14B, 15, 19A e 19B.
 
@@ -215,7 +215,7 @@ Este roadmap define dependências e critérios de saída. Cada fase deve ganhar 
 
 ## Fase 15 — Interface financeira e conciliação
 
-**Status:** 15A (liberações, contestações, extrato, recebíveis e conciliação interna) e 15B (aba Financeiro do painel) implementados como **proposta técnica local** sobre o modelo antigo. A 15 deve ser refeita sobre o ledger em reais da 14E e o repasse ao fornecedor. A ADR 0039 define a política consolidada de cancelamento, substituição, presença e ausência; a ADR 0040 define o repasse 2 h após o início; a ADR 0041 define o Trust Factor interno. UI de presença/suporte continua pendente. Nenhuma decisão de prazo de contestação, repasse real, moderação financeira ou tratamento de divergência foi aprovada; PSP real, MED/chargeback, comprovantes fiscais e os três relógios (pagamento, contestação e repasse) continuam pendentes.
+**Status:** **15A entregue** no backend, refeita sobre o ledger de dupla entrada em reais: extrato por reserva/repasse, recebíveis com janela de contestação de **72 h persistida**, comissão do JOGA separada, contestação com decisão auditável, comprovante simulado, NFS-e placeholder e hook de MED. **15B pendente de painel**: a aba Financeiro ainda precisa consumir os campos novos. A ADR 0039 define cancelamento, substituição, presença e ausência; a ADR 0040 define repasse em `starts_at + 2h`; a ADR 0041 define o Trust Factor. Política de 17/11/2026: antes do cutoff há devolução integral e sem repasse; depois do cutoff/no-show não há devolução e a quadra recebe integral com repasse; quadra que cancela devolve tudo e não recebe; contestação aberta congela o repasse. Não existe reembolso parcial. Repasse real, MED/chargeback real, comprovante real, NFS-e operacional e conciliação externa continuam em 14B/19A.
 
 **Escopo:** interface financeira do fornecedor com extrato por reserva e por repasse, agenda de repasses a receber, status, comprovantes, dados contratuais, canal de contestação, histórico de estornos e relatório de comissão; **repasse em `starts_at + 2h`** (ADR 0040); conciliação periódica em reais; tratamento de MED, chargeback e estorno sem saldo; obrigações de transparência aplicáveis. O fornecedor recebe o valor do espaço; a comissão é receita do JOGA. Não há split nem recebedor de marketplace.
 

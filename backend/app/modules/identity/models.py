@@ -30,7 +30,17 @@ from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 
 USER_STATUSES = ("pending", "active", "suspended", "deleted")
-CHALLENGE_PURPOSES = ("registration", "login", "phone_change", "recovery")
+CHALLENGE_PURPOSES = (
+    "registration",
+    "login",
+    "phone_change",
+    "recovery",
+    "email_verification",
+    "email_login",
+    "email_change",
+    "password_reset",
+)
+CHALLENGE_SUBJECT_TYPES = ("phone", "email")
 DEVICE_PLATFORMS = ("android", "ios", "web", "unknown")
 
 
@@ -46,6 +56,8 @@ class User(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # Legado do pagador: sem unique, sem normalização e sem autoridade de
+    # login. A credencial de e-mail vive em ``user_emails`` (ADR 0050).
     email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending", server_default=text("'pending'")
@@ -90,22 +102,60 @@ class UserPhone(Base):
     )
 
 
+class UserPassword(Base):
+    """Credencial de senha separada da credencial de e-mail (ADR 0050).
+
+    Guarda apenas a string PHC do Argon2id. Nunca registra senha ou hash em
+    respostas, logs ou auditoria.
+    """
+
+    __tablename__ = "user_passwords"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    compromised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+
+
 class PhoneChallenge(Base):
-    """Desafio OTP de uso único; guarda apenas o HMAC do código."""
+    """Desafio OTP de uso único; guarda apenas o HMAC do código.
+
+    A tabela é compartilhada por telefone e e-mail (ADR 0050).
+    ``phone_hash`` guarda o HMAC do sujeito com rótulo próprio para cada tipo,
+    e ``subject_type`` torna a origem explícita.
+    """
 
     __tablename__ = "phone_challenges"
     __table_args__ = (
         CheckConstraint(
-            "purpose IN ('registration', 'login', 'phone_change', 'recovery')",
+            "purpose IN ('registration', 'login', 'phone_change', 'recovery', "
+            "'email_verification', 'email_login', 'email_change', 'password_reset')",
             name="purpose_valid",
         ),
+        CheckConstraint("subject_type IN ('phone', 'email')", name="subject_type_valid"),
         CheckConstraint("attempts >= 0", name="attempts_non_negative"),
         CheckConstraint("max_attempts > 0", name="max_attempts_positive"),
         Index("ix_phone_challenges_phone_created", "phone_hash", "created_at"),
+        Index(
+            "ix_phone_challenges_subject_created",
+            "subject_type",
+            "phone_hash",
+            "created_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     phone_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="phone", server_default="phone"
+    )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )

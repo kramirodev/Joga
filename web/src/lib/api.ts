@@ -7,6 +7,7 @@ import type {
   BusinessHour,
   BusinessHourListResponse,
   ChallengeResponse,
+  CommissionResponse,
   FinancialDispute,
   FinancialDisputeListResponse,
   FinancialStatementListResponse,
@@ -48,6 +49,8 @@ import type {
 
 const API_BASE = "/api/v1";
 const CSRF_COOKIE = "joga_web_csrf";
+
+export const SESSION_EXPIRED_EVENT = "joga:session-expired";
 
 let accessToken: string | null = null;
 let csrfToken: string | null = null;
@@ -207,6 +210,10 @@ async function requestRaw(path: string, init: RequestInit = {}, retry = true): P
     if (refreshed) {
       return requestRaw(path, init, false);
     }
+    clearAuthTokens();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    }
   }
 
   return response;
@@ -244,39 +251,35 @@ export function refreshSession(): Promise<WebSessionPayload | null> {
   return refreshInFlight;
 }
 
-export async function requestPhoneChallenge(
-  phone: string,
-  purpose: "login" | "registration",
+export type EmailCodePurpose = "registration" | "password_reset";
+
+export async function requestEmailCode(
+  email: string,
+  purpose: EmailCodePurpose,
 ): Promise<ChallengeResponse> {
-  return publicRequest<ChallengeResponse>("/auth/phone/challenges", {
+  return publicRequest<ChallengeResponse>("/auth/email/code", {
     method: "POST",
-    body: JSON.stringify({ phone, purpose }),
+    body: JSON.stringify({ email, purpose }),
   });
 }
 
-export async function verifyPhoneChallenge(
+export async function verifyEmailChallenge(
   challengeId: string,
   code: string,
 ): Promise<VerifyResponse> {
-  return publicRequest<VerifyResponse>(
-    `/auth/phone/challenges/${encodeURIComponent(challengeId)}/verify`,
-    {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    },
-  );
+  return publicRequest<VerifyResponse>("/auth/email/verify", {
+    method: "POST",
+    body: JSON.stringify({ challenge_id: challengeId, code }),
+  });
 }
 
-async function webSession(
-  path: "/auth/web/login" | "/auth/web/registration",
-  challengeId: string,
+async function webEmailSession(
+  path: "/auth/web/email/login" | "/auth/web/email/registration",
+  body: { email: string; password: string; challenge_id?: string },
 ): Promise<WebSessionPayload> {
   const payload = await publicRequest<WebSessionPayload>(path, {
     method: "POST",
-    body: JSON.stringify({
-      challenge_id: challengeId,
-      device_name: "JOGA y GESTÃO",
-    }),
+    body: JSON.stringify({ ...body, device_name: "Painel" }),
   });
   setAuthTokens({
     accessToken: payload.access_token,
@@ -285,12 +288,45 @@ async function webSession(
   return payload;
 }
 
-export function webLogin(challengeId: string): Promise<WebSessionPayload> {
-  return webSession("/auth/web/login", challengeId);
+export function webEmailLogin(email: string, password: string): Promise<WebSessionPayload> {
+  return webEmailSession("/auth/web/email/login", { email, password });
 }
 
-export function webRegister(challengeId: string): Promise<WebSessionPayload> {
-  return webSession("/auth/web/registration", challengeId);
+export function webEmailRegistration(
+  challengeId: string,
+  email: string,
+  password: string,
+): Promise<WebSessionPayload> {
+  return webEmailSession("/auth/web/email/registration", {
+    challenge_id: challengeId,
+    email,
+    password,
+  });
+}
+
+export function resetEmailPassword(
+  challengeId: string,
+  email: string,
+  newPassword: string,
+): Promise<void> {
+  return publicRequest<void>("/auth/email/password/reset", {
+    method: "POST",
+    body: JSON.stringify({
+      challenge_id: challengeId,
+      email,
+      new_password: newPassword,
+    }),
+  });
+}
+
+export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  return request<void>("/me/password", {
+    method: "POST",
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
 }
 
 export async function webLogout(): Promise<void> {
@@ -470,8 +506,15 @@ export const api = {
     );
   },
 
-  listReceivables(organizationId: string, limit = 50, offset = 0): Promise<ReceivableListResponse> {
-    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  listReceivables(
+    organizationId: string,
+    options: { status?: string | null; limit?: number; offset?: number } = {},
+  ): Promise<ReceivableListResponse> {
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.status) params.set("status", options.status);
     return request<ReceivableListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/receivables?${params.toString()}`,
     );
@@ -490,12 +533,30 @@ export const api = {
 
   listFinancialDisputes(
     organizationId: string,
-    limit = 50,
-    offset = 0,
+    options: { status?: string | null; limit?: number; offset?: number } = {},
   ): Promise<FinancialDisputeListResponse> {
-    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.status) params.set("status", options.status);
     return request<FinancialDisputeListResponse>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/disputes?${params.toString()}`,
+    );
+  },
+
+  getFinancialCommission(
+    organizationId: string,
+    options: { from?: string | null; to?: string | null; limit?: number; offset?: number } = {},
+  ): Promise<CommissionResponse> {
+    const params = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.from) params.set("from", options.from);
+    if (options.to) params.set("to", options.to);
+    return request<CommissionResponse>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/commission?${params.toString()}`,
     );
   },
 
@@ -505,6 +566,30 @@ export const api = {
   ): Promise<FinancialDispute> {
     return request<FinancialDispute>(
       `/organizations/${encodeURIComponent(organizationId)}/financial/disputes`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  getFinancialDispute(organizationId: string, disputeId: string): Promise<FinancialDispute> {
+    return request<FinancialDispute>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes/${encodeURIComponent(
+        disputeId,
+      )}`,
+    );
+  },
+
+  decideFinancialDispute(
+    organizationId: string,
+    disputeId: string,
+    payload: { decision: "ACCEPTED" | "REJECTED"; reason: string },
+  ): Promise<FinancialDispute> {
+    return request<FinancialDispute>(
+      `/organizations/${encodeURIComponent(organizationId)}/financial/disputes/${encodeURIComponent(
+        disputeId,
+      )}/decision`,
       {
         method: "POST",
         body: JSON.stringify(payload),
@@ -788,6 +873,21 @@ export const api = {
     });
   },
 
+  updateBusinessHour(
+    organizationId: string,
+    venueId: string,
+    businessHourId: string,
+    payload: Partial<{ weekday: number; opens_at: string; closes_at: string }>,
+  ): Promise<BusinessHour> {
+    return request<BusinessHour>(
+      `${venueBase(organizationId, venueId)}/business-hours/${encodeURIComponent(businessHourId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
   deleteBusinessHour(
     organizationId: string,
     venueId: string,
@@ -877,10 +977,13 @@ export const api = {
     return request<ModeratorMe>("/moderation/me");
   },
 
-  getModerationQueue(statusFilter = "OPEN"): Promise<ModerationQueue> {
-    return request<ModerationQueue>(
-      `/moderation/queue?status_filter=${encodeURIComponent(statusFilter)}`,
-    );
+  getModerationQueue(statusFilter = "OPEN", limit = 30, offset = 0): Promise<ModerationQueue> {
+    const query = new URLSearchParams({
+      status_filter: statusFilter,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return request<ModerationQueue>(`/moderation/queue?${query.toString()}`);
   },
 
   getModerationReport(reportId: string): Promise<ModerationReport> {

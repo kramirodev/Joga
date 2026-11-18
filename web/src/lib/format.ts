@@ -145,10 +145,10 @@ const TIMER_STATUS: Record<string, string> = {
 };
 
 const RELEASE_STATUS: Record<string, string> = {
-  PENDING: "A repassar",
+  PENDING: "Repasse pendente",
   RELEASED: "Repassado",
   FAILED: "Falhou",
-  REVERSED: "Revertido",
+  REVERSED: "Revertido após reembolso",
 };
 
 const HOLD_STATUS: Record<string, string> = {
@@ -165,10 +165,18 @@ const DISPUTE_STATUS: Record<string, string> = {
 };
 
 const LEDGER_ENTRY: Record<string, string> = {
-  CHARGE_CREATED: "Cobrança criada",
-  PAYMENT_CONFIRMED: "Pagamento confirmado",
-  PAYMENT_REFUNDED: "Reembolso",
-  VENUE_RELEASE: "Repasse ao estabelecimento",
+  PAYMENT_CONFIRMED: "Pagamento confirmado — parte da quadra",
+  PAYMENT_REFUNDED: "Reembolso — devolução",
+  VENUE_RELEASE: "Repasse ao fornecedor",
+};
+
+const FISCAL_STATUS: Record<string, string> = {
+  pending_manual: "Intenção registrada — sem emissão",
+  issued: "Emitida",
+  processing: "Em processamento",
+  failed: "Falhou",
+  cancelled: "Cancelada",
+  disabled: "Documento desativado",
 };
 
 const ORGANIZATION_STATUS: Record<string, string> = {
@@ -263,6 +271,10 @@ export function ledgerEntryLabel(type: string): string {
   return LEDGER_ENTRY[type] ?? type;
 }
 
+export function fiscalStatusLabel(status: string): string {
+  return FISCAL_STATUS[status] ?? status;
+}
+
 export function organizationStatusLabel(status: string): string {
   return ORGANIZATION_STATUS[status] ?? status;
 }
@@ -339,6 +351,34 @@ export function formatError(error: unknown): string {
   switch (error.code) {
     case "invalid_phone":
       return "Telefone inválido. Confira o país, o DDD e o número.";
+    case "invalid_email":
+      return "E-mail inválido. Confira o endereço e tente novamente.";
+    case "email_domain_not_allowed":
+      return "Não aceitamos esse domínio de e-mail. Use outro endereço.";
+    case "invalid_credentials":
+    case "invalid_email_login":
+      return "E-mail ou senha inválidos.";
+    case "invalid_current_password":
+      return "A senha atual está incorreta.";
+    case "invalid_password":
+    case "weak_password":
+      return "A senha não atende aos requisitos. Use de 10 a 128 caracteres.";
+    case "password_too_short":
+      return "A senha deve ter pelo menos 10 caracteres.";
+    case "password_too_long":
+      return "A senha deve ter no máximo 128 caracteres.";
+    case "password_equals_email":
+      return "A senha não pode ser igual ao e-mail.";
+    case "email_already_registered":
+      return "Esse e-mail já está vinculado a uma conta. Use a opção Entrar.";
+    case "signup_closed":
+      return "O cadastro está fechado no momento. Entre com uma conta existente.";
+    case "email_registration_disabled":
+      return "O cadastro por e-mail está indisponível no momento.";
+    case "email_auth_disabled":
+      return "O acesso por e-mail está indisponível no momento. Tente novamente mais tarde.";
+    case "phone_auth_disabled":
+      return "O acesso por telefone está indisponível. Use o acesso por e-mail.";
     case "rate_limited": {
       const wait = error.retryAfterSeconds;
       if (wait === null || wait <= 0) {
@@ -350,10 +390,8 @@ export function formatError(error: unknown): string {
       return "Código inválido ou expirado. Solicite um novo código.";
     case "invalid_receipt":
       return "A verificação expirou. Solicite um novo código.";
-    case "account_not_found":
-      return "Não encontramos uma conta com esse telefone. Crie uma conta para continuar.";
-    case "phone_already_registered":
-      return "Esse telefone já possui conta. Use a opção Entrar.";
+    case "invalid_password_reset":
+      return "A verificação da senha expirou. Solicite um novo código.";
     case "forbidden":
       return "Seu papel não permite esta ação.";
     case "refund_failed":
@@ -386,6 +424,14 @@ export function formatError(error: unknown): string {
       return "Contestação não encontrada ou fora do seu acesso.";
     case "dispute_already_open":
       return "Já existe uma contestação em análise para esta reserva.";
+    case "dispute_not_open":
+      return "A contestação não está aberta para decisão.";
+    case "release_not_contestable":
+      return "Esta liberação não pode mais ser contestada.";
+    case "dispute_window_expired":
+      return "O prazo de 72 horas para contestar esta reserva terminou.";
+    case "operator_not_authorized":
+      return "Somente a equipe de revisão do JOGA pode decidir esta contestação.";
     case "invalid_input":
       return "Algum campo está inválido. Revise os valores destacados e tente novamente.";
     case "invalid_postal_code":

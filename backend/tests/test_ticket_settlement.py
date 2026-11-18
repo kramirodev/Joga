@@ -123,7 +123,12 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
             tickets,
             source="purchase",
             idempotency_key=f"purchase:{user_id}",
+            unit_price_cents=310,
         )
+    db_session.flush()
+    from app.modules.ledger.opening import open_ledger
+
+    open_ledger(db_session, dry_run=False)
     db_session.flush()
     return {
         "users": users,
@@ -268,7 +273,7 @@ def test_venue_cancellation_refunds_everyone(client: TestClient, db_session: Ses
         assert get_balance(db_session, user_id) == TICKETS_PER_SEAT
 
 
-def test_player_cancellation_refunds_only_the_others(
+def test_player_cancellation_before_cutoff_refunds_everyone(
     client: TestClient, db_session: Session
 ) -> None:
     api = api_client(client, db_session)
@@ -283,8 +288,7 @@ def test_player_cancellation_refunds_only_the_others(
     )
     assert cancelled.status_code == 200, cancelled.text
 
-    assert get_balance(db_session, context["users"][0]) == 0
-    for user_id in context["users"][1:]:
+    for user_id in context["users"]:
         assert get_balance(db_session, user_id) == TICKETS_PER_SEAT
 
 

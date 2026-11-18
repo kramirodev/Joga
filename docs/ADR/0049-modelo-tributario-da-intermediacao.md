@@ -118,12 +118,14 @@ momento: nem na compra do crédito, nem na confirmação da reserva, nem no repa
 ### 2.3 Unidade de conta
 
 **[D]** O saldo passa a ser expresso **em reais**. A unidade "ingresso" deixa de
-ser unidade de conta; se sobreviver na interface, é apenas rótulo de exibição,
-sem efeito jurídico, contábil ou fiscal. A conversão é 1:1 e o valor em reais é
-sempre visível antes da confirmação.
+ser unidade de conta; ela é a **unidade de consumo** da tabela 2D (§13) e não tem
+efeito jurídico, contábil ou fiscal. O valor em reais é sempre visível antes da
+confirmação. **Não há conversão 1:1 entre ticket e real:** a tabela 2D mapeia o
+valor da quadra e o formato para uma quantidade de tickets, e o ledger lança o
+valor em reais.
 
 O limite que o jogador define para o matchmaking é expresso em **créditos**, não
-em reais digitados. Como o crédito é 1:1 com o real, o limite é monetário por
+em reais digitados. Como o saldo é expresso em reais, o limite é monetário por
 construção, sem exigir que o jogador informe um valor em dinheiro.
 
 Isso contraria a ADR 0042 §2.2 e a substitui.
@@ -798,3 +800,173 @@ Nenhuma linha de código deve ser escrita para esse modelo antes de:
 - Exigência de autorização como instituição de pagamento por autoridade
   competente.
 - Qualquer alteração que permita saque, transferência ou expiração de saldo.
+
+---
+
+## 13. Adendo 2026-11-16 — tabela 2D como unidade de consumo
+
+**Status:** decisão de produto para a Fase 14E. Corrige a §2.3 e esclarece a §11.
+Não altera a natureza da intermediação nem o ledger em reais.
+
+### 13.1 Decisão
+
+O ticket é a **unidade de consumo**, não uma conversão do real. A quantidade de
+tickets de uma vaga vem da **tabela 2D** (faixa de preço da quadra × formato),
+como na ADR 0042 §3.2. O preço em reais (valor da quadra + taxa) continua
+congelado por reserva e é o que o ledger lança. **Não há conversão de ticket em
+real no consumo:** a tabela é a autoridade de tickets; o ledger é a autoridade
+monetária.
+
+### 13.2 Formatos padrão
+
+Existem três formatos padrão:
+
+- **5x5 (futebol):** 10 jogadores.
+- **6x6 (vôlei):** 12 jogadores.
+- **3x3 (futevôlei):** 6 jogadores.
+
+4x4 e menores são **contingência** (falta de jogador ou substituição), não
+catálogo padrão. Quando ocorrerem, a contagem é derivada por
+`k = ceil((V + taxa) / (n × 3,10))`, sem célula fixa. O 3x3 deixou de ser
+contingência: é o futevôlei.
+
+### 13.3 Tabela padrão (ingressos por jogador)
+
+| Faixa | Valor da quadra | 5x5 (10) | 6x6 (12) | 3x3 (6) |
+|---|---:|---:|---:|---:|
+| Econômica dia | até R$ 120 | 5 | 4 | 8 |
+| Econômica noite | R$ 121–150 | 6 | 5 | 10 |
+| Padrão dia | R$ 151–180 | 7 | 6 | 12 |
+| Padrão noite | R$ 181–220 | 9 | 8 | 15 |
+| Coberta | R$ 221–260 | 11 | 9 | 17 |
+| Premium | R$ 261–300 | 12 | 10 | 20 |
+
+Correções em relação à tabela da ADR 0042: **Coberta 5x5 10 → 11**, **Padrão
+noite 6x6 7 → 8**, **Padrão noite 3x3 14 → 15** e **Premium 3x3 19 → 20**. As
+outras células não mudam. O calibre é o menor preço de ticket (R$ 3,10, pacote
+grande).
+
+### 13.4 Fechamento da conta
+
+Premissas: taxa de 20% sobre a quadra, alíquota de 15,5% (Anexo V) sobre a taxa,
+PSP de 0,99% sobre a quadra, custo fixo/infraestrutura de R$ 4,00 por partida,
+provisão de cancelamento de R$ 0,20 por jogador e provisão de cauda de 0,2% sobre
+a quadra.
+
+**5x5 (10 jogadores)**
+
+| Faixa | Quadra | Taxa | Imposto | PSP | Provisão | Infra | Cauda | Sobra | Margem |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Econômica dia | 120,00 | 24,00 | 3,72 | 1,19 | 2,00 | 4,00 | 0,24 | 12,85 | 10,71% |
+| Econômica noite | 150,00 | 30,00 | 4,65 | 1,48 | 2,00 | 4,00 | 0,30 | 17,57 | 11,71% |
+| Padrão dia | 180,00 | 36,00 | 5,58 | 1,78 | 2,00 | 4,00 | 0,36 | 22,28 | 12,38% |
+| Padrão noite | 220,00 | 44,00 | 6,82 | 2,18 | 2,00 | 4,00 | 0,44 | 28,56 | 12,98% |
+| Coberta | 260,00 | 52,00 | 8,06 | 2,57 | 2,00 | 4,00 | 0,52 | 34,85 | 13,40% |
+| Premium | 300,00 | 60,00 | 9,30 | 2,97 | 2,00 | 4,00 | 0,60 | 41,13 | 13,71% |
+
+**6x6 (12 jogadores)**
+
+| Faixa | Quadra | Taxa | Imposto | PSP | Provisão | Infra | Cauda | Sobra | Margem |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Econômica dia | 120,00 | 24,00 | 3,72 | 1,19 | 2,40 | 4,00 | 0,24 | 12,45 | 10,38% |
+| Econômica noite | 150,00 | 30,00 | 4,65 | 1,48 | 2,40 | 4,00 | 0,30 | 17,17 | 11,45% |
+| Padrão dia | 180,00 | 36,00 | 5,58 | 1,78 | 2,40 | 4,00 | 0,36 | 21,88 | 12,16% |
+| Padrão noite | 220,00 | 44,00 | 6,82 | 2,18 | 2,40 | 4,00 | 0,44 | 28,16 | 12,80% |
+| Coberta | 260,00 | 52,00 | 8,06 | 2,57 | 2,40 | 4,00 | 0,52 | 34,45 | 13,25% |
+| Premium | 300,00 | 60,00 | 9,30 | 2,97 | 2,40 | 4,00 | 0,60 | 40,73 | 13,58% |
+
+**3x3 (6 jogadores)**
+
+| Faixa | Quadra | Taxa | Imposto | PSP | Provisão | Infra | Cauda | Sobra | Margem |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Econômica dia | 120,00 | 24,00 | 3,72 | 1,19 | 1,20 | 4,00 | 0,24 | 13,65 | 11,38% |
+| Econômica noite | 150,00 | 30,00 | 4,65 | 1,48 | 1,20 | 4,00 | 0,30 | 18,37 | 12,25% |
+| Padrão dia | 180,00 | 36,00 | 5,58 | 1,78 | 1,20 | 4,00 | 0,36 | 23,08 | 12,82% |
+| Padrão noite | 220,00 | 44,00 | 6,82 | 2,18 | 1,20 | 4,00 | 0,44 | 29,36 | 13,35% |
+| Coberta | 260,00 | 52,00 | 8,06 | 2,57 | 1,20 | 4,00 | 0,52 | 35,65 | 13,71% |
+| Premium | 300,00 | 60,00 | 9,30 | 2,97 | 1,20 | 4,00 | 0,60 | 41,93 | 13,98% |
+
+Todas as margens ficam acima do piso de 10%. A sobra é o que resta depois de
+imposto, PSP, provisão, infraestrutura e cauda; não é lucro líquido final.
+
+### 13.5 Contagem e cobertura
+
+| Faixa | 5x5/jogador | k 5x5 | 6x6/jogador | k 6x6 | 3x3/jogador | k 3x3 |
+|---|---:|---:|---:|---:|---:|---:|
+| Econômica dia | 15,50 | 5 | 12,40 | 4 | 24,80 | 8 |
+| Econômica noite | 18,60 | 6 | 15,50 | 5 | 31,00 | 10 |
+| Padrão dia | 21,70 | 7 | 18,60 | 6 | 37,20 | 12 |
+| Padrão noite | 27,90 | 9 | 24,80 | 8 | 46,50 | 15 |
+| Coberta | 34,10 | 11 | 27,90 | 9 | 52,70 | 17 |
+| Premium | 37,20 | 12 | 31,00 | 10 | 62,00 | 20 |
+
+O valor por jogador é `k × 3,10`; o total da partida é esse valor vezes o número
+de jogadores (10 no 5x5, 12 no 6x6, 6 no 3x3). Em todas as células,
+`k × 3,10 ≥ valor da quadra + 20%`. A diferença entre o total de tickets e a
+quadra é o **valor do JOGA** (§13.9).
+
+### 13.6 Risco de cancelamento
+
+O fator de risco da ADR 0021 é `S = 1 + z√(φ/μ)`. Com `q = 20%`, `μ = 4`,
+`z = 1,645` e `φ = 1`, `S = 1,8225`. Com `C_c = R$ 0,47`, a provisão plena é
+`C_c·μ·S = R$ 3,43` por partida.
+
+A decisão vigente usa **R$ 0,20 por jogador** (R$ 2,00 no 5x5 e R$ 2,40 no 6x6),
+abaixo da provisão plena. É uma redução deliberada de risco: com R$ 3,43, a faixa
+de R$ 120 cai para ~9,5% nos dois formatos, abaixo do piso de 10%. Se a operação
+confirmar o custo pleno, a taxa da faixa de R$ 120 precisa subir para ~20,6% ou a
+faixa não é oferecida. A provisão é provisão, não seguro.
+
+Sensibilidade de imposto: com 6% em vez de 15,5%, a sobra sobe e a margem da faixa
+de R$ 120 vai a ~12,6% no 5x5. A alíquota permanece pendente de parecer (§10).
+
+### 13.7 Ledger, invariante e migração
+
+- **Consumo:** `settle_with_tickets` baixa `tickets_per_seat` tickets (tabela) e
+  o ledger debita `tickets_per_seat × 310` (o valor do ticket), não
+  `contribution_cents`.
+- **Ledger (regra 4, caminho por tickets):**
+  D `player_credit` `k × 310`; C `venue_payable` `venue_price_cents`;
+  C `fee_revenue` `(k × 310) − venue_price_cents`.
+- **Caminho por Pix:** D `psp_clearing` `contribution_cents`; C `venue_payable`
+  `space_charge_cents`; C `fee_revenue` `fee_charge_cents` (20% da quadra).
+- **Dois saldos independentes:** tickets (lots) e centavos (`player_credit`). O
+  jogador precisa dos dois; o excedente de caixa (preço do pacote acima de 3,10)
+  fica como crédito (passivo).
+- **Invariante:** por evento, não por valor. Compra sobe caixa e tickets;
+  quitação baixa `k × 310` e `k` tickets; a soma quadra + JOGA = `k × 310`;
+  nenhum saldo negativo. O invariante `ledger == remaining × preço pago` não vale.
+- **Compra:** D `psp_clearing` `N × P`; C `player_credit` `N × P`; lote sobe N
+  tickets. O ticket vale 3,10 no consumo; o que exceder 3,10 é preço do pacote e
+  fica como crédito.
+- **Migração:** abertura monetária `Σ remaining × unit_price_cents`, contra
+  `opening_equity`, idempotente; lotes de passe/grátis/admin ficam em tickets.
+
+### 13.8 O que este adendo altera
+
+- **§2.3:** sai a conversão 1:1; o ticket é a unidade de consumo da tabela 2D.
+- **§11:** a tabela 2D não é preço; é a unidade de consumo e exibição. O preço
+  jurídico continua sendo o valor da quadra + taxa.
+- **§4.1/§8:** confirmam 20% de taxa, piso de R$ 8,00 e provisão de R$ 0,20 por
+  jogador; a provisão plena exigiria ~20,6% na faixa de R$ 120.
+- **Formatos:** 5x5, 6x6 e 3x3 (futevôlei) no catálogo padrão; 4x4 e menores são
+  contingência.
+- **Pendências:** alíquota, PSP definitivo, custódia C e pareceres da §10.
+
+### 13.9 Valor do JOGA na confirmação
+
+Quando o participante confirma e usa os créditos, o valor gasto em tickets é
+`k × 3,10`. A notificação e o recibo mostram duas linhas:
+
+- **Valor da quadra:** `space_charge_cents` (soma exata = `venue_price_cents`).
+- **Valor do JOGA:** `k × 3,10 − space_charge_cents` (o restante).
+
+As duas linhas somam `k × 3,10`. O valor do JOGA é o **restante**, não um
+percentual fixo. A taxa de 20% é o piso de referência; o arredondamento para cima
+do número inteiro de tickets faz o restante ficar entre 20,56% e 35,27% da
+quadra, conforme a faixa e o formato. O backend deve persistir os dois valores
+por participante e devolvê-los na confirmação e no recibo.
+
+Exemplo, R$ 120 no 5x5: 5 tickets × 3,10 = R$ 15,50 por jogador; 10 jogadores =
+R$ 155,00. Quadra R$ 120,00; JOGA R$ 35,00 (29,17%). No 6x6: 4 × 3,10 = R$ 12,40;
+12 jogadores = R$ 148,80; JOGA R$ 28,80 (24,00%).

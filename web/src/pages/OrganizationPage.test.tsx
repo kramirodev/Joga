@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -101,6 +101,12 @@ const receivable: Receivable = {
   ends_at: "2026-12-15T19:00:00Z",
   has_open_dispute: false,
   dispute_id: null,
+  venue_price_cents: 40000,
+  fee_cents: 8000,
+  total_cents: 48000,
+  receipt_reference: null,
+  dispute_deadline: "2026-12-19T19:00:00Z",
+  reason: null,
 };
 
 function organizationFor(role: Role): Organization {
@@ -136,6 +142,9 @@ function stubApi(role: Role, bookings: Booking[] = []) {
       return jsonResponse({ ...booking, status: "PAYMENT_PENDING" });
     }
     if (path.endsWith("/members")) return jsonResponse({ members });
+    if (path === "/api/v1/organizations/org-1/venues/venue-1" && init?.method === "PATCH") {
+      return jsonResponse({ ...venues[0], name: "Quadra Central Editada" });
+    }
     if (path.endsWith("/venues")) return jsonResponse({ venues });
     if (path.endsWith("/bookings")) {
       return jsonResponse({
@@ -153,9 +162,26 @@ function stubApi(role: Role, bookings: Booking[] = []) {
         pending_cents: 0,
         released_cents: 0,
         pending_release_cents: 40000,
+        reversed_cents: 0,
+        failed_cents: 0,
         disputed_cents: 0,
+        venue_price_cents: 40000,
+        joga_fee_cents: 8000,
         payments: 0,
         refunds: 0,
+      });
+    }
+    if (path.endsWith("/financial/commission")) {
+      return jsonResponse({
+        rows: [],
+        totals: {
+          bookings: 0,
+          venue_price_cents: 0,
+          joga_fee_cents: 0,
+          total_cents: 0,
+        },
+        limit: 50,
+        offset: 0,
       });
     }
     if (path.endsWith("/financial/receivables")) {
@@ -179,6 +205,7 @@ function stubApi(role: Role, bookings: Booking[] = []) {
             release_id: "release-1",
             amount_cents: 40000,
             status: "OPEN",
+            deadline_at: "2026-12-19T19:00:00Z",
             reason: "Valor divergente",
             evidence: null,
             decision_reason: null,
@@ -218,6 +245,7 @@ function renderPage() {
               user: { id: "user-1", status: "active" },
               capabilities: [],
               loading: false,
+              sessionExpired: false,
               signIn: vi.fn(),
               signOut: vi.fn(),
             }}
@@ -251,7 +279,7 @@ describe("OrganizationPage — permissões na interface", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/audit"))).toBe(false);
 
     await user.click(screen.getByRole("tab", { name: /Financeiro/ }));
-    expect(await screen.findByText(/liberação prevista em/)).toBeInTheDocument();
+    expect(await screen.findByText(/repasse elegível em/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Contestar repasse" })).not.toBeInTheDocument();
   });
 
@@ -331,6 +359,32 @@ describe("OrganizationPage — permissões na interface", () => {
         fetchMock.mock.calls.some(
           ([url, init]) =>
             String(url).includes("/payout") && (init as RequestInit | undefined)?.method === "PUT",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("edita o estabelecimento pelo modal", async () => {
+    const fetchMock = stubApi("OWNER");
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("tab", { name: /Estabelecimentos/ }));
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const name = within(dialog).getByLabelText("Nome");
+    await user.clear(name);
+    await user.type(name, "Quadra Central Editada");
+    await user.click(within(dialog).getByRole("button", { name: "Salvar alterações" }));
+
+    expect(await screen.findByText("Estabelecimento atualizado")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes("/venues/venue-1") &&
+            (init as RequestInit | undefined)?.method === "PATCH",
         ),
       ).toBe(true),
     );

@@ -68,6 +68,9 @@ class ParticipantView(BaseModel):
     seat: int
     active: bool
     contribution_cents: int
+    space_charge_cents: int
+    fee_charge_cents: int
+    funding_source: str | None
     payment_status: str
     confirmed_at: datetime | None
     declined_at: datetime | None
@@ -133,6 +136,11 @@ class BookingView(BaseModel):
     starts_at: datetime
     ends_at: datetime
     price_cents: int
+    venue_price_cents: int
+    fee_cents: int
+    fee_percent_applied: int
+    total_cents: int
+    pricing_version: str
     currency: str
     seats: int
     policy_version: str
@@ -226,6 +234,11 @@ def _view(
         starts_at=booking.starts_at,
         ends_at=booking.ends_at,
         price_cents=booking.price_cents,
+        venue_price_cents=booking.venue_price_cents,
+        fee_cents=booking.fee_cents,
+        fee_percent_applied=booking.fee_percent_applied,
+        total_cents=booking.total_cents,
+        pricing_version=booking.pricing_version,
         currency=booking.currency,
         seats=booking.seats,
         policy_version=booking.policy_version,
@@ -251,6 +264,9 @@ def _view(
                 seat=item.seat,
                 active=item.active,
                 contribution_cents=item.contribution_cents,
+                space_charge_cents=item.space_charge_cents,
+                fee_charge_cents=item.fee_charge_cents,
+                funding_source=item.funding_source,
                 payment_status=(
                     item.payment_status
                     if include_all_payments or item.user_id == viewer_user_id
@@ -590,7 +606,6 @@ def cancel_booking(
                     )
                 ).all()
             )
-            excluded.add(current.user_id)
         PaymentService(session, adapter).refund_booking(
             booking_id,
             reason=payload.reason,

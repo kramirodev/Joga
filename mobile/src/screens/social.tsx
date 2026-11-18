@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
 import type {
@@ -35,12 +35,12 @@ import {
   Seg,
   SegBtn,
   StateScreen,
-  SystemNotice,
   Textarea,
   TextBtn,
   Txt,
 } from '../ui/kit';
 import { divisionLabel, number, shortDateTime } from '../ui/datetime';
+import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
@@ -346,7 +346,7 @@ function ClanProfile() {
           {
             icon: 'users' as const,
             title: 'Membros e cargos',
-            sub: `${clanMembers.length || 24} membros · 3 oficiais`,
+            sub: `${clanMembers.length} ${clanMembers.length === 1 ? 'membro' : 'membros'}`,
             go: 'clan-members',
           },
           {
@@ -354,12 +354,6 @@ function ClanProfile() {
             title: 'Configurações do clã',
             sub: 'Identidade, entrada e escudo',
             go: 'clan-settings',
-          },
-          {
-            icon: 'plus' as const,
-            title: 'Convidar membros',
-            sub: 'Amigos aceitos e sem bloqueio',
-            go: 'clan-invite',
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
@@ -597,8 +591,8 @@ function ClanJoin() {
       <Notice tone="orange" icon="info">
         Clã cheio não aceita solicitação até abrir vaga. Você pode entrar na lista de interesse.
       </Notice>
-      <Btn tone="primary" toast="Interesse registrado no protótipo">
-        Entrar na lista de interesse
+      <Btn tone="primary" disabled>
+        Lista de interesse em implantação
       </Btn>
       <Btn tone="ghost" go="clan-discovery">
         Ver outros clãs
@@ -610,24 +604,23 @@ function ClanJoin() {
 function ClanMembers() {
   const { palette } = useTheme();
   const { clan, clanMembers } = useApp();
-  const members: ClanMember[] = clanMembers.length
-    ? clanMembers
-    : [
-        { user_id: 'susan', display_name: 'Susan', role: 'leader', joined_at: '' },
-        { user_id: 'rafa', display_name: 'Rafa', role: 'admin', joined_at: '' },
-        { user_id: 'bia', display_name: 'Bia', role: 'admin', joined_at: '' },
-        { user_id: 'jo', display_name: 'Jo', role: 'member', joined_at: '' },
-        { user_id: 'nina', display_name: 'Nina', role: 'member', joined_at: '' },
-        { user_id: 'caio', display_name: 'Caio', role: 'member', joined_at: '' },
-      ];
+  const members: ClanMember[] = clanMembers;
+  const officers = members.filter((member) => member.role === 'admin').length;
   const roleLabel = (role: string) =>
     role === 'leader' ? 'Líder' : role === 'admin' ? 'Oficial' : 'Membro';
   return (
     <Page title="Membros">
       <Row between>
-        <Txt variant="h3">{clan?.members ?? 24} membros</Txt>
-        <Badge>3 oficiais</Badge>
+        <Txt variant="h3">
+          {clan?.members ?? members.length} {members.length === 1 ? 'membro' : 'membros'}
+        </Txt>
+        <Badge>{officers} oficiais</Badge>
       </Row>
+      {members.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">O clã ainda não tem membros carregados.</Txt>
+        </Card>
+      ) : null}
       <CardList>
         {members.map((member, index) => (
           <ListRow key={member.user_id} last={index === members.length - 1}>
@@ -643,9 +636,7 @@ function ClanMembers() {
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {member.display_name ?? 'Jogador'}
               </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>
-                {roleLabel(member.role)} · online
-              </Text>
+              <Text style={{ fontSize: 13, color: palette.muted }}>{roleLabel(member.role)}</Text>
             </View>
             <Badge
               tone={
@@ -657,14 +648,9 @@ function ClanMembers() {
           </ListRow>
         ))}
       </CardList>
-      <BtnRow>
-        <Btn tone="primary" go="clan-invite">
-          Convidar
-        </Btn>
-        <Btn tone="ghost" toast="Cargos abertos no protótipo">
-          Gerenciar cargos
-        </Btn>
-      </BtnRow>
+      <Btn tone="primary" go="clan-invite">
+        Convidar
+      </Btn>
     </Page>
   );
 }
@@ -673,10 +659,8 @@ function ClanSettings() {
   const { palette } = useTheme();
   const nav = useNav();
   const { clan, session, setClan } = useApp();
-  const [name, setName] = useState(clan?.name ?? 'Alpha Squad');
-  const [description, setDescription] = useState(
-    clan?.description ?? 'Grupo de futebol 5x5 e vôlei de terça e quinta.',
-  );
+  const [name, setName] = useState(clan?.name ?? '');
+  const [description, setDescription] = useState(clan?.description ?? '');
   const leave = async () => {
     if (session && clan) {
       try {
@@ -728,8 +712,8 @@ function ClanSettings() {
         </Txt>
       </Card>
       <BtnRow>
-        <Btn tone="primary" toast="Configurações salvas no protótipo">
-          Salvar
+        <Btn tone="primary" disabled>
+          Configurações do clã em implantação
         </Btn>
         <Btn tone="ghost" onPress={leave}>
           Sair do clã
@@ -743,7 +727,6 @@ function ClanChat() {
   const nav = useNav();
   const { palette } = useTheme();
   const { clan, clanMessages, session, loadClanMessages, loadClan } = useApp();
-  const [extra, setExtra] = useState<typeof clanMessages>([]);
   const [input, setInput] = useState('');
   useEffect(() => {
     loadClan().catch(() => undefined);
@@ -762,59 +745,29 @@ function ClanChat() {
         return;
       }
     } else {
-      setExtra((current) => [
-        ...current,
-        {
-          id: String(Date.now()),
-          sender_id: 'me',
-          display_name: 'Você',
-          body,
-          hidden: false,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      nav.toast('Entre em um clã para enviar mensagens.');
+      return;
     }
     setInput('');
   };
-  const combined = [...clanMessages, ...extra];
-  const list = combined.length
-    ? combined
-    : [
-        {
-          id: '1',
-          sender_id: 'rafa',
-          display_name: 'Rafa',
-          body: 'Terça 20h na Arena Sul. Quem fecha?',
-          hidden: false,
-          created_at: '',
-        },
-        {
-          id: '2',
-          sender_id: 'me',
-          display_name: 'Você',
-          body: 'Eu e a Bia. Falta 1.',
-          hidden: false,
-          created_at: '',
-        },
-        {
-          id: '3',
-          sender_id: 'jo',
-          display_name: 'Jo',
-          body: 'Vou.',
-          hidden: false,
-          created_at: '',
-        },
-      ];
+  const combined = clanMessages;
+  const list = combined;
   return (
-    <Page title={clan?.name ?? 'Alpha Squad'}>
+    <Page title={clan?.name ?? 'Chat do clã'}>
       <Card tone="flat" padding={9}>
         <Row between>
-          <Txt variant="tiny">{clan?.members ?? 24} membros · chat permanente</Txt>
+          <Txt variant="tiny">
+            {clan ? `${clan.members} membros · chat permanente` : 'Entre em um clã para conversar'}
+          </Txt>
           <Badge tone="green">SÓ MEMBROS</Badge>
         </Row>
       </Card>
       <View style={{ gap: 10 }}>
-        <SystemNotice>Rafa entrou no clã.</SystemNotice>
+        {list.length === 0 ? (
+          <Notice tone="blue" icon="chat">
+            Nenhuma mensagem ainda. Comece a conversa com o clã.
+          </Notice>
+        ) : null}
         {list.map((message) => {
           const mine = message.sender_id === 'me' || message.sender_id === session?.userId;
           return (
@@ -866,9 +819,9 @@ function ClanChat() {
 
 function ClanRanking() {
   const { palette } = useTheme();
-  const { session, primaryFormatId } = useApp();
+  const { session, primaryFormatId, clan, progress } = useApp();
   const [entries, setEntries] = useState<
-    { name: string; tag: string; trophies: number; position: number }[]
+    { name: string; tag: string; trophies: number; position: number; clan_id: string }[]
   >([]);
   useEffect(() => {
     if (session) {
@@ -878,31 +831,28 @@ function ClanRanking() {
         .catch(() => undefined);
     }
   }, [session, primaryFormatId]);
-  const list = entries.length
-    ? entries.map((item) => ({
-        position: item.position,
-        name: item.name,
-        tag: item.tag,
-        trophies: number(item.trophies),
-        mine: item.name === 'Alpha Squad',
-      }))
-    : [
-        { position: 1, name: 'Arena Norte FC', tag: '#ANFC', trophies: '14.820', mine: false },
-        { position: 2, name: 'Quadra 9', tag: '#Q9', trophies: '13.440', mine: false },
-        { position: 3, name: 'Clube Oeste', tag: '#CO', trophies: '12.910', mine: false },
-        { position: 4, name: 'Alpha Squad', tag: '#ALPHA', trophies: '12.480', mine: true },
-        { position: 5, name: 'Bairro Sul', tag: '#BS', trophies: '11.760', mine: false },
-      ];
+  const list = entries.map((item) => ({
+    position: item.position,
+    name: item.name,
+    tag: item.tag,
+    trophies: number(item.trophies),
+    mine: item.clan_id === clan?.id,
+  }));
   return (
     <Page title="Ranking de clãs">
       <Seg>
-        <SegBtn on>Futebol 5x5</SegBtn>
-        <SegBtn>Vôlei 6x6</SegBtn>
+        <SegBtn on>Formato principal</SegBtn>
       </Seg>
       <Row between>
-        <Txt variant="tiny">Temporada 2026-Q4</Txt>
+        <Txt variant="tiny">Temporada {progress?.season.code ?? '—'}</Txt>
         <Badge>TOP 100</Badge>
       </Row>
+      {list.length === 0 ? (
+        <EmptyState
+          title="Ranking indisponível"
+          text="O ranking aparece quando o servidor publica a temporada e os clãs têm partidas elegíveis."
+        />
+      ) : null}
       <CardList>
         {list.map((item, index) => (
           <ListRow key={`${item.position}-${item.name}`} last={index === list.length - 1}>
@@ -1069,12 +1019,18 @@ function Notifications() {
       nav.go('result-review', matchId ? { matchId } : undefined);
       return;
     }
-    if (item.kind.includes('match') || item.kind.includes('lobby')) {
-      nav.go('lobby-detail', matchId ? { matchId } : undefined);
+    if (item.kind.includes('invite')) {
+      const inviteId =
+        typeof data.invite_id === 'string'
+          ? data.invite_id
+          : typeof data.id === 'string'
+            ? data.id
+            : undefined;
+      nav.go('lobby-invite-received', inviteId ? { inviteId } : undefined);
       return;
     }
-    if (item.kind.includes('invite')) {
-      nav.go('lobby-invite-received');
+    if (item.kind.includes('match') || item.kind.includes('lobby')) {
+      nav.go('lobby-detail', matchId ? { matchId } : undefined);
       return;
     }
     if (item.kind.includes('clan')) {
@@ -1928,8 +1884,8 @@ function ClanInvite() {
       <Notice tone="blue" icon="info">
         Clã cheio não aceita convite. O convite expira e não garante vaga.
       </Notice>
-      <Btn tone="primary" toast="Convites de clã enviados no protótipo">
-        Enviar convites
+      <Btn tone="primary" disabled>
+        Convites de clã em implantação
       </Btn>
     </Page>
   );
@@ -1944,8 +1900,8 @@ function ClanFull() {
         text="30 de 30 membros. Você pode entrar na lista de interesse; se abrir vaga, o convite respeita a ordem e a permanência mínima."
         actions={
           <>
-            <Btn tone="primary" toast="Interesse registrado no protótipo">
-              Entrar na lista
+            <Btn tone="primary" disabled>
+              Lista de interesse em implantação
             </Btn>
             <Btn tone="ghost" go="clan-discovery">
               Ver outros clãs
@@ -1973,7 +1929,7 @@ export const socialScreens: ScreenDef[] = [
   { id: 'report-profile', tab: 'social', render: () => <ReportProfile /> },
   { id: 'report-message', tab: 'social', render: () => <ReportMessage /> },
   { id: 'moderation-status', tab: 'social', render: () => <ModerationStatus /> },
-  { id: 'block-user', tab: 'social', render: () => <BlockUser /> },
-  { id: 'clan-invite', tab: 'social', render: () => <ClanInvite /> },
+  { id: 'block-user', tab: 'social', hidden: true, render: () => <BlockUser /> },
+  { id: 'clan-invite', tab: 'social', hidden: true, render: () => <ClanInvite /> },
   { id: 'clan-full', tab: 'social', render: () => <ClanFull /> },
 ];

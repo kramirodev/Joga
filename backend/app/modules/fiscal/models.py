@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     Uuid,
@@ -35,9 +36,9 @@ FISCAL_DOCUMENT_STATUSES = ("pending_manual", "issued", "failed", "not_required"
 class FiscalDocument(Base):
     """Nota do estabelecimento contra o jogador, ligada a uma reserva.
 
-    ``taker_user_id`` é a referência ao jogador; o CPF não é copiado para cá
-    enquanto o perfil não tiver o campo cifrado. Quando o CPF existir, o snapshot
-    do tomador entra junto, no mesmo evento de emissão.
+    ``taker_user_id`` mantém o tomador principal (quem criou a reserva) para
+    compatibilidade com o schema original. Os tomadores efetivos de cada cota
+    ficam em :class:`FiscalDocumentTaker`; o CPF nunca é copiado em claro.
     """
 
     __tablename__ = "fiscal_documents"
@@ -75,4 +76,37 @@ class FiscalDocument(Base):
         default=utcnow,
         onupdate=utcnow,
         server_default=func.now(),
+    )
+
+
+class FiscalDocumentTaker(Base):
+    """Tomador e cota da nota, um por jogador da reserva (ADR 0049 §3.6).
+
+    O CPF é um snapshot cifrado do perfil no instante da emissão. A AAD é o
+    ``user_id``: o valor não decifra se for copiado para outro tomador.
+    """
+
+    __tablename__ = "fiscal_document_takers"
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="amount_non_negative"),
+        UniqueConstraint(
+            "fiscal_document_id",
+            "user_id",
+            name="uq_fiscal_document_takers_document_user",
+        ),
+        Index("ix_fiscal_document_takers_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    fiscal_document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("fiscal_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    cpf_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    cpf_key_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )

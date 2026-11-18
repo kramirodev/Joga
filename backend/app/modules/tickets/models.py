@@ -129,31 +129,11 @@ class TicketLedgerEntry(Base):
     )
 
 
-class TicketBalance(Base):
-    """Saldo projetado. Reconstruível a partir do ledger."""
-
-    __tablename__ = "ticket_balances"
-    __table_args__ = (CheckConstraint("balance >= 0", name="balance_non_negative"),)
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    balance: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=utcnow,
-        onupdate=utcnow,
-        server_default=func.now(),
-    )
-
-
 class TicketLot(Base):
     """Lote de ingressos com origem, saldo e validade próprios.
 
-    O saldo de ``ticket_balances`` é a soma dos lotes ativos. Lotes expirados
+    É a fonte da verdade do saldo de tickets. ``ticket_balances`` é apenas uma
+    view de compatibilidade sobre os lotes utilizáveis; lotes expirados
     permanecem para auditoria, mas não contam no saldo.
     """
 
@@ -165,11 +145,20 @@ class TicketLot(Base):
             name="remaining_valid",
         ),
         CheckConstraint(
+            "unit_price_cents IS NULL OR unit_price_cents > 0",
+            name="unit_price_positive",
+        ),
+        CheckConstraint(
             "source IN ('purchase','pass','free_level','admin','refund')",
             name="source_valid",
         ),
         Index("ix_ticket_lots_user_expiry", "user_id", "expires_at"),
         Index("ix_ticket_lots_user_source", "user_id", "source"),
+        Index("ix_ticket_lots_user_period", "user_id", "period"),
+        CheckConstraint(
+            "source <> 'pass' OR period IS NOT NULL",
+            name="pass_period_required",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -179,6 +168,11 @@ class TicketLot(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     original_amount: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Preço pago por ticket no lote. Só abertura legada e reembolso usam este
+    # valor; o consumo usa a tabela 2D (ADR 0049 §13).
+    unit_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Franquia do passe: 'YYYY-MM'. Não é validade de crédito comprado.
+    period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ref_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ref_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
@@ -195,7 +189,11 @@ class TicketLotConsumption(Base):
 
     __tablename__ = "ticket_lot_consumptions"
     __table_args__ = (
-        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("amount >= 0", name="amount_non_negative"),
+        CheckConstraint(
+            "amount_cents IS NULL OR amount_cents > 0",
+            name="amount_cents_positive",
+        ),
         UniqueConstraint("lot_id", "ref_type", "ref_id", name="uq_ticket_lot_consumption_ref"),
         Index("ix_ticket_lot_consumptions_user_ref", "user_id", "ref_type", "ref_id"),
     )
@@ -208,6 +206,8 @@ class TicketLotConsumption(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Valor exato consumido no lote, em centavos (ADR 0049 §11.6).
+    amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ref_type: Mapped[str] = mapped_column(String(20), nullable=False)
     ref_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     ledger_entry_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -216,3 +216,9 @@ class TicketLotConsumption(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
+
+    @property
+    def tickets(self) -> int:
+        """Contagem de exibição; `amount` é o nome legado da coluna."""
+
+        return self.amount

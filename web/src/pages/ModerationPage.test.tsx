@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -48,6 +48,7 @@ function stubApi(
     reports?: ModerationReport[];
     appeals?: ModerationAppeal[];
     details?: Record<string, ModerationReport>;
+    queueError?: boolean;
   } = {},
 ) {
   const reports = options.reports ?? [report];
@@ -64,6 +65,12 @@ function stubApi(
         : jsonResponse({ detail: { code: "moderator_required" } }, 403);
     }
     if (url.includes("/moderation/queue")) {
+      if (options.queueError) {
+        return new Response(JSON.stringify({ detail: { code: "request_failed" } }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", "X-Request-ID": "req-queue-1" },
+        });
+      }
       return jsonResponse({
         reports,
         stats: { open: 1, in_review: 0, appealed: 0, high_priority: 1 },
@@ -104,6 +111,7 @@ function renderPage(entry = "/moderation") {
               user: { id: "user-admin", status: "active" },
               capabilities: ["moderation.read", "moderation.manage"],
               loading: false,
+              sessionExpired: false,
               signIn: vi.fn(),
               signOut: vi.fn(),
             }}
@@ -139,6 +147,50 @@ describe("ModerationPage — fila interna", () => {
     await user.click(screen.getByRole("button", { name: "Registrar decisão" }));
 
     expect(await screen.findByText("Denúncia decidida: Resolvida.")).toBeInTheDocument();
+  });
+
+  it("mostra erro da fila com referência de suporte", async () => {
+    stubApi("ADMIN", { queueError: true });
+    renderPage();
+
+    expect(
+      await screen.findByText(/O servidor encontrou um erro ao processar a operação/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("req-queue-1")).toBeInTheDocument();
+    expect(screen.queryByText("Fila vazia")).not.toBeInTheDocument();
+  });
+
+  it("filtra a fila por Em revisão", async () => {
+    const fetchMock = stubApi("ADMIN");
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Ofensas repetidas no chat");
+    await user.click(screen.getByRole("button", { name: "Em revisão" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes("status_filter=IN_REVIEW")),
+      ).toBe(true),
+    );
+  });
+
+  it("pagina a fila com limit e offset", async () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      ...report,
+      id: `report-${index}`,
+      description: `Denúncia ${index}`,
+    }));
+    const fetchMock = stubApi("ADMIN", { reports: many });
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Denúncia 0");
+    await user.click(screen.getByRole("button", { name: "Próxima" }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("offset=30"))).toBe(true),
+    );
   });
 
   it("abre a denúncia indicada por report na URL", async () => {

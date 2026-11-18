@@ -12,11 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.ledger.opening import open_ledger
 from app.modules.tickets.models import TicketLedgerEntry, TicketLot
 from app.modules.tickets.service import (
     InsufficientTickets,
     TicketConflict,
     consume,
+    current_period,
     expire_due,
     get_balance,
     grant,
@@ -41,6 +43,7 @@ def test_grant_and_consume(db_session: Session) -> None:
     user_id = make_user(db_session)
 
     assert grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:1") == 10
+    open_ledger(db_session, dry_run=False)
     booking_id = uuid.uuid4()
     assert consume(db_session, user_id, 6, ref_type="booking", ref_id=booking_id) == 4
     assert get_balance(db_session, user_id) == 4
@@ -49,6 +52,7 @@ def test_grant_and_consume(db_session: Session) -> None:
 def test_insufficient_balance_does_not_debit(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(db_session, user_id, 3, source="purchase", idempotency_key="purchase:2")
+    open_ledger(db_session, dry_run=False)
 
     with pytest.raises(InsufficientTickets):
         consume(db_session, user_id, 6, ref_type="booking", ref_id=uuid.uuid4())
@@ -59,6 +63,7 @@ def test_insufficient_balance_does_not_debit(db_session: Session) -> None:
 def test_consumption_is_idempotent(db_session: Session) -> None:
     user_id = make_user(db_session)
     grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:3")
+    open_ledger(db_session, dry_run=False)
     booking_id = uuid.uuid4()
 
     assert consume(db_session, user_id, 6, ref_type="booking", ref_id=booking_id) == 4
@@ -86,7 +91,6 @@ def test_reusing_key_with_other_effect_is_rejected(db_session: Session) -> None:
 
 def test_consumption_uses_pass_before_purchase(db_session: Session) -> None:
     user_id = make_user(db_session)
-    future = datetime.now(UTC) + timedelta(days=30)
     grant(db_session, user_id, 10, source="purchase", idempotency_key="purchase:order")
     grant(
         db_session,
@@ -94,7 +98,7 @@ def test_consumption_uses_pass_before_purchase(db_session: Session) -> None:
         5,
         source="pass",
         idempotency_key="pass:month",
-        expires_at=future,
+        period=current_period(datetime.now(UTC)),
     )
 
     assert consume(db_session, user_id, 6, ref_type="booking", ref_id=uuid.uuid4()) == 9
@@ -108,16 +112,17 @@ def test_consumption_uses_pass_before_purchase(db_session: Session) -> None:
 
 def test_expired_lot_does_not_count_in_the_balance(db_session: Session) -> None:
     user_id = make_user(db_session)
-    past = datetime.now(UTC) - timedelta(minutes=1)
     grant(
         db_session,
         user_id,
         5,
         source="pass",
         idempotency_key="pass:expired",
-        expires_at=past,
+        period="2000-01",
     )
-    assert get_balance(db_session, user_id) == 5
+    assert get_balance(db_session, user_id) == 0
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None and lot.remaining == 5
 
     assert expire_due(db_session) == 1
     assert get_balance(db_session, user_id) == 0
@@ -133,6 +138,21 @@ def test_expired_lot_does_not_count_in_the_balance(db_session: Session) -> None:
         consume(db_session, user_id, 1, ref_type="booking", ref_id=uuid.uuid4())
 
 
+def test_purchased_credit_never_expires(db_session: Session) -> None:
+    user_id = make_user(db_session)
+    grant(db_session, user_id, 7, source="purchase", idempotency_key="purchase:never")
+    open_ledger(db_session, dry_run=False)
+    lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
+    assert lot is not None and lot.expires_at is None
+    # Mesmo que algo antigo tenha gravado uma validade, o crédito comprado
+    # não é expirado pelo job (ADR 0049 §2.5).
+    lot.expires_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.flush()
+
+    assert expire_due(db_session) == 0
+    assert get_balance(db_session, user_id) == 7
+
+
 def test_refund_restores_the_active_lot(db_session: Session) -> None:
     user_id = make_user(db_session)
     booking_id = uuid.uuid4()
@@ -142,7 +162,7 @@ def test_refund_restores_the_active_lot(db_session: Session) -> None:
         5,
         source="pass",
         idempotency_key="pass:active",
-        expires_at=datetime.now(UTC) + timedelta(days=20),
+        period=current_period(datetime.now(UTC)),
     )
     consume(db_session, user_id, 5, ref_type="booking", ref_id=booking_id)
 
@@ -160,12 +180,12 @@ def test_refund_does_not_convert_expired_pass_into_purchase(db_session: Session)
         3,
         source="pass",
         idempotency_key="pass:will_expire",
-        expires_at=datetime.now(UTC) + timedelta(days=1),
+        period=current_period(datetime.now(UTC)),
     )
     consume(db_session, user_id, 3, ref_type="booking", ref_id=booking_id)
     lot = db_session.scalar(select(TicketLot).where(TicketLot.user_id == user_id))
     assert lot is not None
-    lot.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    lot.period = "2000-01"
     db_session.flush()
 
     assert refund(db_session, user_id, 3, ref_type="booking_cancel", ref_id=booking_id) == 0
@@ -179,6 +199,7 @@ def test_wallet_endpoint_returns_balance_and_entries(
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)
     grant(db_session, user_id, 10, source="purchase", idempotency_key=f"purchase:{user_id}")
+    open_ledger(db_session, dry_run=False)
     consume(db_session, user_id, 4, ref_type="booking", ref_id=uuid.uuid4())
     db_session.commit()
 
@@ -198,6 +219,7 @@ def test_wallet_is_scoped_to_the_user(client: TestClient, db_session: Session) -
     owner_id = make_user(db_session)
     owner_token = make_token(db_session, owner_id)
     grant(db_session, owner_id, 9, source="purchase", idempotency_key=f"purchase:{owner_id}")
+    open_ledger(db_session, dry_run=False)
     db_session.commit()
 
     other_id = make_user(db_session)

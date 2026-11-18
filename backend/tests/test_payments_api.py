@@ -17,6 +17,7 @@ from app.modules.payments.adapter import ProviderStatus, PspUnavailable
 from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import PspWebhookEvent
 from app.modules.payments.service import PaymentService
+from tests.compliance_helpers import cpf_key_kwargs
 
 
 def api_client(client: TestClient, db_session: Session, settings: Settings) -> TestClient:
@@ -171,6 +172,7 @@ def test_webhook_requires_signature_outside_local(client: TestClient, db_session
         mercado_pago_access_token=SecretStr("mp-access-token"),
         mercado_pago_webhook_secret=SecretStr("segredo"),
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     )
     api = api_client(client, db_session, settings)
     response = api.post(

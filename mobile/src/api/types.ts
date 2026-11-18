@@ -4,6 +4,20 @@ export type Challenge = {
   resend_after_seconds: number;
 };
 
+export type EmailVerification = {
+  challenge_id: string;
+  purpose: string;
+  verified_at: string;
+  receipt_expires_at: string;
+};
+
+export type EmailCredential = {
+  email: string;
+  is_primary: boolean;
+  verified_at: string | null;
+  created_at: string;
+};
+
 export type Tokens = {
   access_token: string;
   refresh_token: string;
@@ -291,6 +305,7 @@ export type Mission = {
 
 export type Wallet = {
   balance: number;
+  source: string;
   lots: TicketLot[];
   entries: {
     id: string;
@@ -307,6 +322,7 @@ export type TicketLot = {
   source: string;
   original_amount: number;
   remaining: number;
+  period: string | null;
   expires_at: string | null;
   ref_type: string | null;
   ref_id: string | null;
@@ -323,6 +339,9 @@ export type TicketPack = {
 export type PurchasePayment = {
   provider: string | null;
   provider_status: string | null;
+  status_detail: string | null;
+  external_reference: string | null;
+  amount_cents: number | null;
   qr_code: string | null;
   qr_code_base64: string | null;
   ticket_url: string | null;
@@ -422,15 +441,30 @@ export type BookingParticipant = {
   seat: number;
   active: boolean;
   contribution_cents: number;
+  space_charge_cents: number;
+  fee_charge_cents: number;
+  funding_source: string | null;
   payment_status: string;
   settled_with: string | null;
-  tickets_consumed: number | null;
+  tickets_consumed: number;
   confirmed_at: string | null;
   declined_at: string | null;
   replaced_by_user_id: string | null;
   presence_status: string;
   presence_method: string | null;
   presence_confirmed_at: string | null;
+};
+
+export type Presence = {
+  user_id: string;
+  seat: number;
+  active: boolean;
+  pre_checked_in_at: string | null;
+  status: string;
+  method: string | null;
+  confirmed_at: string | null;
+  distance_m: number | null;
+  accuracy_m: number | null;
 };
 
 export type BookingTimer = {
@@ -451,6 +485,8 @@ export type BookingPayment = {
   provider_order_id: string | null;
   provider_payment_id: string | null;
   provider_status: string | null;
+  status_detail: string | null;
+  external_reference: string | null;
   qr_code: string | null;
   qr_code_base64: string | null;
   ticket_url: string | null;
@@ -476,6 +512,11 @@ export type Booking = {
   starts_at: string;
   ends_at: string;
   price_cents: number;
+  venue_price_cents: number;
+  fee_cents: number;
+  fee_percent_applied: number;
+  total_cents: number;
+  pricing_version: string;
   currency: string;
   seats: number;
   policy_version: string;
@@ -494,6 +535,7 @@ export type Booking = {
   cancellation_reason: string | null;
   created_at: string;
   updated_at: string;
+  timezone: string | null;
   participants: BookingParticipant[];
   timers: BookingTimer[];
   hold: {
@@ -654,4 +696,32 @@ export type Passkey = {
   name: string | null;
   created_at: string;
   last_used_at: string | null;
+};
+
+export type PasskeyOptions = {
+  challenge_id: string;
+  public_key: Record<string, unknown>;
+  expires_at: string;
+};
+
+export type CpfStatus = {
+  cpf_present: boolean;
+  cpf_masked: string | null;
+};
+
+export type TermsVersion = {
+  id: string;
+  version: string;
+  content: string;
+  published_at: string;
+  terms_hash: string;
+};
+
+export type TermsAcceptance = {
+  id: string;
+  terms_version_id: string;
+  version: string;
+  context: string;
+  accepted_at: string;
+  terms_hash: string;
 };

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { EmptyState, ErrorNotice, InfoNotice, SkeletonList } from "../../components/Feedback";
 import { SelectField, TextareaField, TextField } from "../../components/ui/Field";
@@ -30,7 +30,8 @@ import {
   pixKeyError,
   type PixKeyType,
 } from "../../lib/validation";
-import type { Organization, Receivable } from "../../types";
+import type { CommissionResponse, Organization, Receivable } from "../../types";
+import { BookingFinancialDialog } from "./BookingFinancialDialog";
 
 const PIX_TYPE_LABELS: Record<PixKeyType, string> = {
   cnpj: "CNPJ",
@@ -48,12 +49,73 @@ const PIX_PLACEHOLDERS: Record<PixKeyType, string> = {
 
 const PAGE_SIZE = 50;
 
+const RECEIVABLE_STATUS: Array<{ value: string | null; label: string }> = [
+  { value: null, label: "Todos" },
+  { value: "PENDING", label: "Pendentes" },
+  { value: "RELEASED", label: "Repassados" },
+  { value: "FAILED", label: "Falharam" },
+  { value: "REVERSED", label: "Revertidos" },
+];
+
+const DISPUTE_STATUS: Array<{ value: string | null; label: string }> = [
+  { value: null, label: "Todas" },
+  { value: "OPEN", label: "Em análise" },
+  { value: "ACCEPTED", label: "Procedentes" },
+  { value: "REJECTED", label: "Improcedentes" },
+  { value: "WITHDRAWN", label: "Retiradas" },
+];
+
+function dayBoundary(value: string, endOfDay: boolean): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00"}`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function feePercentLabel(basisPoints: number): string {
+  return `${(basisPoints / 100).toFixed(2).replace(".", ",")}%`;
+}
+
+function receiptLabel(reference: string): string {
+  if (reference.startsWith("simulated:")) return `${reference} (comprovante simulado)`;
+  if (reference.startsWith("bank:")) return `${reference} (comprovante bancário)`;
+  return reference;
+}
+
+function deadlinePassed(value: string): boolean {
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now();
+}
+
+function Composition({
+  venuePriceCents,
+  feeCents,
+  totalCents,
+}: {
+  venuePriceCents: number | null;
+  feeCents: number | null;
+  totalCents: number | null;
+}) {
+  if (venuePriceCents === null || feeCents === null || totalCents === null) return null;
+  return (
+    <p className="financial-composition">
+      Espaço <strong>{formatMoney(venuePriceCents)}</strong> + JOGA{" "}
+      <strong>{formatMoney(feeCents)}</strong> = <strong>{formatMoney(totalCents)}</strong>
+    </p>
+  );
+}
+
 export function FinancialPanel({ organization }: { organization: Organization }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [receivableStatus, setReceivableStatus] = useState<string | null>(null);
   const [receivableOffset, setReceivableOffset] = useState(0);
   const [statementOffset, setStatementOffset] = useState(0);
+  const [disputeStatus, setDisputeStatus] = useState<string | null>(null);
   const [disputeOffset, setDisputeOffset] = useState(0);
+  const [commissionFrom, setCommissionFrom] = useState("");
+  const [commissionTo, setCommissionTo] = useState("");
+  const [commissionOffset, setCommissionOffset] = useState(0);
+  const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
 
   const [cnpjInput, setCnpjInput] = useState("");
   const [keyType, setKeyType] = useState<PixKeyType>("cnpj");
@@ -69,14 +131,26 @@ export function FinancialPanel({ organization }: { organization: Organization })
   const [disputeActionError, setDisputeActionError] = useState<unknown>(null);
 
   const canManage = organization.role === "OWNER" || organization.role === "ADMIN";
+  const commissionFromIso = useMemo(() => dayBoundary(commissionFrom, false), [commissionFrom]);
+  const commissionToIso = useMemo(() => dayBoundary(commissionTo, true), [commissionTo]);
 
   const summaryQuery = useQuery({
     queryKey: queryKeys.financialSummary(organization.id),
     queryFn: () => api.getOrganizationFinancialSummary(organization.id),
   });
   const receivablesQuery = useQuery({
-    queryKey: [...queryKeys.receivables(organization.id), PAGE_SIZE, receivableOffset],
-    queryFn: () => api.listReceivables(organization.id, PAGE_SIZE, receivableOffset),
+    queryKey: [
+      ...queryKeys.receivables(organization.id),
+      receivableStatus,
+      PAGE_SIZE,
+      receivableOffset,
+    ],
+    queryFn: () =>
+      api.listReceivables(organization.id, {
+        status: receivableStatus,
+        limit: PAGE_SIZE,
+        offset: receivableOffset,
+      }),
     placeholderData: keepPreviousData,
   });
   const statementQuery = useQuery({
@@ -84,9 +158,28 @@ export function FinancialPanel({ organization }: { organization: Organization })
     queryFn: () => api.getFinancialStatement(organization.id, PAGE_SIZE, statementOffset),
     placeholderData: keepPreviousData,
   });
+  const commissionQuery = useQuery<CommissionResponse>({
+    queryKey: [
+      ...queryKeys.commission(organization.id, commissionFromIso, commissionToIso),
+      commissionOffset,
+    ],
+    queryFn: () =>
+      api.getFinancialCommission(organization.id, {
+        from: commissionFromIso,
+        to: commissionToIso,
+        limit: PAGE_SIZE,
+        offset: commissionOffset,
+      }),
+    placeholderData: keepPreviousData,
+  });
   const disputesQuery = useQuery({
-    queryKey: [...queryKeys.disputes(organization.id), PAGE_SIZE, disputeOffset],
-    queryFn: () => api.listFinancialDisputes(organization.id, PAGE_SIZE, disputeOffset),
+    queryKey: [...queryKeys.disputes(organization.id), disputeStatus, PAGE_SIZE, disputeOffset],
+    queryFn: () =>
+      api.listFinancialDisputes(organization.id, {
+        status: disputeStatus,
+        limit: PAGE_SIZE,
+        offset: disputeOffset,
+      }),
     placeholderData: keepPreviousData,
   });
 
@@ -95,14 +188,20 @@ export function FinancialPanel({ organization }: { organization: Organization })
   const receivablesTotal = receivablesQuery.data?.total ?? 0;
   const statement = statementQuery.data?.entries ?? [];
   const statementTotal = statementQuery.data?.total ?? 0;
+  const commission = commissionQuery.data;
   const disputes = disputesQuery.data?.disputes ?? [];
   const disputesTotal = disputesQuery.data?.total ?? 0;
   const error =
-    summaryQuery.error ?? receivablesQuery.error ?? statementQuery.error ?? disputesQuery.error;
+    summaryQuery.error ??
+    receivablesQuery.error ??
+    statementQuery.error ??
+    commissionQuery.error ??
+    disputesQuery.error;
   const loading =
     summaryQuery.isPending ||
     receivablesQuery.isPending ||
     statementQuery.isPending ||
+    commissionQuery.isPending ||
     disputesQuery.isPending;
 
   const invalidateFinancial = async () => {
@@ -110,6 +209,9 @@ export function FinancialPanel({ organization }: { organization: Organization })
       queryClient.invalidateQueries({ queryKey: queryKeys.financialSummary(organization.id) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.receivables(organization.id) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.statement(organization.id) }),
+      queryClient.invalidateQueries({
+        queryKey: ["organizations", organization.id, "financial-commission"],
+      }),
       queryClient.invalidateQueries({ queryKey: queryKeys.disputes(organization.id) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.audit(organization.id) }),
     ]);
@@ -150,7 +252,7 @@ export function FinancialPanel({ organization }: { organization: Organization })
       setDisputeActionError(null);
       toast.push({
         title: "Contestação registrada",
-        description: "O repasse desta reserva fica suspenso até a análise.",
+        description: "O repasse desta reserva fica suspenso até a análise da equipe JOGA.",
       });
       await invalidateFinancial();
     },
@@ -219,17 +321,20 @@ export function FinancialPanel({ organization }: { organization: Organization })
       <div className="card">
         <SectionHeading
           title="Financeiro"
-          description="Extrato, repasses e contestações das reservas originadas no JOGA."
+          description="Repasses ao fornecedor, comissão do JOGA e extrato das reservas."
         />
         <InfoNotice>
           <p>
-            Cobranças e reembolsos são processados pelo <strong>Mercado Pago</strong>. O repasse ao
-            estabelecimento é registrado em <strong>ledger interno</strong> e liquidado manualmente
-            pela equipe JOGA — não há split automático nem crédito imediato na conta.
+            O ledger controla a substância financeira em reais. O ticket é a unidade de exibição e
+            consumo (R$ 3,10); o valor jurídico é o valor do espaço mais a taxa.
           </p>
           <p>
-            Prazos e valores exibidos são referência operacional. O repasse só é liberado com CNPJ e
-            chave Pix de titularidade do estabelecimento ativos.
+            O valor do espaço pertence ao fornecedor e nunca é receita do JOGA. A receita do JOGA é
+            a comissão de intermediação. Não há split nem transferência real nesta fase.
+          </p>
+          <p>
+            O repasse fica elegível em <strong>início da reserva + 2 h</strong>. Uma contestação
+            aberta suspende o repasse. A decisão é auditada pela equipe JOGA.
           </p>
         </InfoNotice>
 
@@ -241,6 +346,7 @@ export function FinancialPanel({ organization }: { organization: Organization })
               void summaryQuery.refetch();
               void receivablesQuery.refetch();
               void statementQuery.refetch();
+              void commissionQuery.refetch();
               void disputesQuery.refetch();
             }}
           />
@@ -381,51 +487,100 @@ export function FinancialPanel({ organization }: { organization: Organization })
       <div className="card">
         <SectionHeading
           title="Resumo financeiro"
-          description="Valores calculados pelo servidor a partir do ledger interno."
+          description="Valores calculados pelo servidor a partir do ledger em reais."
         />
         {loading && !summary ? (
           <SkeletonList rows={1} label="Carregando resumo financeiro..." />
         ) : summary ? (
-          <div className="financial-summary">
-            <div>
-              <span>Cobrado</span>
-              <strong>{formatMoney(summary.charged_cents)}</strong>
+          <>
+            <div className="financial-summary">
+              <div>
+                <span>Comissão do JOGA</span>
+                <strong>{formatMoney(summary.joga_fee_cents)}</strong>
+                <small>Receita de intermediação</small>
+              </div>
+              <div>
+                <span>Valor do fornecedor</span>
+                <strong>{formatMoney(summary.venue_price_cents)}</strong>
+                <small>Não é receita do JOGA</small>
+              </div>
+              <div>
+                <span>Cobrança total</span>
+                <strong>{formatMoney(summary.charged_cents)}</strong>
+                <small>Espaço + JOGA; não é receita</small>
+              </div>
+              <div>
+                <span>Pago</span>
+                <strong>{formatMoney(summary.paid_cents)}</strong>
+              </div>
+              <div>
+                <span>Reembolsado</span>
+                <strong>{formatMoney(summary.refunded_cents)}</strong>
+              </div>
+              <div>
+                <span>Repasse pendente</span>
+                <strong>{formatMoney(summary.pending_release_cents)}</strong>
+              </div>
+              <div>
+                <span>Repassado</span>
+                <strong>{formatMoney(summary.released_cents)}</strong>
+              </div>
+              <div>
+                <span>Revertido após reembolso</span>
+                <strong>{formatMoney(summary.reversed_cents)}</strong>
+              </div>
+              <div>
+                <span>Repasse com falha</span>
+                <strong>{formatMoney(summary.failed_cents)}</strong>
+              </div>
+              <div>
+                <span>Em contestação</span>
+                <strong>{formatMoney(summary.disputed_cents)}</strong>
+              </div>
+              <div>
+                <span>Pagamento pendente</span>
+                <strong>{formatMoney(summary.pending_cents)}</strong>
+              </div>
             </div>
-            <div>
-              <span>Pago</span>
-              <strong>{formatMoney(summary.paid_cents)}</strong>
-            </div>
-            <div>
-              <span>A repassar</span>
-              <strong>{formatMoney(summary.pending_release_cents)}</strong>
-            </div>
-            <div>
-              <span>Repassado</span>
-              <strong>{formatMoney(summary.released_cents)}</strong>
-            </div>
-            <div>
-              <span>Em contestação</span>
-              <strong>{formatMoney(summary.disputed_cents)}</strong>
-            </div>
-            <div>
-              <span>Reembolsado</span>
-              <strong>{formatMoney(summary.refunded_cents)}</strong>
-            </div>
-            <div>
-              <span>Pendente</span>
-              <strong>{formatMoney(summary.pending_cents)}</strong>
-            </div>
-          </div>
+            <p className="hint">
+              Cobrança total é o valor cobrado do jogador, não a receita do JOGA. A comissão do JOGA
+              é o campo separado acima.
+            </p>
+          </>
         ) : null}
       </div>
 
       <div className="card">
         <SectionHeading
-          title="Repasses a receber"
-          description="Valores liberáveis das reservas concluídas. A liquidação é manual, feita pela equipe JOGA sobre o ledger interno."
+          title="Repasses ao fornecedor"
+          description="O valor exibido é devido ao estabelecimento. A liquidação é simulada no ledger; não há transferência real."
         />
+        <div className="segmented segmented--wrap" role="group" aria-label="Filtrar repasses">
+          {RECEIVABLE_STATUS.map((option) => (
+            <button
+              key={option.value ?? "all"}
+              type="button"
+              className={
+                receivableStatus === option.value ? "segmented__item is-active" : "segmented__item"
+              }
+              aria-pressed={receivableStatus === option.value}
+              onClick={() => {
+                setReceivableStatus(option.value);
+                setReceivableOffset(0);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         {receivablesQuery.isPending ? (
           <SkeletonList rows={2} label="Carregando repasses..." />
+        ) : receivablesQuery.error ? (
+          <ErrorNotice
+            message={formatError(receivablesQuery.error)}
+            requestId={requestIdOf(receivablesQuery.error)}
+            onRetry={() => void receivablesQuery.refetch()}
+          />
         ) : receivables.length === 0 ? (
           <EmptyState title="Nenhum repasse">
             Reservas concluídas aparecem aqui quando houver valor liberável.
@@ -440,26 +595,41 @@ export function FinancialPanel({ organization }: { organization: Organization })
                       className={
                         item.status === "RELEASED"
                           ? "badge badge--success"
-                          : item.has_open_dispute
-                            ? "badge badge--warning"
-                            : "badge badge--muted"
+                          : item.status === "FAILED" || item.status === "REVERSED"
+                            ? "badge badge--danger"
+                            : item.has_open_dispute
+                              ? "badge badge--warning"
+                              : "badge badge--muted"
                       }
                     >
                       {releaseStatusLabel(item.status)}
                     </span>
                     <h3>{formatDateRange(item.starts_at, item.ends_at)}</h3>
                     <p className="muted">
-                      Reserva <span className="mono">#{shortId(item.booking_id)}</span> · liberação
-                      prevista em {formatDate(item.eligible_at)}
+                      Reserva <span className="mono">#{shortId(item.booking_id)}</span> · repasse
+                      elegível em {formatDate(item.eligible_at)}
                     </p>
+                    <p className="hint">Contestação até {formatDate(item.dispute_deadline)}.</p>
+                    <Composition
+                      venuePriceCents={item.venue_price_cents}
+                      feeCents={item.fee_cents}
+                      totalCents={item.total_cents}
+                    />
                   </div>
                   <div className="booking-card__price">
+                    <span>Valor do fornecedor</span>
                     <strong>{formatMoney(item.amount_cents)}</strong>
                   </div>
                 </div>
                 {item.released_at ? (
                   <p className="hint">
-                    Liberação registrada no ledger em {formatDate(item.released_at)}.
+                    Repasse registrado no ledger em {formatDate(item.released_at)}.
+                  </p>
+                ) : null}
+                {item.receipt_reference ? (
+                  <p className="hint">
+                    Comprovante:{" "}
+                    <span className="mono">{receiptLabel(item.receipt_reference)}</span>
                   </p>
                 ) : null}
                 {item.has_open_dispute ? (
@@ -467,17 +637,29 @@ export function FinancialPanel({ organization }: { organization: Organization })
                     Contestação em análise — o repasse fica suspenso até a decisão.
                   </p>
                 ) : null}
-                {canManage && item.status === "PENDING" && !item.has_open_dispute ? (
-                  <div className="booking-card__actions">
-                    <button
-                      type="button"
-                      className="button button--small button--danger"
-                      onClick={() => openDispute(item)}
-                    >
-                      Contestar repasse
-                    </button>
-                  </div>
-                ) : null}
+                {item.reason ? <p className="hint">Motivo: {item.reason}</p> : null}
+                <div className="booking-card__actions">
+                  <button
+                    type="button"
+                    className="button button--small button--ghost"
+                    onClick={() => setDetailBookingId(item.booking_id)}
+                  >
+                    Ver detalhe financeiro
+                  </button>
+                  {canManage && item.status === "PENDING" && !item.has_open_dispute ? (
+                    deadlinePassed(item.dispute_deadline) ? (
+                      <span className="hint">Prazo de contestação encerrado.</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button button--small button--danger"
+                        onClick={() => openDispute(item)}
+                      >
+                        Contestar repasse
+                      </button>
+                    )
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -493,14 +675,189 @@ export function FinancialPanel({ organization }: { organization: Organization })
 
       <div className="card">
         <SectionHeading
-          title="Contestações"
-          description="Contestações abertas pelo estabelecimento e a decisão registrada."
+          title="Comissão do JOGA"
+          description="Relatório por reserva confirmada. O valor do fornecedor e a comissão aparecem separados."
         />
+        <div className="form-row form-row--three">
+          <TextField
+            id="commission-from"
+            label="De"
+            type="date"
+            value={commissionFrom}
+            onChange={(event) => {
+              setCommissionFrom(event.target.value);
+              setCommissionOffset(0);
+            }}
+          />
+          <TextField
+            id="commission-to"
+            label="Até"
+            type="date"
+            value={commissionTo}
+            onChange={(event) => {
+              setCommissionTo(event.target.value);
+              setCommissionOffset(0);
+            }}
+          />
+          <div className="field">
+            <span className="field__label" aria-hidden="true">
+              &nbsp;
+            </span>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => {
+                setCommissionFrom("");
+                setCommissionTo("");
+                setCommissionOffset(0);
+              }}
+              disabled={!commissionFrom && !commissionTo}
+            >
+              Limpar período
+            </button>
+          </div>
+        </div>
+        {commissionQuery.isPending ? (
+          <SkeletonList rows={2} label="Carregando comissão..." />
+        ) : commissionQuery.error ? (
+          <ErrorNotice
+            message={formatError(commissionQuery.error)}
+            requestId={requestIdOf(commissionQuery.error)}
+            onRetry={() => void commissionQuery.refetch()}
+          />
+        ) : commission ? (
+          <>
+            <div className="financial-summary">
+              <div>
+                <span>Reservas confirmadas</span>
+                <strong>{commission.totals.bookings}</strong>
+              </div>
+              <div>
+                <span>Comissão do JOGA</span>
+                <strong>{formatMoney(commission.totals.joga_fee_cents)}</strong>
+                <small>Receita de intermediação</small>
+              </div>
+              <div>
+                <span>Valor do fornecedor</span>
+                <strong>{formatMoney(commission.totals.venue_price_cents)}</strong>
+                <small>Não é receita do JOGA</small>
+              </div>
+              <div>
+                <span>Total das reservas</span>
+                <strong>{formatMoney(commission.totals.total_cents)}</strong>
+              </div>
+            </div>
+            {commission.rows.length === 0 ? (
+              <EmptyState title="Nenhuma reserva no período">
+                Ajuste as datas para consultar a comissão confirmada.
+              </EmptyState>
+            ) : (
+              <ul className="booking-list">
+                {commission.rows.map((row) => (
+                  <li key={row.booking_id} className="booking-card booking-card--compact">
+                    <div className="booking-card__top">
+                      <div>
+                        <h3>{formatDate(row.starts_at)}</h3>
+                        <p className="muted">
+                          Confirmada em {formatDate(row.confirmed_at)}
+                          {row.release_status
+                            ? ` · repasse: ${releaseStatusLabel(row.release_status)}`
+                            : ""}
+                        </p>
+                        <Composition
+                          venuePriceCents={row.venue_price_cents}
+                          feeCents={row.fee_cents}
+                          totalCents={row.total_cents}
+                        />
+                        <p className="hint">
+                          Relação JOGA / espaço:{" "}
+                          {row.venue_price_cents > 0
+                            ? feePercentLabel(
+                                Math.round((row.fee_cents / row.venue_price_cents) * 10000),
+                              )
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="booking-card__price">
+                        <span>Comissão do JOGA</span>
+                        <strong>{formatMoney(row.fee_cents)}</strong>
+                      </div>
+                    </div>
+                    <div className="booking-card__actions">
+                      <button
+                        type="button"
+                        className="button button--small button--ghost"
+                        onClick={() => setDetailBookingId(row.booking_id)}
+                      >
+                        Ver detalhe financeiro
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="pagination">
+              <span className="pagination__info">
+                Página {Math.floor(commissionOffset / PAGE_SIZE) + 1}
+                {commission.rows.length < PAGE_SIZE ? " · fim do período" : ""}
+              </span>
+              <div className="pagination__actions">
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  onClick={() => setCommissionOffset(Math.max(0, commissionOffset - PAGE_SIZE))}
+                  disabled={commissionOffset === 0 || commissionQuery.isFetching}
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  onClick={() => setCommissionOffset(commissionOffset + PAGE_SIZE)}
+                  disabled={commission.rows.length < PAGE_SIZE || commissionQuery.isFetching}
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className="card">
+        <SectionHeading
+          title="Contestações"
+          description="Canal do estabelecimento. A decisão é da equipe JOGA e fica registrada com justificativa."
+        />
+        <div className="segmented segmented--wrap" role="group" aria-label="Filtrar contestações">
+          {DISPUTE_STATUS.map((option) => (
+            <button
+              key={option.value ?? "all"}
+              type="button"
+              className={
+                disputeStatus === option.value ? "segmented__item is-active" : "segmented__item"
+              }
+              aria-pressed={disputeStatus === option.value}
+              onClick={() => {
+                setDisputeStatus(option.value);
+                setDisputeOffset(0);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         {disputesQuery.isPending ? (
           <SkeletonList rows={2} label="Carregando contestações..." />
+        ) : disputesQuery.error ? (
+          <ErrorNotice
+            message={formatError(disputesQuery.error)}
+            requestId={requestIdOf(disputesQuery.error)}
+            onRetry={() => void disputesQuery.refetch()}
+          />
         ) : disputes.length === 0 ? (
           <EmptyState title="Nenhuma contestação">
-            Contestações abertas pelo estabelecimento aparecem aqui com o histórico da decisão.
+            Contestações abertas pelo estabelecimento aparecem aqui com prazo e decisão.
           </EmptyState>
         ) : (
           <ul className="booking-list">
@@ -522,7 +879,7 @@ export function FinancialPanel({ organization }: { organization: Organization })
                     <h3>{formatMoney(item.amount_cents)}</h3>
                     <p className="muted">
                       Reserva <span className="mono">#{shortId(item.booking_id)}</span> · aberta em{" "}
-                      {formatDate(item.created_at)}
+                      {formatDate(item.created_at)} · prazo {formatDate(item.deadline_at)}
                     </p>
                   </div>
                 </div>
@@ -534,9 +891,17 @@ export function FinancialPanel({ organization }: { organization: Organization })
                     <strong>Evidência:</strong> {item.evidence}
                   </p>
                 ) : null}
-                {item.decision_reason ? (
+                {item.decided_at ? (
                   <p className="hint">
-                    <strong>Decisão:</strong> {item.decision_reason}
+                    <strong>Decisão:</strong> {disputeStatusLabel(item.status)} em{" "}
+                    {formatDate(item.decided_at)}
+                    {item.decided_by ? (
+                      <>
+                        {" "}
+                        por <span className="mono">#{shortId(item.decided_by)}</span>
+                      </>
+                    ) : null}
+                    {item.decision_reason ? ` — ${item.decision_reason}` : ""}
                   </p>
                 ) : null}
               </li>
@@ -554,14 +919,20 @@ export function FinancialPanel({ organization }: { organization: Organization })
 
       <div className="card">
         <SectionHeading
-          title="Extrato"
-          description="Cobranças, pagamentos, reembolsos e repasses registrados no ledger interno."
+          title="Extrato do fornecedor"
+          description="Lançamentos que afetam a conta da quadra. A comissão do JOGA não é linha deste extrato."
         />
         {statementQuery.isPending ? (
           <SkeletonList rows={2} label="Carregando extrato..." />
+        ) : statementQuery.error ? (
+          <ErrorNotice
+            message={formatError(statementQuery.error)}
+            requestId={requestIdOf(statementQuery.error)}
+            onRetry={() => void statementQuery.refetch()}
+          />
         ) : statement.length === 0 ? (
           <EmptyState title="Extrato vazio">
-            Cobranças, pagamentos, reembolsos e repasses aparecem aqui.
+            Pagamentos, reembolsos e repasses aparecem aqui.
           </EmptyState>
         ) : (
           <ul className="booking-list">
@@ -583,10 +954,29 @@ export function FinancialPanel({ organization }: { organization: Organization })
                       Reserva <span className="mono">#{shortId(entry.booking_id)}</span> ·{" "}
                       {formatDate(entry.created_at)}
                     </p>
+                    {entry.entry_type === "VENUE_RELEASE" && entry.release_id ? (
+                      <p className="hint">
+                        Repasse <span className="mono">#{shortId(entry.release_id)}</span>
+                      </p>
+                    ) : null}
+                    <Composition
+                      venuePriceCents={entry.venue_price_cents}
+                      feeCents={entry.fee_cents}
+                      totalCents={entry.total_cents}
+                    />
                   </div>
                   <div className="booking-card__price">
                     <strong>{formatMoney(entry.amount_cents)}</strong>
                   </div>
+                </div>
+                <div className="booking-card__actions">
+                  <button
+                    type="button"
+                    className="button button--small button--ghost"
+                    onClick={() => setDetailBookingId(entry.booking_id)}
+                  >
+                    Ver reserva
+                  </button>
                 </div>
               </li>
             ))}
@@ -601,12 +991,22 @@ export function FinancialPanel({ organization }: { organization: Organization })
         />
       </div>
 
+      {detailBookingId ? (
+        <BookingFinancialDialog
+          organizationId={organization.id}
+          bookingId={detailBookingId}
+          onClose={() => setDetailBookingId(null)}
+        />
+      ) : null}
+
       <Modal
         open={Boolean(disputeTarget)}
         title="Contestar repasse"
         description={
           disputeTarget
-            ? `Reserva #${shortId(disputeTarget.booking_id)} · ${formatMoney(disputeTarget.amount_cents)}. A contestação suspende o repasse até a análise.`
+            ? `Reserva #${shortId(disputeTarget.booking_id)} · valor do fornecedor ${formatMoney(
+                disputeTarget.amount_cents,
+              )}. Prazo até ${formatDate(disputeTarget.dispute_deadline)}. A contestação suspende o repasse.`
             : undefined
         }
         onClose={disputeMutation.isPending ? () => undefined : () => setDisputeTarget(null)}

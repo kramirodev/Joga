@@ -9,13 +9,15 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { fontScaleFactor } from './src/accessibility';
+import { authConfig } from './src/auth/config';
 import { AppProvider, useApp } from './src/state/app';
+import { Text } from './src/ui/text';
 import {
   NavContext,
   ThemeContext,
@@ -25,6 +27,7 @@ import {
   type TabKey,
 } from './src/state/context';
 import { entranceScreens } from './src/screens/entrance';
+import { emailScreens } from './src/screens/email';
 import { coreScreens } from './src/screens/core';
 import { venueScreens } from './src/screens/venues';
 import { walletScreens } from './src/screens/wallet';
@@ -56,6 +59,7 @@ import { Icon } from './src/ui/icons';
 
 const ALL_SCREENS: ScreenDef[] = [
   ...entranceScreens,
+  ...emailScreens,
   ...coreScreens,
   ...venueScreens,
   ...walletScreens,
@@ -63,7 +67,7 @@ const ALL_SCREENS: ScreenDef[] = [
   ...statsScreens,
   ...socialScreens,
   ...systemScreens,
-];
+].filter((screen) => !screen.hidden);
 
 const REGISTRY: Record<string, ScreenDef> = Object.fromEntries(
   ALL_SCREENS.map((screen) => [screen.id, screen]),
@@ -98,7 +102,7 @@ function TabButton({
   icon: 'home' | 'cal' | 'trophy' | 'users' | 'user';
   onPress: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, largeTargets } = useTheme();
   const [focus] = useState(() => new Animated.Value(active ? 1 : 0));
 
   useEffect(() => {
@@ -118,7 +122,7 @@ function TabButton({
       accessibilityState={{ selected: active }}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: 48,
+        minHeight: largeTargets ? 56 : 48,
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
@@ -237,21 +241,30 @@ function Sheet({
   > = {
     confirm: {
       title: 'Confirmar ação?',
-      text: 'Esta é uma confirmação destrutiva. No protótipo, nenhum dado real é alterado.',
+      text: 'Esta ação não pode ser desfeita.',
       cancel: 'Voltar',
       confirm: 'Confirmar',
       danger: true,
     },
+    'cancel-booking': {
+      title: 'Cancelar reserva?',
+      text: 'A política de cancelamento da quadra será aplicada. Vagas já pagas podem virar crédito, conforme a antecedência.',
+      cancel: 'Manter reserva',
+      confirm: 'Cancelar reserva',
+      danger: true,
+    },
     cancel: {
       title: 'Cancelar participação?',
-      text: 'Antes do cutoff, você não recebe reembolso e o sistema abre T4 para um substituto. Os demais pagantes seguem protegidos.',
+      text: 'Você recusa a participação. Se a reserva já existe, o cutoff decide: antes dele há devolução integral em ingressos; depois dele não há devolução e um substituto pode ocupar a vaga.',
       cancel: 'Manter vaga',
-      confirm: 'Cancelar e abrir T4',
+      confirm: 'Cancelar participação',
       danger: true,
     },
     logout: {
       title: 'Sair da conta?',
-      text: 'Você precisará da passkey ou do telefone para entrar de novo.',
+      text: authConfig.emailEnabled
+        ? 'Você precisará da passkey ou do e-mail para entrar de novo.'
+        : 'Você precisará da passkey ou do telefone para entrar de novo.',
       cancel: 'Ficar',
       confirm: 'Sair',
       danger: true,
@@ -733,6 +746,7 @@ function Shell() {
   const [phase, setPhase] = useState<ScreenPhase>('idle');
   const [motion, setMotion] = useState<ScreenMotion>('push');
   const palette = app.dark ? dark : light;
+  const reducedMotion = app.accessibility.reducedMotion;
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const statusInset = insets.top;
@@ -784,7 +798,7 @@ function Shell() {
         }
         const run = Animated.timing(anim, {
           toValue: 1,
-          duration: nextMotion === 'tab' ? 180 : 240,
+          duration: reducedMotion ? 0 : nextMotion === 'tab' ? 180 : 240,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         });
@@ -799,7 +813,7 @@ function Shell() {
         });
       });
     },
-    [anim],
+    [anim, reducedMotion],
   );
 
   const nav = useMemo<NavValue>(
@@ -886,8 +900,14 @@ function Shell() {
   }, [modal, canGoBack, nav]);
 
   const theme = useMemo(
-    () => ({ palette, dark: app.dark, setDark: app.setDark }),
-    [palette, app.dark, app.setDark],
+    () => ({
+      palette,
+      dark: app.dark,
+      setDark: app.setDark,
+      fontScale: fontScaleFactor(app.accessibility.fontScale),
+      largeTargets: app.accessibility.largeTargets,
+    }),
+    [palette, app.dark, app.setDark, app.accessibility],
   );
 
   const confirmModal = () => {
@@ -908,13 +928,13 @@ function Shell() {
       return;
     }
     const messages: Record<string, string> = {
-      cancel: 'T4 aberto no protótipo',
-      block: 'Usuário bloqueado no protótipo',
-      filter: 'Filtros aplicados no protótipo',
-      share: 'Link copiado no protótipo',
-      confirm: 'Ação confirmada no protótipo',
+      cancel: 'Participação cancelada.',
+      block: 'Bloqueio ainda não disponível no app.',
+      filter: 'Filtros ainda não disponíveis no app.',
+      share: 'Compartilhamento ainda não disponível no app.',
+      confirm: 'Ação ainda não disponível no app.',
     };
-    nav.toast(messages[active.id] ?? 'Ação concluída no protótipo');
+    nav.toast(messages[active.id] ?? 'Ação ainda não disponível no app.');
   };
 
   const topStyle =

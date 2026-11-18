@@ -74,6 +74,16 @@ class Booking(Base):
         ),
         CheckConstraint("ends_at > starts_at", name="time_order_valid"),
         CheckConstraint("price_cents >= 0", name="price_non_negative"),
+        CheckConstraint("venue_price_cents >= 0", name="venue_price_non_negative"),
+        CheckConstraint("fee_cents >= 0", name="fee_non_negative"),
+        CheckConstraint(
+            "fee_percent_applied BETWEEN 0 AND 10000",
+            name="fee_percent_valid",
+        ),
+        CheckConstraint(
+            "total_cents = venue_price_cents + fee_cents",
+            name="total_matches_lines",
+        ),
         CheckConstraint("seats > 0", name="seats_positive"),
         CheckConstraint(
             "tickets_per_seat IS NULL OR tickets_per_seat >= 0",
@@ -111,6 +121,23 @@ class Booking(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Preço em duas linhas (ADR 0049 §3.3): valor do espaço definido pelo
+    # fornecedor + taxa de intermediação, congelados na criação da reserva.
+    venue_price_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    fee_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    fee_percent_applied: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    total_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    pricing_version: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="legacy_v0", server_default=text("'legacy_v0'")
+    )
     band_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pricing_bands.id", ondelete="RESTRICT"), nullable=True
     )
@@ -164,6 +191,17 @@ class BookingParticipant(Base):
     __table_args__ = (
         CheckConstraint("seat > 0", name="seat_positive"),
         CheckConstraint("contribution_cents >= 0", name="contribution_non_negative"),
+        CheckConstraint("space_charge_cents >= 0", name="space_charge_non_negative"),
+        CheckConstraint("fee_charge_cents >= 0", name="fee_charge_non_negative"),
+        CheckConstraint(
+            "space_charge_cents + fee_charge_cents = contribution_cents",
+            name="charges_match_contribution",
+        ),
+        CheckConstraint(
+            "funding_source IS NULL OR funding_source IN "
+            "('pix', 'credit', 'pass', 'free_level', 'admin')",
+            name="funding_source_valid",
+        ),
         CheckConstraint(
             "payment_status IN ("
             "'PENDING', 'PAID', 'REFUNDED', 'FAILED', 'WAIVED', 'EXPIRED', 'CANCELLED'"
@@ -192,6 +230,7 @@ class BookingParticipant(Base):
             sqlite_where=text("active"),
         ),
         Index("ix_booking_participants_user", "user_id"),
+        Index("ix_booking_participants_funding_source", "funding_source"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -206,6 +245,15 @@ class BookingParticipant(Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     contribution_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Rateio em duas linhas (ADR 0049 §11.3). A soma das cotas de espaço é
+    # exatamente o preço do espaço e a soma das cotas de taxa é a taxa.
+    space_charge_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    fee_charge_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    funding_source: Mapped[str | None] = mapped_column(String(12), nullable=True)
     payment_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING", server_default=text("'PENDING'")
     )

@@ -47,6 +47,69 @@ export function shortDateTime(value: string | Date): string {
   return `${item.weekday}, ${item.day} ${item.month} · ${item.hours}:${item.minutes}`;
 }
 
+function zonedParts(value: string | Date, timeZone: string) {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone,
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const values = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+  return {
+    weekday: (values.weekday ?? '').replace('.', '').toLowerCase(),
+    day: values.day ?? '--',
+    month: MONTHS[Math.max(0, Number(values.month) - 1)] ?? '',
+    hours: (values.hour ?? '00').replace('24', '00'),
+    minutes: values.minute ?? '00',
+  };
+}
+
+/** Formata no fuso IANA do estabelecimento, nunca no fuso do aparelho. */
+export function zonedShortDateTime(value: string | Date, timeZone: string | null): string {
+  if (!timeZone) {
+    return shortDateTime(value);
+  }
+  try {
+    const item = zonedParts(value, timeZone);
+    return `${item.weekday}, ${item.day} ${item.month} · ${item.hours}:${item.minutes}`;
+  } catch {
+    return shortDateTime(value);
+  }
+}
+
+export function zonedTimeOnly(value: string | Date, timeZone: string | null): string {
+  if (!timeZone) {
+    return timeOnly(value);
+  }
+  try {
+    const item = zonedParts(value, timeZone);
+    return `${item.hours}:${item.minutes}`;
+  } catch {
+    return timeOnly(value);
+  }
+}
+
+export function zonedDateOnly(value: string | Date, timeZone: string | null): string {
+  if (!timeZone) {
+    return dateOnly(value);
+  }
+  try {
+    const item = zonedParts(value, timeZone);
+    return `${item.day} ${item.month}`;
+  } catch {
+    return dateOnly(value);
+  }
+}
+
 export function timeOnly(value: string | Date): string {
   const item = parts(value);
   return `${item.hours}:${item.minutes}`;

@@ -65,6 +65,24 @@ class DeviceService:
             )
         )
 
+    def has_named_device(self, user_id: uuid.UUID, name: str) -> bool:
+        """Indica se o usuário já tem um dispositivo ativo com esse nome."""
+        cleaned = name.strip()[:80]
+        if not cleaned:
+            return False
+        return (
+            self._session.scalar(
+                select(Device.id)
+                .where(
+                    Device.user_id == user_id,
+                    Device.name == cleaned,
+                    Device.revoked_at.is_(None),
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
     def revoke(
         self,
         user_id: uuid.UUID,

@@ -33,6 +33,7 @@ from app.modules.season.service import active_season, award_xp
 from app.modules.tickets.models import TicketLot
 from app.modules.tickets.service import expire_due as expire_tickets
 from app.modules.tickets.service import get_balance
+from tests.compliance_helpers import cpf_key_kwargs
 from tests.helpers_results import make_token, make_user
 
 START = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
@@ -84,6 +85,7 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        **cpf_key_kwargs(),
     )
     production_tokens = SessionService(
         db_session,
@@ -119,6 +121,38 @@ def test_pass_purchase_is_idempotent_while_pending(client: TestClient, db_sessio
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
     assert first.json()["id"] == second.json()["id"]
+
+
+def test_pass_idempotency_key_replays_and_rejects_different_plan(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+    headers = {**bearer(token), "Idempotency-Key": "passe-1"}
+
+    first = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "craque"},
+    )
+    second = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "craque"},
+    )
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+    conflict = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=headers,
+        json={"plan_code": "time"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
 
 
 def test_pass_refund_cancels_subscription(
@@ -240,31 +274,34 @@ def test_delivery_is_monthly_idempotent_and_expires(db_session: Session) -> None
     user_id = make_user(db_session)
     subscription = create_subscription(db_session, user_id, "time", now=START)
     assert subscription.status == "pending"
-    assert get_balance(db_session, user_id) == 0
+    assert get_balance(db_session, user_id, now=START) == 0
 
     activate_subscription(db_session, subscription.id, now=START)
-    assert get_balance(db_session, user_id) == 30
+    assert get_balance(db_session, user_id, now=START) == 30
     first_lot = db_session.scalar(
         select(TicketLot).where(TicketLot.user_id == user_id, TicketLot.source == "pass")
     )
     assert first_lot is not None
-    assert first_lot.expires_at is not None
+    assert first_lot.period == "2026-11"
+    assert first_lot.expires_at is None
 
     deliver_due(db_session, subscription, now=START + timedelta(days=3))
-    assert get_balance(db_session, user_id) == 30
+    assert get_balance(db_session, user_id, now=START + timedelta(days=3)) == 30
 
     deliver_due(db_session, subscription, now=add_months(START, 1))
     expire_tickets(db_session, now=add_months(START, 1))
-    assert get_balance(db_session, user_id) == 30
+    assert get_balance(db_session, user_id, now=add_months(START, 1)) == 30
+    db_session.refresh(first_lot)
+    assert first_lot.remaining == 0
 
     deliver_due(db_session, subscription, now=add_months(START, 2))
     expire_tickets(db_session, now=add_months(START, 2))
-    assert get_balance(db_session, user_id) == 30
+    assert get_balance(db_session, user_id, now=add_months(START, 2)) == 30
     assert len(deliveries_for(db_session, subscription.id)) == 3
 
     deliver_due(db_session, subscription, now=add_months(START, 4))
     expire_tickets(db_session, now=add_months(START, 4))
-    assert get_balance(db_session, user_id) == 0
+    assert get_balance(db_session, user_id, now=add_months(START, 4)) == 0
 
     assert expire_due(db_session, now=add_months(START, 3)) == 1
     assert active_subscription(db_session, user_id, add_months(START, 3)) is None

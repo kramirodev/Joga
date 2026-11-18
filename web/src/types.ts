@@ -269,7 +269,13 @@ export interface OrganizationFinancialSummary {
   pending_cents: number;
   released_cents: number;
   pending_release_cents: number;
+  reversed_cents: number;
+  failed_cents: number;
   disputed_cents: number;
+  /** Valor do fornecedor. Nunca é receita do JOGA. */
+  venue_price_cents: number;
+  /** Comissão de intermediação do JOGA. */
+  joga_fee_cents: number;
   payments: number;
   refunds: number;
 }
@@ -280,6 +286,7 @@ export type DisputeStatus = "OPEN" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
 export interface Receivable {
   booking_id: string;
   release_id: string;
+  /** Valor devido ao fornecedor (igual a venue_price_cents). */
   amount_cents: number;
   status: ReleaseStatus;
   eligible_at: string;
@@ -288,6 +295,13 @@ export interface Receivable {
   ends_at: string;
   has_open_dispute: boolean;
   dispute_id: string | null;
+  venue_price_cents: number;
+  fee_cents: number;
+  total_cents: number;
+  /** `simulated:<release_id>` no protótipo; comprovante real fica para a 14B. */
+  receipt_reference: string | null;
+  dispute_deadline: string;
+  reason: string | null;
 }
 
 export interface ReceivableListResponse {
@@ -297,16 +311,40 @@ export interface ReceivableListResponse {
   offset: number;
 }
 
-export interface FinancialStatementEntry {
+export interface LedgerEntry {
   id: string;
-  booking_id: string;
   booking_payment_id: string | null;
-  entry_type: string;
+  release_id: string | null;
+  entry_type: "PAYMENT_CONFIRMED" | "PAYMENT_REFUNDED" | "VENUE_RELEASE" | string;
   direction: "CREDIT" | "DEBIT";
   amount_cents: number;
+  venue_price_cents: number | null;
+  fee_cents: number | null;
+  total_cents: number | null;
   status: string;
   details: Record<string, unknown> | null;
   created_at: string;
+}
+
+export interface FinancialStatementEntry extends LedgerEntry {
+  booking_id: string;
+}
+
+export interface BookingPricing {
+  venue_price_cents: number;
+  fee_cents: number;
+  fee_percent_applied: number;
+  total_cents: number;
+  pricing_version: string;
+}
+
+export interface FiscalDocument {
+  id: string;
+  status: string;
+  amount_cents: number;
+  number: string | null;
+  provider_ref: string | null;
+  issued_at: string | null;
 }
 
 export interface BookingRefund {
@@ -322,7 +360,11 @@ export interface BookingRefund {
 
 export interface BookingFinancialResponse {
   booking_id: string;
-  ledger: FinancialStatementEntry[];
+  pricing: BookingPricing;
+  release: Receivable | null;
+  dispute: FinancialDispute | null;
+  fiscal_document: FiscalDocument | null;
+  ledger: LedgerEntry[];
   refunds: BookingRefund[];
 }
 
@@ -340,6 +382,7 @@ export interface FinancialDispute {
   release_id: string | null;
   amount_cents: number;
   status: DisputeStatus;
+  deadline_at: string;
   reason: string;
   evidence: string | null;
   decision_reason: string | null;
@@ -353,6 +396,30 @@ export interface FinancialDispute {
 export interface FinancialDisputeListResponse {
   disputes: FinancialDispute[];
   total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CommissionRow {
+  booking_id: string;
+  starts_at: string;
+  confirmed_at: string;
+  venue_price_cents: number;
+  fee_cents: number;
+  total_cents: number;
+  release_status: ReleaseStatus | null;
+}
+
+export interface CommissionTotals {
+  bookings: number;
+  venue_price_cents: number;
+  joga_fee_cents: number;
+  total_cents: number;
+}
+
+export interface CommissionResponse {
+  rows: CommissionRow[];
+  totals: CommissionTotals;
   limit: number;
   offset: number;
 }

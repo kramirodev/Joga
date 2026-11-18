@@ -1,9 +1,9 @@
 # Modelo de dados — JOGA (as-built)
 
 **Versão:** 2.0<br>
-**Data:** 16 de novembro de 2026<br>
+**Data:** 17 de novembro de 2026<br>
 **Fonte:** migrations Alembic em `backend/migrations/versions/` e modelos SQLAlchemy em `backend/app/modules/`.<br>
-**Head de migrations:** `j3f4a5b6c7d8` (cadeia linear, 53 revisões).<br>
+**Head de migrations:** `y8b9c0d1e2f3` (cadeia linear, 67 revisões).<br>
 **Natureza:** este documento substitui a versão incremental das Fases 3–4. Ele descreve o schema **existente**, não o alvo. O alvo financeiro da ADR 0049 está na Fase 14E.
 
 > **Regra de leitura.** O banco é a fonte da verdade. Este resumo existe para orientar leitura e revisão; a definição exata de colunas, tipos e constraints está nos modelos e migrations. Não usar este documento para `alembic revision --autogenerate`.
@@ -25,19 +25,22 @@
 
 | Tabela | Papel |
 |---|---|
-| `users` | Identidade central, status, e-mail, `suspended_until` |
+| `users` | Identidade central, status, `suspended_until`; `email` é legado do pagador e não autentica (ADR 0050) |
+| `user_emails` | Credencial de e-mail normalizada, verificação, primária, liberação e bounce (ADR 0050) |
+| `user_passwords` | Credencial de senha Argon2id/PHC, data da troca e marca de comprometimento (ADR 0050) |
 | `user_phones` | Telefone protegido, hash de busca, verificação e estado |
-| `phone_challenges` | Desafios OTP, hash, tentativas, expiração e recibo |
+| `phone_challenges` | Desafios OTP genéricos (`subject_type` phone/email), hash, tentativas, expiração e recibo |
 | `devices` | Dispositivos vinculados e sinais mínimos |
 | `passkey_credentials` | Credenciais WebAuthn, contador e revogação |
 | `passkey_challenges` | Desafios de registro/autenticação, uso único |
 | `sessions` | Access/refresh hashes, família, rotação e revogação |
 | `security_events` | Eventos de autenticação e abuso |
+| `email_deliveries` | Log de entrega por hash, tipo, status, tentativas, provedor e erro interno (sem corpo/código) |
 | `audit_logs` | Ator, ação, recurso, motivo e timestamp |
 
-**Constraints relevantes:** telefone ativo único por hash; `credential_id` único; refresh hash único; sessão revogada não autentica; conta suspensa só acessa rotas de recurso.
+**Constraints relevantes:** telefone ativo único por hash; e-mail ativo único por endereço normalizado; no máximo uma credencial primária ativa por usuário; `credential_id` único; refresh hash único; sessão revogada não autentica; conta suspensa só acessa rotas de recurso.
 
-**Lacunas conhecidas:** não há endpoint de recuperação de conta; `ChallengePurpose.recovery` existe no modelo, mas não é aceito pela API. Não há limite por dispositivo em refresh/passkey/WS.
+**Lacunas conhecidas:** não há endpoint de recuperação de conta; `ChallengePurpose.recovery` existe no modelo, mas não é aceito pela API. Não há limite por dispositivo em refresh/passkey/WS. A Outbox guarda destinatário/código temporariamente até a rotina de limpeza. Senhas nunca são retornadas; a recuperação usa o mesmo código de e-mail e não reativa conta suspensa.
 
 ---
 
@@ -47,14 +50,14 @@
 |---|---|
 | `sports` | Modalidades |
 | `sport_formats` | Formatos, duração, composição e versão |
-| `user_profiles` | Nome, gênero, cidade e preferências |
+| `user_profiles` | Nome, gênero, cidade, preferências e CPF cifrado (AES-256-GCM) |
 | `user_sport_profiles` | Nível autodeclarado e preferência por formato |
 | `availabilities` | Janelas de disponibilidade do jogador |
 | `user_regions` | Região aproximada e coordenada arredondada |
 | `venues` | Locais descobertos, geografia e endereço |
 | `postal_code_cache` | Cache de CEP/geocoding com TTL e proveniência |
 
-**Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor.
+**Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor. Em `user_profiles`, `cpf_ciphertext`, `cpf_key_id` e `cpf_last2` são todos nulos ou todos preenchidos (`cpf_present_consistent` desde `q1b2c3d4e5f6`); o texto claro do CPF nunca é persistido.
 
 **Lacunas conhecidas:** não há `user_avatars`; o avatar é decisão de catálogo ainda não implementada. `sport_equipment_requirements` não existe.
 
@@ -102,7 +105,7 @@
 
 **Constraints relevantes:** uma reserva por lobby; vaga ativa única por assento/usuário; timers por tipo; hold ativo único por espaço/intervalo (lógica de serviço); preço não negativo.
 
-**Lacunas conhecidas:** não há `ExclusionConstraint`/`tstzrange` para sobreposição; a proteção é feita no serviço. `booking_participants.payment_status` não aceita `EXPIRED`/`CANCELLED`, mas o serviço escreve `EXPIRED` em `register_payment_result`. `bookings` não tem `venue_price_cents`, `fee_cents` ou `fee_percent_applied` (Fase 14E).
+**Lacunas conhecidas:** não há `ExclusionConstraint`/`tstzrange` para sobreposição; a proteção é feita no serviço. `booking_participants.payment_status` aceita `EXPIRED`/`CANCELLED` desde `k5b6c7d8e9f0`. `bookings` guarda `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version` desde `m7d8e9f0a1b2`; reservas antigas ficam em `legacy_v0` com taxa zero.
 
 ---
 
@@ -112,22 +115,36 @@
 |---|---|
 | `booking_payments` | Cobrança por participante/versão, status e dados do provedor |
 | `purchase_payments` | Compra de pacote/passe, `kind` e `reference_id` |
-| `payment_refunds` | Reembolso por cobrança (um por pagamento) |
+| `payment_refunds` | Reembolso por cobrança: `FULL` (um por cobrança) e `PARTIAL` (schema pronto) |
 | `payment_events` | Eventos append-only de cobrança/PSP |
 | `psp_webhook_events` | Webhook bruto, idempotência por provedor e retry |
-| `booking_ledger_entries` | Ledger legado single-entry por reserva |
 | `ticket_ledger` | Ledger append-only de créditos/consumos |
 | `ledger_accounts` | Plano de contas do ledger de dupla entrada (ADR 0049) |
 | `ledger_transactions` | Transação balanceada e idempotente |
 | `ledger_entries` | Lançamentos de débito/crédito, imutáveis por trigger |
-| `venue_releases` | Repasse ao fornecedor, status e elegibilidade |
-| `financial_disputes` | Contestação do fornecedor |
-| `fiscal_documents` | Intenção/documento fiscal por reserva (placeholder) |
-| `terms_versions` | Versões de termos e aceite |
+| `venue_releases` | Repasse ao fornecedor: valor do espaço (`venue_price_cents`), status, elegibilidade e snapshot de `dispute_deadline` |
+| `financial_disputes` | Contestação do fornecedor; `deadline_at` copiado da liberação e decisão auditável |
+| `fiscal_documents` | Intenção/documento fiscal por reserva (`pending_manual` no placeholder) |
+| `fiscal_document_takers` | Um tomador por jogador: cota em centavos e CPF cifrado no instante da intenção |
+| `terms_versions` | Versões de termos (rascunho/aprovada) |
+| `terms_acceptances` | Prova de aceite por usuário, versão e contexto |
 
-**Constraints relevantes:** webhook único por `(provider, event_id)`; reembolso único por pagamento; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado.
+**Constraints relevantes:** webhook único por `(provider, event_id)`; índice parcial `uq_payment_refunds_full_payment` garante um único `FULL` por cobrança; `uq_payment_refunds_idempotency_key` evita reembolso parcial duplicado; ledger de dupla entrada balanceado; `VENUE_RELEASE` idempotente; status de pagamento validado; `fiscal_document_takers` é único por `(fiscal_document_id, user_id)`; `terms_acceptances` é único por `(user_id, terms_version_id, context)` e só aceita contexto conhecido.
 
-**Lacunas conhecidas:** o ledger de dupla entrada existe, mas **não é usado por nenhum fluxo**; pagamentos, compras e repasses ainda escrevem `booking_ledger_entries`/`ticket_ledger`. `compute_fee_cents` existe, mas não é chamado. `payment_refunds` não permite reembolso parcial. `purchase.apply_status` ignora `REFUNDED`. `venue_releases.REVERSED` não é usado. `fiscal_documents` e `terms_versions` não têm chamador.
+**Lacunas conhecidas:** o ledger de dupla entrada é escrito pelos fluxos cobertos (Etapas 6/6b/9). A leitura do saldo é exclusivamente lotes + ledger e valida caixa + tickets; `ticket_balances` é view. O extrato do fornecedor é projetado do ledger duplo desde `u5f6a7b8c9d0`. `payment_refunds` aceita `PARTIAL` no schema desde `s3d4e5f6a7b8`, mas **reembolso parcial não existe**: o rateio é integral por jogador e o campo fica sem uso. `fiscal_documents` é intenção `pending_manual` (sem emissor, município ou alíquota); `terms_acceptances` só é exigido quando existe versão `approved`.
+
+**Interface financeira sobre o ledger (Fase 15):** não há tabela nova além do
+snapshot de prazo. O extrato por reserva e por repasse é projeção de
+`ledger_transactions` + `ledger_entries`, com `venue_price_cents`, `fee_cents` e
+`total_cents` lidos de `bookings`. O relatório de comissão também é derivado de
+`bookings` confirmadas: o valor do fornecedor (`venue_price_cents`) e a comissão
+(`fee_cents`) ficam em campos distintos e nunca são somados como receita.
+`venue_releases.dispute_deadline` e `financial_disputes.deadline_at` são
+snapshots de 72 h; mudar `JOGA_DISPUTE_WINDOW_HOURS` não recalcula prazos
+gravados. O comprovante real será `bank:<e2e_id>` + PDF privado; o protótipo usa
+`simulated:<release_id>`. A NFS-e é exibida de `fiscal_documents`
+(`pending_manual`), sem emissão. MED tem política aprovada (bloquear repasse +
+receivable + evidência + prazo, sem clawback) e execução real na 14B.
 
 ---
 
@@ -137,9 +154,9 @@
 |---|---|
 | `ticket_packs` | Escada de pacotes e preço de exibição |
 | `ticket_purchases` | Compra de pacote, valor, status e idempotência |
-| `ticket_lots` | Lote de origem, saldo projetado, preço unitário e período |
-| `ticket_lot_consumptions` | Consumo por lote e referência |
-| `ticket_balances` | Projeção de saldo por usuário |
+| `ticket_lots` | Lote de origem em tickets; `unit_price_cents` só para abertura/reembolso; `remaining` é o saldo de tickets |
+| `ticket_lot_consumptions` | Consumo por lote e referência; `amount` é a contagem de tickets |
+| `ticket_balances` | **View** de compatibilidade sobre `ticket_lots` utilizáveis; não é escrita nem é fonte da verdade |
 | `pass_subscriptions` | Assinatura trimestral, status e período |
 | `pass_deliveries` | Entrega mensal idempotente por assinatura/mês |
 | `seasons` | Temporada trimestral, início/fim e estado |
@@ -249,15 +266,16 @@
 
 ## 12. Lacunas que a Fase 14E deve fechar
 
-- `bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`.
-- Integração do `ledger_*` como fonte da verdade, aposentando o uso de `booking_ledger_entries`/`ticket_ledger` como ledger principal.
-- Migração de `ticket_lots.remaining` para saldo em reais, 1:1, pelo preço unitário pago.
-- `credit` sem expiração; passe com `period`, não `expires_at`.
-- CPF cifrado e documento fiscal por reserva.
-- Reembolso parcial.
+- ~~`bookings.venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents`~~ — **feito em `m7d8e9f0a1b2`**, com `pricing_version` e backfill `legacy_v0`.
+- Sombra de escrita do `ledger_*` nos fluxos de compra, confirmação de reserva, devolução, repasse, passe e vagas por passe/grátis/admin — **feita nas Etapas 6/6b** (`n8e9f0a1b2c3`, `o9f0a1b2c3d4`, `p0a1b2c3d4e5` + `ledger/flow.py`). A leitura pública usa exclusivamente lotes + ledger desde a Etapa 9; conta ausente ou divergência falha alto.
+- Migração de saldo monetário legado — **feita na Etapa 6**: abertura `Σ remaining × unit_price_cents` contra `opening_equity`. Os lotes continuam em tickets; não existe `remaining_cents`. Passe, grátis e admin ficam fora da abertura.
+- ~~`credit` sem expiração; passe com `period`, não `expires_at`~~ — **feito em `m7d8e9f0a1b2`**: comprado não expira, passe usa `period` mensal e ingresso de nível expira com a temporada.
+- `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source` e `ticket_lot_consumptions.amount_cents` — **feitos na Etapa 6**; `ticket_lots` guarda tickets e `unit_price_cents` (só abertura/reembolso). A tabela 2D é a unidade de consumo.
+- CPF cifrado e documento fiscal por reserva — **feito na Etapa 8** (`q1b2c3d4e5f6`): CPF cifrado, snapshot por tomador e intenção `pending_manual`.
+- Reembolso parcial — **schema pronto em `s3d4e5f6a7b8`**; nenhum fluxo cria `PARTIAL` ainda.
 - Constraint de exclusão para sobreposição de reservas.
 - Unicidade de item de temporada por temporada.
-- Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço.
+- ~~Correção da constraint de `payment_status` para aceitar os estados escritos pelo serviço~~ — **feito em `k5b6c7d8e9f0`**.
 
 ---
 
@@ -268,6 +286,7 @@
 - Organizações/quadras: `a1b2c3d4e5f6`, `99c1055b81b5`, `a1c2e3f40517`, `e1f2a3b4c5d6`, `f5a6172b3949`.
 - Reservas/pagamentos: `26b70fd0fbc7`, `c97807d1b140`, `bb4083b7b697`, `c15a1b2c3d4e`, `f4b5c6d7e8f9`, `e4a1c9d7b203`.
 - Crédito/temporada: `d3e4f5061927`, `e4f5061a2838`, `c9f0a1b2d3e4`, `b7c8394d5162`, `c8d94a5e6273`, `d9e95b6f7384`, `f5b2d8e4c310`.
-- Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`.
+- Ledger/fiscal/legal: `j3f4a5b6c7d8`, `i2e3f4a5b6c7`, `m7d8e9f0a1b2`, `n8e9f0a1b2c3`, `o9f0a1b2c3d4`, `p0a1b2c3d4e5`, `q1b2c3d4e5f6`, `r2c3d4e5f6a7`, `s3d4e5f6a7b8`, `t4e5f6a7b8c9`, `u5f6a7b8c9d0`, `v6a7b8c9d0e1`.
+- E-mail e senha (ADR 0050): `x7a8b9c0d1e2` (`user_emails`, `email_deliveries`, `subject_type`) e `y8b9c0d1e2f3` (`user_passwords`, `password_reset`, `password_changed`).
 
-O head atual é `j3f4a5b6c7d8`. A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.
+O head atual é `y8b9c0d1e2f3`. A validação de `alembic upgrade head`, `downgrade base` e `alembic check` deve ser feita com PostgreSQL real antes de declarar o schema estável.

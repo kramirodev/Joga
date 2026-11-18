@@ -158,6 +158,8 @@ function DecisionForm({
   );
 }
 
+const PAGE_SIZE = 30;
+
 export function ModerationPage() {
   useDocumentTitle("Moderação");
   const queryClient = useQueryClient();
@@ -167,6 +169,7 @@ export function ModerationPage() {
   const reportParam = searchParams.get("report");
   const appealParam = searchParams.get("appeal");
   const [status, setStatus] = useState("OPEN");
+  const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [appealTarget, setAppealTarget] = useState<{
@@ -189,8 +192,8 @@ export function ModerationPage() {
   const isAdmin = meQuery.data?.role === "ADMIN";
 
   const queueQuery = useQuery({
-    queryKey: queryKeys.moderationQueue(status),
-    queryFn: () => api.getModerationQueue(status),
+    queryKey: queryKeys.moderationQueue(status, PAGE_SIZE, offset),
+    queryFn: () => api.getModerationQueue(status, PAGE_SIZE, offset),
     enabled: isModerator,
     refetchInterval: 30_000,
   });
@@ -373,8 +376,7 @@ export function ModerationPage() {
     );
   }
 
-  const displayError =
-    queueQuery.error ?? appealsQuery.error ?? operatorsQuery.error ?? actionError;
+  const displayError = appealsQuery.error ?? operatorsQuery.error ?? actionError;
 
   return (
     <>
@@ -447,6 +449,7 @@ export function ModerationPage() {
             {(
               [
                 ["OPEN", "Abertas"],
+                ["IN_REVIEW", "Em revisão"],
                 ["APPEALED", "Em recurso"],
                 ["RESOLVED", "Resolvidas"],
                 ["DISMISSED", "Improcedentes"],
@@ -459,6 +462,7 @@ export function ModerationPage() {
                 aria-pressed={status === value}
                 onClick={() => {
                   setStatus(value);
+                  setOffset(0);
                   setSelectedId(null);
                 }}
               >
@@ -469,6 +473,12 @@ export function ModerationPage() {
 
           {queueQuery.isPending ? (
             <SkeletonList rows={3} label="Carregando denúncias..." />
+          ) : queueQuery.error ? (
+            <ErrorNotice
+              message={formatError(queueQuery.error)}
+              requestId={requestIdOf(queueQuery.error)}
+              onRetry={() => void queueQuery.refetch()}
+            />
           ) : filteredReports.length === 0 ? (
             <EmptyState title="Fila vazia" icon={<ShieldIcon size={26} />}>
               Nenhuma denúncia neste status.
@@ -501,6 +511,38 @@ export function ModerationPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {queueQuery.error ? null : (
+            <div className="pagination">
+              <span className="pagination__info">
+                Página {Math.floor(offset / PAGE_SIZE) + 1}
+                {reports.length < PAGE_SIZE ? " · fim da fila" : ""}
+              </span>
+              <div className="pagination__actions">
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  onClick={() => {
+                    setOffset(Math.max(0, offset - PAGE_SIZE));
+                    setSelectedId(null);
+                  }}
+                  disabled={offset === 0 || queueQuery.isFetching}
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  className="button button--small button--ghost"
+                  onClick={() => {
+                    setOffset(offset + PAGE_SIZE);
+                    setSelectedId(null);
+                  }}
+                  disabled={reports.length < PAGE_SIZE || queueQuery.isFetching}
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
           )}
         </section>
 

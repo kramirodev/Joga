@@ -11,7 +11,10 @@ import type {
   ClanMember,
   ClanMessage,
   ClanRanking,
+  CpfStatus,
   Device,
+  EmailCredential,
+  EmailVerification,
   Friend,
   LobbyInvite,
   MatchSummary,
@@ -25,7 +28,9 @@ import type {
   PassSubscription,
   PassPlan,
   Passkey,
+  PasskeyOptions,
   Passport,
+  Presence,
   Profile,
   Progress,
   Purchase,
@@ -35,6 +40,8 @@ import type {
   Sport,
   Stats,
   Substitute,
+  TermsAcceptance,
+  TermsVersion,
   TicketPack,
   Tokens,
   Track,
@@ -43,10 +50,14 @@ import type {
   Wallet,
 } from './types';
 
-// Desenvolvimento com `adb reverse tcp:8000 tcp:8000`: o aparelho acessa o backend local.
-// Para rede local sem cabo, troque para o IP da máquina (ex.: http://192.168.0.105:8000).
-export const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
-export const API_ORIGIN = 'http://127.0.0.1:8000';
+// Configure pela variável de ambiente EXPO_PUBLIC_API_URL.
+// Sem a variável, usa o backend local via `adb reverse tcp:8000 tcp:8000`.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+export const API_BASE_URL = (configuredApiUrl || 'http://127.0.0.1:8000/api/v1').replace(
+  /\/+$/,
+  '',
+);
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/v1$/i, '');
 
 export function apiAssetUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -59,6 +70,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(code);
   }
@@ -148,9 +160,28 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
         code = detail[0].msg;
       }
     }
-    throw new ApiError(response.status, code);
+    throw new ApiError(
+      response.status,
+      code,
+      retryAfterSeconds(response.headers.get('Retry-After')),
+    );
   }
   return body as T;
+}
+
+function retryAfterSeconds(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds);
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 1000));
 }
 
 function qs(params: Record<string, string | number | boolean | null | undefined>): string {
@@ -167,6 +198,11 @@ function qs(params: Record<string, string | number | boolean | null | undefined>
 
 function key(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Chave para cabeçalho `Idempotency-Key`; o backend limita a 120 caracteres. */
+export function newIdempotencyKey(): string {
+  return key();
 }
 
 export const api = {
@@ -210,6 +246,87 @@ export const api = {
     logoutAll(token: string) {
       return call<void>('/auth/logout-all', { method: 'POST', token });
     },
+    emailRequestCode(email: string, purpose: 'registration' | 'password_reset') {
+      return call<Challenge>('/auth/email/code', {
+        method: 'POST',
+        body: { email, purpose },
+      });
+    },
+    emailVerify(challengeId: string, code: string) {
+      return call<EmailVerification>('/auth/email/verify', {
+        method: 'POST',
+        body: { challenge_id: challengeId, code },
+      });
+    },
+    emailRegister(
+      challengeId: string,
+      email: string,
+      password: string,
+      displayName: string | null,
+      device?: { name: string; platform: string },
+    ) {
+      return call<Tokens>('/auth/email/register', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          email,
+          password,
+          ...(displayName?.trim() ? { display_name: displayName.trim() } : {}),
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
+    emailPasswordLogin(
+      email: string,
+      password: string,
+      device?: { name: string; platform: string },
+    ) {
+      return call<Tokens>('/auth/email/login', {
+        method: 'POST',
+        body: {
+          email,
+          password,
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
+      });
+    },
+    passwordReset(challengeId: string, email: string, newPassword: string) {
+      return call<{ status: string }>('/auth/email/password/reset', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          email,
+          new_password: newPassword,
+        },
+      });
+    },
+    changePassword(token: string, currentPassword: string, newPassword: string) {
+      return call<{ status: string }>('/me/password', {
+        method: 'POST',
+        body: {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+        token,
+      });
+    },
+    emails(token: string) {
+      return call<{ emails: EmailCredential[] }>('/auth/emails', { token });
+    },
+    emailChangeChallenge(token: string, newEmail: string) {
+      return call<Challenge>('/me/account/email/challenges', {
+        method: 'POST',
+        body: { new_email: newEmail },
+        token,
+      });
+    },
+    emailChangeConfirm(token: string, newEmail: string, challengeId: string, code: string) {
+      return call<EmailCredential>('/me/account/email', {
+        method: 'PATCH',
+        body: { new_email: newEmail, challenge_id: challengeId, code },
+        token,
+      });
+    },
     phoneChangeChallenge(token: string, newPhone: string) {
       return call<Challenge>('/auth/phone-change/challenges', {
         method: 'POST',
@@ -222,6 +339,44 @@ export const api = {
         method: 'POST',
         body: { challenge_id: challengeId, code },
         token,
+      });
+    },
+    passkeyRegistrationOptions(token: string) {
+      return call<PasskeyOptions>('/auth/passkeys/registration/options', {
+        method: 'POST',
+        token,
+      });
+    },
+    passkeyRegistrationVerify(
+      token: string,
+      challengeId: string,
+      credential: Record<string, unknown>,
+      name: string | null,
+    ) {
+      return call<{ credential_id: string; name: string | null }>(
+        '/auth/passkeys/registration/verify',
+        {
+          method: 'POST',
+          body: { challenge_id: challengeId, credential, name },
+          token,
+        },
+      );
+    },
+    passkeyAuthenticationOptions() {
+      return call<PasskeyOptions>('/auth/passkeys/authentication/options', { method: 'POST' });
+    },
+    passkeyAuthenticationVerify(
+      challengeId: string,
+      credential: Record<string, unknown>,
+      device?: { name: string; platform: string },
+    ) {
+      return call<Tokens>('/auth/passkeys/authentication/verify', {
+        method: 'POST',
+        body: {
+          challenge_id: challengeId,
+          credential,
+          ...(device ? { device_name: device.name, platform: device.platform } : {}),
+        },
       });
     },
     passkeys(token: string) {
@@ -250,6 +405,25 @@ export const api = {
     },
     me(token: string) {
       return call<Profile>('/me/profile', { token });
+    },
+    email(token: string) {
+      return call<{ email: string | null }>('/me/email', { token });
+    },
+    updateEmail(token: string, email: string | null) {
+      return call<{ email: string | null }>('/me/email', {
+        method: 'PUT',
+        body: { email },
+        token,
+      });
+    },
+    cpf(token: string) {
+      return call<CpfStatus>('/me/cpf', { token });
+    },
+    updateCpf(token: string, cpf: string) {
+      return call<CpfStatus>('/me/cpf', { method: 'PUT', body: { cpf }, token });
+    },
+    clearCpf(token: string) {
+      return call<CpfStatus>('/me/cpf', { method: 'DELETE', token });
     },
     update(token: string, displayName: string | null, bio: string | null) {
       return call<Profile>('/me/profile', {
@@ -408,11 +582,20 @@ export const api = {
     packs(token: string) {
       return call<{ packs: TicketPack[] }>('/me/tickets/packs', { token });
     },
-    createPurchase(token: string, packCode: string) {
+    createPurchase(
+      token: string,
+      packCode: string,
+      idempotencyKey?: string,
+      termsVersionId?: string,
+    ) {
       return call<Purchase>('/me/tickets/purchases', {
         method: 'POST',
-        body: { pack_code: packCode },
+        body: {
+          pack_code: packCode,
+          ...(termsVersionId ? { terms_version_id: termsVersionId } : {}),
+        },
         token,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
     },
     purchase(token: string, purchaseId: string) {
@@ -420,12 +603,6 @@ export const api = {
     },
     syncPurchase(token: string, purchaseId: string) {
       return call<Purchase>(`/me/tickets/purchases/${encodeURIComponent(purchaseId)}/sync`, {
-        method: 'POST',
-        token,
-      });
-    },
-    confirmPurchase(token: string, purchaseId: string) {
-      return call<Purchase>(`/me/tickets/purchases/${encodeURIComponent(purchaseId)}/confirm`, {
         method: 'POST',
         token,
       });
@@ -439,11 +616,12 @@ export const api = {
     get(token: string) {
       return call<{ subscription: PassSubscription | null }>('/me/pass', { token });
     },
-    subscribe(token: string, planCode: string) {
+    subscribe(token: string, planCode: string, idempotencyKey?: string) {
       return call<PassSubscription>('/me/pass/subscriptions', {
         method: 'POST',
         body: { plan_code: planCode },
         token,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
     },
     subscription(token: string, subscriptionId: string) {
@@ -455,12 +633,6 @@ export const api = {
     sync(token: string, subscriptionId: string) {
       return call<PassSubscription>(
         `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}/sync`,
-        { method: 'POST', token },
-      );
-    },
-    confirm(token: string, subscriptionId: string) {
-      return call<PassSubscription>(
-        `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}/confirm`,
         { method: 'POST', token },
       );
     },
@@ -520,6 +692,40 @@ export const api = {
     get(token: string, bookingId: string) {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}`, { token });
     },
+    syncPayment(token: string, bookingId: string, paymentId: string) {
+      return call<{ payment_id: string; status: string; provider_status: string | null }>(
+        `/bookings/${encodeURIComponent(bookingId)}/payments/${encodeURIComponent(paymentId)}/sync`,
+        { method: 'POST', token },
+      );
+    },
+    preCheckIn(token: string, bookingId: string) {
+      return call<Presence>(`/bookings/${encodeURIComponent(bookingId)}/pre-check-in`, {
+        method: 'POST',
+        token,
+      });
+    },
+    confirmPresence(
+      token: string,
+      bookingId: string,
+      input: {
+        method: 'GPS' | 'VENUE';
+        latitude?: number;
+        longitude?: number;
+        accuracy_m?: number;
+      },
+    ) {
+      return call<Presence>(`/bookings/${encodeURIComponent(bookingId)}/presence`, {
+        method: 'POST',
+        body: input,
+        token,
+      });
+    },
+    presence(token: string, bookingId: string) {
+      return call<{ participants: Presence[] }>(
+        `/bookings/${encodeURIComponent(bookingId)}/presence`,
+        { token },
+      );
+    },
     participantConfirmation(token: string, bookingId: string, decision: 'CONFIRM' | 'DECLINE') {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/participant-confirmation`, {
         method: 'POST',
@@ -529,12 +735,6 @@ export const api = {
     },
     settleWithTickets(token: string, bookingId: string) {
       return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/settle-with-tickets`, {
-        method: 'POST',
-        token,
-      });
-    },
-    simulatePayment(token: string, bookingId: string) {
-      return call<Booking>(`/bookings/${encodeURIComponent(bookingId)}/payments/simulate`, {
         method: 'POST',
         token,
       });
@@ -551,6 +751,23 @@ export const api = {
         `/bookings/${encodeURIComponent(bookingId)}/substitutions`,
         { token },
       );
+    },
+  },
+
+  legal: {
+    currentTerms() {
+      return call<{ terms: TermsVersion | null }>('/legal/terms/current');
+    },
+    acceptTerms(
+      token: string,
+      termsVersionId: string,
+      context: 'signup' | 'credit_purchase' | 'pass_purchase' | 'booking_ceiling',
+    ) {
+      return call<TermsAcceptance>('/legal/terms/accept', {
+        method: 'POST',
+        body: { terms_version_id: termsVersionId, context },
+        token,
+      });
     },
   },
 

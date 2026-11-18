@@ -8,6 +8,7 @@ from app.infrastructure.database.base import Base
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.clans import models as clans_models  # noqa: F401
+from app.modules.email import models as email_models  # noqa: F401
 from app.modules.fiscal import models as fiscal_models  # noqa: F401
 from app.modules.geo import models as geo_models  # noqa: F401
 from app.modules.idempotency import models as idempotency_models  # noqa: F401

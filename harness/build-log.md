@@ -20,7 +20,8 @@ Este arquivo registra fatos observados, não intenções. Só marcar uma fase co
 | 13 — Reservas e temporizadores | In progress | `main` | 13A (reservas, holds e T1/T2/T3) e 13B (painel mobile de reservas) implementados localmente | Criação automática a partir do lobby, descoberta comercial e jornada completa do app pendentes; T2 comercial pendente |
 | 14 — Pagamentos Pix e reembolsos | In progress | `main` | 14A (Mercado Pago sandbox, webhook e ledger) e 14C (reembolsos, extrato e conciliação simulada) | 14B (Inter PJ, KYC, transferência real, MED e chargeback) pendente |
 | 14D — Ingresso, carteira e temporada | In progress | `main` | 14D.1–14D.15 implementadas no backend: faixas, fornecedor/Pix, carteira, pacotes, quitação, devolução, temporada, trilha, passe, Pix de checkout, fechamento, estatísticas e rede | UI mobile, buckets/validade do ingresso e conciliação de `purchase_payments` pendentes |
-| 15 — Interface financeira e conciliação | In progress | `main` | 15A/15B implementados como proposta técnica local: liberações, contestações, extrato, recebíveis, conciliação e aba Financeiro | Prazo de repasse real, contestação, PSP, MED, comprovantes e política financeira não aprovados |
+| 14E — Realinhamento ADR 0049 | Implementada, pendente revisão | `feat/17c-painel-moderacao` | Etapas 0–11 e 6b: preço em duas linhas, tabela 2D, ledger de dupla entrada, CPF/termos/NFS-e placeholder, aposentadoria dos ledgers, extrato/comissão e 72 h persistidas; 596 testes, ruff/format/mypy e Alembic verdes | Revisão formal, 15B e 14B pendentes |
+| 15 — Interface financeira e conciliação | In progress | `feat/17c-painel-moderacao` | 15A entregue sobre o ledger em reais: extrato, recebíveis, comissão, contestação com prazo e decisão auditável; 15B do painel entregue localmente em 2026-11-17 (commits `3ec0e9d` e `ed67a71`, sem push) | Comprovante real, NFS-e operacional, PSP/MED reais e revisão formal do painel |
 | 16 — Clãs e troféus | In progress | `main` | Backend implementado (ADR 0046): clãs, papéis, carência, chat, denúncia, troféus e snapshot; testes locais | UI mobile e moderação completa da Fase 17 pendentes |
 
 ## Histórico append-only
@@ -1178,3 +1179,257 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Testes:** seed idempotente e compra de credito lancada contra `player_credit`.
 - **Migracao:** ciclo downgrade/upgrade e `alembic check` validados no PostgreSQL.
 - **Proximo (14E.1):** sombra de escrita no ledger para compra/consumo/estorno, com reconciliador por usuario e sem trocar a leitura.
+
+### 2026-11-16 - S0: reconhecimento e estabilizacao verificada
+
+- **Branch:** `feat/17c-painel-moderacao`, HEAD `37e3871`, 10 commits a frente de `main` e nenhum commit de `main` fora da branch.
+- **Arvore suja:** apenas `mobile/`, `web/` e `telas/` de outra sessao. Nada de backend pendente. Os arquivos foram preservados e **nao** commitados nesta etapa.
+- **Portoes:** `pytest` **538 passed, 30 skipped**; `ruff check`, `ruff format --check` e `mypy app` limpos. Os P0 de CI (`test_trust` com data fixa, `ruff format` em fiscal, `test_observability`) ja estavam fechados pelos commits `99c5225`, `a8a258e` e `ed61c1e`.
+- **Migracoes:** head unico `l6c7d8e9f0a1`; `alembic upgrade head` -> `downgrade base` -> `upgrade head` executados no PostgreSQL local (`127.0.0.1:5434`) e `alembic check` sem diff.
+- **`migrations/env.py`:** importa `fiscal`, `legal` e `ledger`; o commit `99c5225` corrigiu a lacuna.
+- **`a6b7283c4051`:** o `drop_constraint("status_valid")` resolve para `ck_booking_payments_status_valid` pela convencao de nomes do Alembic; o ciclo completo (inclusive downgrade) passou. Nao foi necessaria migracao corretiva.
+- **P0 financeiros:** T3 com devolucao, Pix + ingressos, `REFUNDED` prematuro, reversao de repasse, `EXPIRED` na constraint, idempotencia de compra e revogacao de credito estao implementados por `ed61c1e`, com testes proprios.
+- **Pendente para as proximas etapas:** ledger ainda sem chamador, `compute_fee_cents` sem chamador e preco em duas linhas ainda nao persistido.
+
+### 2026-11-16 - 17C.1: PATCH de expediente do estabelecimento
+
+- **API:** `PATCH /api/v1/organizations/{organization_id}/venues/{venue_id}/business-hours/{business_hour_id}` aceita `weekday`, `opens_at` e `closes_at` (parcial), mantendo os demais campos.
+- **Validacao:** dia 1-7, abertura antes do fechamento, unicidade exata e ausencia de sobreposicao no mesmo dia. Conflito responde `409 business_hour_conflict`; entrada invalida responde `422 invalid_input`.
+- **Autorizacao:** mesma capacidade do `POST`/`DELETE` (`venues:manage`), escopada pela organizacao; membro de outra organizacao recebe `404`.
+- **Auditoria:** `venue_business_hour.updated` com `before` e `after`.
+- **T2:** confirmado no codigo que `booking_timers`/`response_due_at` sao gravados apenas em `_start_t2`; editar expediente nao recalcula prazos ja gravados.
+- **Testes:** 5 novos testes (atualizacao feliz, duplicidade, sobreposicao/encostar, janela invalida e autorizacao negativa) em `tests/test_business_hours.py`; suite completa **543 passed, 30 skipped**.
+- **Contrato:** `docs/CONTRATO_RESERVAS_APP.md` e `docs/JOGA_DOCUMENTACAO_TECNICA.md` atualizados.
+
+### 2026-11-16 - 14E.0b: verificacao e fechamento dos P0 financeiros
+
+- **Itens ja fechados em `ed61c1e` e confirmados no codigo:** T3 devolve ingressos (`bookings/service.py:1083-1092`); Pix pago bloqueia quitacao por ingresso (`settle_with_tickets`, linhas 674-679); `REFUNDED` so e gravado quando o estorno retorna `processed` (`payments/service.py:424-447`); reembolso reverte `venue_releases` para `REVERSED` (`financial.py:114-147`); `EXPIRED`/`CANCELLED` aceitos pela constraint (`k5b6c7d8e9f0`); reembolso de compra revoga credito (`purchase.apply_status`); webhook grava hash e responde `409 webhook_payload_mismatch`.
+- **Idempotencia de compra:** `POST /me/tickets/purchases` e `POST /me/pass/subscriptions` passaram a aceitar `Idempotency-Key` opcional. Replay do mesmo corpo devolve a resposta gravada; a mesma chave com outro pacote/plano responde `409 idempotency_conflict`. Sem o cabecalho, a regra de pendencia unica continua igual.
+- **Testes:** `test_purchase_idempotency_key_replays_without_second_charge` e `test_pass_idempotency_key_replays_and_rejects_different_plan`, alem dos testes existentes de T3, Pix + ingressos, refund `processing`, reversao de release, compra concorrente (PostgreSQL) e replay de webhook.
+- **Concorrencia (2):** `settle_with_tickets` e `register_payment_result` adquirem `SELECT ... FOR UPDATE` na reserva antes de ler o estado da vaga; a checagem de cobranca paga acontece depois do lock.
+- **Item (5):** e uma constraint de schema validada pela migracao aditiva `k5b6c7d8e9f0` e pelo teste de modelo `test_participant_accepts_expired_payment_status`; nao ha cenario concorrente aplicavel.
+- **Verificacao:** `ruff`, `ruff format --check`, `mypy app` limpos; suite **545 passed, 30 skipped**.
+
+### 2026-11-16 - 14E.0c: sanidade do plano de contas e invariante do credito
+
+- **Plano:** `app/modules/ledger/accounts.py` contem as 14 contas (10 singleton + 4 prefixos por dono) e a migracao `l6c7d8e9f0a1` semeia as 10 globais. Contas por usuario/quadra sao criadas sob demanda por `LedgerService.account`, com `owner_kind`/`owner_id`.
+- **Sanidade:** novo teste carrega a migracao de seed por caminho e compara `ACCOUNTS` com `SINGLETON_ACCOUNTS`; outro teste garante que todo prefixo por dono tem tipo declarado e nao colide com contas globais.
+- **Balanceamento:** `LedgerService.post` ja rejeita transacao desbalanceada, valor nao positivo, partida duplicada na mesma conta/direcao e chave vazia; testes existentes cobrem inclusive 100 transacoes aleatorias.
+- **Invariante:** `tests/test_ledger_invariant.py` define `assert_credit_invariant` (saldo de `player_credit:<user>` == lotes de compra pelo preco pago). O teste esta **explicitamente ignorado** com motivo `14E.1` porque nenhum fluxo escreve no ledger ainda; sera habilitado na Etapa 6.
+- **Leitura:** nenhuma leitura publica mudou.
+- **Verificacao:** `9 passed, 1 skipped` nos testes do ledger; `ruff` e formatacao limpos.
+
+### 2026-11-16 - 14E.1: preco em duas linhas e semantica do credito
+
+- **Preco congelado:** a reserva nova grava `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e `pricing_version="adr0049_v1"`. `compute_fee_cents` e a unica fonte do calculo, com `fee_percent_bps` e `fee_min_cents` vindos da configuracao (sem aliquota no codigo).
+- **Rateio e repasse:** a soma dos `contribution_cents` usa `total_cents` (espaco + taxa); o repasse da quadra continua sobre `venue_price_cents` (o valor do espaco nunca e receita do JOGA).
+- **Migracao `m7d8e9f0a1b2`:** colunas aditivas em `bookings`, backfill `legacy_v0` (`fee=0`, `total=price`), `ticket_lots.period` e backfill de passe por `expires_at - 1 mes`; constraint `total_cents = venue_price_cents + fee_cents` e `source <> 'pass' OR period IS NOT NULL`. Downgrade funcional.
+- **Credito:** comprado e devolucao nunca expiram; `expire_due` so encerra passe por competencia vencida e `free_level`/`admin` por `expires_at`; passe entrega `period` (`YYYY-MM`) e nao grava mais `expires_at`; franquia nao acumula.
+- **Ordem de consumo:** `pass -> free_level -> admin -> purchase -> refund` (ADR 0049 §9.1), com teste proprio.
+- **Contrato:** `BookingView` ganhou os cinco campos (aditivo); `GET /me/tickets` ganhou `period` no lote. `CONTRATO_RESERVAS_APP.md`, `DATA_MODEL.md` e `PENDENCIAS.md` atualizados.
+- **Testes:** reserva grava as quatro colunas com piso/soma; credito comprado sobrevive a `expire_due`; passe nao acumula e expira por periodo; ordem de consumo; suite **548 passed, 31 skipped**; `ruff`, formatacao e `mypy` limpos.
+- **Migracao validada:** `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL local.
+- **Fora do escopo desta etapa:** escrita no ledger e inversao da leitura (14E.2/14E.3).
+
+### 2026-11-16 - 14E.2: sombra de escrita do ledger e consumo em reais
+
+- **Decisão aplicada (adendo §11):** a vaga consome `contribution_cents`; `k = ceil(contribution / 310)` é exibição e baixa de lote; o ticket vale R$ 3,10.
+- **Schema (`n8e9f0a1b2c3`):** `ticket_lots.remaining_cents`, `ticket_lot_consumptions.amount_cents`, `booking_participants.space_charge_cents`/`fee_charge_cents`/`funding_source`, conta `purchase_premium_deferred`. Backfill de `remaining_cents = remaining × 310`, rateio retroativo em duas linhas e origem de quitação. Downgrade funcional.
+- **Rateio:** `venue_price_cents` e `fee_cents` são divididos separadamente; `Σ espaço = venue_price`, `Σ taxa = fee` e `space + fee = contribution`.
+- **Consumo:** `settle_with_tickets` usa `contribution_cents`; `ticket_lot_consumptions.amount_cents` fecha a cota e `booking_participants.tickets_consumed` guarda `k`. Vaga coberta por passe/grátis/admin não debita `player_credit` e é marcada como excluída (Etapa 6b).
+- **Ledger:** compra (`purchase:{id}`) com prêmio em `purchase_premium_deferred`; confirmação (`booking:{id}:confirm`) debita `player_credit` ou `psp_clearing` e credita `venue_payable` + `fee_revenue`; devolução (`booking:{id}:refund`) usa payable/receivable conforme o repasse; liberação (`release:{id}`); passe (`pass:{id}:sale`, `pass:{id}:month:{n}`); reembolso Pix (`payment_refund:{id}`); reversão de compra/chargeback (`purchase_refund:{id}`) com receivable do jogador.
+- **Abertura e reconciliação:** `ledger/opening.py` (dry-run e `opening:{user}` contra `opening_equity`, lendo `remaining_cents`) e `ledger/reconciliation.py` (ledger × lotes, lista vagas excluídas). CLIs: `scripts/ledger_opening.py` e `scripts/reconcile_ledger.py`.
+- **Invariante sem skip:** `tests/test_ledger_invariant.py` valida compra, quitação (ledger == contribution == consumo, tickets == k) e ausência de saldo negativo. `tests/test_ledger_shadow.py` cobre regra 4 crédito/Pix, regra 5, regras 6/7, 8/9, 10/11, abertura idempotente e reconciliação limpa.
+- **Verificação:** `559 passed, 30 skipped`; `ruff`, `ruff format --check` e `mypy app` limpos; `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL.
+- **Fora do escopo:** leitura pública (Etapa 7), vagas por passe/grátis/admin (Etapa 6b) e classificação contábil do prêmio.
+
+### 2026-11-16 - 14E.2b: ajuste de arredondamento em lotes multiplos
+
+- **Consumo multi-lote:** quando a cota e dividida entre lotes, a soma de `ticket_lot_consumptions.amount` e ajustada para ser exatamente `k = ceil(contribution/310)`; um lote pode receber `amount = 0` e manter apenas `amount_cents`, por isso a constraint passou de `amount > 0` para `amount >= 0`.
+- **Teste:** `test_consumption_across_lots_keeps_k_exact` cobre dois lotes com sobra de centavos e confirma `Σ amount_cents == cota` e `Σ amount == k`.
+- **Migracoes validadas do zero:** schema local recriado, `upgrade head`, `downgrade base`, `upgrade head` e `alembic check` sem diff.
+
+### 2026-11-16 - 14E.3: inversao da leitura do saldo
+
+- **Flag:** `JOGA_TICKET_BALANCE_SOURCE=cache|ledger` (padrao `cache`). Alterna a fonte sem deploy de codigo; `cache` preserva a leitura antiga para rollback.
+- **Composição:** no modo `ledger`, o saldo exibido é `ceil(player_credit_cents / 310)` + tickets utilizáveis de passe/grátis/admin. A verdade continua em centavos; nenhum saldo em reais é exposto como carteira.
+- **Sem fallback:** conta `player_credit` ausente com lote comprado existente, saldo negativo ou divergencia ledger x lotes levantam `BalanceUnavailable`/`LedgerInconsistency`, registram alerta e respondem `503 balance_unavailable`. O teste cobre divergencia proposital com cache intacto, garantindo que a resposta nao mascara.
+- **Cache:** `ticket_balances` continua sendo escrito na mesma transacao; nenhuma tabela foi removida.
+- **Health check:** `ReconciliationReport.divergence_count` e `ledger_health()` sem PII; `scripts/reconcile_ledger.py` mostra o contador e retorna exit code 1 com divergencia.
+- **API:** `GET /api/v1/me/tickets` ganhou `source` (aditivo) e responde `503` quando a leitura nao fecha. `source=cache` mantem o contrato anterior.
+- **Testes:** 5 novos em `tests/test_balance_source.py` (composicao, conta ausente, divergencia, API com flag e cache escrito). Suite **565 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic check` sem diff.
+- **Operacao:** ligar a flag somente depois de `scripts.ledger_opening --apply` e `scripts.reconcile_ledger` limpo. RUNBOOK atualizado.
+- **Fora do escopo:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).
+
+### 2026-11-17 - CORRECAO 14E: tabela 2D como unidade de consumo
+
+- **Decisao vigente:** ADR 0049 §13 e `DECISOES_BACKEND_ADR_0049.md` §11. O ticket e a unidade de consumo da tabela 2D (`k = tickets_for(band, team_size)`), nao uma conversao de `contribution_cents`. O preco em reais continua congelado na reserva.
+- **Cancelado:** ticket fixo 3,70; ticket fixo 3,10 com `ceil(contribution/310)`; `TICKET_VALUE_CENTS`; `ticket_lots.remaining_cents`; `purchase_premium_deferred`; 4x4/3x3 como tabela padrao; ledger debitando `contribution_cents` no caminho por tickets.
+- **Tabela:** 5x5, 6x6 e 3x3 (futevolei) padrao; 4x4 e menores contingencia por `ceil((V+taxa)/(n×310))`. Correcoes: Coberta 5x5 11, Padrao noite 6x6 8, Padrao noite 3x3 15, Premium 3x3 20. Teste das 18 celulas: `k×310×jogadores >= V+20%`.
+- **Consumo:** `settle_with_tickets` volta a consumir `tickets_per_seat`; exige tickets e credito. A vaga por tickets grava `contribution = k×310`, `space_charge_cents` exato e `fee_charge_cents = k×310 − space`.
+- **Ledger:** compra D `psp_clearing` N×P / C `player_credit` N×P (sem premio); quitação D `player_credit` k×310 / C `venue_payable` space / C `fee_revenue` (k×310 − space); Pix mantem `psp_clearing` e a taxa de 20%.
+- **Schema (`o9f0a1b2c3d4`):** remove `remaining_cents`, adiciona `ticket_lots.unit_price_cents` (abertura/reembolso), remove a conta de premio, corrige a tabela 2D e remove a celula 4x4. Downgrade restaura a coluna, a conta e a tabela anterior.
+- **Abertura:** `opening:{user} = Σ remaining × unit_price_cents` contra `opening_equity`; aborta se algum lote comprado/devolucao com saldo nao tiver preco.
+- **Leitura:** `JOGA_TICKET_BALANCE_SOURCE` continua; em `ledger`, compõe tickets dos lotes + passe/grátis/admin e valida caixa (`compras + abertura − Σ k×310`) em vez de `ledger/310`.
+- **API:** `BookingView.participants[]` ganhou `space_charge_cents`, `fee_charge_cents` e `funding_source`; notificacao `booking_confirmed` leva os dois valores por participante.
+- **Testes:** **566 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos; `alembic upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff.
+- **Pendente:** Etapa 6b (passe/gratico/admin no ledger), Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).
+
+### 2026-11-17 - 14E.4 / 6b: passe, gratis e admin no ledger
+
+- **Conta nova:** `promo_expense` (despesa) semeada pela migracao `p0a1b2c3d4e5`; `pass_revenue` ja existia.
+- **Confirmacao:** `post_booking_confirmed` passou a cobrir as tres fontes nao-credito. Para passe: D `pass_revenue` space_charge / C `venue_payable` space_charge. Para gratis/admin: D `promo_expense` / C `venue_payable`. Nenhuma delas debita `player_credit` nem credita `fee_revenue`.
+- **Devolucao:** `post_booking_refund` tambem estorna passe (C `pass_revenue`) e gratis/admin (C `promo_expense`), com D `venue_payable` ou `venue_receivable`.
+- **Notificacao:** `booking_confirmed` mostra "Cota do passe" ou "Cortesia" e a linha da quadra, sem apresentar a taxa como cobranca do jogador.
+- **Reconciliador:** `non_credit_seats` lista as vagas cobertas e `missing_non_credit_postings` acusa reserva sem o lancamento de confirmacao; `divergence_count` inclui essa checagem.
+- **Testes:** vaga por passe (`pass_revenue`) e por gratis (`promo_expense`), com quadra exata e reconciliação limpa. Suite **568 passed, 30 skipped**; `ruff`, formatacao e `mypy` limpos.
+- **Migracao:** `upgrade head`, `downgrade -1`, `upgrade head` e `alembic check` sem diff no PostgreSQL.
+- **Fora do escopo:** Etapa 8 (CPF/NFS-e/termos) e Etapa 9 (aposentadoria).
+
+### 2026-11-17 - 14E.8: conformidade (CPF, fiscal, termos e reembolso parcial)
+
+- **CPF:** `user_profiles.cpf_ciphertext` (AES-256-GCM, `nonce(12) || ciphertext || tag(16)`, AAD = bytes do `user_id`), `cpf_key_id`, `cpf_last2` e `cpf_updated_at`, com o check `cpf_present_consistent`. A chave vive só em `JOGA_CPF_KEY`/`JOGA_CPF_KEY_ID`; fora de local/test/dev/ci o boot falha sem chave e o placeholder de 32 bytes zero e recusado. Rotacao por `JOGA_CPF_PREVIOUS_KEYS` (leitura apenas).
+- **API de CPF:** `GET /api/v1/me/cpf` devolve `cpf_present` e `cpf_masked` (`***.***.***-25`); `PUT` valida e cifra; `DELETE` anonimiza o perfil. Nenhuma resposta devolve o numero, o ciphertext ou a chave; auditoria registra apenas `cpf_present`.
+- **Fiscal:** a intencao continua uma por reserva em `fiscal_documents` (`pending_manual`, sem emissor/municipio/aliquota). Nova `fiscal_document_takers` guarda um tomador por jogador com `amount_cents` e snapshot do CPF cifrado; a confirmacao da reserva grava os dois quando `JOGA_FISCAL_MODE=placeholder` e a organizacao tem `legal_document`. O valor do documento e `booking.venue_price_cents`, sem a taxa do JOGA.
+- **Termos:** `terms_versions` (rascunho/aprovada) e nova `terms_acceptances` com `terms_hash`, `ip_hash` (HMAC) e `user_agent_hash` (SHA-256). `GET /api/v1/legal/terms/current` e `POST /api/v1/legal/terms/accept`; rascunho nunca e aceitavel. A compra de pacote exige `terms_version_id` somente quando existe versao `approved`; sem versao aprovada, o fluxo atual continua.
+- **Reembolso parcial (aditivo):** `payment_refunds` ganhou `refund_type FULL|PARTIAL` e `idempotency_key`; a unicidade por cobranca virou indice parcial de `FULL`, permitindo parciais futuros. O servico continua criando um unico `FULL`; nenhum comportamento mudou.
+- **Migracoes:** `q1b2c3d4e5f6` (CPF + tomadores), `r2c3d4e5f6a7` (aceites) e `s3d4e5f6a7b8` (reembolso parcial), todas com downgrade funcional. Head final `s3d4e5f6a7b8`.
+- **Testes:** 19 novos em `tests/test_compliance_stage8.py` (roundtrip e AAD, adulteracao, rotacao, validacao, boot sem chave, API de CPF e isolamento entre usuarios, erro sem eco, tomadores idempotentes, fiscal na confirmacao, termos, compra com e sem versao aprovada, indice de reembolso). Suite completa **587 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos.
+- **Migracoes validadas do zero:** `upgrade head` -> `downgrade base` -> `upgrade head` e `alembic check` sem diff no PostgreSQL local. Corrigido o nome do check no downgrade (convencao `ck_<tabela>_` reaplicada).
+- **Documentacao:** `DATA_MODEL.md`, `PENDENCIAS.md`, `RUNBOOK.md`, `backend/.env.example` e o novo `docs/PRIVACIDADE_CPF_E_RETENCAO.md` (base legal, finalidade, acesso, rotacao e retencao).
+- **Fora do escopo:** Etapa 9 (aposentadoria dos ledgers legados), emissao real de NFS-e, municipio/aliquota, recifragem em lote e qualquer fluxo de reembolso parcial.
+
+### 2026-11-17 - 14E.9: aposentadoria dos ledgers legados
+
+- **Leitura (9a):** `get_balance` le exclusivamente `ticket_lots` + ledger; removidos o modo `cache` e `JOGA_TICKET_BALANCE_SOURCE`. A API de wallet mantem `source`, agora sempre `ledger`. O saldo aceita `now` injetavel para testes de competencia mensal.
+- **Escrita (9b):** `TicketBalance` foi removido do modelo; `ticket_balances` e **view** sobre `ticket_lots` (`t4e5f6a7b8c9`), com conversao do saldo legado em lote `admin` + evento `ticket_ledger` (`legacy_lot:*`). O lock de carteira passou a ser `SELECT ... FOR UPDATE` na linha de `users`. `expire_due` opera por jogador.
+- **Extrato (9c):** novo `payments/statement.py` projeta `statement`/`count_statement` de `ledger_transactions` + `ledger_entries` + contas de venue. `booking_ledger_entries` foi removido (`u5f6a7b8c9d0`); `CHARGE_CREATED` deixou de existir, `PAYMENT_CONFIRMED` representa a parte da quadra e `booking_payment_id` vem nulo.
+- **Conciliacao:** tickets reconstruidos por `sum(original_amount)` + debitos + devolucoes que reabriram lote existente; caixa conferido apenas para reservas com `confirmed_at` (o debito ocorre na confirmacao, nao na quitacao individual); pagamentos conferem `booking_confirmed`, `booking_refund`, `payment_refund` e `venue_release`, incluindo `VenueRelease.amount_cents == Booking.venue_price_cents`.
+- **Testes:** ajustados `test_balance_source.py` (leitura exclusiva, sem flag, `ticket_balances` fora da metadata), `test_ledger_shadow.py`, `test_ledger_invariant.py`, `test_tickets.py`, `test_financials.py`, `test_payments_service.py` e `test_pass.py`. Suite completa **587 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos.
+- **Migracoes:** `upgrade head` -> `downgrade base` -> `upgrade head` e `alembic check` sem diff no PostgreSQL local; conversao de saldo legado validada (view 7, lote `admin` 7, um evento). Head final `u5f6a7b8c9d0`.
+- **Documentacao:** `DATA_MODEL.md`, `PENDENCIAS.md`, `RUNBOOK.md`, `JOGA_DOCUMENTACAO_TECNICA.md`, `CONTRATO_RESERVAS_APP.md`, `backend/.env.example` e a fase 14E.
+- **Fora do escopo:** 14B/18, dinheiro real, webhook publico, alteracao da ADR 0049 e UI nova.
+
+### 2026-11-17 - 14E.10/11: interface financeira sobre o ledger em reais
+
+- **Extrato:** cada linha de `financial/statement` carrega `release_id`, `venue_price_cents`, `fee_cents` e `total_cents`, inclusive em `VENUE_RELEASE`; `booking_payment_id` continua nulo e `PAYMENT_CONFIRMED` e a parte da quadra. O extrato e projecao de `ledger_transactions` + `ledger_entries` e foi conferido contra o ledger nos testes.
+- **Recebiveis:** `financial/receivables` expoe preco em duas linhas, `receipt_reference` (comprovante simulado `simulated:<release_id>`, nulo enquanto pendente), `dispute_deadline` e `reason`. O valor do repasse usa `Booking.venue_price_cents`.
+- **Comissao:** novo `GET financial/commission?from=&to=` por reserva confirmada; `joga_fee_cents` soma apenas `fee_cents` e o valor do fornecedor fica em `venue_price_cents`. O resumo tambem separa `venue_price_cents`/`joga_fee_cents` e adiciona `reversed_cents`/`failed_cents`.
+- **Detalhe da reserva:** `GET organizations/{org}/bookings/{booking}/financial` devolve `pricing`, `release`, `dispute`, `fiscal_document` (placeholder `pending_manual`), `ledger` e `refunds`.
+- **Contestacao:** so liberacao `PENDING` e antes de `eligible_at + JOGA_DISPUTE_WINDOW_HOURS` (default tecnico 24 h, nao aprovado). Nova `POST .../disputes/{id}/decision` exige `financial:manage` + `JOGA_REVIEW_OPERATORS`, grava `decided_by`/`decided_at` e auditoria `financial.dispute_decided`; `ACCEPTED` libera, `REJECTED` mantem pendente.
+- **Bloqueio/reversao:** `block_for_chargeback` marca `PENDING` como `FAILED` e `RELEASED` como `REVERSED`, com auditoria e sem tocar saldo; reembolso continua usando `reverse_for_refund`. MED real fica para 14B.
+- **Sem schema novo:** nenhuma tabela, coluna ou migracao; os campos sao projecao/derivacao de `bookings` e `venue_releases`.
+- **Contrato (Etapa 11):** `docs/CONTRATO_RESERVAS_APP.md` ganhou a secao 10 com endpoints, campos, capacidades, erros e o aviso de que `participant_id` em `payments[]` e o id da vaga, nao o `user_id`. `tests/test_openapi_financial.py` confirma o OpenAPI.
+- **Testes:** suite completa **595 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos. Nenhuma migracao nova.
+- **Fora do escopo:** 14B/18, transferencia real, MED/chargeback real, PSP de producao, NFS-e operacional, comprovante fiscal real e atualizacao do painel 15B.
+
+### 2026-11-17 - 14E.12: correcoes finais, 72 h e publicacao
+
+- **Tabela 2D:** confirmadas as 18 celulas (5x5, 6x6, 3x3) e as quatro correcoes (Coberta 5x5 11, Padrao noite 6x6 8, Padrao noite 3x3 15, Premium 3x3 20).
+- **Ledger:** o caminho por tickets debita `k x 310` (nao `contribution_cents`) e credita `venue_payable` + `fee_revenue = (k x 310) - space`; Pix mantem `psp_clearing` e 20%.
+- **Notificacao:** `booking_confirmed` mostra quadra = `space_charge_cents`, JOGA = `(tickets_consumed x 310) - space` e total = `tickets_consumed x 310`; Pix usa `contribution_cents`/`fee_charge_cents`; nunca 20% do total.
+- **Conciliacao:** confere espaco somado = `venue_price_cents`, taxa somada = `sum(k x 310) - venue_price` (reservas so-credito), contribuicao/taxa por participante de credito e saldos nao negativos; o invariante `ledger == remaining x preco pago` nao existe.
+- **Cancelamento:** antes do cutoff devolve todos (inclusive o desistente) e reverte o repasse; depois do cutoff o cancelamento do jogador e bloqueado e o no-show nao reembolsa, mantendo quadra integral e repasse; quadra que cancela devolve tudo e nao recebe; contestacao aberta congela. Sem reembolso parcial.
+- **Janela de contestacao:** 72 h (`JOGA_DISPUTE_WINDOW_HOURS=72`) persistidas como snapshot em `venue_releases.dispute_deadline` e `financial_disputes.deadline_at`; migracao `v6a7b8c9d0e1`; `DisputeView.deadline_at`.
+- **Decisoes registradas:** custodia B com Inter PJ; MED bloqueia repasse + receivable + evidencia + prazo, sem clawback (real na 14B); NFS-e em duas notas por jogador (JOGA no Rio) com parametros versionados e automacao posterior; CPF valida formato no perfil e existencia antes da 1a confirmacao; comprovante real `bank:<e2e_id>` + PDF privado.
+- **Testes:** suite completa **596 passed, 30 skipped**; `ruff`, `ruff format --check` e `mypy app` limpos; `alembic check` sem diff; ciclo `downgrade -1`/`upgrade head` validado; head `v6a7b8c9d0e1`.
+- **Publicacao:** commit e push autorizados; `PLANS.md` atualizado com 14E implementada/pendente de revisao, 15A entregue e 15B pendente. Commits `65d9ff5` (ledger/cancelamento), `7c56da5` (financeiro/72h) e `5afd32c` (docs); push `e5a7bce..5afd32c` em `feat/17c-painel-moderacao`.
+
+### 2026-11-17 - 15B: painel financeiro sobre o ledger em reais
+
+- **Escopo:** somente `web/`. O backend, as migracoes e o app mobile nao foram alterados. Nenhum push, merge ou deploy.
+- **Etapa 1 (higiene):** 401/refresh invalido limpa os tokens e leva ao `/login` preservando caminho, query e hash em `state.from`; o login devolve ao destino e avisa quando a sessao expirou. A fila de moderacao ganhou `limit/offset`, filtro `IN_REVIEW`, estado de erro com `X-Request-ID` e paginacao. O expediente passou a ser editado por `PATCH .../business-hours/{id}`, com validacao de sobreposicao no cliente. Edicoes de estabelecimento, quadra e janela de agenda foram revisadas contra a API atual.
+- **Etapa 2 (financeiro):** tipos e telas alinhados a `venue_price_cents`/`fee_cents`/`fee_percent_applied`/`total_cents`; resumo separa comissao do JOGA de valor do fornecedor e marca `charged_cents` como cobranca total, nao receita. Repasses exibem status (`PENDING`/`RELEASED`/`FAILED`/`REVERSED`), composicao, `receipt_reference`, `dispute_deadline` e motivo. Extrato usa apenas `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` e `VENUE_RELEASE`; `CHARGE_CREATED` foi removido. Relatorio de comissao por `from/to` com totais separados. Contestacoes mostram prazo e decisao; o fornecedor nao decide a propria contestacao. Detalhe por reserva consome `bookings/{id}/financial` e exibe `fiscal_document` placeholder, ledger e refunds. `booking_payment_id` nulo nao vira link.
+- **Testes:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .`, `pnpm exec vitest run` (**98 passed**, 19 arquivos) e `pnpm build` com CSP validada em `dist/index.html`. Testes novos cobrem retorno de sessao, expediente por PATCH, sobreposicao, erro de fila com referencia, filtros/paginacao financeiros, composicao, comprovante simulado, comissao por periodo, NFS-e placeholder e isolamento por organizacao (404 sem dados cruzados).
+- **Commits locais:** `3ec0e9d` (sessao, expediente e fila) e `ed67a71` (financeiro). Sem push.
+- **Pendencias:** comprovante real `bank:<e2e_id>` + PDF privado, NFS-e operacional, PSP/MED reais, `total` no endpoint de comissao para paginacao exata e revisao formal dos textos financeiros.
+- **Fora do escopo:** dinheiro real, split, transferencia, escrow, KYC de recebedor, publicidade e qualquer alteracao de backend/mobile.
+
+### 2026-11-17 - Mobile: correções da auditoria e interface da 14E
+
+- **Escopo:** somente `mobile/` e este registro. Backend, migrações e `web/` não foram alterados. Sem push, merge, deploy ou build publicada.
+- **Trabalho preservado:** os commits `2e5c373` (Pix, passkeys, presença e tempo real) e `fd77374` (acessibilidade e sessão offline) integram o trabalho não commitado das sessões anteriores; os commits `5984304`, `ae0d3a6` e `e8a5fdd` fecham as correções e a interface financeira.
+- **Vaga x pessoa:** `payments[].participant_id` passou a ser comparado com `participants[].id` (id da vaga), nunca com `session.userId`. A tela de pagamento e as ações da reserva usam o mesmo critério.
+- **Checkout:** o retry volta a disparar a criação da cobrança, com `Idempotency-Key` persistida por tentativa; replay devolve a mesma cobrança e `409 idempotency_conflict` limpa a chave. Pacote e passe têm chaves separadas; cobrança expirada gera chave nova.
+- **Polling:** `queue-search` usa `replace` e uma referência de rota para não empilhar `lobby-found` a cada 5 s.
+- **Cold start:** falha de rede mantém a sessão salva; somente `401` encerra a sessão. Conta suspensa abre a tela de recurso.
+- **Acessibilidade:** preferência A/AA/AAA aplicada por um `Text` global, alvos de toque maiores em botões/listas/campos, redução de movimento respeitada na navegação.
+- **Telas sem lastro:** 21 telas sem caminho real foram marcadas como `hidden` e deixaram de ser registradas; dados fictícios de lobby, chat de clã, convite, resultado e pacotes foram removidos ou substituídos por dados do servidor. A tabela de custo da partida passou a usar a tabela 2D correta.
+- **Crédito e preço:** carteira exibe ingressos (`balance` de `GET /me/tickets`, `source=ledger`), não saldo em reais; `503 balance_unavailable` mostra indisponibilidade e retry, nunca zero. Reserva mostra valor da quadra, valor do JOGA e total por participante a partir de `venue_price_cents`/`fee_cents`/`space_charge_cents`/`fee_charge_cents`; a tabela 2D aparece antes da confirmação. O app não aplica 20%: no Pix a segunda linha vem do servidor com rótulo de taxa de 20%.
+- **Passe:** franquia mensal por `period`, sem acúmulo; crédito comprado sem expiração; remoção de plano e valores fictícios no checkout.
+- **CPF, termos e NFS-e:** `GET/PUT/DELETE /me/cpf`, `GET /legal/terms/current` e `POST /legal/terms/accept` consumidos; compra de pacote exige `terms_version_id` quando há versão aprovada. A confirmação mostra o placeholder da NFS-e sem inventar número.
+- **Verificação real:** `pnpm exec tsc --noEmit`, `pnpm exec eslint .`, `pnpm exec prettier --check .` e `pnpm exec expo export --platform android --clear` concluídos com exit 0. Bundle Android gerado (758 módulos).
+- **Pendências:** aceite de termos no passe não é exigido pelo endpoint atual; NFS-e real e referência não são devolvidas em `BookingView`; CPF não é obrigatório na criação da reserva; passkey iOS e build nativo de produção continuam fora do escopo.
+
+### 2026-11-18 - Credencial de login por e-mail no beta (ADR 0050)
+
+- **Decisao:** ADR 0050 registra a fase 1 (e-mail primario, telefone dormente
+  por flag, cadastro aberto) e a fase 2 (telefone obrigatorio no lancamento,
+  so flags). ADR 0015/0016 e `AGENTS.md` §4 continuam validos; a exigencia de
+  telefone foi adiada, nao revogada.
+- **Dados:** `user_emails` (autoridade da credencial) e `email_deliveries`
+  (log sem corpo/codigo/endereco). `phone_challenges` ganhou `subject_type` e
+  as finalidades `email_verification`, `email_login` e `email_change`.
+  `users.email` continua legado do pagador e nao autentica.
+- **Migracao:** `x7a8b9c0d1e2`. Ciclo upgrade/downgrade/upgrade e
+  `alembic check` limpos em PostgreSQL descartavel (`joga_email_migration`).
+- **API:** `/auth/email/code|verify|register|login`, `/auth/emails`,
+  `/me/account/email/challenges` e `PATCH /me/account/email`; rotas web
+  `/auth/web/email/registration|login`. Rotas de telefone sob flag. Passkey
+  aceita e-mail informado sem enumerar contas.
+- **Entrega:** Outbox existente, `EmailSender` com Brevo/Resend/fake, sete
+  templates PT-BR, idempotencia por chave, backoff, bounce e orcamento diario
+  (alerta em 80%, bloqueio em 100%). Brevo ja validado manualmente pelo dono
+  em `.env`; os testes usam `fake` e zero rede.
+- **Testes:** 619 passed, 33 skipped na suite completa (sem
+  `JOGA_TEST_DATABASE_URL`); testes PostgreSQL de e-mail executados a parte
+  com 3 passed (indice unico parcial e concorrencia de cadastro).
+  `ruff check`, `ruff format --check` e `mypy app` limpos.
+- **Infra de teste:** `tests/conftest.py` passou a isolar a suite do `.env` real
+  (segredos/placeholders, telefone habilitado por padrao e banco local),
+  evitando que credenciais reais do desenvolvedor entrem em testes.
+- **Fora do escopo:** OAuth social, SMS real, PSP/dinheiro, marketing, edicao
+  de `mobile/` e `web/`, gatilho automatico de alerta em suspensao/exclusao e
+  UI nova nos dois clientes.
+- **Correcoes de aceite:** credencial movida para `PATCH /me/account/email`
+  (e desafio para `/me/account/email/challenges`), deixando `/me/email` apenas
+  como pagador; testes provam que `PUT /me/email` nao altera a credencial.
+  Workflows `email-worker.yml` (5 min) e `email-cleanup.yml` (diario) drenam
+  a Outbox sem depender de worker no Render. `conftest.py` neutraliza
+  `JOGA_CPF_KEY`, `JOGA_CPF_KEY_ID`, `JOGA_DEV_FIXED_OTP` e
+  `JOGA_WEB_COOKIE_SECURE`, com teste de isolamento. Limites de beta por IP
+  passam a 50/h e 20 cadastros/dia, separados do limite por endereco.
+- **Correcao do demo:** workflows usam `JOGA_ENVIRONMENT=development` e
+  `JOGA_PSP_PROVIDER=simulator` por padrao, sem `JOGA_MERCADO_PAGO_*`; o
+  perfil de producao fica por repository variables. RUNBOOK documenta o
+  Session pooler IPv4 do Supabase, o merge no branch padrao e o cron
+  best-effort de 5-15 min. Simulacao local de `--once` com sender fake
+  resultou em `email_deliveries.status=sent` e Outbox `DISPATCHED`.
+- **Proximo:** handoff mobile/web; agendar `scripts.cleanup_email`; avaliar
+  dominio proprio/DMARC antes do lancamento.
+
+### 2026-11-19 - Login por e-mail e senha (ADR 0050, revisao 2)
+
+- **Nota:** registrado inicialmente como uma ADR separada; consolidado na ADR
+  0050 por decisao do dono do produto, para nao haver duas ADRs para a mesma
+  decisao.
+- **Decisao:** login passa a ser e-mail + senha na ADR 0050. Codigo de 6
+  digitos fica restrito a verificacao de e-mail no cadastro, troca de e-mail e
+  reset de senha. Login por codigo foi removido do contrato, sem flag de
+  reativacao.
+- **Dados:** `user_passwords` (user_id PK, PHC Argon2id, `password_changed_at`,
+  `compromised_at`); `phone_challenges` ganhou `password_reset`;
+  `email_deliveries` ganhou `password_reset` e `password_changed`.
+- **Hash:** `argon2-cffi==25.1.0`, Argon2id com 64 MiB, 3 iteracoes,
+  paralelismo 4; versao fixada em `pyproject.toml` e `requirements.lock`.
+- **API:** registro com senha; login sem challenge; reset com revogacao de
+  todas as sessoes; troca autenticada com revogacao das demais; erros
+  `invalid_credentials`, `weak_password` e `invalid_password_reset`.
+- **Rate limit:** 10/15 min por e-mail e 30/15 min por IP; e-mail inexistente
+  executa hash descartavel para equalizar o custo.
+- **Testes:** hash/politica, login generico, rate limit, reset/replay/expiracao,
+  troca de senha, passkey sem senha e prova de que codigo nao autentica.
+- **Migracao:** `y8b9c0d1e2f3`; ciclo upgrade/downgrade/upgrade e
+  `alembic check` no banco descartavel.
+- **Fora do escopo:** MFA obrigatoria, fluxo para marcar `compromised_at`,
+  recalibracao do Argon2 com carga real, edicao de `mobile/`/`web/`.

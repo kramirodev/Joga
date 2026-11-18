@@ -1248,3 +1248,319 @@ existirem, `JOGA_MONEY_MODE=real` não sobe, e isso é intencional.
 
 **O que continua bloqueado de verdade:** emitir NFS-e, mover dinheiro real,
 operar custódia C, publicar Termos, fixar alíquota.
+
+---
+
+## 11. Decisão da Etapa 6 — tabela 2D como unidade de consumo
+
+**Resposta à seção 4 do relatório do backend (16/11/2026).**
+**Decisão: a tabela 2D volta a ser a unidade de consumo.** A vaga custa
+`tickets_per_seat` tickets, resolvidos por faixa × tamanho de time, como na
+ADR 0042 §3.2. O preço em reais (`venue_price_cents + fee_cents`) continua
+congelado e é o que o ledger lança. O ticket **não** é convertido em reais para
+consumo: o ledger é a autoridade monetária e a tabela é a autoridade de tickets.
+O invariante muda de definição e entra sem `skip`.
+
+Esta seção **substitui** a §3.1 apenas na parte que usava o preço pago como
+valor de consumo. O preço pago continua valendo para a abertura legada do saldo
+monetário. O que ela não substitui: preço em duas linhas (§3.3), rateio da §9.10,
+regras 1 a 18 do §9.2 e a proibição de converter passe, grátis e admin em
+centavos (§10).
+
+### 11.1 O modelo
+
+- **Tabela 2D é a autoridade de tickets.** `PricingBand` (teto de preço) ×
+  `PricingBandTicket` (tamanho de time) → `tickets` por jogador. É a tabela da
+  ADR 0042 §3.2, já implementada em `pricing/service.py` (`BAND_TICKETS`,
+  `tickets_for`).
+- **Preço em reais é a autoridade monetária.** A reserva congela
+  `venue_price_cents`, `fee_cents`, `fee_percent_applied`, `total_cents` e
+  `tickets_per_seat` na criação.
+- **O ticket não é convertido em reais no consumo.** O jogador paga `k` tickets;
+  o ledger debita `contribution_cents`. O valor dos tickets comprados é o preço
+  do pacote; o valor do consumo é o preço congelado da reserva. São dois
+  registros do mesmo evento, não uma conversão.
+- **Pacotes voltam a fazer sentido.** 3/10/30/50 a 3,70/3,40/3,20/3,10; o pacote
+  maior é o mais barato por ticket. A tabela é calibrada no menor preço (3,10),
+  como na ADR 0042 §3.8.
+- **Passe** continua franquia mensal em tickets, fora de `player_credit`.
+
+### 11.2 A conta da vaga
+
+```text
+band = resolve_band(venue_price_cents)
+k    = tickets_for(band, team_size)
+```
+
+Tabela padrão (ADR 0042 §3.2; **5x5, 6x6 e 3x3 são formatos padrão**):
+
+| Faixa | Valor da quadra | 5x5 (10) | 6x6 (12) | 3x3 (6) |
+|---|---:|---:|---:|---:|
+| Econômica dia | até R$ 120 | 5 | 4 | 8 |
+| Econômica noite | R$ 121–150 | 6 | 5 | 10 |
+| Padrão dia | R$ 151–180 | 7 | 6 | 12 |
+| Padrão noite | R$ 181–220 | 9 | 8 | 15 |
+| Coberta | R$ 221–260 | 11 | 9 | 17 |
+| Premium | R$ 261–300 | 12 | 10 | 20 |
+
+- `resolve_band` usa o teto de preço; `tickets_for` lê a tabela.
+- `k` é congelado em `tickets_per_seat`. Reajuste de tabela vale só para
+  reservas futuras.
+- `k` é consumo, não preço. O preço é `contribution_cents`.
+- **Correções em relação à tabela vigente:** Coberta 5x5 **10 → 11**, Padrão
+  noite 6x6 **7 → 8**, Padrão noite 3x3 **14 → 15** e Premium 3x3 **19 → 20**.
+  As outras células não mudam.
+- **Consistência:** em toda célula padrão, `k × 310 ≥ total por jogador`
+  (quadra + taxa). As 18 células fecham com as correções.
+- **4x4 e menores:** não são catálogo padrão; são contingência (falta ou
+  substituição). A contagem é derivada por
+  `ceil((V + taxa) / (n × 310))` no momento da reserva, sem célula fixa.
+  O 3x3 é padrão porque é o futevôlei.
+
+### 11.3 O rateio em duas linhas
+
+Antes de lançar, `booking_participants` precisa de `space_charge_cents` e
+`fee_charge_cents` (migração aditiva), com:
+
+```text
+Σ space_charge_cents = venue_price_cents
+Σ fee_charge_cents   = fee_cents
+space_charge_cents_i + fee_charge_cents_i = contribution_cents_i
+Σ contribution_cents_i = total_cents
+```
+
+O rateio segue a §9.10: dividir `venue_price_cents` e `fee_cents` **separadamente**,
+distribuir o resto por ordem de assento e somar. `_split_price(total_cents)`
+sozinho não serve, porque não garante as duas somas parciais. Isso substitui
+`bookings/service.py:251`.
+
+### 11.4 O consumo
+
+`settle_with_tickets` volta a consumir `tickets_per_seat` (a tabela 2D), não
+`contribution_cents`. Passa a:
+
+1. debitar do crédito do jogador `contribution_cents_i` (o preço congelado);
+2. baixar `tickets_per_seat` tickets da alocação, na ordem
+   `pass → free_level → admin → purchase → refund`;
+3. gravar, na mesma transação, o lançamento do ledger e o consumo do lote.
+
+O débito em centavos e a baixa em tickets são dois efeitos do mesmo evento.
+Nenhum dos dois é derivado do outro. `_tickets_per_seat`
+(`bookings/service.py:834-856`) volta a ser a fonte do consumo; `tickets_for`
+(`pricing/service.py:102`) é a tabela.
+
+A quitação exige **os dois**: tickets suficientes e crédito suficiente. Se faltar
+ticket, `insufficient_tickets`; se faltar crédito, `insufficient_credit`. Pelo
+calibre da tabela, o pacote de 3,10 cobre a reserva; o excedente fica como
+crédito.
+
+### 11.5 O ledger (regra 4)
+
+Por participante, no **caminho por tickets**:
+
+```text
+D player_credit:<user>   k_i × 310
+C venue_payable:<venue>  space_charge_cents_i
+C fee_revenue            (k_i × 310) − space_charge_cents_i
+```
+
+- `space_charge_cents_i` é a cota exata da quadra; a soma é `venue_price_cents`.
+- `(k_i × 310) − space_charge_cents_i` é o **valor do JOGA** daquela vaga
+  (§11.14). Não é 20% fixo: é o restante depois da quadra.
+- No **caminho por Pix**, o débito é `psp_clearing` e o crédito de taxa é o
+  `fee_cents` congelado (20%); não há resto de ticket.
+- Vários participantes no mesmo `psp_clearing` entram como uma partida agregada
+  (a chave única é `(transaction, account, direction)`); `player_credit` é uma
+  conta por usuário.
+- A confirmação da reserva é o evento (transição para `CONFIRMED`), não
+  `COMPLETED`.
+
+### 11.6 O invariante (sem skip)
+
+O invariante antigo (`ledger == remaining × preço pago`) **não vale** e deve
+sair. Ele pressupõe que o ticket tem valor monetário único, o que a tabela 2D
+não tem. O novo invariante é de **evento**, não de valor:
+
+1. Em cada compra: `player_credit` sobe pelo caixa pago (`N × P`); o lote sobe
+   por `N` tickets.
+2. Em cada quitação por tickets, na mesma transação:
+   - débito no ledger == `booking_participants.contribution_cents` ==
+     `k_i × 310` (o valor do ticket);
+   - `ticket_lot_consumptions.tickets` ==
+     `booking_participants.tickets_consumed` == `booking.tickets_per_seat`
+     (tabela);
+   - o lote baixa exatamente esses tickets.
+3. Σ `space_charge_cents` == `venue_price_cents`; Σ `fee_charge_cents` ==
+   `(Σ k_i × 310) − venue_price_cents` no caminho por tickets; no Pix, ==
+   `fee_cents`.
+4. `player_credit` == caixa das compras − `Σ k_i × 310` das reservas quitadas
+   por tickets.
+5. `ticket_balances` == tickets das compras − tickets das reservas quitadas.
+6. Nenhum saldo negativo.
+
+Os dois saldos são independentes em valor: o jogador precisa de tickets
+suficientes **e** de crédito suficiente. O excedente de caixa sobre o valor dos
+tickets consumidos (preço do pacote acima de 3,10) fica em `player_credit` como
+passivo; não é receita. O excedente de tickets fica no lote.
+
+Não existe `remaining_cents` nem `TICKET_VALUE_CENTS`. `unit_price_cents` do lote
+continua como rastro do preço pago, usado só na abertura legada e no reembolso de
+compra; não é usado no consumo.
+
+Schema necessário:
+
+- `ticket_lot_consumptions.tickets` (contagem) e, se ainda não existir,
+  `amount_cents` só como rastro informativo do preço da reserva — o invariante
+  não depende dele.
+- `booking_participants.space_charge_cents`, `fee_charge_cents`.
+
+Não converter `pass`, `free_level` nem `admin` para centavos (§10). Esses lotes
+continuam em tickets e fora de `player_credit`.
+
+**Devolução.** Reserva cancelada credita `player_credit` por `k × 310` (regras 6
+e 7) e restaura os `tickets_per_seat` no lote de origem. Devolução de compra (7
+dias ou encerramento) usa o saldo em centavos de `player_credit`, nunca o preço
+do lote.
+
+### 11.7 Migração
+
+- Lotes `purchase`/`refund` continuam em tickets. A abertura monetária legada é
+  o caixa pago pelos tickets não usados:
+  `opening_credit = Σ remaining × unit_price_cents`, creditando `player_credit`
+  e debitando `opening_equity`, idempotente por `opening:{user}`.
+- `pass`/`free_level`/`admin`: ficam em tickets, sem abertura monetária.
+- Dry-run e relatório por usuário; abortar se o rastro não fechar.
+- `unit_price_cents` é o preço pago na compra, não o valor do ticket no consumo.
+  A regra de §3.1 continua valendo **só** para essa abertura.
+
+### 11.8 Compra de pacote
+
+- Compra de N tickets a preço P:
+
+```text
+D psp_clearing    N × P
+C player_credit   N × P
+```
+
+- O lote sobe N tickets. O preço P é o caixa por ticket; o pacote maior tem P
+  menor (3,10), o menor tem P maior (3,70).
+- Não há conta de desconto nem de prêmio: o caixa é o crédito; a diferença entre
+  o preço do pacote e o preço da reserva fica como saldo em `player_credit`,
+  passivo, não receita.
+- O passe continua separado: D `psp_clearing`, C `pass_deferred_revenue`; a
+  disponibilização mensal D `pass_deferred_revenue`, C `pass_revenue`; a cota
+  não entra em `player_credit`.
+
+### 11.9 Margem e taxa
+
+- No **caminho por tickets**, a receita do JOGA é `(k × 310) − venue_price_cents`
+  — o restante. O piso de referência é 20% da quadra; o arredondamento para cima
+  faz o restante ficar entre 20,56% e 35,27%, conforme a faixa e o formato.
+- No **caminho por Pix**, a receita é o `fee_cents` congelado (20%).
+- O excedente de caixa do pacote (preço pago acima de 3,10) fica em
+  `player_credit` (passivo), não é receita. O backend não deve reconhecê-lo como
+  margem.
+- O backend não fixa 20% no código: `fee_percent_bps` é configuração. A tabela
+  2D é calibrada no menor preço (3,10) e não depende da taxa.
+
+### 11.10 Limite da Etapa 6
+
+- A Etapa 6 fecha o caminho **crédito comprado** (o conflito da seção 4) e os
+  fluxos inequívocos: compra, passe, abertura, devolução e repasse.
+- Vaga paga por `pass`/`free_level`/`admin` não debita `player_credit`; o
+  lançamento da quadra e da taxa para essas fontes é a **Etapa 6b**, com regra
+  própria (`pass_revenue`/`promo_expense`). Não pode ser ignorado em silêncio: o
+  reconciliador precisa listar essas quinas como excluídas e testá-las.
+- O portão "invariante sem skip" vale para o caminho coberto; a Etapa 6b tem o
+  próprio teste antes da Etapa 7.
+
+### 11.11 Não fazer
+
+- Não converter ticket em reais no consumo.
+- Não usar `ceil(contribution / 310)` como contagem; a contagem é a tabela 2D.
+- Não usar `unit_price_cents` do lote como valor de consumo.
+- Não reconhecer o excedente do pacote como receita.
+- Não converter passe, grátis ou admin em centavos.
+- Não fixar a taxa em 20% no código.
+
+### 11.12 Resposta curta
+
+A tabela 2D volta a ser a unidade de consumo: `k = tickets_for(band, team_size)`,
+congelado em `tickets_per_seat`. No caminho por tickets, o ledger debita
+`k × 310`, credita `venue_price_cents` na quadra e o restante em `fee_revenue`.
+Os dois saldos — tickets e centavos — são independentes e ligados pelo evento,
+não por conversão. O invariante antigo sai; o novo compara evento a evento. A
+Etapa 6 pode seguir, depois de corrigir as 4 células da tabela padrão e incluir o
+3x3 (futevôlei).
+
+### 11.13 O que o backend deve corrigir
+
+**Instruções anteriores que ficam canceladas:**
+
+| Instrução anterior | Fica |
+|---|---|
+| ticket fixo em R$ 3,70 | tabela 2D; o ticket não tem valor único |
+| ticket fixo em R$ 3,10 e `ceil(contribution / 310)` | contagem vem de `tickets_for(band, team_size)` |
+| `TICKET_VALUE_CENTS` | não existe |
+| `ticket_lots.remaining_cents` | não existe; lotes ficam em tickets |
+| `purchase_premium_deferred` / `promo_expense` na compra | não existem; compra credita caixa e lote (conta de promoção só pode ser necessária na Etapa 6b, para grátis/admin) |
+| tabela com 4x4/3x3 como padrão | só 5x5, 6x6 e 3x3 (futevôlei) são padrão |
+| "5 células falham" | agora são 4 células padrão: Coberta 5x5, Padrão noite 6x6, Padrão noite 3x3 e Premium 3x3 |
+| ledger debita `contribution_cents` no caminho por tickets | debita `k × 310` e credita o restante como JOGA |
+
+**O que manter do que já existe:**
+
+- `PricingBand`/`PricingBandTicket`, `resolve_band`, `tickets_for`.
+- `settle_with_tickets` consumindo `tickets_per_seat` (`bookings/service.py:694`).
+- `_tickets_per_seat` (`bookings/service.py:834-856`) lendo a tabela.
+- `venue_price_cents`/`fee_cents`/`total_cents` congelados (Etapa 5).
+- `compute_fee_cents` como fonte da taxa.
+
+**O que mudar:**
+
+1. `pricing/service.py`/seed: tabela padrão 5x5/6x6/3x3; corrigir Coberta 5x5
+   10→11, Padrão noite 6x6 7→8, Padrão noite 3x3 14→15 e Premium 3x3 19→20.
+   4x4 fica como fallback de contingência.
+2. `bookings/service.py:251`: ratear `venue_price_cents` e `fee_cents`
+   **separadamente**; gravar `space_charge_cents` e `fee_charge_cents` por
+   participante.
+3. `bookings/service.py:694`: manter `tickets_per_seat`; o débito do ledger é
+   `k × 310`, separado.
+4. `tickets/service.py`: lotes em tickets; compra credita caixa e tickets;
+   `unit_price_cents` só para abertura legada e reembolso.
+5. Ledger: D `player_credit` `k × 310`; C `venue_payable` `space_charge_cents`;
+   C `fee_revenue` `(k × 310) − space_charge_cents`; Pix usa `psp_clearing`.
+6. `tests/test_ledger_invariant.py`: invariante por evento (compra sobe caixa e
+   tickets; quitação baixa `k × 310` e `k` tickets; somas fecham; sem negativo).
+   Remover o invariante `remaining × preço pago`.
+7. Migração: abertura `Σ remaining × unit_price_cents` contra `opening_equity`;
+   sem `remaining_cents`.
+8. Teste novo: `k × 310 ≥ total por jogador` nas 18 células padrão.
+9. Etapa 6b: passe/grátis/admin fora de `player_credit`.
+10. Notificação de confirmação (§11.14): devolver `space_charge_cents` e
+    `fee_charge_cents` por participante.
+
+**O que não mudar:** a regra 4 do §9.2, o rateio do §9.10, a ordem de consumo, o
+preço em duas linhas, o ledger em centavos e a proibição de converter
+passe/grátis/admin em centavos.
+
+### 11.14 Notificação de confirmação
+
+Quando o participante confirma e usa os créditos, o valor gasto é `k × 3,10`. A
+notificação e o recibo mostram duas linhas:
+
+- **Valor da quadra:** `space_charge_cents` (soma exata = `venue_price_cents`).
+- **Valor do JOGA:** `k × 3,10 − space_charge_cents` (o restante).
+
+As duas linhas somam `k × 3,10`. O valor do JOGA é o **restante**, não 20% fixo; a
+taxa de 20% é o piso de referência. O arredondamento para cima do número inteiro
+de tickets faz o restante ficar entre 20,56% e 35,27% da quadra, conforme a faixa
+e o formato.
+
+O backend deve:
+
+1. persistir `space_charge_cents` e `fee_charge_cents` por participante no
+   momento da quitação;
+2. devolver os dois valores na resposta de confirmação e no recibo;
+3. emitir a notificação `booking_confirmed` com os dois valores;
+4. calcular o JOGA como `k × 310 − space`, nunca como 20% do total.
