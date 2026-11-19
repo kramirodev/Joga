@@ -97,6 +97,14 @@ function venueLocation(venue: BookableVenue): string {
   return [venue.address_line, venue.city, venue.state].filter(Boolean).join(' · ');
 }
 
+function PublicVenueBadge() {
+  return (
+    <View accessible accessibilityLabel="Quadra pública" accessibilityRole="text">
+      <Badge tone="blue">Quadra pública</Badge>
+    </View>
+  );
+}
+
 function weekdayLabel(day: number): string {
   return ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][day - 1] ?? 'Dia';
 }
@@ -262,9 +270,20 @@ function Venues() {
             )}
             <View style={{ padding: 14 }}>
               <Row between>
-                <Txt variant="h3" numberOfLines={1} style={{ flex: 1 }}>
-                  {venue.name}
-                </Txt>
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <Txt variant="h3" numberOfLines={1} style={{ flexShrink: 1 }}>
+                    {venue.name}
+                  </Txt>
+                  {venue.is_public === true ? <PublicVenueBadge /> : null}
+                </View>
                 <Badge tone={venue.covered ? 'green' : 'default'}>
                   {venue.covered ? 'COBERTA' : 'ABERTA'}
                 </Badge>
@@ -601,6 +620,12 @@ function VenueDetail() {
         </View>
         <Badge tone={covered ? 'green' : 'default'}>{covered ? 'COBERTA' : 'ABERTA'}</Badge>
       </Row>
+      {detail.is_public === true ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <PublicVenueBadge />
+          <Txt variant="tiny">Quadra da plataforma JOGA</Txt>
+        </View>
+      ) : null}
       <Card tone="flat">
         <Row between>
           <Txt variant="tiny">Espaços reserváveis</Txt>

@@ -100,6 +100,7 @@ export type BookableVenue = {
   longitude: number;
   timezone: string;
   covered: boolean;
+  is_public?: boolean;
   spaces_count: number;
   min_price_cents: number;
   distance_km: number | null;
@@ -173,6 +174,7 @@ export type BookableVenueDetail = {
   organization_id: string;
   name: string;
   timezone: string;
+  is_public?: boolean;
   photos: BookableVenuePhoto[];
   spaces: BookableVenueSpace[];
 };
