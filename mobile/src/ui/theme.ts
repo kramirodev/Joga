@@ -1,3 +1,25 @@
+/**
+ * Selawik (SIL OFL 1.1) substitui a Segoe UI na interface. Os arquivos são
+ * carregados em `assets/fonts/` e registrados com estes nomes no `App.tsx`.
+ * O mapa de pesos segue 400 → Regular, 600 → SemiBold, 700/800/900 → Bold.
+ */
+export const fontFamily = {
+  regular: 'Selawik-Regular',
+  semiBold: 'Selawik-SemiBold',
+  bold: 'Selawik-Bold',
+} as const;
+
+export function fontFamilyForWeight(weight?: string | number | null): string {
+  const value = String(weight ?? '400');
+  if (value === '600') {
+    return fontFamily.semiBold;
+  }
+  if (value === '700' || value === '800' || value === '900' || value === 'bold') {
+    return fontFamily.bold;
+  }
+  return fontFamily.regular;
+}
+
 export type Palette = {
   bg: string;
   surface: string;
