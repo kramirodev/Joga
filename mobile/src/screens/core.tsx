@@ -86,6 +86,10 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       nav.toast(map[error.code]);
       return;
     }
+    if (error.status === 0) {
+      nav.toast('Não foi possível falar com o servidor. Tente novamente.');
+      return;
+    }
     // Não mascara respostas inesperadas: status, código e corpo ficam no relatório.
     if (__DEV__) {
       console.warn('Resposta inesperada da API', describeApiError(error));
@@ -107,6 +111,9 @@ function errorDetail(error: unknown): string {
     };
     if (map[error.code]) {
       return map[error.code];
+    }
+    if (error.status === 0) {
+      return 'Não foi possível falar com o servidor. Tente novamente.';
     }
     return `Falha inesperada (${describeApiError(error)}).`;
   }

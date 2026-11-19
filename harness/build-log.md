@@ -1593,7 +1593,6 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Pendente:** gerar/distribuir o APK 1.0.1 e validar a cerimônia de passkey
   nesse build.
 
-
 ### 2026-11-19 - Identidade visual, splash e Selawik
 
 - **Escopo:** assets de marca, splash/loader contínuos em `#0F1214`, ícone
@@ -1622,3 +1621,23 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Pendente:** validar o splash em build de release em dispositivo Android/iOS
   e conferir a máscara do launcher no aparelho.
 - **Painel (fechamento):** gate concluído — tsc, Prettier e 163/163 testes web verdes.
+
+### 2026-11-19 - Escopo mobile: fila, identidade, compra e quadra pública
+
+- **Unificação intencional:** fila, catálogo e identidade por ícones ficaram no
+  mesmo commit da branch `feat/mobile-fila-identidade-quadra-publica` porque a
+  reescrita de `core.tsx` (fila + catálogo + substituição do editor de avatar
+  pela identidade por ícones) é um bloco contíguo. Separar hunks quebrava
+  commits intermediários; a decisão foi registrar a unificação aqui e manter a
+  revisão pelo diff final.
+- **Compra de ingressos:** somente `store`, `checkout-package` e `buy-3` estão
+  bloqueados. O passe e `checkout-pass` continuam ativos. `insufficient-tickets`
+  permanece registrada sem `hidden` de propósito, pois `ALL_SCREENS` filtra
+  telas ocultas; a tela não tem entrada visível, mas recebe o deep link e o
+  `nav.go` do erro `insufficient_tickets` com `needed`/`available`.
+- **Compatibilidade de rede:** erros `insufficient_tickets` são direcionados à
+  mensagem própria de ingressos insuficientes; `request_timeout` mantém o texto
+  de demora do servidor e falhas com status 0 recebem texto de indisponibilidade
+  de rede, sem expor código ou status ao jogador.
+- **Descoberta:** quadras com `is_public=true` exibem "Quadra pública" na lista
+  e "Quadra da plataforma JOGA" no detalhe, sem alterar o fluxo de reserva.

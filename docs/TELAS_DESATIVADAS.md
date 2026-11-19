@@ -21,6 +21,8 @@ No backend, a flag é aplicada por `require_ticket_purchase_enabled` (`backend/a
 
 O passe e a rota `checkout-pass` **não estão bloqueados**. `insufficient-tickets` também não é interceptada pela tela genérica; ela permanece registrada e exibe a mensagem própria de ingressos insuficientes.
 
+> **Nota de registro:** `insufficient-tickets` foi mantida **sem `hidden: true`** de propósito. `ALL_SCREENS` em `App.tsx` filtra telas ocultas antes de montar o registry, então a tela precisa continuar registrada para receber o deep link e o `nav.go('insufficient-tickets', { needed, available })` disparado pelos erros `insufficient_tickets` do backend. Ela continua sem entrada visível no app; `buy-3` segue `hidden` e é interceptada antes do registry.
+
 ## 3. Mensagens oficiais
 
 ### Compra de ingressos indisponível

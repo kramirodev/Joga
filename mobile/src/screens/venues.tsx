@@ -14,7 +14,7 @@ import type {
   Substitute,
 } from '../api/types';
 import { useApp } from '../state/app';
-import { useNav, useTheme } from '../state/context';
+import { useNav, useTheme, type Params } from '../state/context';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { IdentityBadge } from '../ui/IdentityBadge';
 import { identityFromSeed } from '../ui/identity';
@@ -66,8 +66,22 @@ import { formatFamily, referenceBreakdown, TICKET_REFERENCE_CENTS } from '../ui/
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
-function toastError(nav: { toast: (message: string) => void }, error: unknown) {
+type ToastNav = {
+  toast: (message: string) => void;
+  go: (id: string, params?: Params) => void;
+};
+
+type TicketShortage = { needed?: number | null; available?: number | null };
+
+function toastError(nav: ToastNav, error: unknown, shortage?: TicketShortage) {
   if (error instanceof ApiError) {
+    if (error.code === 'insufficient_tickets') {
+      nav.go('insufficient-tickets', {
+        ...(shortage?.needed != null ? { needed: shortage.needed } : {}),
+        ...(shortage?.available != null ? { available: shortage.available } : {}),
+      });
+      return;
+    }
     const map: Record<string, string> = {
       payout_not_ready:
         'A quadra ainda não está habilitada para receber repasse. Escolha outra quadra.',
@@ -88,7 +102,15 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       low_accuracy: 'O GPS do aparelho não tem precisão suficiente. Tente novamente.',
       pre_check_in_required: 'Faça o pré-check-in antes de confirmar a presença.',
     };
-    nav.toast(map[error.code] ?? 'Não foi possível concluir a ação.');
+    if (map[error.code]) {
+      nav.toast(map[error.code]);
+      return;
+    }
+    if (error.status === 0) {
+      nav.toast('Não foi possível falar com o servidor. Tente novamente.');
+      return;
+    }
+    nav.toast('Não foi possível concluir a ação.');
   } else {
     nav.toast('Não foi possível concluir a ação.');
   }
@@ -663,7 +685,7 @@ function VenueDetail() {
 
 function BookingRequest() {
   const nav = useNav();
-  const { session, matches, queue, loadBookings, email, emailReady } = useApp();
+  const { session, matches, queue, loadBookings, email, emailReady, wallet } = useApp();
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const venueId = typeof nav.params.venueId === 'string' ? nav.params.venueId : null;
@@ -783,7 +805,10 @@ function BookingRequest() {
         nav.go('payment-email');
         return;
       }
-      toastError(nav, error);
+      toastError(nav, error, {
+        needed: ticketsPerSeat,
+        available: wallet?.balance ?? null,
+      });
     } finally {
       setBusy(false);
     }
@@ -875,7 +900,7 @@ function bookingStatusLabel(status: string): string {
 
 function BookingActions({ booking }: { booking: Booking }) {
   const nav = useNav();
-  const { session, loadBookings } = useApp();
+  const { session, loadBookings, wallet } = useApp();
   const [busy, setBusy] = useState(false);
   const ownParticipant =
     booking.participants.find((participant) => participant.user_id === session?.userId) ?? null;
@@ -910,7 +935,10 @@ function BookingActions({ booking }: { booking: Booking }) {
         nav.toast('Participação confirmada.');
       }
     } catch (error) {
-      toastError(nav, error);
+      toastError(nav, error, {
+        needed: booking.tickets_per_seat,
+        available: wallet?.balance ?? null,
+      });
     } finally {
       setBusy(false);
     }
