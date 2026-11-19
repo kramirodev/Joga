@@ -1,9 +1,9 @@
 # Deploy de demonstração (Render + Supabase)
 
 **Status:** ambiente de demonstração **no ar** no Render free + Supabase. A URL
-real não é versionada (repositório público); consulte o dashboard do Render. O
-worker de e-mail do GitHub ainda está **bloqueado** por permissão do token (403
-ao gravar secrets); a Outbox remota está `queued`.
+real não é versionada (repositório público); consulte o dashboard do Render.
+Worker de e-mail validado; a Outbox remota está DISPATCHED e as entregas
+`password_reset`/`security_alert` estão `sent`.
 
 **Data:** 2026-11-18
 
@@ -36,6 +36,7 @@ Não adicionar CORS.
 | Caminho | Destino | Basic auth |
 |---|---|---|
 | `/api/*` (inclui `/api/v1/health/live` e `/ready`) | `127.0.0.1:8000` | **não** (app mobile e monitores não enviam credencial HTTP) |
+| `/.well-known/assetlinks.json` | `/srv/web/.well-known/assetlinks.json` | **não** (Digital Asset Links do Android; expõe só este arquivo) |
 | `/` e assets do SPA | `/srv/web` com fallback `index.html` | **sim** |
 
 ## 3. Artefatos
@@ -217,13 +218,15 @@ O web service foi criado pela API do Render, somente para o demo:
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
 | Variáveis | 26, nomes conferidos na API; valores secretos só no Render |
-| Deploy | `dep-dbv1gmmk1f9s73b4m6cg`, status **live** |
+| Deploy | HEAD, status **live** (deploy manual; auto-deploy não disparou) |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
-O build Docker foi executado pelo Render a partir do commit `b3dd739`; o
-container subiu, as migrações rodaram no boot e o health check ficou 200. O
+O build Docker foi executado pelo Render a partir do HEAD; o container subiu, as
+migrações rodaram no boot e o health check ficou 200. O
 `Dockerfile`/`deploy/start.sh` não foram testados localmente porque Docker não
-está instalado neste host, mas o build remoto validou o caminho.
+está instalado neste host, mas o build remoto validou o caminho. O auto-deploy
+não disparou nos primeiros minutos após o push; o deploy do HEAD foi disparado
+pela API do Render.
 
 **Basic auth do painel:** usuário `demo`; a senha está em
 `DEMO_BASIC_AUTH_PASSWORD` no `.env.deploy` (arquivo ignorado pelo Git). O hash
@@ -241,15 +244,11 @@ Secrets do repositório:
 - `JOGA_EMAIL_API_KEY`
 - `JOGA_EMAIL_FROM`
 
-**Estado (2026-11-18):** o repositório ainda tem 0 secrets. O `GITHUB_TOKEN`
-fornecido consegue ler o repositório e a lista de secrets, mas a API recusou a
-escrita com `403 Resource not accessible by personal access token`. A Outbox
-remota tem `password_reset` e `security_alert` em `queued`, aguardando o worker.
-
-Para concluir, o token precisa de `Secrets: Read and write` e
-`Actions: Read and write` no repositório `kramirodev/Joga` (fine-grained PAT).
-Depois de atualizar `GITHUB_TOKEN` no `.env.deploy`, os três secrets podem ser
-gravados pela API e o workflow disparado.
+**Estado (2026-11-18):** os três secrets estão configurados. O workflow
+`Email worker (Outbox)` foi executado com sucesso (run `44408140879`); a Outbox
+remota ficou DISPATCHED e as entregas `password_reset`/`security_alert` estão
+`sent`, com `attempts=1` e `provider_message_id`. Um reset real para
+`kramirodev+teste@gmail.com` também foi enviado e ficou `sent`.
 
 Depois do merge na `main`, em Actions → "Email worker (Outbox)" → *Run
 workflow* (`workflow_dispatch`), conferir no log `enviados` > 0 e, no banco,
@@ -270,7 +269,12 @@ health é aberto). Isso também reduz o sleep do Render.
 | Tipo | HTTP(s) |
 | Intervalo | 300 s |
 | Contato | `9051684` (e-mail, ativo) |
-| Status inicial | criado, aguardando o primeiro check |
+| Método | GET (`http_method=2`) |
+| Status | **up (2)** |
+
+O monitor padrão da UptimeRobot enviava HEAD e recebia 405 do health; o método
+foi ajustado para GET no monitor existente, sem criar duplicata nem apagar
+monitores.
 
 ## 11. Smoke test
 
@@ -281,10 +285,10 @@ health é aberto). Isso também reduz o sleep do Render.
 | `GET /api/v1/health/live` sem credencial | 200 `{"status":"ok"}` |
 | `GET /api/v1/health/ready` sem credencial | 200 `{"status":"ok","database":"ok"}` |
 | `GET /` sem basic auth | 401 |
-| `GET /` com `demo:<senha>` | 200, SPA carrega |
+| `GET /` com `demo:<senha>` | 200, SPA carrega; assets JS/CSS 200 |
 | Login do painel (`/auth/web/email/login`) | 200; organização `Arena Demo` visível |
 | `GET /organizations` com sessão do painel | 200, papel `OWNER` |
-| Cookies do painel | `joga_web_refresh` HttpOnly/Secure/SameSite=strict/Path=`/api/v1/auth/web`; `joga_web_csrf` Secure/SameSite=strict/Path=`/` |
+| Cookies do painel | `joga_web_refresh` HttpOnly/Secure/SameSite=strict; `joga_web_csrf` Secure/SameSite=strict |
 | `POST /auth/email/login` com senha errada | 401 `invalid_credentials` |
 | Login do jogador | 200, access + refresh emitidos |
 | `GET /auth/emails` | 200, apenas `jogador@demo.joga.test` |
@@ -293,28 +297,60 @@ health é aberto). Isso também reduz o sleep do Render.
 | `PUT /me/email` | 200, altera só o pagador |
 | `GET /auth/emails` após o PUT | continua apenas `jogador@demo.joga.test` |
 | `POST /auth/email/code` (`registration`) | 403 `signup_closed` |
-| `POST /auth/email/code` (`password_reset`) | 202 com `challenge_id`; `email_deliveries` remoto em `queued` |
+| `POST /auth/email/code` (`password_reset`) | 202; worker drenou a Outbox |
+| Worker `email-worker` | run `44408140879` success; `email_deliveries` `sent` com `provider_message_id` |
+| Reset real (`kramirodev+teste@gmail.com`) | `sent` com `provider_message_id` |
 
 O `SameSite=strict` é o valor emitido pelo Starlette; equivale semanticamente a
 `SameSite=Strict`. Nenhum cookie, CSP ou CORS foi alterado.
 
-### Ensaio local
+### Executado localmente (API + Postgres local, sem Caddy)
 
 | Verificação | Resultado |
 |---|---|
-| Seed no Postgres local, 2 execuções | idempotente; segunda preservou IDs e criou 0 janelas |
-| Caddy 2.11.9 oficial com SPA stub | health 200 sem basic auth; `/` 401 sem auth; `/` 200 com `demo`; fallback do SPA 200 |
-| `caddy validate` | `Valid configuration` |
-| Backend | `ruff`, `ruff format --check`, `mypy app` e `alembic check` limpos |
-| Testes | 709 passed, 33 skipped |
-| Docker local | não executado (Docker/Node ausentes neste host); o build remoto do Render ficou **live** |
+| `GET /api/v1/health/live` | 200 `{"status":"ok"}` |
+| `GET /api/v1/health/ready` | 200 `{"status":"ok","database":"ok"}` |
+| `POST /auth/email/login` com senha errada | 401 `invalid_credentials` |
+| Login do jogador (e-mail + senha) | 200, access + refresh emitidos |
+| `GET /auth/emails` | 200, apenas `jogador@demo.joga.test` |
+| `GET /discovery/bookable-venues` | 200, `Arena Demo Centro` |
+| `GET /me/tickets` | 200, `source=ledger`, saldo 0 |
+| `PUT /me/email` | 200, altera só o pagador |
+| `GET /auth/emails` após o PUT | continua apenas `jogador@demo.joga.test` |
+| `POST /auth/email/code` (`registration`) | 403 `signup_closed` |
+| Login do painel (`/auth/web/email/login`) | 200; cookies `joga_web_refresh` (HttpOnly) e `joga_web_csrf`, ambos `SameSite=Strict`, `Path=/` |
+| `GET /organizations` com sessão do painel | 200, `Arena Demo`, papel `OWNER` |
+| `POST /auth/email/code` (`password_reset`) | 202 com `challenge_id` |
+| Worker `scripts.deliver_emails --once` com sender fake | `enviados=2`; `email_deliveries.status='sent'` |
+
+### Caddy validado com o binário oficial (SPA stub, porta 8090)
+
+O Caddyfile real foi executado com o Caddy 2.11.9 oficial para Windows,
+substituindo apenas o `root` por um diretório temporário com um `index.html`
+stub. O restante (proxy, basic auth, fallback) é o mesmo do container:
+
+| Verificação | Resultado |
+|---|---|
+| `GET /api/v1/health/live` sem basic auth | 200 |
+| `GET /api/v1/health/ready` sem basic auth | 200 |
+| `GET /` sem basic auth | 401 |
+| `GET /` com `demo:<senha>` | 200, corpo do SPA |
+| `GET /painel/rota` com basic auth | 200, fallback para `index.html` |
+| `caddy validate --config deploy/Caddyfile --adapter caddyfile` | `Valid configuration` |
 
 ### Pendente
 
 | Verificação | Motivo |
 |---|---|
-| Worker do GitHub e envio Brevo | `GITHUB_TOKEN` sem `Secrets: write`; Outbox remota em `queued` |
-| Reset completo (código recebido → nova senha) | depende de uma caixa de entrada real; os e-mails do seed são `@demo.joga.test` e não recebem mensagens |
+| `docker build` local | Docker/Node ausentes neste host; o build remoto do Render ficou **live** |
+| Confirmação de chegada do e-mail real | Brevo aceitou (`sent` com `provider_message_id`); depende da caixa `kramirodev+teste@gmail.com` |
+| Reset completo (código → nova senha) | depende do código recebido na caixa real |
+| Passkey Android | `assetlinks.json` publicado em `web/public`; falta o redeploy e validar no APK |
+
+O `web/public/.well-known/assetlinks.json` declara `com.anonymous.joga` e o
+SHA-256 do keystore de debug (`FA:C6:…:3B:9C`). O Caddy serve esse caminho sem
+basic auth; a validação local retornou 200 sem credencial, com `/` ainda 401 e o
+fallback do SPA 200. O login por senha continua independente de passkey.
 
 ## 12. Limitações do free tier
 

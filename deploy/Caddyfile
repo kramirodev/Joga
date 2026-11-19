@@ -12,6 +12,13 @@
 # Nunca coloque a senha em claro neste arquivo ou no Git.
 
 :{$PORT} {
+	# Android Digital Asset Links: precisa ser aberto e sem basic auth para o
+	# Credential Manager verificar o app. Expoe somente este arquivo estatico.
+	handle /.well-known/assetlinks.json {
+		root * /srv/web
+		file_server
+	}
+
 	handle /api/* {
 		reverse_proxy 127.0.0.1:8000
 	}

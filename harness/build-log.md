@@ -1537,3 +1537,16 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Gates backend:** `ruff check .`, `ruff format --check .` e
   `pytest`: 709 passed, 33 skipped.
 - **Fora do escopo:** produção, PSP/dinheiro real, CORS/cookies/CSP.
+
+
+### 2026-11-18 - Passkey Android no host do demo
+
+- **Arquivo:** `web/public/.well-known/assetlinks.json`, com
+  `com.anonymous.joga` e o SHA-256 do keystore de debug
+  (`FA:C6:…:3B:9C`), reaproveitando a prova de `harness/proofs/passkeys/`.
+- **Caddy:** rota específica `/.well-known/assetlinks.json` servida de
+  `/srv/web`, sem basic auth; o restante do SPA continua protegido.
+- **Validação local:** assetlinks 200 sem credencial; `/` 401 sem basic auth;
+  `/` e fallback do SPA 200 com `demo`; `caddy validate` OK.
+- **Pendente:** redeploy do host e validação no APK. O login por senha não
+  depende de passkey; o package `com.anonymous.joga` continua provisório.
