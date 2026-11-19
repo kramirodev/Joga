@@ -242,6 +242,10 @@ class Settings(BaseSettings):
     # de user IDs separada por vírgula; vazia significa que ninguém é admin.
     platform_admins: str = ""
 
+    # Organização da plataforma que possui as quadras públicas. Não aparece em
+    # listagens de estabelecimentos e é operada por platform_admin sem vínculo.
+    platform_org_slug: str = Field(default="joga-publico", min_length=2, max_length=60)
+
     # Limite de POSTs de resultado por usuário em uma janela de 60 segundos.
     results_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
 

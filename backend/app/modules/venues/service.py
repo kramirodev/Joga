@@ -111,10 +111,21 @@ class PhotoListResult:
 class VenueService:
     """Operações multi-tenant de quadras, agenda e fotos."""
 
-    def __init__(self, session: Session, storage: PhotoStorage) -> None:
+    def __init__(
+        self,
+        session: Session,
+        storage: PhotoStorage,
+        *,
+        platform_admin_ids: frozenset[str] | None = None,
+        platform_org_slug: str = "joga-publico",
+    ) -> None:
         self.session = session
         self.storage = storage
-        self.organizations = OrganizationService(session)
+        self.organizations = OrganizationService(
+            session,
+            platform_admin_ids=platform_admin_ids,
+            platform_org_slug=platform_org_slug,
+        )
 
     # -- quadras ---------------------------------------------------------
 
@@ -127,14 +138,20 @@ class VenueService:
         name: str,
         description: str | None = None,
         is_covered: bool = False,
+        format_id: uuid.UUID | None = None,
+        price_cents: int | None = None,
     ) -> VenueSpace:
         venue, _ = self._venue_access(
             actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
         )
+        if price_cents is not None and price_cents < 0:
+            raise VenueInvalid
         space = VenueSpace(
             organization_venue_id=venue.id,
             name=_clean_name(name),
             description=_clean_optional(description, 280),
+            format_id=format_id,
+            price_cents=price_cents,
             is_covered=bool(is_covered),
         )
         try:
@@ -232,12 +249,28 @@ class VenueService:
                 cleaned = value
             elif field == "is_covered":
                 cleaned = bool(value)
+            elif field == "format_id":
+                cleaned = value
+            elif field == "price_cents":
+                if value is not None and (not isinstance(value, int) or value < 0):
+                    raise VenueInvalid
+                cleaned = value
             else:
                 raise VenueInvalid
             previous = getattr(space, field)
             if previous != cleaned:
                 setattr(space, field, cleaned)
                 applied[field] = {"from": previous, "to": cleaned}
+
+        # O preço do espaço é a fonte de publicação; as janelas de reserva
+        # acompanham esse valor para não existirem duas fontes divergentes.
+        if "price_cents" in applied and space.price_cents is not None:
+            windows = self.session.scalars(
+                select(VenueAvailability).where(VenueAvailability.venue_space_id == space.id)
+            )
+            for window in windows:
+                window.price_cents = space.price_cents
+                window.band_id = self._band_id_for(space.price_cents)
 
         if applied:
             try:
@@ -335,6 +368,8 @@ class VenueService:
             actor_user_id, organization_id, venue_id, Capability.VENUES_MANAGE
         )
         space = self._lock_space(venue.id, space_id)
+        if space.price_cents is not None and price_cents != space.price_cents:
+            raise VenueInvalid
         _validate_window(weekday, start_time, end_time, price_cents, slot_minutes)
         self._ensure_no_availability_overlap(space.id, weekday, start_time, end_time)
         availability = VenueAvailability(
@@ -400,6 +435,8 @@ class VenueService:
         end_time = changes.get("end_time", availability.end_time)
         price_cents = int(changes.get("price_cents", availability.price_cents))
         slot_minutes = int(changes.get("slot_minutes", availability.slot_minutes))
+        if space.price_cents is not None and price_cents != space.price_cents:
+            raise VenueInvalid
         _validate_window(weekday, start_time, end_time, price_cents, slot_minutes)
         self._ensure_no_availability_overlap(
             space.id, weekday, start_time, end_time, exclude_id=availability.id
