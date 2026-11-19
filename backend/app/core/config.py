@@ -238,12 +238,20 @@ class Settings(BaseSettings):
     # significa que nenhum operador está autorizado.
     review_operators: str = ""
 
+    # Administração de plataforma (catálogo de esportes e usuários). Allowlist
+    # de user IDs separada por vírgula; vazia significa que ninguém é admin.
+    platform_admins: str = ""
+
     # Limite de POSTs de resultado por usuário em uma janela de 60 segundos.
     results_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
 
     @property
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
+
+    @property
+    def platform_admin_ids(self) -> frozenset[str]:
+        return frozenset(item.strip() for item in self.platform_admins.split(",") if item.strip())
 
     @property
     def email_disposable_domain_set(self) -> frozenset[str]:
