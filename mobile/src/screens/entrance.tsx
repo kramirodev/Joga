@@ -44,6 +44,7 @@ function errorText(error: unknown): string {
   if (error instanceof ApiError) {
     const messages: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       invalid_phone: 'Telefone inválido.',
       rate_limited: 'Muitas tentativas. Aguarde um pouco.',
       invalid_code_or_challenge: 'Código inválido ou expirado.',

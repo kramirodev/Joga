@@ -41,7 +41,7 @@ movimento ativa, o fundo fica estático.
 | `mobile/assets/brand/JOGA-wordmark.png` | wordmark completo "JOGA." | transparente | 687 × 183 |
 | `web/public/brand/JOGA-wordmark.png` | cópia do wordmark | transparente | 687 × 183 |
 | `mobile/assets/icon.png` | "J." branco + ponto vermelho | `#0F1214` sólido | 1024 × 1024 |
-| `mobile/assets/android-icon-foreground.png` | "J." centralizado na zona segura (~61%) | transparente | 1024 × 1024 |
+| `mobile/assets/android-icon-foreground.png` | "J." com raio máximo ~327 px na zona segura circular (341,3 px) | transparente | 1024 × 1024 |
 | `mobile/assets/android-icon-background.png` | somente `#0F1214` | sólido | 1024 × 1024 |
 | `mobile/assets/android-icon-monochrome.png` | silhueta de "J." em branco | transparente | 1024 × 1024 |
 | `mobile/assets/splash-icon.png` | "JOGA." completo | transparente | 1024 × 1024 |
@@ -61,8 +61,11 @@ Regras do ícone:
   uma elipse limpa com a mesma proporção medida (47,1 × 45,8 unidades), porque
   no wordmark o ponto encosta na perna do "A".
 - Nada de texto pequeno, sombra ou gradiente dentro do ícone.
-- O foreground do Android usa ~61% do canvas para caber na zona segura da
-  máscara adaptativa. O ícone legado usa ~66%, para leitura a 48 px.
+- A zona segura do adaptive icon é um círculo de 72dp em 108dp: raio de 341,3 px
+  no canvas de 1024. O foreground foi reduzido/reposicionado para raio máximo
+  ~327 px (diâmetro ~654 px); a caixa do desenho tem 550 px de largura, mas o
+  critério é o raio, não a largura do canvas. O ícone legado usa caixa de 676 px
+  (~66% da largura) para leitura a 48 px.
 - O splash tem 920 px de wordmark em um canvas de 1024 px (~5% de margem por
   lado); o plugin usa `imageWidth: 220`, `resizeMode: "contain"` e variante
   `dark` idêntica. O wordmark exibido fica em ~198 px.
@@ -116,7 +119,8 @@ outra fonte de display.
    reconstruído como elipse na proporção medida).
 3. Componha o "J." com o ponto alinhado à base do "J" e recoloque:
    - `icon.png`: 1024 × 1024, fundo `#0F1214`, marca com ~66% da largura;
-   - `android-icon-foreground.png`: 1024 × 1024 transparente, marca com ~61%;
+   - `android-icon-foreground.png`: 1024 × 1024 transparente, marca com raio
+     máximo ~327 px (zona segura de 341,3 px);
    - `android-icon-background.png`: 1024 × 1024 `#0F1214`;
    - `android-icon-monochrome.png`: 1024 × 1024 transparente, silhueta branca;
    - `favicon.png`: 196 × 196, fundo `#0F1214`, marca com ~66%;

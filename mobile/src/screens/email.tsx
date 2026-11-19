@@ -47,6 +47,7 @@ function emailError(error: unknown): EmailErrorInfo {
   }
   const messages: Record<string, string> = {
     network_unavailable: 'Não foi possível falar com o servidor.',
+    request_timeout: 'O servidor demorou para responder. Tente novamente.',
     invalid_email: 'Informe um e-mail válido.',
     email_domain_not_allowed: 'Este domínio de e-mail não é aceito.',
     invalid_code_or_challenge: 'Código inválido ou expirado.',

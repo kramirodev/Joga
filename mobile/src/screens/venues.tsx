@@ -79,6 +79,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       booking_not_found: 'Reserva não encontrada.',
       forbidden: 'Você não participa deste lobby.',
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       invalid_transition: 'Esta ação não é válida no estado atual da reserva.',
       cancellation_closed: 'O prazo de cancelamento desta reserva já passou.',
       presence_window_closed: 'O pré-check-in ou a confirmação de presença está fora da janela.',

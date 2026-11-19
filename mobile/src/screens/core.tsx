@@ -73,6 +73,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       region_required: 'Defina sua região antes de entrar na fila.',
       sport_profile_required: 'Escolha uma modalidade no seu perfil.',
       already_queued: 'Você já está em uma fila.',
@@ -99,6 +100,7 @@ function errorDetail(error: unknown): string {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       invalid_visual_item: 'Item de identidade inválido.',
       visual_item_locked: 'Este item ainda não está liberado.',
       ticket_purchase_disabled: TICKET_PURCHASE_DISABLED_TEXT,

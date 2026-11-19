@@ -1621,3 +1621,4 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   sob trabalho concorrente, fora deste escopo.
 - **Pendente:** validar o splash em build de release em dispositivo Android/iOS
   e conferir a máscara do launcher no aparelho.
+- **Painel (fechamento):** gate concluído — tsc, Prettier e 163/163 testes web verdes.

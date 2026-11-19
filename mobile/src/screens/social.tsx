@@ -48,6 +48,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       clan_full: 'Clã cheio.',
       clan_cooldown: 'Aguarde antes de entrar em outro clã.',
       already_friends: 'Vocês já são amigos.',
