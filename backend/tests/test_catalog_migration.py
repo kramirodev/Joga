@@ -36,7 +36,7 @@ def alembic_env() -> Iterator[tuple[Config, Connection]]:
 
     engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     connection = engine.connect()
-    connection.execute(text(f"SET search_path TO {SCHEMA}, public"))
+    connection.execute(text(f"SET search_path TO {SCHEMA}, public, extensions"))
     connection.commit()
 
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
