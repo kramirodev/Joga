@@ -1,6 +1,6 @@
 # ADR 0051 — Versão mínima do app mobile e bloqueio 426
 
-- **Status:** Aprovado para o ambiente de demonstração em 2026-11-19.
+- **Status:** Aprovado e ativado no ambiente de demonstração em 2026-11-19.
 - **Data:** 2026-11-19
 - **Relaciona:** ADR 0050 (credencial de login por e-mail), `AGENTS.md` §3/§4/§5,
   `docs/JOGA_DOCUMENTACAO_TECNICA.md` §19.2 e `docs/DEPLOY_DEMO.md`.

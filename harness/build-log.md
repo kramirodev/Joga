@@ -1575,3 +1575,20 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Rollout:** ativar no Render com `JOGA_APP_VERSION_GATE_ENABLED=true`,
   `JOGA_MIN_APP_VERSION=1.0.1` e `JOGA_LATEST_APP_VERSION=1.0.1`; o binário
   1.0.0 antigo será bloqueado e exige a build 1.0.1.
+
+
+### 2026-11-19 - Gate de versão ativado no demo
+
+- **Render:** 29 variáveis; `JOGA_APP_VERSION_GATE_ENABLED=true`,
+  `JOGA_MIN_APP_VERSION=1.0.1`, `JOGA_LATEST_APP_VERSION=1.0.1`; deploy
+  `c766713` live.
+- **CI:** run `44454141709`, Backend/Mobile/Web success.
+- **Smoke público:** app-config com gate true; mobile 1.0.0 e UA OkHttp sem
+  headers recebem **426 `app_update_required`**; mobile 1.0.1, `X-Client: web`,
+  curl e painel recebem 200; health 200/200; `/` 401 sem basic auth e 200 com
+  `demo`.
+- **Operação:** o APK 1.0.0 instalado é bloqueado até receber a build 1.0.1;
+  o painel web continua funcionando. O gate não substitui autorização,
+  rate limit nem integridade; headers são falsificáveis.
+- **Pendente:** gerar/distribuir o APK 1.0.1 e validar a cerimônia de passkey
+  nesse build.

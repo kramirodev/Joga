@@ -158,6 +158,9 @@ O gate não é fronteira de segurança: headers podem ser falsificados. Ele exis
 para impedir que binários antigos continuem consumindo a API; autorização e rate
 limit permanecem no servidor. Ver ADR 0051.
 
+**Estado no demo (2026-11-19):** gate ativo com 29 variáveis; mobile 1.0.0
+recebe 426, mobile 1.0.1 passa, painel e curl continuam liberados.
+
 ## 6. Banco: migração e cuidados
 
 O `backend/.env` aponta para o Postgres **local** de propósito. Para migrar o
@@ -367,7 +370,7 @@ stub. O restante (proxy, basic auth, fallback) é o mesmo do container:
 | `docker build` local | Docker/Node ausentes neste host; o build remoto do Render ficou **live** |
 | Confirmação de chegada do e-mail real | Brevo aceitou (`sent` com `provider_message_id`); depende da caixa `kramirodev+teste@gmail.com` |
 | Reset completo (código → nova senha) | depende do código recebido na caixa real |
-| Passkey Android | `assetlinks.json` publicado em `web/public`; falta o redeploy e validar no APK |
+| Passkey Android | `/.well-known/assetlinks.json` servido e 200 sem basic auth; falta validar a cerimônia no APK 1.0.1 |
 
 O `web/public/.well-known/assetlinks.json` declara `com.anonymous.joga` e o
 SHA-256 do keystore de debug (`FA:C6:…:3B:9C`). O Caddy serve esse caminho sem
