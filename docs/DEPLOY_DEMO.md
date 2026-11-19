@@ -167,6 +167,18 @@ O Render free dorme e não mantém worker. O cron do GitHub é *best-effort*: em
 - O workflow `Email worker (Outbox)` continua ativo como reserva; ele não é mais
   o caminho principal.
 
+**Cota do Brevo (monitoramento).** O orçamento é 250/dia, abaixo da cota free
+de 300. Em 80% (200 e-mails) o backend grava `email.budget_warning`; em 100%
+bloqueia envio novo com `email.budget_exhausted` e mantém a resposta pública
+`202`. Acompanhamento por SQL (sem PII):
+
+```sql
+SELECT count(*) FILTER (WHERE created_at >= date_trunc('day', now())) AS hoje,
+       count(*) FILTER (WHERE created_at >= now() - interval '24 hours') AS ultimas_24h
+FROM email_deliveries
+WHERE status = 'sent';
+```
+
 ### Hash do basic auth
 
 O usuário é fixo `demo`; o que varia é a senha. Gerar dentro da imagem (a senha
@@ -275,8 +287,8 @@ O web service foi criado pela API do Render, somente para o demo:
 | Plano | `free` (sem cartão, sem upgrade, sem trial) |
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
-| Variáveis | 29, nomes conferidos na API; valores secretos só no Render |
-| Deploy | HEAD, status **live** (deploy manual; auto-deploy não disparou) |
+| Variáveis | 33, nomes conferidos na API; valores secretos só no Render |
+| Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API; o auto-deploy não disparou de novo) |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
 O build Docker foi executado pelo Render a partir do HEAD; o container subiu, as
