@@ -11,7 +11,8 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.core.config import get_settings
+from app.core.client_version import client_version_error
+from app.core.config import Settings, get_settings
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -27,7 +28,9 @@ def request_id_from(value: str | None) -> str:
     return uuid.uuid4().hex
 
 
-def install_observability(app: FastAPI) -> None:
+def install_observability(app: FastAPI, settings: Settings | None = None) -> None:
+    resolved = settings or get_settings()
+
     @app.middleware("http")
     async def observability(request: Request, call_next: Any) -> Response:
         request_id = request_id_from(request.headers.get(REQUEST_ID_HEADER))
@@ -37,7 +40,7 @@ def install_observability(app: FastAPI) -> None:
             too_large = (
                 content_length is not None
                 and content_length.isdigit()
-                and int(content_length) > get_settings().max_request_body_bytes
+                and int(content_length) > resolved.max_request_body_bytes
             )
             if too_large:
                 response: Response = JSONResponse(
@@ -45,7 +48,11 @@ def install_observability(app: FastAPI) -> None:
                     content={"detail": {"code": "payload_too_large"}},
                 )
             else:
-                response = await call_next(request)
+                version_error = client_version_error(request, resolved)
+                if version_error is not None:
+                    response = version_error
+                else:
+                    response = await call_next(request)
         except Exception:
             duration_ms = (time.perf_counter() - started) * 1000
             logger.exception(

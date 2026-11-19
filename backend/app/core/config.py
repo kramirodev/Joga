@@ -9,6 +9,8 @@ from typing import Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.versioning import parse_version
+
 DEFAULT_PHONE_HASH_SECRET = "local-development-only-change-me"
 DEFAULT_TOKEN_HASH_SECRET = "local-token-development-only-change-me"
 LOCAL_ENVIRONMENTS = {"local", "test", "development", "ci"}
@@ -38,6 +40,13 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=3, ge=1, le=30)
     max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     log_level: str = "INFO"
+
+    # Gate de versão do app mobile (ADR 0051). Desativado no desenvolvimento
+    # local/testes; o demo/produção pode ativá-lo sem alterar o código.
+    app_version_gate_enabled: bool = False
+    min_app_version: str = Field(default="1.0.1", pattern=r"^\d{1,5}\.\d{1,5}\.\d{1,5}$")
+    latest_app_version: str = Field(default="1.0.1", pattern=r"^\d{1,5}\.\d{1,5}\.\d{1,5}$")
+    app_update_url: str | None = Field(default=None, max_length=500)
 
     # Segredo de hash de telefone/OTP/IP. O valor padrão só vale para
     # desenvolvimento e testes; ambientes reais precisam definir JOGA_PHONE_HASH_SECRET.
@@ -281,6 +290,19 @@ class Settings(BaseSettings):
     @property
     def webauthn_origins(self) -> list[str]:
         return [self.webauthn_origin_android, self.webauthn_origin_web]
+
+    @model_validator(mode="after")
+    def validate_app_version_policy(self) -> Self:
+        """Garante semver coerente e URL de atualização HTTPS (ADR 0051)."""
+        minimum = parse_version(self.min_app_version)
+        latest = parse_version(self.latest_app_version)
+        if minimum is None or latest is None:
+            raise ValueError("JOGA_MIN_APP_VERSION/JOGA_LATEST_APP_VERSION devem ser semver")
+        if minimum > latest:
+            raise ValueError("JOGA_MIN_APP_VERSION nao pode ser maior que JOGA_LATEST_APP_VERSION")
+        if self.app_update_url and not self.app_update_url.strip().startswith("https://"):
+            raise ValueError("JOGA_APP_UPDATE_URL deve usar https")
+        return self
 
     @model_validator(mode="after")
     def reject_default_secret_outside_local(self) -> Self:

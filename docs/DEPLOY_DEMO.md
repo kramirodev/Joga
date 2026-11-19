@@ -111,6 +111,10 @@ JOGA_FISCAL_MODE=disabled
 JOGA_CUSTODY_MODEL=B
 JOGA_WEBAUTHN_RP_ID=<host do Render, sem https>
 JOGA_WEBAUTHN_ORIGIN_WEB=https://<host do Render>
+JOGA_APP_VERSION_GATE_ENABLED=true
+JOGA_MIN_APP_VERSION=1.0.1
+JOGA_LATEST_APP_VERSION=1.0.1
+# JOGA_APP_UPDATE_URL=https://...   # opcional; quando existir, use HTTPS
 JOGA_MEDIA_ROOT=/app/backend/var/media
 DEMO_BASIC_AUTH_HASH                   # segredo: hash bcrypt do Caddy
 ```
@@ -139,6 +143,20 @@ No Render, cole o hash em `DEMO_BASIC_AUTH_HASH` (secret). O Caddyfile lê a
 variável em tempo de execução; sem ela, o Caddy falha fechado. A diretiva
 `basic_auth` do Caddy exige o par `<usuário> <hash>` — por isso o Caddyfile tem
 `demo {$DEMO_BASIC_AUTH_HASH}` e não apenas o hash.
+
+### Gate de versão do app mobile
+
+O app 1.0.1 envia `X-Client: mobile`, `X-App-Version`, `X-Build-Number` e
+`X-Platform` em REST e WebSocket. O painel envia `X-Client: web`. Com
+`JOGA_APP_VERSION_GATE_ENABLED=true`, mobile abaixo de `JOGA_MIN_APP_VERSION`
+recebe **426 `app_update_required`** (WebSocket fecha com 4403). Health,
+`/api/v1/app-config` e o painel ficam isentos. Sem `X-Client`, User-Agent
+OkHttp/CFNetwork/Expo é tratado como mobile antigo; curl e navegador continuam
+liberados.
+
+O gate não é fronteira de segurança: headers podem ser falsificados. Ele existe
+para impedir que binários antigos continuem consumindo a API; autorização e rate
+limit permanecem no servidor. Ver ADR 0051.
 
 ## 6. Banco: migração e cuidados
 
@@ -217,7 +235,7 @@ O web service foi criado pela API do Render, somente para o demo:
 | Plano | `free` (sem cartão, sem upgrade, sem trial) |
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
-| Variáveis | 26, nomes conferidos na API; valores secretos só no Render |
+| Variáveis | 29, nomes conferidos na API; valores secretos só no Render |
 | Deploy | HEAD, status **live** (deploy manual; auto-deploy não disparou) |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
@@ -284,6 +302,10 @@ monitores.
 |---|---|
 | `GET /api/v1/health/live` sem credencial | 200 `{"status":"ok"}` |
 | `GET /api/v1/health/ready` sem credencial | 200 `{"status":"ok","database":"ok"}` |
+| `GET /api/v1/app-config` | 200 com `min_supported_version=1.0.1` |
+| Mobile 1.0.0 / sem headers | 426 `app_update_required` |
+| Mobile 1.0.1 | login 200; headers `X-Client`/`X-App-Version` |
+| `X-Client: web` | login 200 |
 | `GET /` sem basic auth | 401 |
 | `GET /` com `demo:<senha>` | 200, SPA carrega; assets JS/CSS 200 |
 | Login do painel (`/auth/web/email/login`) | 200; organização `Arena Demo` visível |

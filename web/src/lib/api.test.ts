@@ -90,7 +90,9 @@ describe("cliente HTTP do painel", () => {
     const [refreshUrl, refreshInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(refreshUrl).toBe("/api/v1/auth/web/refresh");
     expect(refreshInit.method).toBe("POST");
-    expect((refreshInit.headers as Record<string, string>)["X-CSRF-Token"]).toBe("csrf-1");
+    const refreshHeaders = new Headers(refreshInit.headers);
+    expect(refreshHeaders.get("X-CSRF-Token")).toBe("csrf-1");
+    expect(refreshHeaders.get("X-Client")).toBe("web");
 
     const [, retryInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect((retryInit.headers as Headers).get("Authorization")).toBe("Bearer access-2");

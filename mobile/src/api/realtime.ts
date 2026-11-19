@@ -1,5 +1,7 @@
 import { API_ORIGIN } from './client';
 
+import { APP_BUILD, APP_VERSION, CLIENT_NAME, CLIENT_PLATFORM } from './version';
+
 export type RealtimeEvent = {
   type: string;
   data?: unknown;
@@ -41,7 +43,13 @@ function connect() {
     options?: { headers?: Record<string, string> },
   ) => WebSocket;
   const ws = new Socket(url, undefined, {
-    headers: { Authorization: `Bearer ${currentToken}` },
+    headers: {
+      Authorization: `Bearer ${currentToken}`,
+      'X-Client': CLIENT_NAME,
+      'X-App-Version': APP_VERSION,
+      'X-Build-Number': APP_BUILD,
+      'X-Platform': CLIENT_PLATFORM,
+    },
   });
   socket = ws;
 

@@ -50,6 +50,19 @@ import type {
 const API_BASE = "/api/v1";
 const CSRF_COOKIE = "joga_web_csrf";
 
+const CLIENT_HEADERS = {
+  "X-Client": "web",
+  "X-App-Version": "0.1.0",
+} as const;
+
+function withClientHeaders(headers?: HeadersInit): Headers {
+  const merged = new Headers(headers);
+  for (const [key, value] of Object.entries(CLIENT_HEADERS)) {
+    merged.set(key, value);
+  }
+  return merged;
+}
+
 export const SESSION_EXPIRED_EVENT = "joga:session-expired";
 
 let accessToken: string | null = null;
@@ -173,7 +186,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
+  const headers = withClientHeaders(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -186,7 +199,7 @@ async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T
 }
 
 async function requestRaw(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
-  const headers = new Headers(init.headers);
+  const headers = withClientHeaders(init.headers);
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -230,7 +243,7 @@ async function doRefresh(): Promise<WebSessionPayload | null> {
   const response = await fetch(`${API_BASE}/auth/web/refresh`, {
     method: "POST",
     credentials: "same-origin",
-    headers: { "X-CSRF-Token": csrf },
+    headers: withClientHeaders({ "X-CSRF-Token": csrf }),
   });
   if (response.status === 401 || response.status === 403) {
     clearAuthTokens();
@@ -336,7 +349,7 @@ export async function webLogout(): Promise<void> {
       await fetch(`${API_BASE}/auth/web/logout`, {
         method: "POST",
         credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrf },
+        headers: withClientHeaders({ "X-CSRF-Token": csrf }),
       });
     }
   } finally {

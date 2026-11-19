@@ -1355,6 +1355,21 @@ Toda rota que recebe IDs deve validar propriedade, participação ou papel no re
 - Somente ações do servidor e eventos do provedor alteram status financeiro.
 - Campos internos como MMR, Trust Factor, troféus, papéis, estado do fornecedor, preço aplicado e pagamento nunca podem ser alterados por mass assignment do cliente.
 
+### 19.2 Versão mínima do app mobile
+
+O app envia `X-Client: mobile`, `X-App-Version` (`MAJOR.MINOR.PATCH`),
+`X-Build-Number` e `X-Platform`. O painel envia `X-Client: web`. O endpoint
+aberto `GET /api/v1/app-config` devolve `min_supported_version`,
+`latest_version`, `update_url`, `version_gate_enabled` e `update_required`.
+
+Com `JOGA_APP_VERSION_GATE_ENABLED=true`, requisições mobile abaixo de
+`JOGA_MIN_APP_VERSION` recebem **426 `app_update_required`**; WebSocket fecha
+com **4403**. Health e o próprio app-config são isentos. Sem `X-Client`, um
+User-Agent OkHttp/CFNetwork/Expo é tratado como mobile antigo; navegador, curl e
+painel continuam liberados. O gate é controle de compatibilidade/abuso, não
+fronteira de segurança: headers podem ser falsificados; autorização, rate limit
+e integridade continuam no servidor. Ver ADR 0051.
+
 ---
 
 ## 20. Segurança da API, chat e operações financeiras

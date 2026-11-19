@@ -50,6 +50,8 @@ import type {
   Wallet,
 } from './types';
 
+import { APP_BUILD, APP_VERSION, CLIENT_NAME, CLIENT_PLATFORM } from './version';
+
 // Configure pela variável de ambiente EXPO_PUBLIC_API_URL.
 // Sem a variável, usa o backend local via `adb reverse tcp:8000 tcp:8000`.
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
@@ -79,6 +81,7 @@ export class ApiError extends Error {
 let refreshHandler: (() => Promise<string | null>) | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 let suspensionHandler: (() => void) | null = null;
+let updateRequiredHandler: (() => void) | null = null;
 
 export function setRefreshHandler(handler: (() => Promise<string | null>) | null) {
   refreshHandler = handler;
@@ -91,6 +94,10 @@ export function setSuspensionHandler(handler: (() => void) | null) {
   suspensionHandler = handler;
 }
 
+export function setUpdateRequiredHandler(handler: (() => void) | null) {
+  updateRequiredHandler = handler;
+}
+
 type Init = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -101,6 +108,10 @@ type Init = {
 async function call<T>(path: string, init: Init = {}, allowRefresh = true): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Client': CLIENT_NAME,
+    'X-App-Version': APP_VERSION,
+    'X-Build-Number': APP_BUILD,
+    'X-Platform': CLIENT_PLATFORM,
     ...(init.token ? { Authorization: `Bearer ${init.token}` } : {}),
     ...(init.headers ?? {}),
   };
@@ -113,6 +124,10 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
     });
   } catch {
     throw new ApiError(0, 'network_unavailable');
+  }
+
+  if (response.status === 426) {
+    updateRequiredHandler?.();
   }
 
   if (response.status === 401 && init.token && allowRefresh && refreshHandler) {

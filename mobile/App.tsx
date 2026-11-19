@@ -526,6 +526,18 @@ function appealBadge(status: string): {
   return { label: 'EM ANÁLISE', tone: 'orange' };
 }
 
+function UpdateRequiredScreen() {
+  return (
+    <Page title="Atualize o JOGA" back={false}>
+      <StateScreen
+        icon="download"
+        title="Atualização obrigatória"
+        text="Esta versão do JOGA não é mais suportada. Atualize pelo canal de distribuição para continuar usando o aplicativo."
+      />
+    </Page>
+  );
+}
+
 function SuspendedScreen() {
   const app = useApp();
   const { palette } = useTheme();
@@ -1015,7 +1027,9 @@ function Shell() {
         >
           <View style={{ flex: 1 }}>
             <View style={{ flex: 1, overflow: 'hidden', backgroundColor: palette.bg }}>
-              {app.suspended ? (
+              {app.updateRequired ? (
+                <UpdateRequiredScreen />
+              ) : app.suspended ? (
                 <SuspendedScreen />
               ) : (
                 stack.map((entry, index) => {

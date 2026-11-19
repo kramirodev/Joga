@@ -52,7 +52,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(api_router, prefix="/api/v1")
-    install_observability(app)
+    app.state.settings = resolved
+    install_observability(app, resolved)
     return app
 
 

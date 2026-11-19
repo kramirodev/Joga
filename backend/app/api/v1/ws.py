@@ -7,7 +7,8 @@ import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.core.config import get_settings
+from app.core.client_version import blocked_client_code
+from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session_factory
 from app.modules.chat.service import ChatService
 from app.modules.identity.sessions import AuthenticatedSession, InvalidAccessToken, SessionService
@@ -17,6 +18,7 @@ router = APIRouter(tags=["realtime"])
 
 HEARTBEAT_SECONDS = 30
 CLOSE_UNAUTHORIZED = 4401
+CLOSE_UPDATE_REQUIRED = 4403
 
 
 def _token_from_header(value: str | None) -> str | None:
@@ -50,6 +52,13 @@ def _can_subscribe(user_id: uuid.UUID, lobby_id: uuid.UUID) -> bool:
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
+    resolved = getattr(websocket.app.state, "settings", None)
+    settings = resolved if isinstance(resolved, Settings) else get_settings()
+    blocked = blocked_client_code(websocket.headers, websocket.url.path, settings)
+    if blocked is not None:
+        await websocket.close(code=CLOSE_UPDATE_REQUIRED, reason=blocked)
+        return
+
     token = _token_from_header(websocket.headers.get("authorization"))
     if token is None:
         await websocket.close(code=CLOSE_UNAUTHORIZED)

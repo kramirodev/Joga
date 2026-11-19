@@ -55,6 +55,12 @@ services:
         value: "250"
       - key: JOGA_WEB_COOKIE_SECURE
         value: "true"
+      - key: JOGA_APP_VERSION_GATE_ENABLED
+        value: "true"
+      - key: JOGA_MIN_APP_VERSION
+        value: 1.0.1
+      - key: JOGA_LATEST_APP_VERSION
+        value: 1.0.1
       - key: JOGA_PSP_PROVIDER
         value: simulator
       - key: JOGA_MONEY_MODE

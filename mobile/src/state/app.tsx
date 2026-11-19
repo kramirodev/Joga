@@ -10,7 +10,13 @@ import {
 } from 'react';
 import { Appearance } from 'react-native';
 
-import { api, ApiError, setRefreshHandler, setSuspensionHandler } from '../api/client';
+import {
+  api,
+  ApiError,
+  setRefreshHandler,
+  setSuspensionHandler,
+  setUpdateRequiredHandler,
+} from '../api/client';
 import { startRealtime, stopRealtime, subscribeRealtime } from '../api/realtime';
 import {
   defaultAccessibility,
@@ -114,6 +120,7 @@ type AppValue = {
   notifications: Notification[];
   unreadNotifications: number;
   suspended: boolean;
+  updateRequired: boolean;
   moderationActions: ModerationAction[];
   moderationAppeals: ModerationAppeal[];
   email: string | null;
@@ -208,6 +215,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [suspended, setSuspended] = useState(false);
+  const [updateRequired, setUpdateRequired] = useState(false);
   const [moderationActions, setModerationActions] = useState<ModerationAction[]>([]);
   const [moderationAppeals, setModerationAppeals] = useState<ModerationAppeal[]>([]);
   const [email, setEmail] = useState<string | null>(null);
@@ -692,6 +700,13 @@ export function AppProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
+    setUpdateRequiredHandler(() => {
+      setUpdateRequired(true);
+    });
+    return () => setUpdateRequiredHandler(null);
+  }, []);
+
+  useEffect(() => {
     if (!token) {
       stopRealtime();
       return;
@@ -797,6 +812,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       notifications,
       unreadNotifications,
       suspended,
+      updateRequired,
       moderationActions,
       moderationAppeals,
       email,
@@ -872,6 +888,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       notifications,
       unreadNotifications,
       suspended,
+      updateRequired,
       moderationActions,
       moderationAppeals,
       email,

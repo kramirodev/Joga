@@ -1550,3 +1550,28 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   `/` e fallback do SPA 200 com `demo`; `caddy validate` OK.
 - **Pendente:** redeploy do host e validação no APK. O login por senha não
   depende de passkey; o package `com.anonymous.joga` continua provisório.
+
+
+### 2026-11-19 - Gate de versão mínima do app mobile (ADR 0051)
+
+- **Contrato:** app envia `X-Client: mobile`, `X-App-Version`,
+  `X-Build-Number` e `X-Platform` em REST e WebSocket; painel envia
+  `X-Client: web`. `GET /api/v1/app-config` é aberto e devolve versão mínima,
+  última, URL de atualização e `update_required`.
+- **Bloqueio:** com `JOGA_APP_VERSION_GATE_ENABLED=true`, mobile abaixo de
+  `JOGA_MIN_APP_VERSION` recebe **426 `app_update_required`**; WebSocket fecha
+  com **4403**. Health, app-config, painel, navegador e curl ficam isentos. Sem
+  `X-Client`, User-Agent OkHttp/CFNetwork/Expo é tratado como mobile antigo.
+- **Limite:** o gate é controle de compatibilidade/abuso, não fronteira de
+  segurança; headers podem ser falsificados. Autorização, rate limit e
+  integridade continuam no servidor.
+- **Mobile:** versão **1.0.1**, `expo-constants`, headers em `client.ts` e
+  `realtime.ts`, handler global de 426 e tela “Atualização obrigatória”.
+- **Painel:** `api.ts` envia `X-Client: web` e `X-App-Version` também no
+  refresh/logout.
+- **Gates:** backend 725 passed, 33 skipped; ruff/format/mypy limpos. Mobile:
+  `expo install --check`, lint, Prettier, TypeScript e frozen install. Web:
+  112 testes, lint, Prettier, TypeScript e build.
+- **Rollout:** ativar no Render com `JOGA_APP_VERSION_GATE_ENABLED=true`,
+  `JOGA_MIN_APP_VERSION=1.0.1` e `JOGA_LATEST_APP_VERSION=1.0.1`; o binário
+  1.0.0 antigo será bloqueado e exige a build 1.0.1.
