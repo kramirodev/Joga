@@ -287,7 +287,7 @@ O web service foi criado pela API do Render, somente para o demo:
 | Plano | `free` (sem cartão, sem upgrade, sem trial) |
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
-| Variáveis | 33, nomes conferidos na API; valores secretos só no Render |
+| Variáveis | 34, nomes conferidos na API; valores secretos só no Render |
 | Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API; o auto-deploy não disparou de novo) |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
