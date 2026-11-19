@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, time
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -32,13 +33,23 @@ VENUE_KINDS = ("public", "private")
 
 
 class Sport(Base):
-    """Modalidade esportiva do catálogo."""
+    """Modalidade esportiva do catálogo administrável."""
 
     __tablename__ = "sports"
+    __table_args__ = (CheckConstraint("sort_order >= 0", name="sort_order_non_negative"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
+    icon_key: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="icon-app-escudo",
+        server_default=text("'icon-app-escudo'"),
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
@@ -61,6 +72,12 @@ class SportFormat(Base):
             "duration_minutes = play_minutes + break_minutes",
             name="duration_matches_parts",
         ),
+        CheckConstraint("players_per_team > 0", name="players_per_team_positive"),
+        CheckConstraint("period_count > 0", name="period_count_positive"),
+        CheckConstraint(
+            "score_model IN ('sets_points', 'goals')",
+            name="score_model_valid",
+        ),
         UniqueConstraint("slug", "version", name="uq_sport_formats_slug_version"),
     )
 
@@ -71,10 +88,22 @@ class SportFormat(Base):
     slug: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     team_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    players_per_team: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default=text("5")
+    )
     total_participants: Mapped[int] = mapped_column(Integer, nullable=False)
     play_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
+    score_model: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="sets_points", server_default=text("'sets_points'")
+    )
+    positions: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(

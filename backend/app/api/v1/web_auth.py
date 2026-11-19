@@ -180,13 +180,15 @@ def _clear_session_cookies(response: Response, settings: Settings) -> None:
     )
 
 
-def _capabilities(session: Session, user_id: UUID) -> list[str]:
+def _capabilities(session: Session, user_id: UUID, settings: Settings) -> list[str]:
+    capabilities: list[str] = []
     role = ModerationService(session).operator_role(user_id)
-    if role is None:
-        return []
-    capabilities = ["moderation.read"]
-    if role == "ADMIN":
-        capabilities.append("moderation.manage")
+    if role is not None:
+        capabilities.append("moderation.read")
+        if role == "ADMIN":
+            capabilities.append("moderation.manage")
+    if str(user_id) in settings.platform_admin_ids:
+        capabilities.append("platform.admin")
     return capabilities
 
 
@@ -256,7 +258,7 @@ def web_register(
         tokens,
         record,
         settings,
-        _capabilities(session, record.id),
+        _capabilities(session, record.id, settings),
     )
 
 
@@ -299,7 +301,7 @@ def web_login(
         tokens,
         record,
         settings,
-        _capabilities(session, record.id),
+        _capabilities(session, record.id, settings),
     )
 
 
@@ -373,7 +375,7 @@ def web_register_email(
         tokens,
         record,
         settings,
-        _capabilities(session, record.id),
+        _capabilities(session, record.id, settings),
     )
 
 
@@ -461,7 +463,7 @@ def web_login_email(
         tokens,
         record,
         settings,
-        _capabilities(session, record.id),
+        _capabilities(session, record.id, settings),
     )
 
 
@@ -511,7 +513,7 @@ def web_refresh(
         tokens,
         user,
         settings,
-        _capabilities(session, user.id),
+        _capabilities(session, user.id, settings),
     )
 
 

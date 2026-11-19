@@ -37,6 +37,7 @@ from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.moderation import models as moderation_models  # noqa: F401
 from app.modules.notifications import models as notifications_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
+from app.modules.organizations.platform import ensure_platform_organization
 from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.passes import models as passes_models  # noqa: F401
 from app.modules.payments import models as payments_models  # noqa: F401
@@ -54,6 +55,8 @@ from app.modules.social import models as social_models  # noqa: F401
 from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.tickets.service import seed_default_packs
 from app.modules.venues import models as venues_models  # noqa: F401
+from app.modules.visual import models as visual_models  # noqa: F401
+from app.modules.visual.seed import seed_default_visual_catalog
 from tests.compliance_helpers import TEST_CPF_KEY, TEST_CPF_KEY_ID
 
 
@@ -86,6 +89,9 @@ def hermetic_test_settings() -> Iterator[None]:
         "JOGA_CPF_KEY_ID": TEST_CPF_KEY_ID,
         "JOGA_DEV_FIXED_OTP": "",
         "JOGA_WEB_COOKIE_SECURE": "false",
+        # A compra fica desligada em produção por padrão; os testes existentes
+        # que exercitam o checkout habilitam a flag explicitamente no fixture.
+        "JOGA_TICKET_PURCHASE_ENABLED": "true",
     }
     previous = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)
@@ -145,6 +151,8 @@ def db_session() -> Iterator[Session]:
     with Session(engine) as session:
         seed_default_bands(session)
         seed_default_packs(session)
+        seed_default_visual_catalog(session)
+        ensure_platform_organization(session)
         season = seed_current_season(session)
         seed_season_track(session, season)
         session.commit()

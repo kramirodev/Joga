@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_challenge_service, get_sms_sender
 from app.api.v1.web_auth import CSRF_COOKIE_NAME, REFRESH_COOKIE_NAME
-from app.core.config import DEFAULT_PHONE_HASH_SECRET
+from app.core.config import DEFAULT_PHONE_HASH_SECRET, Settings, get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.events import AUTH_LOGOUT, AUTH_REFRESH_ROTATED
 from app.modules.identity.models import SecurityEvent
@@ -157,6 +157,26 @@ def test_web_session_exposes_moderation_capabilities(
     admin = api.post("/api/v1/auth/web/refresh", headers=csrf_headers(api))
     assert admin.status_code == 200, admin.text
     assert admin.json()["capabilities"] == ["moderation.read", "moderation.manage"]
+
+
+def test_web_session_exposes_platform_admin_capability(
+    api: TestClient,
+    sms_sender: RecordingSmsSender,
+) -> None:
+    receipt = receipt_for(api, sms_sender, PHONE, "registration")
+    registered = web_register(api, receipt)
+    assert registered.status_code == 201, registered.text
+    user_id = registered.json()["user"]["id"]
+    assert registered.json()["capabilities"] == []
+
+    api.app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        platform_admins=user_id,
+    )
+
+    refreshed = api.post("/api/v1/auth/web/refresh", headers=csrf_headers(api))
+    assert refreshed.status_code == 200, refreshed.text
+    assert "platform.admin" in refreshed.json()["capabilities"]
 
 
 def test_web_refresh_requires_csrf_and_rotates_cookies(

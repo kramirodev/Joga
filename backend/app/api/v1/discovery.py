@@ -89,6 +89,7 @@ class VenueCardView(BaseModel):
     latitude: float | None
     longitude: float | None
     timezone: str
+    is_public: bool
     covered: bool
     spaces_count: int
     min_price_cents: int
@@ -113,6 +114,7 @@ class VenueDetailView(BaseModel):
     latitude: float | None
     longitude: float | None
     timezone: str
+    is_public: bool
     photos: list[PhotoView]
     spaces: list[SpaceView]
 
@@ -169,6 +171,7 @@ def list_bookable_venues(
                 latitude=item.latitude,
                 longitude=item.longitude,
                 timezone=item.timezone,
+                is_public=item.is_public,
                 covered=item.covered,
                 spaces_count=item.spaces_count,
                 min_price_cents=item.min_price_cents,
@@ -206,6 +209,7 @@ def get_bookable_venue(
         latitude=venue.latitude,
         longitude=venue.longitude,
         timezone=venue.timezone,
+        is_public=venue.is_public,
         photos=[
             PhotoView(
                 id=photo.id,

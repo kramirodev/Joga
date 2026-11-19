@@ -238,12 +238,28 @@ class Settings(BaseSettings):
     # significa que nenhum operador está autorizado.
     review_operators: str = ""
 
+    # Administração de plataforma (catálogo de esportes e usuários). Allowlist
+    # de user IDs separada por vírgula; vazia significa que ninguém é admin.
+    platform_admins: str = ""
+
+    # Compra de tickets. Desligada por padrão: o app exibe carteira e pacotes,
+    # mas abrir compra exige decisão operacional explícita.
+    ticket_purchase_enabled: bool = False
+
+    # Organização da plataforma que possui as quadras públicas. Não aparece em
+    # listagens de estabelecimentos e é operada por platform_admin sem vínculo.
+    platform_org_slug: str = Field(default="joga-publico", min_length=2, max_length=60)
+
     # Limite de POSTs de resultado por usuário em uma janela de 60 segundos.
     results_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
 
     @property
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
+
+    @property
+    def platform_admin_ids(self) -> frozenset[str]:
+        return frozenset(item.strip() for item in self.platform_admins.split(",") if item.strip())
 
     @property
     def email_disposable_domain_set(self) -> frozenset[str]:

@@ -37,6 +37,18 @@ def require_phone_auth_enabled(
         )
 
 
+def require_ticket_purchase_enabled(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Compra de tickets é desligada por padrão; leitura continua disponível."""
+
+    if not settings.ticket_purchase_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "ticket_purchase_disabled"},
+        )
+
+
 def require_phone_registration_allowed(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
@@ -60,4 +72,5 @@ __all__ = [
     "require_email_registration_allowed",
     "require_phone_auth_enabled",
     "require_phone_registration_allowed",
+    "require_ticket_purchase_enabled",
 ]

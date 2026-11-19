@@ -95,8 +95,16 @@ class MemberRecord:
 class OrganizationService:
     """Operações multi-tenant com autorização por objeto."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        platform_admin_ids: frozenset[str] | None = None,
+        platform_org_slug: str = "joga-publico",
+    ) -> None:
         self.session = session
+        self._platform_admin_ids = platform_admin_ids or frozenset()
+        self._platform_org_slug = platform_org_slug
 
     def create(self, actor_user_id: uuid.UUID, name: str) -> Organization:
         """Cria a organização e o vínculo de proprietário na mesma transação."""
@@ -400,11 +408,18 @@ class OrganizationService:
         geocoding_precision: str | None = None,
         timezone: str | None = None,
         venue_id: uuid.UUID | None = None,
+        is_public: bool = False,
+        allow_missing_coordinates: bool = False,
     ) -> OrganizationVenue:
         """Cria um estabelecimento vinculado à organização."""
 
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
-        clean_latitude, clean_longitude = _clean_coordinates(latitude, longitude)
+        clean_latitude: float | None
+        clean_longitude: float | None
+        if allow_missing_coordinates and latitude is None and longitude is None:
+            clean_latitude, clean_longitude = None, None
+        else:
+            clean_latitude, clean_longitude = _clean_coordinates(latitude, longitude)
         clean_source, clean_precision = _clean_geocoding(
             geocoding_source,
             geocoding_precision,
@@ -427,6 +442,7 @@ class OrganizationService:
             geocoding_precision=clean_precision,
             geocoded_at=geocoded_at,
             timezone=_clean_timezone(timezone),
+            is_public=bool(is_public),
         )
         try:
             with self.session.begin_nested():
@@ -582,6 +598,8 @@ class OrganizationService:
                 cleaned = _clean_timezone(value)
             elif field == "venue_id":
                 cleaned = self._validate_discovery_venue(value)
+            elif field == "is_public":
+                cleaned = bool(value)
             elif field == "status":
                 if value not in {"active", "inactive"}:
                     raise InvalidInput
@@ -677,10 +695,26 @@ class OrganizationService:
         organization_id: uuid.UUID,
     ) -> OrganizationMembership:
         membership = self._membership(organization_id, actor_user_id)
-        if membership is None:
-            # 404 evita revelar a existência de organizações de terceiros.
-            raise OrganizationNotFound
-        return membership
+        if membership is not None:
+            return membership
+        # Platform admins operam a organização da plataforma sem vínculo
+        # persistido; as demais organizações continuam invisíveis.
+        if str(actor_user_id) in self._platform_admin_ids:
+            platform = self.session.scalar(
+                select(Organization).where(
+                    Organization.id == organization_id,
+                    Organization.slug == self._platform_org_slug,
+                    Organization.is_platform.is_(True),
+                )
+            )
+            if platform is not None:
+                return OrganizationMembership(
+                    organization_id=organization_id,
+                    user_id=actor_user_id,
+                    role=Role.OWNER.value,
+                )
+        # 404 evita revelar a existência de organizações de terceiros.
+        raise OrganizationNotFound
 
     def _require_capability(
         self,
@@ -906,8 +940,14 @@ def mask_pix_key(key_type: str, value: str) -> str:
 
 
 def payout_ready(organization: Organization) -> bool:
-    """O estabelecimento pode receber repasse?"""
+    """O estabelecimento pode receber repasse?
 
+    A organização da plataforma não recebe repasse de terceiro; a quadra
+    pública é operada pelo próprio JOGA e não depende de chave Pix/CNPJ.
+    """
+
+    if organization.is_platform:
+        return True
     return bool(
         organization.payout_status == "active"
         and organization.pix_key
