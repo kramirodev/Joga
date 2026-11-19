@@ -242,6 +242,10 @@ class Settings(BaseSettings):
     # de user IDs separada por vírgula; vazia significa que ninguém é admin.
     platform_admins: str = ""
 
+    # Compra de tickets. Desligada por padrão: o app exibe carteira e pacotes,
+    # mas abrir compra exige decisão operacional explícita.
+    ticket_purchase_enabled: bool = False
+
     # Organização da plataforma que possui as quadras públicas. Não aparece em
     # listagens de estabelecimentos e é operada por platform_admin sem vínculo.
     platform_org_slug: str = Field(default="joga-publico", min_length=2, max_length=60)
