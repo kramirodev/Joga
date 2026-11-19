@@ -15,7 +15,9 @@ import type {
 } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
-import { Avatar } from '../ui/Avatar';
+import { useActiveInterval } from '../state/useActiveInterval';
+import { IdentityBadge } from '../ui/IdentityBadge';
+import { identityFromSeed } from '../ui/identity';
 import { PaymentPix, paymentState } from '../ui/PaymentPix';
 import {
   Badge,
@@ -682,7 +684,7 @@ function BookingRequest() {
           text="A reserva é feita para um lobby existente, com o grupo que vai jogar. Entre em uma partida ou lobby e volte para escolher o horário."
           actions={
             <>
-              <Btn tone="primary" go="queue-casual">
+              <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
                 Buscar partida
               </Btn>
               <Btn tone="ghost" go="matches">
@@ -1546,12 +1548,7 @@ function MatchAdapt() {
                 key={name}
                 name={name}
                 role={index === 3 ? 'ausente substituído' : 'presente'}
-                avatar={{
-                  skin: '#A6ABB1',
-                  hair: '#17191B',
-                  shirt: '#62686E',
-                  style: ((index % 3) + 1) as 1 | 2 | 3,
-                }}
+                identity={identityFromSeed(name)}
               />
             ),
           )}
@@ -1639,14 +1636,7 @@ function Substitutes() {
       <CardList>
         {list.map((item, index) => (
           <ListRow key={item.id} last={index === list.length - 1}>
-            <Avatar
-              size={34}
-              palette={palette}
-              skin="#A6ABB1"
-              hair="#17191B"
-              shirt="#62686E"
-              style={((index % 3) + 1) as 1 | 2 | 3}
-            />
+            <IdentityBadge size={34} identity={identityFromSeed(item.id)} palette={palette} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.name}
@@ -2155,10 +2145,7 @@ function Matches() {
       .catch(() => setFailed(true))
       .finally(() => setLoading(false));
   };
-  useEffect(() => {
-    const timer = setInterval(() => loadMatches().catch(() => undefined), 15_000);
-    return () => clearInterval(timer);
-  }, [loadMatches]);
+  useActiveInterval(() => loadMatches().catch(() => undefined), 15_000);
   const filtered = useMemo(() => {
     if (tab === 'Próximas') {
       return matches.filter((match) => new Date(match.scheduled_start_at).getTime() > now);
@@ -2271,7 +2258,7 @@ function Matches() {
           }
           text="Quando você confirmar uma partida, ela aparece aqui."
           actions={
-            <Btn tone="primary" icon="search" go="queue-casual">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Buscar partida
             </Btn>
           }
@@ -2337,7 +2324,7 @@ function MatchHistory() {
           title="Nenhuma partida no histórico"
           text="Partidas concluídas, canceladas ou expiradas aparecem aqui."
           actions={
-            <Btn tone="primary" icon="search" go="queue-casual">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Buscar partida
             </Btn>
           }
@@ -2372,7 +2359,7 @@ function MatchDetail() {
   }, [matchId, session]);
   const rating = primaryFormatId ? ratings[primaryFormatId] : undefined;
   const participants = match?.participants ?? [];
-  const avatarNames = participants.length
+  const participantNames = participants.length
     ? participants.slice(0, 10).map((item) => item.display_name ?? 'J')
     : [];
   return (
@@ -2430,16 +2417,9 @@ function MatchDetail() {
           <Txt variant="tiny">Time B · {participants.filter((item) => item.team === 2).length}</Txt>
         </Row>
         <View style={{ flexDirection: 'row', marginTop: 8 }}>
-          {avatarNames.map((name, index) => (
+          {participantNames.map((name, index) => (
             <View key={index} style={{ marginLeft: index === 0 ? 0 : -6 }}>
-              <Avatar
-                size={34}
-                palette={palette}
-                skin={index % 2 === 0 ? '#A6ABB1' : '#D5D9D6'}
-                hair={index % 2 === 0 ? '#17191B' : '#62686E'}
-                shirt="#62686E"
-                style={((index % 3) + 1) as 1 | 2 | 3}
-              />
+              <IdentityBadge size={34} identity={identityFromSeed(name)} palette={palette} />
             </View>
           ))}
         </View>

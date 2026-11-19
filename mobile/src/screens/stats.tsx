@@ -150,6 +150,7 @@ function Stats() {
 }
 
 function StatsEvolution() {
+  const nav = useNav();
   const { ratings, primaryFormatId, profile } = useApp();
   const rating = primaryFormatId ? ratings[primaryFormatId] : undefined;
   if (!rating || rating.matches_played === 0) {
@@ -159,7 +160,7 @@ function StatsEvolution() {
           title="Sem partidas ranqueadas"
           text="Sua evolução aparece depois das primeiras partidas ranqueadas."
           actions={
-            <Btn tone="primary" icon="search" go="queue-ranked">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'ranked' })}>
               Buscar ranqueada
             </Btn>
           }
@@ -349,6 +350,7 @@ function StatsPassport() {
 }
 
 function StatsTimes() {
+  const nav = useNav();
   const { palette } = useTheme();
   const { stats } = useApp();
   if (!stats || stats.totals.matches === 0) {
@@ -358,7 +360,7 @@ function StatsTimes() {
           title="Sem partidas suficientes"
           text="Seus horários e formatos aparecem depois das primeiras partidas."
           actions={
-            <Btn tone="primary" icon="search" go="queue-casual">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Buscar partida
             </Btn>
           }

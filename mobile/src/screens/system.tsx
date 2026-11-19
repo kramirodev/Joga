@@ -768,9 +768,10 @@ function LgpdDelete() {
       <Card tone="red">
         <Txt variant="h3">O que acontece</Txt>
         <Txt variant="tiny" style={{ marginTop: 6 }}>
-          Sua conta, perfil, avatar, mensagens e preferências são excluídos. Registros financeiros e
-          fiscais podem ser retidos pelo prazo legal. O saldo de crédito comprado segue a política
-          de encerramento; a franquia do passe já disponibilizada não é reembolsada.
+          Sua conta, perfil, identidade, mensagens e preferências são excluídos. Registros
+          financeiros e fiscais podem ser retidos pelo prazo legal. O saldo de crédito comprado
+          segue a política de encerramento; a franquia do passe já disponibilizada não é
+          reembolsada.
         </Txt>
       </Card>
       <Field label="Digite EXCLUIR para confirmar">
@@ -1184,7 +1185,7 @@ function Decisions() {
     ],
     ['3', 'Check-in GPS + estabelecimento', 'GPS com fallback do estabelecimento.'],
     ['4', 'Notificações dentro do app', 'Central de prazos e ações.'],
-    ['5', 'Avatar no cadastro', 'Configurado no onboarding e editável no perfil.'],
+    ['5', 'Identidade no cadastro', 'Ícone escolhido no onboarding e editável no perfil.'],
     ['6', 'Passe 10/20/30/50', 'Franquia mensal, cobrança trimestral, entrega mês a mês.'],
     [
       '7',

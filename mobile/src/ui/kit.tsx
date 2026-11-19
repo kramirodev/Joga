@@ -25,8 +25,9 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 
+import type { VisualIdentity } from '../api/types';
 import { useNav, useTheme } from '../state/context';
-import { Avatar, type AvatarProps } from './Avatar';
+import { IdentityBadge } from './IdentityBadge';
 import { Icon, type IconName } from './icons';
 import { Text } from './text';
 import { space, type, type TextVariant } from './theme';
@@ -1806,20 +1807,20 @@ export function ListRow({
 export function PlayerRow({
   name,
   role,
-  avatar,
+  identity,
   cap,
   badge,
 }: {
   name: string;
   role: string;
-  avatar: Omit<AvatarProps, 'palette'>;
+  identity?: Partial<VisualIdentity> | null;
   cap?: boolean;
   badge?: ReactNode;
 }) {
   const { palette } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}>
-      <Avatar {...avatar} size={30} palette={palette} />
+      <IdentityBadge identity={identity} size={30} palette={palette} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: 12.5, lineHeight: 14, fontWeight: '700', color: palette.ink }}>
           {name}
@@ -1838,7 +1839,7 @@ export function TeamCard({
   badge,
 }: {
   name: string;
-  players: { name: string; role: string; avatar: Omit<AvatarProps, 'palette'> }[];
+  players: { name: string; role: string; identity?: Partial<VisualIdentity> | null }[];
   badge?: ReactNode;
 }) {
   const { palette } = useTheme();
@@ -1874,7 +1875,12 @@ export function TeamCard({
         {badge}
       </View>
       {players.map((player) => (
-        <PlayerRow key={player.name} name={player.name} role={player.role} avatar={player.avatar} />
+        <PlayerRow
+          key={player.name}
+          name={player.name}
+          role={player.role}
+          identity={player.identity}
+        />
       ))}
     </View>
   );
@@ -1893,6 +1899,7 @@ export function Page({
   flush,
   rightNode,
   hideHeader,
+  scroll = true,
 }: PropsWithChildren<{
   title?: string;
   sub?: string;
@@ -1903,6 +1910,8 @@ export function Page({
   flush?: boolean;
   rightNode?: ReactNode;
   hideHeader?: boolean;
+  /** Desliga o ScrollView para telas que hospedam uma FlatList própria. */
+  scroll?: boolean;
 }>) {
   const { palette } = useTheme();
   const nav = useNav();
@@ -1921,6 +1930,73 @@ export function Page({
       });
     }
   };
+
+  const header = hideHeader ? null : (
+    <View
+      style={{
+        minHeight: 54,
+        paddingTop: 8,
+        paddingBottom: 2,
+        marginHorizontal: flush ? 16 : 0,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: palette.bg,
+        zIndex: 5,
+      }}
+    >
+      {back && nav.canGoBack ? <IconBtn icon="back" label="Voltar" plain back /> : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          maxFontSizeMultiplier={1.2}
+          style={{
+            fontSize: 16,
+            lineHeight: 18,
+            fontWeight: '900',
+            letterSpacing: 0.4,
+            textTransform: 'uppercase',
+            color: palette.ink,
+          }}
+        >
+          {title}
+        </Text>
+        {sub ? (
+          <Text
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+            style={{ fontSize: 13, lineHeight: 18, color: palette.muted, marginTop: 2 }}
+          >
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      {rightNode ?? (right ? <IconBtn icon={right} label={title ?? 'Ação'} go={rightGo} /> : null)}
+    </View>
+  );
+
+  if (!scroll) {
+    return (
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: palette.bg }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: flush ? 0 : 16,
+            alignItems: center ? 'center' : 'stretch',
+          }}
+        >
+          {header}
+          <View style={{ flex: 1, gap: 14 }}>{children}</View>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -1947,53 +2023,7 @@ export function Page({
         }}
         showsVerticalScrollIndicator={false}
       >
-        {hideHeader ? null : (
-          <View
-            style={{
-              minHeight: 54,
-              paddingTop: 8,
-              paddingBottom: 2,
-              marginHorizontal: flush ? 16 : 0,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              backgroundColor: palette.bg,
-              zIndex: 5,
-            }}
-          >
-            {back && nav.canGoBack ? <IconBtn icon="back" label="Voltar" plain back /> : null}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                accessibilityRole="header"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.82}
-                maxFontSizeMultiplier={1.2}
-                style={{
-                  fontSize: 16,
-                  lineHeight: 18,
-                  fontWeight: '900',
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                  color: palette.ink,
-                }}
-              >
-                {title}
-              </Text>
-              {sub ? (
-                <Text
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={1.3}
-                  style={{ fontSize: 13, lineHeight: 18, color: palette.muted, marginTop: 2 }}
-                >
-                  {sub}
-                </Text>
-              ) : null}
-            </View>
-            {rightNode ??
-              (right ? <IconBtn icon={right} label={title ?? 'Ação'} go={rightGo} /> : null)}
-          </View>
-        )}
+        {header}
         {children}
       </ScrollView>
     </KeyboardAvoidingView>

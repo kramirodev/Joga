@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, View, useWindowDimensions } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, View, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 
-import { api, ApiError } from '../api/client';
+import { api, ApiError, describeApiError } from '../api/client';
 import { subscribeLobby, subscribeRealtime } from '../api/realtime';
-import type { MatchSummary } from '../api/types';
+import type { MatchSummary, VisualIdentity, VisualItem } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
-import { Avatar } from '../ui/Avatar';
+import {
+  consumePendingQueueIntent,
+  setPendingQueueIntent,
+  type QueueCourtPreference,
+  type QueueMode,
+} from '../state/queueIntent';
+import { useQueueWatcher } from '../state/queueWatcher';
+import { useActiveInterval } from '../state/useActiveInterval';
+import { IdentityBadge } from '../ui/IdentityBadge';
+import { catalogVersionOf, identityFromSeed, visualItems } from '../ui/identity';
 import { AddWindowSheet } from '../ui/AddWindowSheet';
 import {
   Badge,
@@ -44,7 +53,6 @@ import {
 } from '../ui/kit';
 import {
   countdown,
-  courtLabel,
   dateOnly,
   divisionLabel,
   elapsed,
@@ -68,11 +76,36 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       ranked_restricted: 'Ranqueada indisponível no momento.',
       invalid_format: 'Formato indisponível.',
       forbidden: 'Ação não permitida.',
+      ticket_purchase_disabled: 'Compra de ingressos indisponível no momento.',
     };
-    nav.toast(map[error.code] ?? 'Não foi possível concluir a ação.');
+    if (map[error.code]) {
+      nav.toast(map[error.code]);
+      return;
+    }
+    // Não mascara respostas inesperadas: status, código e corpo ficam no relatório.
+    if (__DEV__) {
+      console.warn('Resposta inesperada da API', describeApiError(error));
+    }
+    nav.toast(`Falha inesperada (${error.status} · ${error.code}).`);
   } else {
     nav.toast('Não foi possível concluir a ação.');
   }
+}
+
+function errorDetail(error: unknown): string {
+  if (error instanceof ApiError) {
+    const map: Record<string, string> = {
+      network_unavailable: 'Não foi possível falar com o servidor.',
+      invalid_visual_item: 'Item de identidade inválido.',
+      visual_item_locked: 'Este item ainda não está liberado.',
+      ticket_purchase_disabled: 'Compra de ingressos indisponível no momento.',
+    };
+    if (map[error.code]) {
+      return map[error.code];
+    }
+    return `Falha inesperada (${describeApiError(error)}).`;
+  }
+  return 'Não foi possível concluir a ação.';
 }
 
 function Home() {
@@ -219,7 +252,12 @@ function Home() {
             Entre em uma fila para encontrar sua próxima partida.
           </Txt>
           <View style={{ marginTop: 14 }}>
-            <Btn tone="ghost" small block={false} onPress={() => nav.go('queue-casual')}>
+            <Btn
+              tone="ghost"
+              small
+              block={false}
+              onPress={() => nav.go('queue', { mode: 'casual' })}
+            >
               Buscar partida
             </Btn>
           </View>
@@ -234,7 +272,6 @@ function Home() {
             </Txt>
             <Txt variant="tiny">{wallet ? 'disponíveis' : 'saldo indisponível'}</Txt>
           </View>
-          <Badge tone="lime">COMPRAR</Badge>
         </Row>
       </Card>
       {mission ? (
@@ -315,34 +352,97 @@ function Home() {
           </ListRow>
         ))}
       </CardList>
-      <Btn tone="primary" icon="search" go="queue-casual">
+      <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
         Buscar partida
       </Btn>
     </Page>
   );
 }
 
-function QueueScreen({ mode }: { mode: 'casual' | 'ranked' }) {
+function QueueScreen() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { catalog, profile, wallet, ratings, primaryFormatId, formatForName, loadRating } =
+  const { catalog, profile, wallet, ratings, primaryFormatId, loadRating, loadCatalog, session } =
     useApp();
-  const ranked = mode === 'ranked';
-  const [selected, setSelected] = useState<string[]>(['Futebol 5x5']);
+  const initialMode: QueueMode = nav.params.mode === 'ranked' ? 'ranked' : 'casual';
+  const [mode, setMode] = useState<QueueMode>(initialMode);
+  const [selected, setSelected] = useState<string[]>([]);
   const [court, setCourt] = useState('Tanto faz');
   const [busy, setBusy] = useState(false);
-  const formats = catalog.flatMap((sport) => sport.formats);
-  const options = formats.length
-    ? formats.filter((format) =>
-        ['futebol', 'vôlei', 'volei'].some((term) => format.name.toLowerCase().includes(term)),
-      )
-    : [];
-  const shownOptions = options.length
-    ? options.map((format) => format.name)
-    : ['Futebol 5x5', 'Vôlei 6x6'];
-  const selectedFormatId =
-    formatForName(selected[0] ?? 'Futebol 5x5') ?? primaryFormatId ?? formats[0]?.id ?? null;
+  const busyRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  const renderCount = useRef(0);
+  const ranked = mode === 'ranked';
+
+  useEffect(() => {
+    renderCount.current += 1;
+    if (__DEV__ && renderCount.current % 10 === 0) {
+      console.log(`[QueueScreen] render #${renderCount.current}`);
+    }
+  });
+
+  const formats = useMemo(() => catalog.flatMap((sport) => sport.formats), [catalog]);
+  const options = formats;
+  const shownOptions = useMemo(() => options.map((format) => format.name), [options]);
+  const optionById = useMemo(
+    () => new Map(options.map((format) => [format.id, format])),
+    [options],
+  );
+  const profileFormatIds = useMemo(
+    () => (profile?.sports ?? []).map((sport) => sport.format_id),
+    [profile],
+  );
+
+  useEffect(() => {
+    if (catalog.length > 0) {
+      return;
+    }
+    loadCatalog().catch((cause) => {
+      if (__DEV__) {
+        console.warn('Falha ao carregar /sports', describeApiError(cause));
+      }
+    });
+  }, [catalog.length, loadCatalog]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected((current) => {
+      if (current.length > 0) {
+        return current;
+      }
+      const fromProfile = profileFormatIds.filter((id) => optionById.has(id));
+      if (fromProfile.length > 0) {
+        return fromProfile;
+      }
+      if (primaryFormatId && optionById.has(primaryFormatId)) {
+        return [primaryFormatId];
+      }
+      return options.length > 0 ? [options[0].id] : [];
+    });
+  }, [optionById, options, primaryFormatId, profileFormatIds]);
+
+  const selectedFormatId = selected[0] ?? primaryFormatId ?? options[0]?.id ?? null;
   const rating = selectedFormatId ? ratings[selectedFormatId] : undefined;
+  const ratingsRef = useRef(ratings);
+  const requestedRatings = useRef(new Set<string>());
+
+  useEffect(() => {
+    ratingsRef.current = ratings;
+  }, [ratings]);
+
+  useEffect(() => {
+    if (!selectedFormatId) {
+      return;
+    }
+    if (ratingsRef.current[selectedFormatId] || requestedRatings.current.has(selectedFormatId)) {
+      return;
+    }
+    requestedRatings.current.add(selectedFormatId);
+    loadRating(selectedFormatId).catch(() => {
+      requestedRatings.current.delete(selectedFormatId);
+    });
+  }, [selectedFormatId, loadRating]);
+
   const windows = profile?.availability ?? [];
   const firstWindow = windows[0];
   const availabilityTitle = firstWindow
@@ -357,52 +457,73 @@ function QueueScreen({ mode }: { mode: 'casual' | 'ranked' }) {
     ? `raio de ${profile.region.radius_km} km · GPS aproximado`
     : 'sem região definida';
 
-  useEffect(() => {
-    if (selectedFormatId && !rating) {
-      loadRating(selectedFormatId).catch(() => undefined);
-    }
-  }, [selectedFormatId, rating, loadRating]);
+  const toggleFormat = useCallback((formatId: string) => {
+    setSelected((current) =>
+      current.includes(formatId)
+        ? current.length > 1
+          ? current.filter((value) => value !== formatId)
+          : current
+        : [...current, formatId],
+    );
+  }, []);
 
-  const app = useApp();
-  const enqueue = async () => {
-    if (!app.session) {
-      nav.go('queue-search');
+  const courtPreference: QueueCourtPreference =
+    court === 'Públicas' ? 'PUBLIC_ONLY' : court === 'Particulares' ? 'PRIVATE_ONLY' : 'ANY';
+
+  const enqueue = useCallback(async () => {
+    if (busyRef.current) {
+      return;
+    }
+    if (!session) {
+      nav.toast('Entre na sua conta para buscar partida.');
       return;
     }
     if (!selectedFormatId) {
-      nav.toast('Formato indisponível.');
+      setError('Nenhum formato disponível no catálogo. Tente novamente.');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
+    setError(null);
     try {
-      const preference =
-        court === 'Públicas' ? 'PUBLIC_ONLY' : court === 'Particulares' ? 'PRIVATE_ONLY' : 'ANY';
-      await api.matchmaking.enqueue(app.session.accessToken, selectedFormatId, mode, preference);
-      nav.go('queue-search');
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'region_required') {
-        nav.go('region');
-      } else if (error instanceof ApiError && error.code === 'ranked_restricted') {
-        nav.go('queue-restricted');
-      } else if (error instanceof ApiError && error.code === 'sport_profile_required') {
-        nav.go('sports');
-      } else if (error instanceof ApiError && error.code === 'already_queued') {
-        nav.go('queue-search');
-      } else {
-        toastError(nav, error);
+      await api.matchmaking.enqueue(session.accessToken, selectedFormatId, mode, courtPreference);
+      nav.replace('queue-search', { mode, formatId: selectedFormatId });
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        if (cause.code === 'region_required') {
+          nav.go('region');
+          return;
+        }
+        if (cause.code === 'ranked_restricted') {
+          nav.go('queue-restricted');
+          return;
+        }
+        if (cause.code === 'sport_profile_required') {
+          // A intenção sobrevive à tela de modalidades e retoma o enqueue.
+          setPendingQueueIntent({ mode, formatId: selectedFormatId, courtPreference });
+          nav.go('sports');
+          return;
+        }
+        if (cause.code === 'already_queued') {
+          nav.replace('queue-search', { mode, formatId: selectedFormatId });
+          return;
+        }
       }
+      setError(errorDetail(cause));
+      toastError(nav, cause);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  };
+  }, [courtPreference, mode, nav, selectedFormatId, session]);
 
   return (
     <Page title="Buscar partida">
       <Seg>
-        <SegBtn on={!ranked} go="queue-casual">
+        <SegBtn on={!ranked} onPress={() => setMode('casual')}>
           Casual
         </SegBtn>
-        <SegBtn on={ranked} go="queue-ranked">
+        <SegBtn on={ranked} onPress={() => setMode('ranked')}>
           Ranqueada
         </SegBtn>
       </Seg>
@@ -438,27 +559,27 @@ function QueueScreen({ mode }: { mode: 'casual' | 'ranked' }) {
         </Card>
       )}
       <Card>
-        <Txt variant="h3">Formato</Txt>
-        <ChipRow style={{ marginTop: 8 }}>
-          {shownOptions.map((item, index) => (
-            <Chip
-              key={item}
-              on={selected.includes(item)}
-              onPress={() =>
-                setSelected((current) =>
-                  current.includes(item)
-                    ? current.length > 1
-                      ? current.filter((value) => value !== item)
-                      : current
-                    : [...current, item],
-                )
-              }
-              icon={index === 0 ? 'bolt' : undefined}
-            >
-              {item}
-            </Chip>
-          ))}
-        </ChipRow>
+        <Row between>
+          <Txt variant="h3">Formato</Txt>
+          <Txt variant="tiny">{shownOptions.length} no catálogo</Txt>
+        </Row>
+        {options.length === 0 ? (
+          <Txt variant="tiny" style={{ marginTop: 8 }}>
+            Catálogo de formatos indisponível. Tente novamente em instantes.
+          </Txt>
+        ) : (
+          <ChipRow style={{ marginTop: 8 }}>
+            {options.map((format) => (
+              <Chip
+                key={format.id}
+                on={selected.includes(format.id)}
+                onPress={() => toggleFormat(format.id)}
+              >
+                {format.name}
+              </Chip>
+            ))}
+          </ChipRow>
+        )}
       </Card>
       <Card>
         <Txt variant="h3">Preferência de quadra</Txt>
@@ -515,7 +636,12 @@ function QueueScreen({ mode }: { mode: 'casual' | 'ranked' }) {
           Ranqueada exige pelo menos 1 substituto em standby. Fila insuficiente pode virar casual.
         </Notice>
       ) : null}
-      <Btn tone="primary" icon="search" onPress={enqueue} disabled={busy}>
+      {error ? (
+        <Notice tone="orange" icon="alert">
+          {error}
+        </Notice>
+      ) : null}
+      <Btn tone="primary" icon="search" onPress={enqueue} disabled={busy || options.length === 0}>
         {busy ? 'Entrando…' : 'Entrar na fila'}
       </Btn>
       <TextBtn go="queue-empty" muted>
@@ -528,45 +654,78 @@ function QueueScreen({ mode }: { mode: 'casual' | 'ranked' }) {
 function QueueSearch() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { queue, loadQueue, session, profile } = useApp();
-  const [now, setNow] = useState(new Date());
+  const { queue, loadQueue, session, profile, catalog } = useApp();
+  const mode: QueueMode =
+    nav.params.mode === 'ranked' || queue?.mode === 'ranked' ? 'ranked' : 'casual';
+  const [now, setNow] = useState(() => new Date());
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const routed = useRef(false);
-  const started = useMemo(() => (queue ? new Date(queue.created_at) : new Date()), [queue]);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  useEffect(() => {
+  const startedAt = queue?.created_at;
+  const started = useMemo(() => (startedAt ? new Date(startedAt) : new Date()), [startedAt]);
+  const formatName = useMemo(() => {
+    const formatId =
+      queue?.format_id ?? (typeof nav.params.formatId === 'string' ? nav.params.formatId : null);
+    if (!formatId) {
+      return 'Formato';
+    }
+    for (const sport of catalog) {
+      const found = sport.formats.find((format) => format.id === formatId);
+      if (found) {
+        return found.name;
+      }
+    }
+    return 'Formato';
+  }, [catalog, nav.params.formatId, queue?.format_id]);
+
+  useActiveInterval(() => setNow(new Date()), 1000);
+
+  const poll = useCallback(() => {
     if (!session) {
       return;
     }
-    const timer = setInterval(() => {
-      loadQueue()
-        .then((entry) => {
-          if (entry?.lobby && !routed.current) {
-            routed.current = true;
-            // replace evita empilhar a mesma tela a cada polling de 5 s.
-            nav.replace('lobby-found', { lobbyId: entry.lobby.id, mode: entry.mode });
-          }
-        })
-        .catch(() => undefined);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [session, loadQueue, nav]);
+    loadQueue()
+      .then((entry) => {
+        if (entry?.lobby && !routed.current) {
+          routed.current = true;
+          // replace evita empilhar a mesma tela a cada polling.
+          nav.replace('lobby-found', { lobbyId: entry.lobby.id, mode: entry.mode });
+        }
+      })
+      .catch((cause) => {
+        if (__DEV__) {
+          console.warn('Polling da fila falhou', describeApiError(cause));
+        }
+        setError(errorDetail(cause));
+      });
+  }, [loadQueue, nav, session]);
+
+  // Inscrição única de polling; o hook pausa em segundo plano e libera ao
+  // desmontar ou quando o modo muda.
+  useQueueWatcher(poll, !!session, mode);
+
+  useEffect(() => {
+    routed.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setError(null);
+  }, [mode]);
+
   const cancel = async () => {
     setBusy(true);
+    setError(null);
     try {
       if (session) {
         await api.matchmaking.leave(session.accessToken);
       }
       nav.go('home');
-    } catch {
-      nav.toast('Não foi possível sair da fila.');
+    } catch (cause) {
+      setError(errorDetail(cause));
+      toastError(nav, cause);
     } finally {
       setBusy(false);
     }
   };
+
   return (
     <Page title="Procurando partida">
       <View style={{ alignItems: 'center', paddingTop: 12, gap: 12 }}>
@@ -588,7 +747,8 @@ function QueueSearch() {
           Procurando{'\n'}partida
         </Txt>
         <Txt variant="tiny" align="center">
-          Futebol 5x5 · casual{profile?.region?.city ? ` · ${profile.region.city}` : ''}
+          {formatName} · {mode === 'ranked' ? 'ranqueada' : 'casual'}
+          {profile?.region?.city ? ` · ${profile.region.city}` : ''}
         </Txt>
         <Txt variant="num" style={{ fontSize: 42, lineHeight: 46 }}>
           {elapsed(started, now)}
@@ -596,13 +756,20 @@ function QueueSearch() {
         <Txt variant="tiny">tempo real na fila</Txt>
       </View>
       <Notice icon="clock">Não prometemos um tempo de espera. Você pode sair quando quiser.</Notice>
+      {error ? (
+        <Notice tone="orange" icon="alert">
+          {error}
+        </Notice>
+      ) : null}
       <Btn tone="ghost" onPress={cancel} disabled={busy}>
         Cancelar busca
       </Btn>
       <Card tone="flat">
         <Row between>
           <Txt variant="tiny">Enquanto isso</Txt>
-          <TextBtn go="queue-casual">Ver lobbies em formação</TextBtn>
+          <TextBtn muted onPress={() => nav.back()}>
+            Voltar aos filtros
+          </TextBtn>
         </Row>
       </Card>
     </Page>
@@ -635,6 +802,7 @@ function QueueEmpty() {
 }
 
 function QueueRestricted() {
+  const nav = useNav();
   return (
     <Page title="Fila ranqueada">
       <StateScreen
@@ -643,7 +811,7 @@ function QueueRestricted() {
         text="Dois no-shows em 30 dias acionaram uma restrição temporária. O casual continua liberado."
         actions={
           <>
-            <Btn tone="primary" go="queue-casual">
+            <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Jogar casual
             </Btn>
             <Btn tone="ghost" go="support">
@@ -774,12 +942,7 @@ function LobbyDetail() {
               players={grouped.a.map((item, index) => ({
                 name: item.display_name ?? `Jogador ${index + 1}`,
                 role: item.level,
-                avatar: {
-                  skin: '#A6ABB1',
-                  hair: '#17191B',
-                  shirt: '#62686E',
-                  style: ((index % 3) + 1) as 1 | 2 | 3,
-                },
+                identity: identityFromSeed(item.user_id),
               }))}
             />
             <TeamCard
@@ -788,12 +951,7 @@ function LobbyDetail() {
               players={grouped.b.map((item, index) => ({
                 name: item.display_name ?? `Jogador ${index + 1}`,
                 role: item.level,
-                avatar: {
-                  skin: '#A6ABB1',
-                  hair: '#17191B',
-                  shirt: '#62686E',
-                  style: ((index % 3) + 1) as 1 | 2 | 3,
-                },
+                identity: identityFromSeed(item.user_id),
               }))}
             />
           </>
@@ -904,7 +1062,7 @@ function LobbyChat() {
   const lobbyId =
     typeof nav.params.lobbyId === 'string' ? nav.params.lobbyId : matches[0]?.lobby_id;
   const [messages, setMessages] = useState<
-    { id: string; sender: string; body: string; time: string; mine: boolean }[]
+    { id: string; senderId: string; sender: string; body: string; time: string; mine: boolean }[]
   >([]);
   const [input, setInput] = useState('');
   const loadMessages = useCallback(async () => {
@@ -916,6 +1074,7 @@ function LobbyChat() {
       setMessages(
         result.messages.map((message) => ({
           id: message.id,
+          senderId: message.sender_id,
           sender: message.sender_id === session.userId ? 'Você' : 'Jogador',
           body: message.body,
           time: timeOnly(message.created_at),
@@ -940,14 +1099,13 @@ function LobbyChat() {
         void loadMessages();
       }
     });
-    // Fallback de 15 s caso o WebSocket esteja indisponível na rede.
-    const timer = setInterval(() => void loadMessages(), 15_000);
     return () => {
-      clearInterval(timer);
       unsubscribe();
       unsubscribeLobby();
     };
   }, [lobbyId, session, loadMessages]);
+  // Fallback de 15 s caso o WebSocket esteja indisponível na rede; pausa em background.
+  useActiveInterval(() => void loadMessages(), 15_000, !!lobbyId && !!session);
   const visible = messages;
   const send = async () => {
     const body = input.trim();
@@ -964,7 +1122,14 @@ function LobbyChat() {
     }
     setMessages((current) => [
       ...current,
-      { id: String(Date.now()), sender: 'Você', body, time: timeOnly(new Date()), mine: true },
+      {
+        id: String(Date.now()),
+        senderId: session?.userId ?? 'me',
+        sender: 'Você',
+        body,
+        time: timeOnly(new Date()),
+        mine: true,
+      },
     ]);
     setInput('');
   };
@@ -1005,10 +1170,17 @@ function LobbyChat() {
                   },
                 ]}
               >
-                <Txt variant="tiny">
-                  <Text style={{ fontWeight: '800', color: palette.ink }}>{message.sender}</Text>
-                  {message.time ? ` · ${message.time}` : ''}
-                </Txt>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <IdentityBadge
+                    size={24}
+                    identity={identityFromSeed(message.senderId)}
+                    palette={palette}
+                  />
+                  <Txt variant="tiny">
+                    <Text style={{ fontWeight: '800', color: palette.ink }}>{message.sender}</Text>
+                    {message.time ? ` · ${message.time}` : ''}
+                  </Txt>
+                </View>
                 <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>
                   {message.body}
                 </Text>
@@ -1100,7 +1272,7 @@ function LobbyInvite() {
           const checked = selected.includes(friend.id);
           return (
             <ListRow key={friend.id} last={index === list.length - 1}>
-              <Avatar size={34} palette={palette} />
+              <IdentityBadge size={34} identity={identityFromSeed(friend.id)} palette={palette} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                   {friend.name}{' '}
@@ -1239,9 +1411,9 @@ function LobbyOpen() {
         <Txt variant="tiny">Centro · 4,2 km · casual · 7 ingressos</Txt>
         <Row between style={{ marginTop: 12 }}>
           <View style={{ flexDirection: 'row' }}>
-            <Avatar size={34} style={1} palette={palette} />
-            <Avatar size={34} style={2} palette={palette} />
-            <Avatar size={34} style={3} palette={palette} />
+            <IdentityBadge size={34} identity={identityFromSeed('lobby-a')} palette={palette} />
+            <IdentityBadge size={34} identity={identityFromSeed('lobby-b')} palette={palette} />
+            <IdentityBadge size={34} identity={identityFromSeed('lobby-c')} palette={palette} />
           </View>
           <Btn tone="primary" small block={false} onPress={() => nav.go('lobby-detail')}>
             Entrar
@@ -1398,6 +1570,7 @@ function LobbyCanceled() {
 }
 
 function LobbyFull() {
+  const nav = useNav();
   return (
     <Page title="Partida cheia">
       <StateScreen
@@ -1409,7 +1582,7 @@ function LobbyFull() {
             <Btn tone="primary" disabled>
               Fila de espera em implantação
             </Btn>
-            <Btn tone="ghost" go="queue-casual">
+            <Btn tone="ghost" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Ver outras partidas
             </Btn>
           </>
@@ -1434,9 +1607,10 @@ function ProfileMe() {
     loadStats,
     loadSeason,
     badges,
+    visual,
   } = useApp();
   const { width } = useWindowDimensions();
-  const avatarSize = width < 360 ? 88 : 112;
+  const identitySize = width < 360 ? 88 : 112;
   const formatId = primaryFormatId;
   useEffect(() => {
     if (formatId) {
@@ -1485,10 +1659,10 @@ function ProfileMe() {
               padding: 3,
               borderWidth: 2,
               borderColor: palette.lineStrong,
-              borderRadius: avatarSize / 2 + 4,
+              borderRadius: identitySize / 2 + 4,
             }}
           >
-            <Avatar size={avatarSize} {...onboarding.avatar} palette={palette} />
+            <IdentityBadge size={identitySize} identity={visual} palette={palette} />
           </View>
           <View style={{ flex: 1 }}>
             <Txt variant="h1" style={{ fontSize: 26 }}>
@@ -1718,15 +1892,7 @@ function ProfileOther() {
     <Page title="Perfil do jogador">
       <Card>
         <Row style={{ gap: 14 }}>
-          <Avatar
-            size={112}
-            skin="#62686E"
-            hair="#17191B"
-            shirt="#62686E"
-            style={2}
-            glasses
-            palette={palette}
-          />
+          <IdentityBadge size={112} identity={identityFromSeed(userId || name)} palette={palette} />
           <View style={{ flex: 1 }}>
             <Txt variant="h1" style={{ fontSize: 26 }}>
               {name}
@@ -1826,7 +1992,7 @@ function ProfileOther() {
 function ProfileEdit() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { profile, onboarding, session, loadProfile, email } = useApp();
+  const { profile, session, loadProfile, email, visual } = useApp();
   const [name, setName] = useState(profile?.display_name ?? '');
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [busy, setBusy] = useState(false);
@@ -1847,13 +2013,13 @@ function ProfileEdit() {
   return (
     <Page title="Editar perfil">
       <Row style={{ gap: 14 }}>
-        <Avatar size={86} {...onboarding.avatar} palette={palette} />
+        <IdentityBadge size={86} identity={visual} palette={palette} />
         <View style={{ flex: 1 }}>
-          <Txt variant="h3">Avatar</Txt>
-          <Txt variant="tiny">Catálogo fechado · sem upload</Txt>
+          <Txt variant="h3">Identidade</Txt>
+          <Txt variant="tiny">Ícone, moldura e destaque do catálogo · sem upload</Txt>
           <View style={{ marginTop: 6 }}>
-            <Btn tone="ghost" small block={false} go="avatar-editor">
-              Editar camadas
+            <Btn tone="ghost" small block={false} go="identity-editor">
+              Escolher ícone
             </Btn>
           </View>
         </View>
@@ -1931,191 +2097,416 @@ function ProfileEdit() {
   );
 }
 
-function AvatarEditor() {
+const IDENTITY_FIELD: Record<
+  'icon' | 'frame' | 'accent' | 'badge',
+  'icon_key' | 'frame_key' | 'accent_key' | 'badge_key'
+> = {
+  icon: 'icon_key',
+  frame: 'frame_key',
+  accent: 'accent_key',
+  badge: 'badge_key',
+};
+
+function IdentityEditor() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { onboarding, setOnboarding } = useApp();
-  const [tab, setTab] = useState<'skin' | 'hair' | 'shirt' | 'accessory'>('skin');
-  const [avatar, setAvatar] = useState(onboarding.avatar);
-  const [hairStyle, setHairStyle] = useState('Médio');
-  const [shirtStyle, setShirtStyle] = useState('Camisa');
-  const [accessory, setAccessory] = useState('Sem acessório');
-  const skins = ['#F1F3F0', '#D5D9D6', '#A6ABB1', '#A6ABB1', '#62686E'];
-  const hairs = ['#17191B', '#383D43', '#62686E', '#A6ABB1', '#D5D9D6'];
-  const shirts = ['#62686E', '#62686E', '#E53935', '#62686E', '#17191B'];
-  const save = () => {
-    setOnboarding({ avatar: { ...avatar, glasses: accessory === 'Óculos' } });
-    nav.back();
+  const { visual, visualCatalog, saveVisual, setOnboarding } = useApp();
+  const [kind, setKind] = useState<'icon' | 'frame' | 'accent' | 'badge'>('icon');
+  const [draft, setDraft] = useState<VisualIdentity>(visual);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const items = useMemo(() => visualItems(visualCatalog, kind), [visualCatalog, kind]);
+  const catalogVersion = catalogVersionOf(visualCatalog);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft(visual);
+  }, [visual]);
+
+  const select = useCallback(
+    (item: VisualItem) => {
+      setDraft((current) => ({
+        ...current,
+        [IDENTITY_FIELD[kind]]: item.key,
+        catalog_version: catalogVersion,
+      }));
+    },
+    [catalogVersion, kind],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: VisualItem }) => {
+      const active = draft[IDENTITY_FIELD[kind]] === item.key;
+      const locked = item.unlock_state !== 'free';
+      return (
+        <Card
+          tone={active ? 'lime' : 'surface'}
+          padding={12}
+          onPress={locked ? undefined : () => select(item)}
+          accessibilityLabel={`${item.name}${locked ? ' bloqueado' : ''}`}
+          style={{ flex: 1 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <IdentityBadge
+              size={40}
+              identity={{ ...draft, [IDENTITY_FIELD[kind]]: item.key }}
+              catalog={visualCatalog}
+              palette={palette}
+            />
+            <View style={{ flex: 1 }}>
+              <Txt variant="h3" numberOfLines={1}>
+                {item.name}
+              </Txt>
+              <Txt variant="tiny">{locked ? 'Bloqueado' : 'Liberado'}</Txt>
+            </View>
+            {active ? <Badge tone="lime">ON</Badge> : null}
+          </View>
+        </Card>
+      );
+    },
+    [draft, kind, palette, select, visualCatalog],
+  );
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await saveVisual(draft);
+      setOnboarding({ visual: result.identity });
+      if (result.synced) {
+        nav.back();
+      } else {
+        setError(
+          result.error ?? 'Identidade salva neste aparelho. Sincronização com o servidor pendente.',
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
   };
+
   return (
-    <Page title="Editar avatar">
-      <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-        <Avatar size={112} {...avatar} palette={palette} />
-      </View>
+    <Page title="Identidade" scroll={false}>
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <IdentityBadge size={72} identity={draft} catalog={visualCatalog} palette={palette} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="h3">Seu ícone</Txt>
+            <Txt variant="tiny" style={{ marginTop: 3 }}>
+              Ícone, moldura, cor de destaque e selo. Sem boneco e sem upload.
+            </Txt>
+          </View>
+        </View>
+      </Card>
       <Seg>
         {[
-          ['skin', 'Pele'],
-          ['hair', 'Cabelo'],
-          ['shirt', 'Roupa'],
-          ['accessory', 'Acessório'],
+          ['icon', 'Ícone'],
+          ['frame', 'Moldura'],
+          ['accent', 'Destaque'],
+          ['badge', 'Selo'],
         ].map(([key, label]) => (
-          <SegBtn key={key} on={tab === key} onPress={() => setTab(key as typeof tab)}>
+          <SegBtn key={key} on={kind === key} onPress={() => setKind(key as typeof kind)}>
             {label}
           </SegBtn>
         ))}
       </Seg>
-      {tab === 'skin' ? (
-        <Card>
-          <Txt variant="h3">Tom de pele</Txt>
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            {skins.map((color, index) => (
-              <View
-                key={`${color}-${index}`}
-                onTouchEnd={() => setAvatar((current) => ({ ...current, skin: color }))}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  backgroundColor: color,
-                  borderWidth: avatar.skin === color && index === 2 ? 2 : 1.5,
-                  borderColor: avatar.skin === color && index === 2 ? '#17191B' : palette.line,
-                }}
-              />
-            ))}
-          </View>
-        </Card>
+      {error ? (
+        <Notice tone="orange" icon="alert">
+          {error}
+        </Notice>
       ) : null}
-      {tab === 'hair' ? (
-        <Card>
-          <Txt variant="h3">Cabelo</Txt>
-          <ChipRow style={{ marginTop: 10 }}>
-            {['Curto', 'Médio', 'Cacheado', 'Raspado'].map((item) => (
-              <Chip key={item} on={hairStyle === item} onPress={() => setHairStyle(item)}>
-                {item}
-              </Chip>
-            ))}
-          </ChipRow>
-          <Txt variant="h3" style={{ marginTop: 16 }}>
-            Cor
-          </Txt>
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            {hairs.map((color, index) => (
-              <View
-                key={`${color}-${index}`}
-                onTouchEnd={() => setAvatar((current) => ({ ...current, hair: color }))}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  backgroundColor: color,
-                  borderWidth: avatar.hair === color && index === 0 ? 2 : 1.5,
-                  borderColor: avatar.hair === color && index === 0 ? '#17191B' : palette.line,
-                }}
-              />
-            ))}
-          </View>
-        </Card>
-      ) : null}
-      {tab === 'shirt' ? (
-        <Card>
-          <Txt variant="h3">Roupa</Txt>
-          <ChipRow style={{ marginTop: 10 }}>
-            {['Camisa', 'Regata', 'Moletom'].map((item) => (
-              <Chip key={item} on={shirtStyle === item} onPress={() => setShirtStyle(item)}>
-                {item}
-              </Chip>
-            ))}
-          </ChipRow>
-          <Txt variant="h3" style={{ marginTop: 16 }}>
-            Cor
-          </Txt>
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            {shirts.map((color, index) => (
-              <View
-                key={`${color}-${index}`}
-                onTouchEnd={() => setAvatar((current) => ({ ...current, shirt: color }))}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  backgroundColor: color,
-                  borderWidth: avatar.shirt === color && index === 0 ? 2 : 1.5,
-                  borderColor: avatar.shirt === color && index === 0 ? '#17191B' : palette.line,
-                }}
-              />
-            ))}
-          </View>
-        </Card>
-      ) : null}
-      {tab === 'accessory' ? (
-        <Card>
-          <Txt variant="h3">Acessório</Txt>
-          <ChipRow style={{ marginTop: 10 }}>
-            {['Sem acessório', 'Óculos', 'Boné', 'Brinco'].map((item) => (
-              <Chip key={item} on={accessory === item} onPress={() => setAccessory(item)}>
-                {item}
-              </Chip>
-            ))}
-          </ChipRow>
-        </Card>
-      ) : null}
-      <Btn tone="primary" onPress={save}>
-        Salvar avatar
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.key}
+        renderItem={renderItem}
+        numColumns={2}
+        style={{ flex: 1 }}
+        columnWrapperStyle={{ gap: 10 }}
+        contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={12}
+        windowSize={7}
+        removeClippedSubviews
+      />
+      <Btn tone="primary" onPress={save} disabled={busy}>
+        {busy ? 'Salvando…' : 'Salvar identidade'}
       </Btn>
     </Page>
   );
 }
 
+const LEVEL_OPTIONS: [string, string][] = [
+  ['beginner', 'Iniciante'],
+  ['intermediate', 'Intermediário'],
+  ['advanced', 'Avançado'],
+];
+
+const COURT_OPTIONS: [string, string][] = [
+  ['ANY', 'Tanto faz'],
+  ['PUBLIC_ONLY', 'Públicas'],
+  ['PRIVATE_ONLY', 'Particulares'],
+];
+
+type SportSelection = { level: string; court_preference: string };
+
 function Sports() {
-  const { profile, onboarding } = useApp();
-  const sports = profile?.sports.length
-    ? profile.sports
-    : [
-        {
-          format_id: 'f5',
-          sport_slug: 'futebol',
-          sport_name: 'Futebol',
-          format_name: 'Futebol 5x5',
-          level: onboarding.level,
-          court_preference: onboarding.courtPreference,
-        },
-        {
-          format_id: 'v6',
-          sport_slug: 'volei',
-          sport_name: 'Vôlei',
-          format_name: 'Vôlei 6x6',
-          level: 'beginner',
-          court_preference: 'PRIVATE_ONLY',
-        },
-      ];
+  const nav = useNav();
+  const { palette } = useTheme();
+  const { profile, catalog, loadCatalog, session, setProfile } = useApp();
+  const [selected, setSelected] = useState<Record<string, SportSelection>>(() =>
+    Object.fromEntries(
+      (profile?.sports ?? []).map((sport) => [
+        sport.format_id,
+        { level: sport.level, court_preference: sport.court_preference },
+      ]),
+    ),
+  );
+  const [loading, setLoading] = useState(catalog.length === 0);
+  const [busy, setBusy] = useState(false);
+  const savingRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (catalog.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    loadCatalog()
+      .catch((cause) => {
+        if (active) {
+          setError(errorDetail(cause));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [catalog.length, loadCatalog]);
+
+  const formats = useMemo(() => catalog.flatMap((sport) => sport.formats), [catalog]);
+  const payload = useMemo(
+    () =>
+      formats.flatMap((format) => {
+        const current = selected[format.id];
+        return current
+          ? [
+              {
+                format_id: format.id,
+                level: current.level,
+                court_preference: current.court_preference,
+              },
+            ]
+          : [];
+      }),
+    [formats, selected],
+  );
+
+  const toggleFormat = useCallback(
+    (formatId: string) => {
+      setSelected((current) => {
+        if (current[formatId]) {
+          const next = { ...current };
+          delete next[formatId];
+          return next;
+        }
+        return {
+          ...current,
+          [formatId]: {
+            level:
+              profile?.sports.find((sport) => sport.format_id === formatId)?.level ??
+              'intermediate',
+            court_preference:
+              profile?.sports.find((sport) => sport.format_id === formatId)?.court_preference ??
+              'ANY',
+          },
+        };
+      });
+    },
+    [profile],
+  );
+
+  const updateFormat = useCallback((formatId: string, patch: Partial<SportSelection>) => {
+    setSelected((current) => {
+      const existing = current[formatId];
+      if (!existing) {
+        return current;
+      }
+      return { ...current, [formatId]: { ...existing, ...patch } };
+    });
+  }, []);
+
+  const save = async () => {
+    if (savingRef.current) {
+      return;
+    }
+    if (!session) {
+      setError('Entre na sua conta para salvar as modalidades.');
+      return;
+    }
+    if (payload.length === 0) {
+      setError('Escolha pelo menos um formato para entrar na fila.');
+      return;
+    }
+    savingRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.profile.replaceSports(session.accessToken, payload);
+      setProfile(updated);
+      const intent = consumePendingQueueIntent();
+      if (!intent) {
+        nav.back();
+        return;
+      }
+      const firstFormatId = payload[0]?.format_id;
+      if (!firstFormatId) {
+        setError('Nenhum formato salvo para entrar na fila.');
+        return;
+      }
+      const formatId =
+        intent.formatId && payload.some((item) => item.format_id === intent.formatId)
+          ? intent.formatId
+          : firstFormatId;
+      try {
+        await api.matchmaking.enqueue(
+          session.accessToken,
+          formatId,
+          intent.mode,
+          intent.courtPreference,
+        );
+        nav.replace('queue-search', { mode: intent.mode, formatId });
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === 'region_required') {
+          nav.go('region');
+          return;
+        }
+        if (cause instanceof ApiError && cause.code === 'ranked_restricted') {
+          nav.go('queue-restricted');
+          return;
+        }
+        // Perfil salvo, mas a fila não entrou: informa e devolve aos filtros.
+        toastError(nav, cause);
+        nav.back();
+      }
+    } catch (cause) {
+      setError(errorDetail(cause));
+      toastError(nav, cause);
+    } finally {
+      savingRef.current = false;
+      setBusy(false);
+    }
+  };
+
   return (
     <Page title="Modalidades e formatos">
-      {sports.map((sport) => (
-        <Card key={sport.format_id}>
-          <Row between>
-            <Txt variant="h3">{sport.format_name}</Txt>
-            <Badge tone="green">ATIVO</Badge>
-          </Row>
-          <Txt variant="tiny" style={{ marginTop: 4, marginBottom: 10 }}>
-            {sport.format_id === 'v6'
-              ? 'Formato em validação · duração definida pelo formato'
-              : '10 jogadores · duração definida pelo formato'}
+      <Notice tone="blue" icon="info">
+        Escolha um ou mais formatos do catálogo e ajuste nível e quadra. O perfil é salvo no
+        servidor.
+      </Notice>
+      {error ? (
+        <Notice tone="orange" icon="alert">
+          {error}
+        </Notice>
+      ) : null}
+      {loading ? <LoadingState label="Buscando o catálogo de esportes." variant="generic" /> : null}
+      {!loading && catalog.length === 0 ? (
+        <Card>
+          <Txt variant="h3">Catálogo indisponível</Txt>
+          <Txt variant="tiny" style={{ marginTop: 4 }}>
+            Não foi possível carregar os esportes agora.
           </Txt>
-          <Kv label="Nível autodeclarado" value={levelLabel(sport.level)} />
-          <Kv label="Preferência de quadra" value={courtLabel(sport.court_preference)} />
-          {sport.format_name.toLowerCase().includes('futebol') ? (
-            <Kv label="Posição" value="Ala" />
-          ) : null}
+          <View style={{ marginTop: 10 }}>
+            <Btn
+              tone="ghost"
+              small
+              block={false}
+              onPress={() => loadCatalog().catch(() => undefined)}
+            >
+              Tentar novamente
+            </Btn>
+          </View>
+        </Card>
+      ) : null}
+      {catalog.map((sport) => (
+        <Card key={sport.id}>
+          <Txt variant="h3">{sport.name}</Txt>
+          <ChipRow style={{ marginTop: 8 }}>
+            {sport.formats.map((format) => (
+              <Chip
+                key={format.id}
+                on={!!selected[format.id]}
+                onPress={() => toggleFormat(format.id)}
+              >
+                {format.name}
+              </Chip>
+            ))}
+          </ChipRow>
+          {sport.formats.map((format) => {
+            const current = selected[format.id];
+            if (!current) {
+              return null;
+            }
+            return (
+              <View
+                key={format.id}
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTopWidth: 1,
+                  borderTopColor: palette.line,
+                }}
+              >
+                <Row between>
+                  <Txt variant="h3">{format.name}</Txt>
+                  <Badge tone="green">ATIVO</Badge>
+                </Row>
+                <Txt variant="tiny" style={{ marginTop: 4 }}>
+                  {format.total_participants} jogadores · {format.play_minutes} min de jogo
+                </Txt>
+                <Txt variant="label" style={{ marginTop: 10 }}>
+                  Nível autodeclarado
+                </Txt>
+                <ChipRow style={{ marginTop: 6 }}>
+                  {LEVEL_OPTIONS.map(([value, label]) => (
+                    <Chip
+                      key={value}
+                      on={current.level === value}
+                      onPress={() => updateFormat(format.id, { level: value })}
+                    >
+                      {label}
+                    </Chip>
+                  ))}
+                </ChipRow>
+                <Txt variant="label" style={{ marginTop: 10 }}>
+                  Preferência de quadra
+                </Txt>
+                <ChipRow style={{ marginTop: 6 }}>
+                  {COURT_OPTIONS.map(([value, label]) => (
+                    <Chip
+                      key={value}
+                      on={current.court_preference === value}
+                      onPress={() => updateFormat(format.id, { court_preference: value })}
+                    >
+                      {label}
+                    </Chip>
+                  ))}
+                </ChipRow>
+              </View>
+            );
+          })}
         </Card>
       ))}
       <Notice tone="orange" icon="info">
         Nível autodeclarado não é divisão. A divisão só aparece em partidas ranqueadas.
       </Notice>
-      <Btn tone="ghost" icon="plus" disabled>
-        Adicionar modalidade em implantação
-      </Btn>
-      <Btn tone="primary" back>
-        Salvar
+      <Btn tone="primary" onPress={save} disabled={busy || loading}>
+        {busy ? 'Salvando…' : 'Salvar modalidades'}
       </Btn>
     </Page>
   );
@@ -2322,8 +2713,7 @@ function RegionCepLocked() {
 
 export const coreScreens: ScreenDef[] = [
   { id: 'home', tab: 'jogar', render: () => <Home /> },
-  { id: 'queue-casual', tab: 'jogar', render: () => <QueueScreen mode="casual" /> },
-  { id: 'queue-ranked', tab: 'jogar', render: () => <QueueScreen mode="ranked" /> },
+  { id: 'queue', tab: 'jogar', render: () => <QueueScreen /> },
   { id: 'queue-search', tab: 'jogar', render: () => <QueueSearch /> },
   { id: 'queue-empty', tab: 'jogar', render: () => <QueueEmpty /> },
   { id: 'queue-restricted', tab: 'jogar', render: () => <QueueRestricted /> },
@@ -2341,7 +2731,8 @@ export const coreScreens: ScreenDef[] = [
   { id: 'profile-me', tab: 'perfil', render: () => <ProfileMe /> },
   { id: 'profile-other', tab: 'social', render: () => <ProfileOther /> },
   { id: 'profile-edit', tab: 'perfil', render: () => <ProfileEdit /> },
-  { id: 'avatar-editor', tab: 'perfil', render: () => <AvatarEditor /> },
+  { id: 'identity-editor', tab: 'perfil', render: () => <IdentityEditor /> },
+  { id: 'avatar-editor', tab: 'perfil', render: () => <IdentityEditor /> },
   { id: 'sports', tab: 'perfil', render: () => <Sports /> },
   { id: 'availability', tab: 'perfil', render: () => <Availability /> },
   { id: 'region', tab: 'perfil', render: () => <Region /> },
