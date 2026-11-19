@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     # Login por senha (ADR 0050). Janela fixa de 15 min.
     email_login_max_per_email: int = Field(default=10, ge=1, le=100)
     email_login_max_per_ip: int = Field(default=30, ge=1, le=300)
+    # Drenagem da Outbox dentro do processo da API. O Render free não mantém
+    # worker e o cron do GitHub é best-effort; ligada no demo, desligada por
+    # padrão (inclusive em teste). O workflow agendado continua como reserva.
+    email_inline_drain_enabled: bool = False
+    email_inline_drain_interval_seconds: int = Field(default=30, ge=10, le=300)
 
     # Segredo de hash de access/refresh tokens. O padrão só vale para
     # desenvolvimento e testes; ambientes reais precisam definir JOGA_TOKEN_HASH_SECRET.

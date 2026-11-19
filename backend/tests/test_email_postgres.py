@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.infrastructure.database.base import Base
 from app.modules.email.deliveries import EmailDeliveryService
+from app.modules.email.drain_lock import email_drain_lock
 from app.modules.email.models import UserEmail
 from app.modules.identity.email_accounts import (
     EmailAccountService,
@@ -115,6 +116,15 @@ def _consumed_challenge(session: Session, suffix: str) -> str:
         now=BASE_TIME + timedelta(seconds=int(suffix) + 1),
     )
     return str(issued.challenge_id)
+
+
+def test_advisory_lock_blocks_a_second_drainer(engine: Engine) -> None:
+    with email_drain_lock(engine) as first:
+        assert first is True
+        with email_drain_lock(engine) as second:
+            assert second is False
+    with email_drain_lock(engine) as released:
+        assert released is True
 
 
 def test_partial_unique_index_blocks_duplicate_active_email(

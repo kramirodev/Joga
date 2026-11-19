@@ -124,6 +124,10 @@ class EmailDelivery(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
+    # Instante do despacho aceito pelo provedor; base da latência p50/p95.
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
 
 __all__ = [

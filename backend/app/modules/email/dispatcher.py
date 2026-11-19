@@ -194,11 +194,25 @@ def _deliver(
             return "failed"
 
         delivery.status = "sent"
+        delivery.sent_at = moment
         delivery.provider_message_id = message_id
         delivery.last_error_code = None
         session.flush()
         outbox.mark_dispatched(event, now=moment)
+        _log_latency(event, delivery, moment)
         return "sent"
+
+
+def _log_latency(event: OutboxEvent, delivery: EmailDelivery, moment: datetime) -> None:
+    """Loga a latência do evento até o aceite do provedor, sem PII."""
+    latency_ms = max(
+        0.0, (ensure_utc(moment) - ensure_utc(event.created_at)).total_seconds() * 1000
+    )
+    logger.info(
+        "e-mail: entregue kind=%s latencia_ms=%.0f",
+        delivery.kind,
+        latency_ms,
+    )
 
 
 def _record_delivery_failure(

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
 from app.modules.email.dispatcher import DeliveryReport, dispatch_email_deliveries
+from app.modules.email.drain_lock import email_drain_lock
 from app.modules.email.sender import EmailSender, build_email_sender
 
 logger = logging.getLogger("joga.email")
@@ -52,12 +53,18 @@ def run_once(session: Session) -> int:
         logger.warning("JOGA_EMAIL_PROVIDER=none; Outbox de e-mail preservada")
         return 0
     try:
-        report = run_once_with_sender(
-            session,
-            sender,
-            max_attempts=settings.email_max_delivery_attempts,
-            bounce_threshold=settings.email_bounce_threshold,
-        )
+        # O mesmo lock usado pela drenagem inline da API: dois drenadores nunca
+        # selecionam o mesmo evento.
+        with email_drain_lock(session.get_bind()) as acquired:
+            if not acquired:
+                logger.info("e-mail: Outbox já está sendo drenada por outro processo")
+                return 0
+            report = run_once_with_sender(
+                session,
+                sender,
+                max_attempts=settings.email_max_delivery_attempts,
+                bounce_threshold=settings.email_bounce_threshold,
+            )
     except Exception:
         session.rollback()
         logger.exception("entrega de e-mail falhou")

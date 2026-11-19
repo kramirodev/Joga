@@ -2,10 +2,12 @@
 
 **Status:** ambiente de demonstração **no ar** no Render free + Supabase. A URL
 real não é versionada (repositório público); consulte o dashboard do Render.
-Worker de e-mail validado; a Outbox remota está DISPATCHED e as entregas
-`password_reset`/`security_alert` estão `sent`.
+Cadastro **aberto** desde 2026-11-19. A Outbox é drenada **no processo da API**
+(task inline a cada 30 s) e o workflow do GitHub fica como reserva; a Outbox
+remota está DISPATCHED e as entregas `password_reset`/`security_alert` estão
+`sent`.
 
-**Data:** 2026-11-18
+**Data:** 2026-11-19 (última atualização)
 
 ## 1. O que é e o que não é
 
@@ -26,7 +28,7 @@ domínios diferentes **quebram o login**.
 | API + painel | Um único container no Render (Caddy serve `/srv/web` e faz proxy de `/api/*` para o uvicorn) | Mesma origem, sem CORS |
 | Banco | Supabase free (Postgres + PostGIS) | PostGIS pronto, sem cartão |
 | E-mail | Brevo free (300/dia) | Envia para qualquer destinatário sem domínio verificado |
-| Worker | GitHub Actions agendado | Render free não mantém worker |
+| Worker | Task inline na API + GitHub Actions agendado (reserva) | Render free não mantém worker dedicado; o cron do GitHub é *best-effort* |
 | Redis | Nenhum | O código não usa |
 
 Não adicionar CORS.
@@ -98,12 +100,17 @@ JOGA_AUTH_PHONE_ENABLED=false
 JOGA_ALLOW_EMAIL_REGISTRATION=true
 JOGA_ALLOW_PHONE_REGISTRATION=false
 JOGA_PHONE_REQUIRED_FOR_BOOKING=false
-JOGA_SIGNUP_MODE=closed                # decisão do demo: cadastro fechado
+JOGA_SIGNUP_MODE=open                  # demo desde 2026-11-19 (kill switch)
+JOGA_SIGNUP_MAX_PER_IP_PER_DAY=20
 JOGA_EMAIL_PROVIDER=brevo
 JOGA_EMAIL_API_KEY                     # segredo
 JOGA_EMAIL_FROM=kramirodev@gmail.com
 JOGA_EMAIL_FROM_NAME=JOGA
 JOGA_EMAIL_DAILY_BUDGET=250
+JOGA_EMAIL_MAX_PER_ADDRESS_PER_HOUR=5
+JOGA_EMAIL_MAX_PER_IP_PER_HOUR=50
+JOGA_EMAIL_INLINE_DRAIN_ENABLED=true   # drenagem no processo da API
+JOGA_EMAIL_INLINE_DRAIN_INTERVAL_SECONDS=30
 JOGA_WEB_COOKIE_SECURE=true            # HTTPS no Render
 JOGA_PSP_PROVIDER=simulator
 JOGA_MONEY_MODE=simulated
@@ -124,11 +131,41 @@ DEMO_BASIC_AUTH_HASH                   # segredo: hash bcrypt do Caddy
 (`backend/app/core/config.py`). Por isso o demo é `development` e o acesso fica
 atrás de basic auth.
 
-### Cadastro fechado
+### Cadastro aberto e kill switch
 
-`JOGA_SIGNUP_MODE=closed` impede que qualquer pessoa crie conta e consuma a cota
-de 300 e-mails/dia. As contas de teste entram pelo seed. Para liberar
-autoatendimento, troque para `open` sabendo do risco.
+O demo está com `JOGA_SIGNUP_MODE=open` desde 2026-11-19 para validar o
+autoatendimento pelo app. A cota de e-mail é protegida pelo orçamento
+(`JOGA_EMAIL_DAILY_BUDGET=250`), pelos limites por IP/endereço e pelo teto de
+cadastros por IP.
+
+Emergência (sem deploy): troque `JOGA_SIGNUP_MODE=closed` no dashboard do
+Render; a mudança reinicia o serviço e o endpoint
+`POST /api/v1/auth/email/code` (`registration`) volta a responder
+`403 signup_closed`. O `render.yaml` é a fonte para recriar o ambiente e só
+muda por commit; mantenha dashboard e arquivo alinhados.
+
+### Drenagem inline da Outbox
+
+O Render free dorme e não mantém worker. O cron do GitHub é *best-effort*: em
+2026-11-19 houve **1** execução agendada em 4h15, o que não sustenta o aceite de
+15 min. Por isso a API drena a Outbox sozinha:
+
+- `JOGA_EMAIL_INLINE_DRAIN_ENABLED=true` sobe uma task asyncio no lifespan do
+  FastAPI; cada ciclo chama `dispatch_email_deliveries` fora do event loop.
+- `JOGA_EMAIL_INLINE_DRAIN_INTERVAL_SECONDS=30` (mínimo 10, máximo 300; valor
+  fora da faixa falha no boot).
+- O ciclo usa `pg_try_advisory_lock` (`backend/app/modules/email/drain_lock.py`,
+  chave `4_426_433_101`). API e workflow usam o **mesmo** lock, então nunca há
+  envio duplo; se o lock estiver ocupado, o ciclo é ignorado e tenta de novo.
+- Falha do provedor não derruba a API: o ciclo loga, a entrega volta para a
+  fila com backoff e o próximo ciclo tenta outra vez. Shutdown cancela a task.
+- `email_deliveries.sent_at` guarda o aceite do provedor; a latência
+  (`sent_at - created_at`) é logada por mensagem (`latencia_ms`) e resumida por
+  ciclo em p50/p95 do dia (UTC).
+- **Aceite do demo:** p95 ≤ 60 s com o serviço acordado. Até 15 min vale apenas
+  no caminho de reserva (workflow do GitHub), quando a API estiver dormindo.
+- O workflow `Email worker (Outbox)` continua ativo como reserva; ele não é mais
+  o caminho principal.
 
 ### Hash do basic auth
 
@@ -265,18 +302,19 @@ Secrets do repositório:
 - `JOGA_EMAIL_API_KEY`
 - `JOGA_EMAIL_FROM`
 
-**Estado (2026-11-18):** os três secrets estão configurados. O workflow
-`Email worker (Outbox)` foi executado com sucesso (run `44408140879`); a Outbox
-remota ficou DISPATCHED e as entregas `password_reset`/`security_alert` estão
-`sent`, com `attempts=1` e `provider_message_id`. Um reset real para
-`kramirodev+teste@gmail.com` também foi enviado e ficou `sent`.
+**Estado (2026-11-19):** os três secrets estão configurados e o workflow segue
+`active` na `main`. O caminho principal passou a ser a drenagem inline da API
+(seção 5); o workflow é a reserva. O cron do GitHub não é confiável para o
+aceite: em 2026-11-19 houve **1** execução agendada (run `44437055423`, 01:27Z)
+em 4h15 de janela, e uma entrega ficou presa por 28 min até um
+`workflow_dispatch` manual (run `44467343379`) drenar a Outbox.
 
-Depois do merge na `main`, em Actions → "Email worker (Outbox)" → *Run
-workflow* (`workflow_dispatch`), conferir no log `enviados` > 0 e, no banco,
-`email_deliveries.status = 'sent'`.
+Conferência manual (reserva), em Actions → "Email worker (Outbox)" → *Run
+workflow*: o log termina com `enviados` > 0 e, no banco,
+`email_deliveries.status = 'sent'` com `provider_message_id`.
 
-Lembretes: o cron do GitHub é best-effort (5–15 min), só roda no branch padrão e
-é desativado após ~60 dias sem atividade.
+Lembretes: o cron só roda no branch padrão e é desativado após ~60 dias sem
+atividade no repositório.
 
 ## 10. UptimeRobot
 
@@ -299,7 +337,7 @@ monitores.
 
 ## 11. Smoke test
 
-### Ambiente público (Render + Supabase)
+### Ambiente público (Render + Supabase) — baseline 2026-11-18
 
 | Verificação | Resultado |
 |---|---|
@@ -328,6 +366,21 @@ monitores.
 
 O `SameSite=strict` é o valor emitido pelo Starlette; equivale semanticamente a
 `SameSite=Strict`. Nenhum cookie, CSP ou CORS foi alterado.
+
+### Cadastro aberto e drenagem inline (2026-11-19)
+
+| Verificação | Resultado |
+|---|---|
+| Variáveis no Render | `JOGA_SIGNUP_MODE=open`, `JOGA_AUTH_EMAIL_ENABLED=true`, `JOGA_EMAIL_PROVIDER=brevo`, `JOGA_EMAIL_DAILY_BUDGET=250`, `JOGA_SIGNUP_MAX_PER_IP_PER_DAY=20`, `JOGA_EMAIL_MAX_PER_IP_PER_HOUR=50`, `JOGA_EMAIL_MAX_PER_ADDRESS_PER_HOUR=5`, `JOGA_EMAIL_INLINE_DRAIN_ENABLED=true`, intervalo 30 s |
+| Sonda de cadastro (`registration` com domínio descartável) | 400 `email_domain_not_allowed` — o gate `signup_closed` passou, sem enviar e-mail |
+| Antes da mudança | 403 `signup_closed` (mesma sonda) |
+| Workflow `Email worker (Outbox)` | `active` na `main`; secrets `JOGA_DATABASE_URL`, `JOGA_EMAIL_API_KEY`, `JOGA_EMAIL_FROM` presentes |
+| Execuções agendadas | 1 em 4h15 (run `44437055423`, 01:27Z) — cron não sustenta o aceite |
+| Entrega presa | `security_alert` pendente 28 min; `workflow_dispatch` `44467343379` drenou e marcou `sent` com `provider_message_id`; Outbox em 0 pendentes |
+| Latência p50/p95 do dia | coletada por `email_deliveries.sent_at`; sem tráfego real de cadastro depois do deploy |
+
+O `render.yaml` local e o da `main` não contêm a URL pública; a origem WebAuthn
+segue `sync: false` no dashboard.
 
 ### Executado localmente (API + Postgres local, sem Caddy)
 
@@ -386,7 +439,10 @@ fallback do SPA 200. O login por senha continua independente de passkey.
 - `JOGA_MEDIA_ROOT` é disco efêmero: fotos de quadra somem no redeploy.
 - Sem backup automático confiável.
 - Sem observabilidade além de log.
-- O cron do GitHub é best-effort e desativado após ~60 dias sem atividade.
+- O cron do GitHub é best-effort e desativado após ~60 dias sem atividade; por
+  isso a entrega do demo depende da drenagem inline enquanto a API está
+  acordada (p95 ≤ 60 s). Com o serviço dormindo, o pior caso é o caminho de
+  reserva (até 15 min).
 
 ## 13. Como revogar / encerrar o demo
 
