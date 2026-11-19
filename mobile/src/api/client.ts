@@ -101,6 +101,8 @@ export function describeApiError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 let refreshHandler: (() => Promise<string | null>) | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 let suspensionHandler: (() => void) | null = null;
@@ -139,14 +141,22 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
     ...(init.headers ?? {}),
   };
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: init.method ?? 'GET',
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(0, 'request_timeout');
+    }
     throw new ApiError(0, 'network_unavailable');
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (response.status === 426) {

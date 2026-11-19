@@ -5,12 +5,27 @@
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "backgroundColor": "#0F1214",
     "userInterfaceStyle": "automatic",
     "plugins": [
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "O JOGA usa sua localização somente enquanto você busca partidas."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0F1214",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#0F1214",
+            "image": "./assets/splash-icon.png"
+          }
         }
       ]
     ],
@@ -19,7 +34,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F1214",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
