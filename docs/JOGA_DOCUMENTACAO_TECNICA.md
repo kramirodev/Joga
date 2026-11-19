@@ -42,7 +42,7 @@ O comércio de produtos está fora do escopo inicial (ADR 0022). A camada comerc
 | Quadras públicas | Descoberta/local de encontro; reserva formal apenas se houver autorização e disponibilidade verificável |
 | Quadras privadas | Cadastro, agenda, reserva e pagamento quando habilitados |
 | Chat | Por lobby e por clã; sem chat global universal no escopo atual |
-| Identidade visual | Sem fotos de pessoas; avatar ilustrado de catálogo fechado; fotos restritas a quadras/estabelecimentos (ADR 0029) |
+| Identidade visual | Sem fotos de pessoas; identidade por ícone de perfil, moldura, cor de destaque, ícone de entrada, emote e badge, de catálogo fechado; fotos restritas a quadras/estabelecimentos (ADR 0029, revisão 2) |
 | Equipamento da partida | Kit por formato com responsáveis; não é critério de capitão, MMR ou elegibilidade (ADR 0030) |
 | Clãs | Abertos ou fechados, com ranking de troféus por modalidade |
 | Reservas | Solicitação ao estabelecimento, bloqueio temporário e confirmação com todas as vagas quitadas |
@@ -754,9 +754,9 @@ Os pesos 50/30/20 são a fórmula-base aceita para prototipação, não devem se
 
 Troféus de clã são uma classificação coletiva própria, independente do MMR individual. Nenhum ponto pode ser comprado ou concedido por publicidade.
 
-### 12.6 Política de mídia e avatares
+### 12.6 Política de mídia e identidade
 
-Não há fotos de pessoas no produto. Perfil, lobby, chat e clã usam avatar ilustrado gerado a partir de catálogo fechado (`user_avatars`), composto por peças, cores e acessórios versionados; o cliente escolhe apenas combinações válidas e o backend valida.
+Não há fotos de pessoas no produto. Perfil, lobby, chat e clã usam identidade por ícones de catálogo fechado e versionado (`visual_catalog_items`), com seis slots equipados em `user_visual_identity`: `icon_key`, `frame_key`, `accent_key`, `entry_key`, `emote_key` e `badge_key`. O cliente escolhe apenas chaves válidas e o backend valida um item por slot; não há corpo, camadas, tom de pele, cabelo ou roupa.
 
 - sem upload de imagem de pessoa, áudio, vídeo ou arquivo em perfil, lobby ou chat no MVP;
 - nome de exibição e `#tag` são texto moderado;
@@ -766,7 +766,7 @@ Não há fotos de pessoas no produto. Perfil, lobby, chat e clã usam avatar ilu
 - a API não aceita URL arbitrária de imagem; mídia de quadra é servida por endpoint autorizado;
 - qualquer expansão para foto de pessoa ou upload livre exige ADR e revisão de moderação, privacidade e retenção.
 
-ADR: 0029.
+ADR: 0029 (revisão 2).
 
 ## 13. Organizações, quadras e onboarding do fornecedor
 
@@ -1198,7 +1198,9 @@ Temporada, trilha, XP, passe e catálogo cosmético têm modelo detalhado em `do
 | Entidade | Responsabilidade |
 |---|---|
 | `users` | Identidade central e estado da conta |
-| `user_avatars` | Avatar escolhido, peças e versão do catálogo |
+| `visual_catalog_items` | Catálogo fechado de identidade visual, tipo, desbloqueio e versão |
+| `user_visual_identity` | Seis slots equipados (ícone, moldura, cor, entrada, emote e badge) |
+| `user_visual_unlocks` | Desbloqueio explícito de item não gratuito |
 | `user_phones` | Telefone protegido, hash de busca e verificação |
 | `phone_challenges` | Desafios OTP e expiração |
 | `passkey_credentials` | Credenciais públicas e revogação |
@@ -1277,7 +1279,7 @@ Temporada, trilha, XP, passe e catálogo cosmético têm modelo detalhado em `do
 - Mensagem só pode ser lida por membro autorizado da conversa.
 - Participante único por lobby/partida.
 - Um item de equipamento só pode ter um responsável ativo por partida.
-- Avatar só aceita peças e combinações da versão vigente do catálogo.
+- Identidade só aceita códigos e combinações da versão vigente do catálogo.
 - Foto de quadra só é pública após revisão e vínculo com organização ativa.
 - Um usuário não participa de partidas simultâneas incompatíveis.
 - Apenas uma votação ativa por lobby.
@@ -1329,7 +1331,7 @@ Famílias iniciais de endpoints (nomes ilustrativos; contratos finais em OpenAPI
 | Matchmaking | Entrar/sair da fila e consultar estado |
 | Lobbies | Criar, listar, entrar, sair, horário e participantes |
 | Equipamento | Catálogo por formato, assumir item, liberar item e confirmar kit |
-| Avatares | Catálogo de peças, escolher combinação e atualizar avatar |
+| Identidade | Catálogo de ícones, molduras, cores, entradas, emotes e badges; escolher e atualizar a identidade |
 | Votação | Propor quadra, votar e consultar resultado |
 | Chat | Histórico paginado e envio de mensagens autorizadas |
 | Amigos | Solicitação, aceite, remoção, bloqueio e convites |
@@ -1386,7 +1388,7 @@ e integridade continuam no servidor. Ver ADR 0051.
 - Logs sem tokens, OTP, telefone completo, dados bancários ou coordenadas precisas.
 - Backups criptografados e testes de restauração.
 - Uploads privados com allowlist, limites e armazenamento privado; chat não aceita arquivos no MVP.
-- Nenhuma foto de pessoa ou URL arbitrária de imagem é aceita pela API; avatares vêm de catálogo fechado e fotos de quadra passam por revisão.
+- Nenhuma foto de pessoa ou URL arbitrária de imagem é aceita pela API; ícones de identidade vêm de catálogo fechado e fotos de quadra passam por revisão.
 - Fotos de quadra validam o conteúdo real, reencodam em JPEG, removem EXIF/metadados, limitam bytes/pixels/dimensões e são servidas apenas por endpoint autorizado.
 - Na 12A, a revisão inicial é feita por `OWNER`/`ADMIN` da organização, com auditoria; a revisão independente e a denúncia de foto entram na Fase 17.
 - Dados do fornecedor e conta bancária com acesso restrito e auditoria.
@@ -1660,7 +1662,7 @@ Os itens abaixo devem ser definidos antes dos módulos correspondentes:
 20. **Moderação:** política de conteúdo, limites de contexto, ferramenta/provedor de IA e retenção.
 21. **Precificação:** medir `q`, `C_k`, `C_c`, `τ` e `p_t`; definir `c` final e limite de elegibilidade por faixa.
 22. **Jurídico:** modelo de intermediação/custódia, contratos com fornecedores, cancelamento, reembolso e retenção de valores.
-23. **Avatares e mídia:** catálogo definitivo de peças, limites de combinação, storage de produção, processo de revisão independente, remoção e retenção de fotos de quadra.
+23. **Identidade e mídia:** catálogo definitivo de ícones de perfil, molduras, cores de destaque, ícones de entrada, emotes e badges; limites e moderação; storage de produção, processo de revisão independente, remoção e retenção de fotos de quadra.
 24. **Equipamento:** catálogo definitivo por formato, obrigatoriedade em partidas casuais/ranqueadas, consequências de descumprimento e contestação.
 25. **Mídia de quadra:** provedor de storage, criptografia, backup, limpeza de arquivos órfãos e política de retenção.
 26. **Provisão de fraude dinâmica:** hipótese de `p_t` pela mediana de Trust Factor registrada na ADR 0036; não implementar sem dados de MED/chargeback, score de risco separado, revisão jurídica e teste em modo sombra. O modelo atual mantém `p_t = 0,2%` fixo.

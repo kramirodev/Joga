@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.api.v1.auth_guards import require_ticket_purchase_enabled
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.api.v1.request_context import request_ip_hash, request_user_agent_hash
 from app.core.config import Settings, get_settings
@@ -231,7 +232,12 @@ def read_packs(
     return PackListResponse(packs=[_pack_view(pack) for pack in list_packs(session)])
 
 
-@router.post("/purchases", response_model=PurchaseView, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/purchases",
+    response_model=PurchaseView,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_ticket_purchase_enabled)],
+)
 def create_ticket_purchase(
     payload: PurchaseCreate,
     request: Request,
@@ -324,7 +330,11 @@ def read_purchase(
     return _purchase_view(purchase, payment_for(session, "ticket_pack", purchase.id))
 
 
-@router.post("/purchases/{purchase_id}/sync", response_model=PurchaseView)
+@router.post(
+    "/purchases/{purchase_id}/sync",
+    response_model=PurchaseView,
+    dependencies=[Depends(require_ticket_purchase_enabled)],
+)
 def sync_ticket_purchase(
     purchase_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
@@ -349,7 +359,11 @@ def sync_ticket_purchase(
     return _purchase_view(purchase, payment_for(session, "ticket_pack", purchase.id))
 
 
-@router.post("/purchases/{purchase_id}/confirm", response_model=PurchaseView)
+@router.post(
+    "/purchases/{purchase_id}/confirm",
+    response_model=PurchaseView,
+    dependencies=[Depends(require_ticket_purchase_enabled)],
+)
 def confirm_ticket_purchase(
     purchase_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],

@@ -81,7 +81,7 @@ com titularidade confirmada e comprovante.
 - Contrato JOGA ↔ Mercado Pago: termos da conta, uso comercial, payout e
   responsabilidade por chargeback.
 - Eventual contrato com clã/organizador e publicidade (Fase 18).
-- Propriedade intelectual: marca, avatar, catálogo cosmético e conteúdo de clã.
+- Propriedade intelectual: marca, identidade por ícones, catálogo cosmético e conteúdo de clã.
 - Seguro/garantia para eventos e responsabilidade civil, se necessário.
 
 ## 5. LGPD e dados

@@ -3,6 +3,7 @@
 **Versão:** 2.0<br>
 **Data:** 17 de novembro de 2026<br>
 **Status:** proposta de recorte para produção de arte; substitui a versão 1.0 (character creator).<br>
+**Atualização:** 19 de novembro de 2026 — alinhamento com a ADR 0029, revisão 2, e com o catálogo implementado (`visual_catalog_items`).<br>
 **Base:** ADR 0029 (sem fotos de pessoas), ADR 0043 (temporada, passe e customização), ADR 0045 (divisão × nível), ADR 0049 (ticket como unidade de exibição), `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` e as telas atuais de `mobile/src/screens/`.
 
 > **Escopo.** Este documento cobre os assets visuais do **app do jogador**. Não cobre ícones do painel web, telas de loja, screenshots, material de marketing nem logotipos de terceiros.
@@ -26,7 +27,7 @@ Regra de economia: **não desenhar 30 níveis da trilha nem 4 tamanhos de pacote
 
 - Existem **39 ícones genéricos** em `mobile/src/ui/icon-data.ts`, extraídos do protótipo.
 - As telas usam **26** desses ícones. Não é preciso redesenhar os genéricos; o esforço novo está nos ícones de produto.
-- O avatar atual (`mobile/src/ui/Avatar.tsx`) é um **placeholder** com 3 cabelos e óculos. Ele será substituído pelo **ícone de perfil** descrito na seção 3.
+- O `Avatar.tsx` ainda é usado em telas de onboarding/social não migradas; o componente novo de identidade é `IdentityBadge.tsx`, com o catálogo em `identity.ts`. Ele será removido quando todas as telas usarem o ícone de perfil descrito na seção 3.
 - O app usa `react-native-svg` e `Animated`. **Não há `lottie-react-native`.** Para o MVP, animar em SVG + `Animated` evita dependência nova; Lottie só com aprovação.
 
 ---
@@ -75,10 +76,10 @@ Por temporada, a ADR 0043 §11 pede **7 itens**. Composição sugerida: 3 ícone
 
 ### 2.4 Impacto no backend e nos ADRs
 
-- **ADR 0029:** o texto “avatar ilustrado gerado” passa a “identidade por ícone de catálogo fechado”. Precisa de adendo.
-- **ADR 0043 §5/§11:** as categorias de item passam a `profile_icon`, `frame`, `accent_color`, `entry_icon`, `emote`, `badge`.
-- **Backend:** `profile_icon_code`, `frame_code`, `accent_color`, `entry_icon_code`, `emote_code`; um equipado por slot; catálogo versionado; sem configuração de avatar.
-- **Mobile:** `Avatar.tsx` vira `ProfileIcon.tsx` (ícone circular + moldura + cor). O onboarding escolhe 1 ícone livre de cada modalidade.
+- **ADR 0029:** a revisão 2 (2026-11-19) registra a troca de “avatar ilustrado gerado” por identidade de ícone de catálogo fechado.
+- **ADR 0043 §5/§11:** categorias atualizadas para ícone de perfil, moldura, cor de destaque, ícone de entrada, emote e badge.
+- **Backend:** catálogo em `visual_catalog_items` e escolha em `user_visual_identity`, com `icon_key`, `frame_key`, `accent_key`, `entry_key`, `emote_key` e `badge_key`; um equipado por slot; catálogo versionado.
+- **Mobile:** `IdentityBadge.tsx` e `identity.ts` renderizam a identidade por ícones; o onboarding escolhe 1 ícone livre de cada modalidade.
 
 ---
 
@@ -463,10 +464,10 @@ mobile/src/ui/assets/illus/
 
 ## 17. Pendências e decisões
 
-1. **ADR 0029:** adendo para trocar “avatar ilustrado” por “identidade por ícone de catálogo fechado”.
-2. **ADR 0043 §5/§11:** categorias de item passam a `profile_icon`, `frame`, `accent_color`, `entry_icon`, `emote`, `badge`.
-3. **Backend:** `profile_icon_code`, `frame_code`, `accent_color`, `entry_icon_code`, `emote_code`; um equipado por slot.
-4. **Mobile:** `Avatar.tsx` vira `ProfileIcon.tsx`; onboarding escolhe 1 ícone livre por modalidade.
+1. **ADR 0029:** atendido pela revisão 2, que troca “avatar ilustrado” por “identidade por ícone de catálogo fechado”.
+2. **ADR 0043 §5/§11:** atendido; categorias de item passam a ícone de perfil, moldura, cor de destaque, ícone de entrada, emote e badge.
+3. **Backend:** implementado com `visual_catalog_items` e `user_visual_identity` (`icon_key`, `frame_key`, `accent_key`, `entry_key`, `emote_key`, `badge_key`); um equipado por slot.
+4. **Mobile:** `IdentityBadge.tsx`/`identity.ts`; onboarding escolhe 1 ícone livre por modalidade.
 5. **Catálogo:** o número de 88 é baseline; o catálogo final depende de produto.
 6. **Lottie:** decidir se o app aceita a dependência ou se as animações ficam em SVG + `Animated`.
 7. **Pix:** confirmar uso da marca oficial e revisão de licenciamento.

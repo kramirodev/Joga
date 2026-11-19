@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.17<br>
-**Status:** visão de produto atualizada pela ADR 0049 — crédito em reais, ticket como unidade de exibição, preço em duas linhas, NFS-e e custódia B→C<br>
-**Data:** 16 de novembro de 2026<br>
+**Versão:** 3.18<br>
+**Status:** visão de produto atualizada pela ADR 0049 — crédito em reais, ticket como unidade de exibição, preço em duas linhas, NFS-e e custódia B→C — e pela identidade por ícones (ADR 0029, revisão 2)<br>
+**Data:** 19 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -16,7 +16,7 @@
 | 3.1 | 5 de novembro de 2026 | Coeficiente 1,8 reposicionado como hipótese inicial de segurança; piso, preço variável e teto; PSP com múltiplos pagamentos individuais por reserva como condição de viabilidade |
 | 3.2 | 5 de novembro de 2026 | Fórmula `TAXA = c·V + C_k + C_c·μ·S + p_t·V`; 1,8 reinterpretado como fator de segurança de 95%; piso, preço variável e teto removidos; elegibilidade mínima; Pagar.me Flex como primeira opção; KYC, liberação após a partida e interface financeira do recebedor; comércio de produtos fora do escopo |
 | 3.3 | 6 de novembro de 2026 | Fase 7: relato de resultado em 10 minutos; três resultados; regra de 50% sem tolerância separada; segunda rodada; capitão provisório por partidas finalizadas e UUID; evidência apenas textual; revisão humana por CLI; backend-only sem MMR |
-| 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado; fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
+| 3.4 | 7 de novembro de 2026 | Sem fotos de pessoas no aplicativo; identidade visual por avatar ilustrado gerado a partir de catálogo fechado (modelo substituído na 3.18); fotos restritas a quadras/estabelecimentos; kit da partida como requisito logístico, sem alterar o critério de capitão |
 | 3.5 | 7 de novembro de 2026 | Fase 12A: quadras/espaços, modalidades, agenda, preços, bloqueios e fotos de quadra; revisão inicial pelo proprietário/administrador da organização, com revisão independente prevista para a Fase 17 |
 | 3.6 | 7 de novembro de 2026 | Fase 13A: reservas com T1/T2/T3 independentes, hold transacional, substituição sem reiniciar T3 e pagamento simulado apenas em ambiente local/teste; T2 em tempo corrido nesta fase |
 | 3.7 | 7 de novembro de 2026 | Protótipo/beta fechado usa Mercado Pago Checkout Transparente com Pix e custódia centralizada de teste; produção continua com Pagar.me e retenção controlada (ADR 0034) |
@@ -30,6 +30,7 @@
 | 3.15 | 12 de novembro de 2026 | Escada de preços decrescente (3/10/30/50 a R$ 3,70/3,40/3,20/3,10); passe a R$ 3,25 com franquia mensal; ingressos grátis por nível (1 no free, 2 no passe); C_c recalibrado para R$ 0,60 por jogador; tabela 2D recomputada; produção no Inter PJ |
 | 3.16 | 12 de novembro de 2026 | ADR 0045: estatísticas do passe com evolução da divisão/progresso, histórico por quadra, passaporte, horários e retrospectiva; inteligência de rede com quadras mais usadas, horários de maior movimento e densidade competitiva por quadra, em faixas, com amostra mínima e atualização diária. O MMR bruto permanece oculto (ADR 0025) |
 | 3.17 | 16 de novembro de 2026 | ADR 0049: saldo e ledger em reais; ticket como unidade de exibição 1:1, sem efeito jurídico/contábil/fiscal; saldo em reais não exibido como carteira; valor do espaço, taxa e tabela de conversão antes da confirmação; NFS-e materializa o valor; passe como franquia mensal não acumulável e fora do escrow; custódia B no protótipo e C na fase comercial; dinheiro real bloqueado até pareceres |
+| 3.18 | 19 de novembro de 2026 | ADR 0029 revisão 2: identidade visual por ícone de perfil + moldura + cor de destaque + ícone de entrada + emote + badge, em catálogo fechado e versionado, sem corpo ou camadas; a proibição de fotos de pessoas permanece |
 
 ## Como interpretar as decisões neste documento
 
@@ -1566,24 +1567,24 @@ O ranking poderá funcionar em temporadas de duração configurável, por exempl
 
 Troféus de clã não são MMR individual. Compras futuras, assinaturas, publicidade, número bruto de membros e pagamento não concedem pontos competitivos.
 
-### 20.4 Identidade visual, avatares e ausência de fotos de pessoas
+### 20.4 Identidade visual, ícones de perfil e ausência de fotos de pessoas
 
 O JOGA não terá fotos de pessoas no aplicativo: nem no perfil, nem no lobby, nem no chat ou no clã.
 
-A identidade visual do jogador será um **avatar ilustrado gerado**, no estilo boneco, montado a partir de um catálogo fechado de peças — tom de pele, cabelo, barba, óculos, roupas, cores e acessórios. O usuário escolhe combinações válidas; não envia imagem, não desenha livremente e não insere texto no avatar.
+A identidade visual do jogador será um **ícone de perfil** de catálogo fechado, combinado com **moldura**, **cor de destaque**, **ícone de entrada**, **emote** e **badge**. O usuário escolhe itens válidos do catálogo; não envia imagem, não desenha livremente e não insere texto no ícone. Não há corpo, camadas, tom de pele, cabelo, roupa ou expressão.
 
 Regras:
 
-- O catálogo de peças e combinações é definido pelo produto, versionado e validado pelo backend; o cliente não inventa atributos.
-- O avatar é escolhido no onboarding e pode ser editado depois, sempre dentro do catálogo vigente.
-- O avatar é público e não contém dado pessoal, localização, telefone, nome real ou referência a terceiros.
-- A identidade visual de clã segue a mesma regra: peças, cores e símbolos do catálogo fechado, sem upload de imagem.
+- O catálogo de ícones de perfil, molduras, cores de destaque, ícones de entrada, emotes e badges é definido pelo produto, versionado e validado pelo backend; o cliente não inventa atributos nem códigos. O backend valida os seis slots equipados (ícone, moldura, cor, entrada, emote e badge) contra a versão vigente do catálogo, com um item por slot.
+- A identidade é escolhida no onboarding e pode ser editada depois, sempre dentro do catálogo vigente.
+- O ícone de perfil é público e não contém dado pessoal, localização, telefone, nome real ou referência a terceiros.
+- A identidade visual de clã segue a mesma regra: ícones, molduras, cores e símbolos do catálogo fechado, sem upload de imagem.
 - Nome de exibição e `#tag` continuam sendo texto sujeito a validação e moderação.
 - Fotos são permitidas apenas para **quadras e estabelecimentos**, enviadas por organização autenticada, com revisão, sem pessoas identificáveis e com retenção controlada.
 - Na Fase 12A, a revisão inicial é feita por `OWNER`/`ADMIN` da organização, com auditoria e motivo obrigatório na rejeição; a revisão independente, a denúncia de foto e a moderação de abuso entram na Fase 17.
 - Documentos de KYC são privados, nunca exibidos no aplicativo e não se confundem com a política de mídia pública.
 - Não há upload livre de imagem, áudio, vídeo ou arquivo em perfil, lobby ou chat no MVP.
-- Avatares também podem ser usados para abuso — combinações ofensivas, assédio por identidade ou impersonação. Denúncias continuam existindo e a moderação pode restringir nome, avatar ou conta.
+- Ícones de perfil também podem ser usados para abuso — escolhas ofensivas, assédio por identidade ou impersonação. Denúncias continuam existindo e a moderação pode restringir nome, ícone de perfil ou conta, inclusive redefinindo o ícone padrão.
 - A política reduz moderação de imagem, risco de exposição de menores, doxxing, sextorsão, catfishing e impersonação, além de diminuir custo de armazenamento e revisão.
 - Qualquer mudança que permita foto de pessoa ou upload livre exige nova decisão em ADR e revisão de moderação, privacidade e retenção.
 
@@ -1880,7 +1881,7 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 47. A CLI de revisão exige `--operator` validado contra lista autorizada e `--reason` obrigatório.
 48. Relatos e votos individuais são visíveis aos participantes; a contagem agregada e o resultado parcial só aparecem após o fechamento da rodada.
 49. Futebol 5x5 permite empate esportivo; vôlei não permite na primeira versão.
-50. O aplicativo não exibe fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, sem upload livre. Fotos são restritas a quadras e estabelecimentos, enviadas por organização autenticada e moderadas.
+50. O aplicativo não exibe fotos de pessoas; a identidade visual é um ícone de perfil de catálogo fechado, combinado com moldura, cor de destaque, ícone de entrada, emote e badge, sem upload livre e sem corpo ou camadas. Fotos são restritas a quadras e estabelecimentos, enviadas por organização autenticada e moderadas.
 51. O kit da partida é um requisito logístico do formato, assumido por participantes ou pelo responsável logístico; não é critério de capitão, elegibilidade, MMR ou Trust Factor automático, e descumprimento isolado não pune automaticamente.
 52. Na Fase 12A, a revisão inicial de foto de quadra é feita por `OWNER`/`ADMIN` da organização, com auditoria e motivo obrigatório na rejeição; `OPERATOR` não revisa. A revisão independente e a denúncia de foto entram na Fase 17.
 53. O vínculo entre perfil comercial e local descoberto (`organization_venues.venue_id`) é opcional e único, e só aceita local privado ativo; não concede autorização de reserva nem publica o estabelecimento automaticamente.
@@ -1907,7 +1908,7 @@ O objetivo não é substituir clubes, arenas ou grupos existentes, mas conectar 
 - Formato do vôlei: ainda a definir.
 - Duração da partida: definida pelo formato esportivo, não pelo lobby.
 - Equipamento: catálogo inicial por formato — futebol 5x5 e basquete 3x3: bola; vôlei de praia: rede e bola; tênis: bolas.
-- Avatar: catálogo fechado de peças, sem upload de imagem.
+- Identidade visual: ícone de perfil + moldura + cor de destaque + ícone de entrada + emote + badge, de catálogo fechado e versionado, sem upload de imagem.
 
 ### 26.3 Propostas em validação
 
@@ -1957,7 +1958,7 @@ As questões abaixo continuam abertas. Este documento não as resolve por suposi
 26. Periodicidade e amostra mínima da recalibração.
 27. Metodologia de amortecimento para evitar oscilações de preço.
 28. Estratégia de onboarding e cobrança do fornecedor.
-29. Catálogo definitivo de avatar, limites e moderação.
+29. Catálogo definitivo de ícones de identidade, molduras, cores de destaque, ícones de entrada, emotes e badges; limites e moderação.
 30. Processo de revisão, remoção e retenção de fotos de quadra.
 31. Catálogo definitivo de equipamento e obrigatoriedade do kit.
 32. Consequências de descumprir item assumido e efeito no Trust Factor.
@@ -2038,6 +2039,7 @@ Próximos passos recomendados, em ordem:
 - **Pagamento tardio:** pagamento confirmado depois do prazo ou depois do cancelamento/substituição.
 - **Reembolso:** devolução do valor pago ao participante.
 - **Reserva confirmada:** reserva com bloqueio confirmado e todas as vagas quitadas dentro do prazo.
+- **Identidade por ícones:** ícone de perfil + moldura + cor de destaque + ícone de entrada + emote + badge, todos de catálogo fechado e versionado; não há corpo, camadas ou upload de imagem.
 
 ---
 
@@ -2069,7 +2071,7 @@ Próximos passos recomendados, em ordem:
 - A revisão humana da Fase 7 passou a ser feita por CLI/script auditável, sem painel administrativo.
 - Foi registrado que a Fase 7 é backend-only e não implementa nem atualiza MMR.
 - Foram separadas decisões aprovadas, parâmetros iniciais, propostas e pendências.
-- Na versão 3.4, o aplicativo passou a não exibir fotos de pessoas; a identidade visual é um avatar ilustrado gerado a partir de catálogo fechado, e fotos ficaram restritas a quadras e estabelecimentos.
+- Na versão 3.4, o aplicativo passou a não exibir fotos de pessoas; a identidade visual era um avatar ilustrado gerado a partir de catálogo fechado, e fotos ficaram restritas a quadras e estabelecimentos. O modelo de avatar foi substituído na versão 3.18 pela identidade por ícones.
 - Foi criado o kit da partida como requisito logístico do formato, sem alterar o critério de capitão, a elegibilidade ou o MMR.
 - Na versão 3.5, a Fase 12A passou a cobrir quadras, modalidades, agenda, preços, bloqueios e fotos de quadra; a revisão inicial de foto é feita por `OWNER`/`ADMIN`, com revisão independente na Fase 17.
 - Na versão 3.6, a Fase 13A passou a implementar reservas com T1/T2/T3 independentes, hold transacional e substituição sem reiniciar T3; T2 usa tempo corrido e o pagamento é simulado apenas em ambiente local/teste.
@@ -2077,3 +2079,4 @@ Próximos passos recomendados, em ordem:
 - Na versão 3.8, a Fase 14A passou a usar Orders API do Mercado Pago, cobrança Pix por participante, webhook assinado, idempotência e ledger interno de teste.
 - Na versão 3.9, foi registrada a hipótese de `p_t` dinâmico pela mediana de Trust Factor; o modelo atual mantém `p_t = 0,2%` fixo e a avaliação futura será em modo sombra (ADR 0036).
 - Na versão 3.10, a Fase 14C passou a reembolsar integralmente cancelamentos/expirações do beta, reembolsar substituto e oferecer extrato/resumo financeiro com PSP simulado.
+- Na versão 3.18, a identidade visual passou a ser um ícone de perfil de catálogo fechado, combinado com moldura, cor de destaque, ícone de entrada, emote e badge. Não há corpo, camadas nem upload; a proibição de fotos de pessoas e a moderação de perfil continuam valendo (ADR 0029, revisão 2).

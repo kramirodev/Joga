@@ -470,6 +470,7 @@ Operação:
   (`provider_rejected`) marca a credencial como não entregável após
   `JOGA_EMAIL_BOUNCE_THRESHOLD`; o jogador precisa de passkey/suporte.
 - `JOGA_SIGNUP_MODE=closed` é o kill switch imediato de cadastro, sem deploy.
+- `JOGA_TICKET_PURCHASE_ENABLED=false` (padrão) bloqueia criação, sincronização e confirmação de compra de ingressos com `503 ticket_purchase_disabled`; carteira, extrato e lotes continuam legíveis. Ver `docs/TELAS_DESATIVADAS.md`.
 - Para voltar ao telefone no lançamento, troque as flags (e-mail continua
   ligado como secundário):
   `JOGA_AUTH_PHONE_ENABLED=true`, `JOGA_ALLOW_PHONE_REGISTRATION=true`,
@@ -556,6 +557,8 @@ adb reverse tcp:8000 tcp:8000
 ```
 
 Conferir a ABI do aparelho com `adb shell getprop ro.product.cpu.abilist`. O APK de debug depende do Metro em `localhost:8081`; o `adb reverse` faz essa ponte. O APK não é versionado e precisa ser gerado de novo em cada máquina.
+
+Para o procedimento de build no Windows com raiz curta, MAX_PATH/Ninja, `arm64-v8a` e `EXPO_PUBLIC_API_URL`, consulte `docs/BUILD_ANDROID.md`. Para a compra de ingressos desativada, consulte `docs/TELAS_DESATIVADAS.md`.
 
 ## 5.1 Painel web (Fase 11B)
 

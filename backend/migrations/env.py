@@ -32,6 +32,7 @@ from app.modules.season import models as season_models  # noqa: F401
 from app.modules.social import models as social_models  # noqa: F401
 from app.modules.tickets import models as tickets_models  # noqa: F401
 from app.modules.venues import models as venues_models  # noqa: F401
+from app.modules.visual import models as visual_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -40,7 +41,9 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Não desabilitar loggers da aplicação (ex.: ``joga.http``) ao rodar
+    # migrações dentro do mesmo processo de testes/CLI.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 settings = get_settings()
 
@@ -50,7 +53,7 @@ target_metadata = Base.metadata
 
 # Objetos de infraestrutura criados por extensões (PostGIS, etc.) não pertencem
 # ao modelo da aplicação e não devem aparecer no autogenerate.
-IGNORED_TABLES = frozenset({"spatial_ref_sys"})
+IGNORED_TABLES = frozenset({"spatial_ref_sys", "alembic_version"})
 
 
 def include_object(object, name, type_, reflected, compare_to) -> bool:  # noqa: ANN001
@@ -73,7 +76,23 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Run migrations in 'online' mode.
+
+    ``config.attributes["connection"]`` permite que testes executem a migração
+    em um schema isolado sem alterar a URL global do processo.
+    """
+    injected = config.attributes.get("connection")
+    if injected is not None:
+        context.configure(
+            connection=injected,
+            target_metadata=target_metadata,
+            include_object=include_object,
+            version_table_schema=config.attributes.get("version_table_schema"),
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = create_engine(settings.database_url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
