@@ -12,6 +12,7 @@ export function Drawer({
   description,
   children,
   footer,
+  closeLabel = "Fechar",
   onClose,
 }: {
   open: boolean;
@@ -19,6 +20,7 @@ export function Drawer({
   description?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
+  closeLabel?: string;
   onClose: () => void;
 }) {
   const titleId = useId();
@@ -108,7 +110,7 @@ export function Drawer({
           <button
             type="button"
             className="icon-button"
-            aria-label="Fechar notificações"
+            aria-label={closeLabel}
             onClick={onClose}
             data-autofocus
           >

@@ -76,6 +76,19 @@ export function uuidError(value: string, label = "o UUID"): string | null {
   return null;
 }
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function slugError(value: string, label = "o slug"): string | null {
+  const clean = value.trim();
+  if (!clean) return `Informe ${label}.`;
+  if (clean.length < 2) return `${capitalize(label)} deve ter pelo menos 2 caracteres.`;
+  if (clean.length > 40) return `${capitalize(label)} deve ter no máximo 40 caracteres.`;
+  if (!SLUG_PATTERN.test(clean)) {
+    return `${capitalize(label)} deve usar apenas minúsculas, números e hífens.`;
+  }
+  return null;
+}
+
 export function digitsOnly(value: string): string {
   return value.replace(/\D/g, "");
 }

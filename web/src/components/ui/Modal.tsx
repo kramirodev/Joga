@@ -199,6 +199,8 @@ interface ReasonDialogProps {
   confirmLabel?: string;
   tone?: "default" | "danger";
   busy?: boolean;
+  /** Bloqueia a confirmação além do motivo (ex.: invariante de preço violado). */
+  confirmDisabled?: boolean;
   children?: ReactNode;
   onConfirm: () => void;
   onClose: () => void;
@@ -218,6 +220,7 @@ export function ReasonDialog({
   confirmLabel = "Confirmar",
   tone = "default",
   busy = false,
+  confirmDisabled = false,
   children,
   onConfirm,
   onClose,
@@ -251,7 +254,7 @@ export function ReasonDialog({
                 ? "button button--danger button--solid-danger"
                 : "button button--primary"
             }
-            disabled={busy || value.trim().length < minLength}
+            disabled={busy || confirmDisabled || value.trim().length < minLength}
             aria-busy={busy || undefined}
           >
             {busy ? "Processando..." : confirmLabel}

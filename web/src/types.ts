@@ -452,6 +452,240 @@ export interface AuditListResponse {
   offset: number;
 }
 
+export type AdminUserStatus = "pending" | "active" | "suspended" | "deleted";
+
+export interface AdminUserSummary {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  status: AdminUserStatus | string;
+  suspended_until: string | null;
+  created_at: string;
+}
+
+export interface AdminUserDetail extends AdminUserSummary {
+  /** CPF sempre mascarado pela API; o painel nunca recebe o valor completo. */
+  cpf_masked: string | null;
+  email_verified?: boolean;
+  last_login_at?: string | null;
+  updated_at?: string | null;
+  roles?: string[];
+  capabilities?: string[];
+}
+
+export interface AdminUserListResponse {
+  users: AdminUserSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminSessionsRevokeResponse {
+  revoked: number;
+}
+
+export interface AdminAuditEvent {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  reason: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminUserAuditResponse {
+  events: AdminAuditEvent[];
+}
+
+export interface AdminSportFormat {
+  id: string;
+  slug: string;
+  name: string;
+  team_size: number;
+  players_per_team: number;
+  total_participants: number;
+  duration_minutes: number;
+  period_count: number;
+  score_model: string;
+  positions: string[];
+  active: boolean;
+  version: number;
+  /** Reservas já usam este formato; o tamanho de equipe não pode mudar. */
+  in_use?: boolean;
+}
+
+export interface AdminSport {
+  id: string;
+  slug: string;
+  name: string;
+  icon_key: string;
+  sort_order: number;
+  active: boolean;
+  formats: AdminSportFormat[];
+}
+
+export interface AdminSportFormatPayload {
+  slug: string;
+  name: string;
+  team_size: number;
+  players_per_team: number;
+  duration_minutes: number;
+  period_count: number;
+  score_model: string;
+  positions: string[];
+}
+
+export interface AdminSportCreatePayload {
+  slug: string;
+  name: string;
+  icon_key: string;
+  sort_order: number;
+  formats: AdminSportFormatPayload[];
+  reason: string;
+}
+
+export interface AdminSportUpdatePayload {
+  name: string;
+  icon_key: string;
+  sort_order: number;
+  reason: string;
+}
+
+export interface AdminSportListResponse {
+  sports: AdminSport[];
+}
+
+export interface AdminPricingBandSuggestion {
+  code: string;
+  label: string;
+  max_price_cents: number;
+  tickets: number;
+  player_price_cents: number;
+  invariant_ok: boolean;
+}
+
+export interface AdminPricingSuggestionResponse {
+  team_size: number;
+  mode: string;
+  calibration_cents: number;
+  bands: AdminPricingBandSuggestion[];
+}
+
+export type AdminPricingMode = "standard" | "contingency";
+
+export interface AdminBandTicketsPayload {
+  band_code: string;
+  team_size: number;
+  tickets: number;
+  mode: AdminPricingMode;
+  reason: string;
+}
+
+export interface VisualCatalogItem {
+  key: string;
+  kind: string;
+  name: string;
+  asset_ref: string;
+  season: string | null;
+  unlock_state: string;
+  /** O backend devolve apenas itens ativos; o campo é aceito para filtro. */
+  active?: boolean;
+}
+
+export interface VisualCatalogResponse {
+  catalog_version: number;
+  items: VisualCatalogItem[];
+}
+
+export interface AdminPublicVenueSpace {
+  id: string;
+  venue_id: string;
+  name: string;
+  sport_slug: string;
+  format_id: string;
+  sport_name?: string;
+  format_name?: string;
+  price_cents: number;
+  status: "active" | "inactive";
+  in_use?: boolean;
+}
+
+export interface AdminPublicVenue {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  address_line: string;
+  postal_code: string | null;
+  latitude: number;
+  longitude: number;
+  is_public: boolean;
+  active: boolean;
+  spaces: AdminPublicVenueSpace[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AdminPublicVenueListResponse {
+  venues: AdminPublicVenue[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminPublicVenueCreatePayload {
+  name: string;
+  city: string;
+  state: string;
+  address_line: string;
+  postal_code: string | null;
+  latitude: number;
+  longitude: number;
+  is_public: true;
+  reason: string;
+}
+
+export interface AdminPublicVenueUpdatePayload {
+  name?: string;
+  city?: string;
+  state?: string;
+  address_line?: string;
+  postal_code?: string | null;
+  latitude?: number;
+  longitude?: number;
+  is_public?: true;
+  reason: string;
+}
+
+export interface AdminPublicVenueSpacePayload {
+  name: string;
+  sport_slug: string;
+  format_id: string;
+  price_cents: number;
+  status: "active" | "inactive";
+  reason: string;
+}
+
+export interface AdminVenueAvailability {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+}
+
+export interface AdminVenueAvailabilityResponse {
+  availability: AdminVenueAvailability[];
+}
+
+export interface AdminVenueBusinessHour {
+  weekday: number;
+  opens_at: string;
+  closes_at: string;
+}
+
+export interface AdminVenueBusinessHoursResponse {
+  business_hours: AdminVenueBusinessHour[];
+}
+
 export interface ChallengeResponse {
   challenge_id: string;
   expires_at: string;

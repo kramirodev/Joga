@@ -108,6 +108,7 @@ function NotificationDrawer({ onClose }: { onClose: () => void }) {
 
   return (
     <Drawer
+      closeLabel="Fechar notificações"
       open
       onClose={onClose}
       title="Notificações"

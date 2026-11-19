@@ -1,4 +1,25 @@
 import type {
+  AdminBandTicketsPayload,
+  AdminPricingMode,
+  AdminPricingSuggestionResponse,
+  AdminPublicVenue,
+  AdminPublicVenueCreatePayload,
+  AdminPublicVenueListResponse,
+  AdminPublicVenueSpace,
+  AdminPublicVenueSpacePayload,
+  AdminPublicVenueUpdatePayload,
+  AdminSessionsRevokeResponse,
+  AdminSport,
+  AdminSportCreatePayload,
+  AdminSportListResponse,
+  AdminSportUpdatePayload,
+  AdminUserAuditResponse,
+  AdminUserDetail,
+  AdminUserListResponse,
+  AdminVenueAvailability,
+  AdminVenueAvailabilityResponse,
+  AdminVenueBusinessHour,
+  AdminVenueBusinessHoursResponse,
   AuditListResponse,
   Booking,
   BookingFinancialResponse,
@@ -44,6 +65,7 @@ import type {
   VenueSpace,
   VenueSpaceListResponse,
   VerifyResponse,
+  VisualCatalogResponse,
   WebSessionPayload,
 } from "../types";
 
@@ -370,6 +392,14 @@ function venuePath(organizationId: string, venueId?: string): string {
 
 function venueBase(organizationId: string, venueId: string): string {
   return venuePath(organizationId, venueId);
+}
+
+function adminUserPath(userId: string): string {
+  return `/admin/users/${encodeURIComponent(userId)}`;
+}
+
+function adminVenuePath(venueId: string): string {
+  return `/admin/venues/${encodeURIComponent(venueId)}`;
 }
 
 export const api = {
@@ -1078,5 +1108,235 @@ export const api = {
 
   markAllModerationNotificationsRead(): Promise<MarkAllReadResponse> {
     return request<MarkAllReadResponse>("/moderation/notifications/read-all", { method: "POST" });
+  },
+
+  listAdminUsers(
+    params: { query?: string; status?: string; page?: number } = {},
+  ): Promise<AdminUserListResponse> {
+    const query = new URLSearchParams();
+    const search = params.query?.trim();
+    if (search) {
+      // O contrato do painel usa `query`; a API real usa `q`.
+      query.set("query", search);
+      query.set("q", search);
+    }
+    if (params.status) query.set("status", params.status);
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", "20");
+    return request<AdminUserListResponse>(`/admin/users?${query.toString()}`);
+  },
+
+  getAdminUser(userId: string): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>(adminUserPath(userId));
+  },
+
+  createAdminUser(payload: {
+    email: string;
+    password: string;
+    display_name: string;
+    verify_email: boolean;
+    reason: string;
+  }): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>("/admin/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateAdminUserEmail(
+    userId: string,
+    payload: { email: string; reason: string },
+  ): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>(`${adminUserPath(userId)}/email`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  resetAdminUserPassword(userId: string, payload: { reason: string }): Promise<void> {
+    return request<void>(`${adminUserPath(userId)}/password-reset`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  suspendAdminUser(
+    userId: string,
+    payload: { reason: string; until?: string },
+  ): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>(`${adminUserPath(userId)}/suspend`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  reactivateAdminUser(userId: string, payload: { reason: string }): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>(`${adminUserPath(userId)}/reactivate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async revokeAdminUserSessions(
+    userId: string,
+    payload: { reason: string },
+  ): Promise<AdminSessionsRevokeResponse> {
+    const response = await request<{ revoked?: number }>(
+      `${adminUserPath(userId)}/sessions/revoke`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return { revoked: response.revoked ?? 0 };
+  },
+
+  listAdminUserAudit(userId: string): Promise<AdminUserAuditResponse> {
+    return request<AdminUserAuditResponse>(`${adminUserPath(userId)}/audit`);
+  },
+
+  listAdminSports(): Promise<AdminSportListResponse> {
+    return request<AdminSportListResponse>("/admin/sports");
+  },
+
+  createAdminSport(payload: AdminSportCreatePayload): Promise<AdminSport> {
+    return request<AdminSport>("/admin/sports", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateAdminSport(slug: string, payload: AdminSportUpdatePayload): Promise<AdminSport> {
+    return request<AdminSport>(`/admin/sports/${encodeURIComponent(slug)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  activateAdminSport(slug: string, reason: string): Promise<AdminSport> {
+    return request<AdminSport>(`/admin/sports/${encodeURIComponent(slug)}/activate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  deactivateAdminSport(slug: string, reason: string): Promise<AdminSport> {
+    return request<AdminSport>(`/admin/sports/${encodeURIComponent(slug)}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  getAdminPricingSuggestion(
+    teamSize: number,
+    mode: AdminPricingMode,
+  ): Promise<AdminPricingSuggestionResponse> {
+    const query = new URLSearchParams({ team_size: String(teamSize), mode });
+    return request<AdminPricingSuggestionResponse>(`/admin/pricing/suggest?${query.toString()}`);
+  },
+
+  updateAdminBandTickets(payload: AdminBandTicketsPayload): Promise<unknown> {
+    return request<unknown>("/admin/pricing/band-tickets", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  listVisualCatalog(): Promise<VisualCatalogResponse> {
+    return request<VisualCatalogResponse>("/catalog/visual");
+  },
+
+  listAdminPublicVenues(
+    params: { active?: string; page?: number } = {},
+  ): Promise<AdminPublicVenueListResponse> {
+    const query = new URLSearchParams();
+    if (params.active) query.set("active", params.active);
+    query.set("page", String(params.page ?? 1));
+    return request<AdminPublicVenueListResponse>(`/admin/venues?${query.toString()}`);
+  },
+
+  createAdminPublicVenue(payload: AdminPublicVenueCreatePayload): Promise<AdminPublicVenue> {
+    return request<AdminPublicVenue>("/admin/venues", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateAdminPublicVenue(
+    venueId: string,
+    payload: AdminPublicVenueUpdatePayload,
+  ): Promise<AdminPublicVenue> {
+    return request<AdminPublicVenue>(adminVenuePath(venueId), {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  activateAdminPublicVenue(venueId: string, reason: string): Promise<AdminPublicVenue> {
+    return request<AdminPublicVenue>(`${adminVenuePath(venueId)}/activate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  deactivateAdminPublicVenue(venueId: string, reason: string): Promise<AdminPublicVenue> {
+    return request<AdminPublicVenue>(`${adminVenuePath(venueId)}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  createAdminPublicVenueSpace(
+    venueId: string,
+    payload: AdminPublicVenueSpacePayload,
+  ): Promise<AdminPublicVenueSpace> {
+    return request<AdminPublicVenueSpace>(`${adminVenuePath(venueId)}/spaces`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateAdminPublicVenueSpace(
+    venueId: string,
+    spaceId: string,
+    payload: AdminPublicVenueSpacePayload,
+  ): Promise<AdminPublicVenueSpace> {
+    return request<AdminPublicVenueSpace>(
+      `${adminVenuePath(venueId)}/spaces/${encodeURIComponent(spaceId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  getAdminPublicVenueAvailability(venueId: string): Promise<AdminVenueAvailabilityResponse> {
+    return request<AdminVenueAvailabilityResponse>(`${adminVenuePath(venueId)}/availability`);
+  },
+
+  replaceAdminPublicVenueAvailability(
+    venueId: string,
+    availability: AdminVenueAvailability[],
+    reason: string,
+  ): Promise<AdminVenueAvailabilityResponse> {
+    return request<AdminVenueAvailabilityResponse>(`${adminVenuePath(venueId)}/availability`, {
+      method: "PUT",
+      body: JSON.stringify({ availability, reason }),
+    });
+  },
+
+  getAdminPublicVenueBusinessHours(venueId: string): Promise<AdminVenueBusinessHoursResponse> {
+    return request<AdminVenueBusinessHoursResponse>(`${adminVenuePath(venueId)}/business-hours`);
+  },
+
+  replaceAdminPublicVenueBusinessHours(
+    venueId: string,
+    businessHours: AdminVenueBusinessHour[],
+    reason: string,
+  ): Promise<AdminVenueBusinessHoursResponse> {
+    return request<AdminVenueBusinessHoursResponse>(`${adminVenuePath(venueId)}/business-hours`, {
+      method: "PUT",
+      body: JSON.stringify({ business_hours: businessHours, reason }),
+    });
   },
 };
