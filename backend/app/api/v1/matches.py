@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.api.v1.visual_views import PublicVisualResponse, public_visual
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.matches.models import Match, MatchParticipant
@@ -36,6 +37,7 @@ class MatchParticipantResponse(BaseModel):
     is_substitute: bool
     confirmed_at: datetime | None
     checked_in_at: datetime | None
+    visual: PublicVisualResponse
 
 
 class MatchSummary(BaseModel):
@@ -104,6 +106,7 @@ def _summary(
                     is_substitute=row.is_substitute,
                     confirmed_at=row.confirmed_at,
                     checked_in_at=row.checked_in_at,
+                    visual=public_visual(session, row.user_id),
                 )
             )
     return MatchSummary(

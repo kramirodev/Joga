@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.api.v1.visual_views import PublicVisualResponse, public_visual
 from app.core.config import get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import BOOKING_STATUSES, BookingRefundExclusion
@@ -80,6 +81,7 @@ class ParticipantView(BaseModel):
     presence_status: str
     presence_method: str | None
     presence_confirmed_at: datetime | None
+    visual: PublicVisualResponse
 
 
 class TimerView(BaseModel):
@@ -210,6 +212,7 @@ def _handle(exc: Exception) -> HTTPException:
 
 
 def _view(
+    session: Session,
     bundle: BookingBundle,
     *,
     viewer_user_id: UUID | None = None,
@@ -280,6 +283,7 @@ def _view(
                 presence_status=item.presence_status,
                 presence_method=item.presence_method,
                 presence_confirmed_at=item.presence_confirmed_at,
+                visual=public_visual(session, item.user_id),
             )
             for item in bundle.participants
         ],
@@ -367,7 +371,7 @@ def create_booking(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, viewer_user_id=current.user_id)
+    return _view(session, bundle, viewer_user_id=current.user_id)
 
 
 @router.post(
@@ -388,7 +392,7 @@ def create_booking_from_lobby(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, viewer_user_id=current.user_id)
+    return _view(session, bundle, viewer_user_id=current.user_id)
 
 
 @router.get("/bookings", response_model=BookingListResponse)
@@ -414,7 +418,9 @@ def list_my_bookings(
         offset=offset,
     )
     return BookingListResponse(
-        bookings=[_view(bundle, viewer_user_id=current.user_id) for bundle in page.bundles],
+        bookings=[
+            _view(session, bundle, viewer_user_id=current.user_id) for bundle in page.bundles
+        ],
         total=page.total,
         limit=limit,
         offset=offset,
@@ -452,7 +458,7 @@ def list_organization_bookings(
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
     return BookingListResponse(
-        bookings=[_view(bundle, include_all_payments=True) for bundle in page.bundles],
+        bookings=[_view(session, bundle, include_all_payments=True) for bundle in page.bundles],
         total=page.total,
         limit=limit,
         offset=offset,
@@ -471,6 +477,7 @@ def get_booking(
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
     return _view(
+        session,
         bundle,
         viewer_user_id=current.user_id,
         include_all_payments=service.viewer_is_org(current.user_id, bundle.booking),
@@ -496,7 +503,7 @@ def confirm_participation(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, viewer_user_id=current.user_id)
+    return _view(session, bundle, viewer_user_id=current.user_id)
 
 
 @router.post(
@@ -517,7 +524,7 @@ def settle_with_tickets(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, viewer_user_id=current.user_id)
+    return _view(session, bundle, viewer_user_id=current.user_id)
 
 
 @router.post("/bookings/{booking_id}/substitutions", response_model=BookingView)
@@ -547,6 +554,7 @@ def substitute_participant(
         session.rollback()
         raise _handle(exc) from None
     return _view(
+        session,
         bundle,
         viewer_user_id=current.user_id,
         include_all_payments=service.viewer_is_org(current.user_id, bundle.booking),
@@ -567,7 +575,7 @@ def simulate_payment(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, viewer_user_id=current.user_id)
+    return _view(session, bundle, viewer_user_id=current.user_id)
 
 
 @router.post("/bookings/{booking_id}/cancel", response_model=BookingView)
@@ -617,6 +625,7 @@ def cancel_booking(
         session.rollback()
         raise _handle(exc) from None
     return _view(
+        session,
         bundle,
         viewer_user_id=current.user_id,
         include_all_payments=service.viewer_is_org(current.user_id, bundle.booking),
@@ -644,7 +653,7 @@ def accept_booking(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, include_all_payments=True)
+    return _view(session, bundle, include_all_payments=True)
 
 
 @router.post(
@@ -667,7 +676,7 @@ def decline_booking(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, include_all_payments=True)
+    return _view(session, bundle, include_all_payments=True)
 
 
 @router.post(
@@ -701,7 +710,7 @@ def cancel_booking_by_venue(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, include_all_payments=True)
+    return _view(session, bundle, include_all_payments=True)
 
 
 @router.post(
@@ -725,4 +734,4 @@ def complete_booking(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _view(bundle, include_all_payments=True)
+    return _view(session, bundle, include_all_payments=True)
