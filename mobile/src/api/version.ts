@@ -1,10 +1,12 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+import appConfig from '../../app.json';
+
 const expoConfig = Constants.expoConfig;
 
 /** Versão do binário/app.json; 0.0.0 falha fechado se não houver configuração. */
-export const APP_VERSION = expoConfig?.version?.trim() || '0.0.0';
+export const APP_VERSION = expoConfig?.version?.trim() || appConfig.expo.version.trim() || '0.0.0';
 
 const nativeBuild =
   Platform.OS === 'android' ? expoConfig?.android?.versionCode : expoConfig?.ios?.buildNumber;
