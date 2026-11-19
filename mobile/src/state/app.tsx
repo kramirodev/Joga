@@ -52,6 +52,8 @@ import type {
   Track,
   Wallet,
   Venue,
+  VisualCatalog,
+  VisualIdentity,
 } from '../api/types';
 import {
   clearSession,
@@ -60,6 +62,7 @@ import {
   saveSession,
   type Session,
 } from '../session';
+import { DEFAULT_IDENTITY, LOCAL_VISUAL_CATALOG, normalizeIdentity } from '../ui/identity';
 
 export type OnboardingState = {
   formats: string[];
@@ -67,13 +70,7 @@ export type OnboardingState = {
   courtPreference: string;
   windows: Availability[];
   displayName: string;
-  avatar: {
-    skin: string;
-    hair: string;
-    shirt: string;
-    style: 1 | 2 | 3;
-    glasses: boolean;
-  };
+  visual: VisualIdentity;
 };
 
 export type AuthState = {
@@ -126,6 +123,8 @@ type AppValue = {
   email: string | null;
   emailReady: boolean;
   accessibility: AccessibilityPreferences;
+  visual: VisualIdentity;
+  visualCatalog: VisualCatalog;
   setAccessibility: (preferences: AccessibilityPreferences) => Promise<void>;
   setSession: (tokens: Parameters<typeof saveSession>[0]) => Promise<void>;
   signOut: () => Promise<void>;
@@ -156,6 +155,10 @@ type AppValue = {
   recheckSuspension: () => Promise<void>;
   loadEmail: () => Promise<void>;
   saveEmail: (email: string | null) => Promise<void>;
+  loadVisual: () => Promise<void>;
+  saveVisual: (
+    patch: Partial<VisualIdentity>,
+  ) => Promise<{ identity: VisualIdentity; synced: boolean; error?: string }>;
   loadRating: (formatId: string) => Promise<MyRating | null>;
   refreshCore: () => Promise<void>;
   formatForName: (name: string) => string | null;
@@ -178,7 +181,7 @@ const initialOnboarding: OnboardingState = {
   courtPreference: 'ANY',
   windows: [],
   displayName: '',
-  avatar: { skin: '#A6ABB1', hair: '#383D43', shirt: '#62686E', style: 2, glasses: false },
+  visual: DEFAULT_IDENTITY,
 };
 
 export function AppProvider({ children }: PropsWithChildren) {
@@ -222,6 +225,8 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [emailReady, setEmailReady] = useState(false);
   const [accessibility, setAccessibilityState] =
     useState<AccessibilityPreferences>(defaultAccessibility);
+  const [visual, setVisual] = useState<VisualIdentity>(DEFAULT_IDENTITY);
+  const [visualCatalog, setVisualCatalog] = useState<VisualCatalog>(LOCAL_VISUAL_CATALOG);
 
   const token = session?.accessToken ?? null;
 
@@ -271,6 +276,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     setModerationAppeals([]);
     setEmail(null);
     setEmailReady(false);
+    setVisual(DEFAULT_IDENTITY);
+    setVisualCatalog(LOCAL_VISUAL_CATALOG);
     setAuthState(initialAuth);
     setOnboardingState(initialOnboarding);
   }, [token]);
@@ -521,6 +528,82 @@ export function AppProvider({ children }: PropsWithChildren) {
     [token],
   );
 
+  const loadVisual = useCallback(async () => {
+    let catalog = LOCAL_VISUAL_CATALOG;
+    try {
+      const remote = await api.visual.catalog();
+      if (remote?.items?.length) {
+        catalog = remote;
+      }
+    } catch (error) {
+      if (__DEV__) {
+        // O catálogo remoto ainda pode não existir; o fallback local mantém a UI.
+        console.warn('catalog/visual indisponível, usando catálogo local', error);
+      }
+    }
+    setVisualCatalog(catalog);
+    if (!token) {
+      setVisual((current) => normalizeIdentity(current, catalog));
+      return;
+    }
+    try {
+      const remoteIdentity = await api.visual.me(token);
+      setVisual(normalizeIdentity(remoteIdentity, catalog));
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('me/visual indisponível, usando identidade padrão', error);
+      }
+      setVisual((current) => normalizeIdentity(current, catalog));
+    }
+  }, [token]);
+
+  const saveVisual = useCallback(
+    async (patch: Partial<VisualIdentity>) => {
+      const next = normalizeIdentity({ ...visual, ...patch }, visualCatalog);
+      setVisual(next);
+      if (!token) {
+        return { identity: next, synced: false };
+      }
+      try {
+        const saved = await api.visual.update(token, {
+          icon_key: next.icon_key,
+          frame_key: next.frame_key,
+          accent_key: next.accent_key,
+          entry_key: next.entry_key,
+          emote_key: next.emote_key,
+          badge_key: next.badge_key,
+        });
+        const normalized = normalizeIdentity(saved, visualCatalog);
+        setVisual(normalized);
+        return { identity: normalized, synced: true };
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          (error.code === 'visual_item_locked' || error.code === 'invalid_visual_item')
+        ) {
+          setVisual(visual);
+          return {
+            identity: visual,
+            synced: false,
+            error:
+              error.code === 'visual_item_locked'
+                ? 'Este item ainda não está liberado.'
+                : 'Item de identidade inválido.',
+          };
+        }
+        if (__DEV__) {
+          console.warn('PUT /me/visual falhou; identidade mantida localmente', error);
+        }
+        return {
+          identity: next,
+          synced: false,
+          error: 'Identidade salva neste aparelho. Sincronização com o servidor pendente.',
+        };
+      }
+    },
+    [token, visual, visualCatalog],
+  );
+
   const loadRating = useCallback(
     async (formatId: string) => {
       if (!token) {
@@ -738,7 +821,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       .catch(() => undefined)
       .finally(() => setHydratedToken(token));
     loadCatalog().catch(() => undefined);
-  }, [token, refreshCore, loadCatalog]);
+    loadVisual().catch(() => undefined);
+  }, [token, refreshCore, loadCatalog, loadVisual]);
 
   const formatForName = useCallback(
     (name: string) => {
@@ -818,6 +902,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       email,
       emailReady,
       accessibility,
+      visual,
+      visualCatalog,
       setAccessibility,
       setSession,
       signOut,
@@ -847,6 +933,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       loadModerationAppeals,
       loadEmail,
       saveEmail,
+      loadVisual,
+      saveVisual,
       recheckSuspension,
       loadRating,
       refreshCore,
@@ -894,6 +982,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       email,
       emailReady,
       accessibility,
+      visual,
+      visualCatalog,
       setAccessibility,
       setSession,
       signOut,
@@ -918,6 +1008,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       loadModerationAppeals,
       loadEmail,
       saveEmail,
+      loadVisual,
+      saveVisual,
       recheckSuspension,
       loadRating,
       refreshCore,

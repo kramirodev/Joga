@@ -1,7 +1,31 @@
+@font-face {
+  font-family: "Selawik";
+  src: url("/fonts/Selawik-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Selawik";
+  src: url("/fonts/Selawik-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Selawik";
+  src: url("/fonts/Selawik-Bold.woff2") format("woff2");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   font-family:
-    "Inter",
+    "Selawik",
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -13,12 +37,12 @@
   line-height: 1.55;
   font-weight: 400;
   color: #f2f5ed;
-  background: #0b100a;
+  background: #0f1214;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
-  --bg: #0b100a;
+  --bg: #0f1214;
   --bg-soft: #0e140c;
   --surface: #141c12;
   --surface-2: #192315;
@@ -80,7 +104,7 @@ body {
   background:
     radial-gradient(circle at 12% -8%, rgb(201 245 109 / 10%), transparent 34rem),
     radial-gradient(circle at 92% 2%, rgb(255 124 89 / 7%), transparent 30rem),
-    linear-gradient(180deg, #0c120b 0%, var(--bg) 32rem);
+    linear-gradient(180deg, #0f1214 0%, var(--bg) 32rem);
   color: var(--text);
 }
 

@@ -1,3 +1,5 @@
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -45,7 +47,6 @@ import {
   ChipRow,
   Field,
   Kv,
-  LoadingState,
   Notice,
   Page,
   Row,
@@ -54,8 +55,13 @@ import {
   Txt,
 } from './src/ui/kit';
 import { shortDateTime } from './src/ui/datetime';
+import { BrandLoader } from './src/ui/BrandLoader';
 import { dark, light } from './src/ui/theme';
 import { Icon } from './src/ui/icons';
+
+// Mantém o splash nativo até fontes e sessão estarem prontas, para não haver
+// flash branco entre o splash e o loader.
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const ALL_SCREENS: ScreenDef[] = [
   ...entranceScreens,
@@ -431,7 +437,30 @@ function entryKey(entry: StackEntry): string {
   return `${entry.id}?${keys.map((key) => `${key}=${String(entry.params[key])}`).join('&')}`;
 }
 
+/** Rotas de compra de ingressos mantidas no código, mas sem caminho alcançável. */
+const PURCHASE_ROUTES = new Set(['store', 'checkout-package', 'buy-3']);
+
+function PurchaseUnavailable() {
+  return (
+    <Page title="Ingressos">
+      <StateScreen
+        icon="wallet"
+        title="Compra de ingressos indisponível"
+        text="A compra de ingressos está desativada nesta versão do JOGA. Seus ingressos atuais continuam válidos e podem ser usados normalmente nas reservas."
+        actions={
+          <Btn tone="primary" back>
+            Voltar
+          </Btn>
+        }
+      />
+    </Page>
+  );
+}
+
 function ScreenLayer({ entry }: { entry: StackEntry }) {
+  if (PURCHASE_ROUTES.has(entry.id)) {
+    return <PurchaseUnavailable />;
+  }
   const def = REGISTRY[entry.id] ?? REGISTRY.welcome;
   return <View style={{ flex: 1 }}>{def.render({ params: entry.params })}</View>;
 }
@@ -743,7 +772,7 @@ function SuspendedScreen() {
   );
 }
 
-function Shell() {
+function Shell({ fontsReady }: { fontsReady: boolean }) {
   const app = useApp();
   const signedIn = !!app.session;
   const [tabStacks, setTabStacks] = useState<TabStacks>(() => createStacks(signedIn));
@@ -782,6 +811,29 @@ function Shell() {
   useEffect(() => {
     Appearance.setColorScheme(app.dark ? 'dark' : 'light');
   }, [app.dark]);
+
+  const splashHidden = useRef(false);
+  useEffect(() => {
+    const hideSplash = () => {
+      if (splashHidden.current) {
+        return;
+      }
+      splashHidden.current = true;
+      SplashScreen.hideAsync().catch(() => undefined);
+    };
+    if (app.ready && fontsReady) {
+      hideSplash();
+    }
+    // Guarda contra refresh/sessão pendurados: o splash nunca fica eterno.
+    // O loader escuro continua por baixo enquanto o app termina de hidratar.
+    const guard = setTimeout(() => {
+      if (!splashHidden.current && __DEV__) {
+        console.warn('[brand] splash liberado pelo guarda de 9 s sem app.ready.');
+      }
+      hideSplash();
+    }, 9_000);
+    return () => clearTimeout(guard);
+  }, [app.ready, fontsReady]);
 
   useLayoutEffect(() => {
     if (!app.ready || signedInRef.current === signedIn) {
@@ -980,36 +1032,11 @@ function Shell() {
               ],
             };
 
-  if (!app.ready) {
+  if (!app.ready || !fontsReady) {
     return (
       <ThemeContext.Provider value={theme}>
-        <ExpoStatusBar style={app.dark ? 'light' : 'dark'} />
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: palette.bg,
-            paddingTop: statusInset,
-          }}
-        >
-          <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: 26 }}>
-            <View style={{ minHeight: 54, justifyContent: 'center' }}>
-              <Text
-                maxFontSizeMultiplier={1.2}
-                style={{
-                  fontSize: 26,
-                  lineHeight: 26,
-                  fontWeight: '900',
-                  letterSpacing: -1.6,
-                  textTransform: 'uppercase',
-                  color: palette.ink,
-                }}
-              >
-                JOGA <Text style={{ color: palette.lime }}>Y</Text> JOGA
-              </Text>
-            </View>
-            <LoadingState label="Carregando o JOGA." variant="generic" />
-          </View>
-        </View>
+        <ExpoStatusBar style="light" />
+        <BrandLoader />
       </ThemeContext.Provider>
     );
   }
@@ -1074,10 +1101,17 @@ function Shell() {
 }
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    'Selawik-Regular': require('./assets/fonts/Selawik-Regular.ttf'),
+    'Selawik-SemiBold': require('./assets/fonts/Selawik-SemiBold.ttf'),
+    'Selawik-Bold': require('./assets/fonts/Selawik-Bold.ttf'),
+  });
+  const fontsReady = fontsLoaded || Boolean(fontError);
+
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <Shell />
+        <Shell fontsReady={fontsReady} />
       </AppProvider>
     </SafeAreaProvider>
   );

@@ -47,6 +47,9 @@ import type {
   Track,
   TrackLevel,
   VenuePage,
+  VisualCatalog,
+  VisualIdentity,
+  VisualIdentityResponse,
   Wallet,
 } from './types';
 
@@ -73,10 +76,32 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly retryAfterSeconds?: number,
+    readonly body?: unknown,
   ) {
     super(code);
   }
 }
+
+/** Diagnóstico legível para erros inesperados: status, código e corpo. */
+export function describeApiError(error: unknown): string {
+  if (error instanceof ApiError) {
+    let detail = '';
+    if (error.body !== undefined && error.body !== null) {
+      try {
+        detail = JSON.stringify(error.body);
+      } catch {
+        detail = String(error.body);
+      }
+      if (detail.length > 300) {
+        detail = `${detail.slice(0, 300)}…`;
+      }
+    }
+    return `HTTP ${error.status} · ${error.code}${detail ? ` · ${detail}` : ''}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+const REQUEST_TIMEOUT_MS = 15_000;
 
 let refreshHandler: (() => Promise<string | null>) | null = null;
 let refreshPromise: Promise<string | null> | null = null;
@@ -116,14 +141,22 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
     ...(init.headers ?? {}),
   };
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: init.method ?? 'GET',
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(0, 'request_timeout');
+    }
     throw new ApiError(0, 'network_unavailable');
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (response.status === 426) {
@@ -179,6 +212,7 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
       response.status,
       code,
       retryAfterSeconds(response.headers.get('Retry-After')),
+      body,
     );
   }
   return body as T;
@@ -1112,6 +1146,22 @@ export const api = {
         `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}/decide`,
         { method: 'POST', body: { approve }, token },
       );
+    },
+  },
+
+  visual: {
+    catalog() {
+      return call<VisualCatalog>('/catalog/visual');
+    },
+    me(token: string) {
+      return call<VisualIdentityResponse>('/me/visual', { token });
+    },
+    update(token: string, identity: Omit<VisualIdentity, 'catalog_version'>) {
+      return call<VisualIdentityResponse>('/me/visual', {
+        method: 'PUT',
+        body: identity,
+        token,
+      });
     },
   },
 

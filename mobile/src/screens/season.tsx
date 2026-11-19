@@ -607,7 +607,7 @@ function LevelLockedXp() {
         text={`O nível ${level} abre com ${number(xpRequired)} XP. Jogue partidas, complete missões e visite quadras novas. O passe não acelera o XP.`}
         actions={
           <>
-            <Btn tone="primary" go="queue-casual">
+            <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Jogar para ganhar XP
             </Btn>
             <Btn tone="ghost" go="missions">

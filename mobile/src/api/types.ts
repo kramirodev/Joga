@@ -100,6 +100,7 @@ export type BookableVenue = {
   longitude: number;
   timezone: string;
   covered: boolean;
+  is_public?: boolean;
   spaces_count: number;
   min_price_cents: number;
   distance_km: number | null;
@@ -173,6 +174,7 @@ export type BookableVenueDetail = {
   organization_id: string;
   name: string;
   timezone: string;
+  is_public?: boolean;
   photos: BookableVenuePhoto[];
   spaces: BookableVenueSpace[];
 };
@@ -707,6 +709,50 @@ export type PasskeyOptions = {
 export type CpfStatus = {
   cpf_present: boolean;
   cpf_masked: string | null;
+};
+
+export type VisualKind = 'icon' | 'frame' | 'accent' | 'entry' | 'emote' | 'badge';
+
+export type VisualUnlockState = 'free' | 'xp' | 'pass';
+
+export type VisualItem = {
+  key: string;
+  kind: VisualKind;
+  name: string;
+  asset_ref: string;
+  unlock_state: VisualUnlockState;
+  /** O backend devolve apenas itens ativos, então o campo é opcional. */
+  active?: boolean;
+  season?: string | null;
+};
+
+export type VisualCatalog = {
+  /** Contrato conceitual (`version`); o backend atual usa `catalog_version`. */
+  version?: string;
+  catalog_version?: string | number;
+  items: VisualItem[];
+};
+
+export type VisualIdentity = {
+  icon_key: string;
+  frame_key: string;
+  accent_key: string;
+  entry_key: string;
+  emote_key: string;
+  badge_key: string;
+  catalog_version: string | number;
+};
+
+/** Resposta do backend: chaves podem vir nulas antes da primeira escolha. */
+export type VisualIdentityResponse = {
+  user_id?: string;
+  icon_key: string | null;
+  frame_key: string | null;
+  accent_key: string | null;
+  entry_key: string | null;
+  emote_key: string | null;
+  badge_key: string | null;
+  catalog_version: string | number;
 };
 
 export type TermsVersion = {

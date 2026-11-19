@@ -14,8 +14,10 @@ import type {
   Substitute,
 } from '../api/types';
 import { useApp } from '../state/app';
-import { useNav, useTheme } from '../state/context';
-import { Avatar } from '../ui/Avatar';
+import { useNav, useTheme, type Params } from '../state/context';
+import { useActiveInterval } from '../state/useActiveInterval';
+import { IdentityBadge } from '../ui/IdentityBadge';
+import { identityFromSeed } from '../ui/identity';
 import { PaymentPix, paymentState } from '../ui/PaymentPix';
 import {
   Badge,
@@ -64,8 +66,22 @@ import { formatFamily, referenceBreakdown, TICKET_REFERENCE_CENTS } from '../ui/
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
-function toastError(nav: { toast: (message: string) => void }, error: unknown) {
+type ToastNav = {
+  toast: (message: string) => void;
+  go: (id: string, params?: Params) => void;
+};
+
+type TicketShortage = { needed?: number | null; available?: number | null };
+
+function toastError(nav: ToastNav, error: unknown, shortage?: TicketShortage) {
   if (error instanceof ApiError) {
+    if (error.code === 'insufficient_tickets') {
+      nav.go('insufficient-tickets', {
+        ...(shortage?.needed != null ? { needed: shortage.needed } : {}),
+        ...(shortage?.available != null ? { available: shortage.available } : {}),
+      });
+      return;
+    }
     const map: Record<string, string> = {
       payout_not_ready:
         'A quadra ainda não está habilitada para receber repasse. Escolha outra quadra.',
@@ -77,6 +93,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       booking_not_found: 'Reserva não encontrada.',
       forbidden: 'Você não participa deste lobby.',
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       invalid_transition: 'Esta ação não é válida no estado atual da reserva.',
       cancellation_closed: 'O prazo de cancelamento desta reserva já passou.',
       presence_window_closed: 'O pré-check-in ou a confirmação de presença está fora da janela.',
@@ -85,7 +102,15 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       low_accuracy: 'O GPS do aparelho não tem precisão suficiente. Tente novamente.',
       pre_check_in_required: 'Faça o pré-check-in antes de confirmar a presença.',
     };
-    nav.toast(map[error.code] ?? 'Não foi possível concluir a ação.');
+    if (map[error.code]) {
+      nav.toast(map[error.code]);
+      return;
+    }
+    if (error.status === 0) {
+      nav.toast('Não foi possível falar com o servidor. Tente novamente.');
+      return;
+    }
+    nav.toast('Não foi possível concluir a ação.');
   } else {
     nav.toast('Não foi possível concluir a ação.');
   }
@@ -93,6 +118,14 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
 
 function venueLocation(venue: BookableVenue): string {
   return [venue.address_line, venue.city, venue.state].filter(Boolean).join(' · ');
+}
+
+function PublicVenueBadge() {
+  return (
+    <View accessible accessibilityLabel="Quadra pública" accessibilityRole="text">
+      <Badge tone="blue">Quadra pública</Badge>
+    </View>
+  );
 }
 
 function weekdayLabel(day: number): string {
@@ -260,9 +293,20 @@ function Venues() {
             )}
             <View style={{ padding: 14 }}>
               <Row between>
-                <Txt variant="h3" numberOfLines={1} style={{ flex: 1 }}>
-                  {venue.name}
-                </Txt>
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <Txt variant="h3" numberOfLines={1} style={{ flexShrink: 1 }}>
+                    {venue.name}
+                  </Txt>
+                  {venue.is_public === true ? <PublicVenueBadge /> : null}
+                </View>
                 <Badge tone={venue.covered ? 'green' : 'default'}>
                   {venue.covered ? 'COBERTA' : 'ABERTA'}
                 </Badge>
@@ -599,6 +643,12 @@ function VenueDetail() {
         </View>
         <Badge tone={covered ? 'green' : 'default'}>{covered ? 'COBERTA' : 'ABERTA'}</Badge>
       </Row>
+      {detail.is_public === true ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <PublicVenueBadge />
+          <Txt variant="tiny">Quadra da plataforma JOGA</Txt>
+        </View>
+      ) : null}
       <Card tone="flat">
         <Row between>
           <Txt variant="tiny">Espaços reserváveis</Txt>
@@ -635,7 +685,7 @@ function VenueDetail() {
 
 function BookingRequest() {
   const nav = useNav();
-  const { session, matches, queue, loadBookings, email, emailReady } = useApp();
+  const { session, matches, queue, loadBookings, email, emailReady, wallet } = useApp();
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const venueId = typeof nav.params.venueId === 'string' ? nav.params.venueId : null;
@@ -682,7 +732,7 @@ function BookingRequest() {
           text="A reserva é feita para um lobby existente, com o grupo que vai jogar. Entre em uma partida ou lobby e volte para escolher o horário."
           actions={
             <>
-              <Btn tone="primary" go="queue-casual">
+              <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
                 Buscar partida
               </Btn>
               <Btn tone="ghost" go="matches">
@@ -755,7 +805,10 @@ function BookingRequest() {
         nav.go('payment-email');
         return;
       }
-      toastError(nav, error);
+      toastError(nav, error, {
+        needed: ticketsPerSeat,
+        available: wallet?.balance ?? null,
+      });
     } finally {
       setBusy(false);
     }
@@ -847,7 +900,7 @@ function bookingStatusLabel(status: string): string {
 
 function BookingActions({ booking }: { booking: Booking }) {
   const nav = useNav();
-  const { session, loadBookings } = useApp();
+  const { session, loadBookings, wallet } = useApp();
   const [busy, setBusy] = useState(false);
   const ownParticipant =
     booking.participants.find((participant) => participant.user_id === session?.userId) ?? null;
@@ -882,7 +935,10 @@ function BookingActions({ booking }: { booking: Booking }) {
         nav.toast('Participação confirmada.');
       }
     } catch (error) {
-      toastError(nav, error);
+      toastError(nav, error, {
+        needed: booking.tickets_per_seat,
+        available: wallet?.balance ?? null,
+      });
     } finally {
       setBusy(false);
     }
@@ -1546,12 +1602,7 @@ function MatchAdapt() {
                 key={name}
                 name={name}
                 role={index === 3 ? 'ausente substituído' : 'presente'}
-                avatar={{
-                  skin: '#A6ABB1',
-                  hair: '#17191B',
-                  shirt: '#62686E',
-                  style: ((index % 3) + 1) as 1 | 2 | 3,
-                }}
+                identity={identityFromSeed(name)}
               />
             ),
           )}
@@ -1639,14 +1690,7 @@ function Substitutes() {
       <CardList>
         {list.map((item, index) => (
           <ListRow key={item.id} last={index === list.length - 1}>
-            <Avatar
-              size={34}
-              palette={palette}
-              skin="#A6ABB1"
-              hair="#17191B"
-              shirt="#62686E"
-              style={((index % 3) + 1) as 1 | 2 | 3}
-            />
+            <IdentityBadge size={34} identity={identityFromSeed(item.id)} palette={palette} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.name}
@@ -2155,10 +2199,7 @@ function Matches() {
       .catch(() => setFailed(true))
       .finally(() => setLoading(false));
   };
-  useEffect(() => {
-    const timer = setInterval(() => loadMatches().catch(() => undefined), 15_000);
-    return () => clearInterval(timer);
-  }, [loadMatches]);
+  useActiveInterval(() => loadMatches().catch(() => undefined), 15_000);
   const filtered = useMemo(() => {
     if (tab === 'Próximas') {
       return matches.filter((match) => new Date(match.scheduled_start_at).getTime() > now);
@@ -2271,7 +2312,7 @@ function Matches() {
           }
           text="Quando você confirmar uma partida, ela aparece aqui."
           actions={
-            <Btn tone="primary" icon="search" go="queue-casual">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Buscar partida
             </Btn>
           }
@@ -2337,7 +2378,7 @@ function MatchHistory() {
           title="Nenhuma partida no histórico"
           text="Partidas concluídas, canceladas ou expiradas aparecem aqui."
           actions={
-            <Btn tone="primary" icon="search" go="queue-casual">
+            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
               Buscar partida
             </Btn>
           }
@@ -2372,7 +2413,7 @@ function MatchDetail() {
   }, [matchId, session]);
   const rating = primaryFormatId ? ratings[primaryFormatId] : undefined;
   const participants = match?.participants ?? [];
-  const avatarNames = participants.length
+  const participantNames = participants.length
     ? participants.slice(0, 10).map((item) => item.display_name ?? 'J')
     : [];
   return (
@@ -2430,16 +2471,9 @@ function MatchDetail() {
           <Txt variant="tiny">Time B · {participants.filter((item) => item.team === 2).length}</Txt>
         </Row>
         <View style={{ flexDirection: 'row', marginTop: 8 }}>
-          {avatarNames.map((name, index) => (
+          {participantNames.map((name, index) => (
             <View key={index} style={{ marginLeft: index === 0 ? 0 : -6 }}>
-              <Avatar
-                size={34}
-                palette={palette}
-                skin={index % 2 === 0 ? '#A6ABB1' : '#D5D9D6'}
-                hair={index % 2 === 0 ? '#17191B' : '#62686E'}
-                shirt="#62686E"
-                style={((index % 3) + 1) as 1 | 2 | 3}
-              />
+              <IdentityBadge size={34} identity={identityFromSeed(name)} palette={palette} />
             </View>
           ))}
         </View>

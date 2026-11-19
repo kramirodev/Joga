@@ -9,7 +9,8 @@ import { createPasskey, getPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import { AddWindowSheet } from '../ui/AddWindowSheet';
-import { Avatar } from '../ui/Avatar';
+import { IdentityBadge } from '../ui/IdentityBadge';
+import { catalogVersionOf, visualItems } from '../ui/identity';
 import {
   Badge,
   Btn,
@@ -43,6 +44,7 @@ function errorText(error: unknown): string {
   if (error instanceof ApiError) {
     const messages: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       invalid_phone: 'Telefone inválido.',
       rate_limited: 'Muitas tentativas. Aguarde um pouco.',
       invalid_code_or_challenge: 'Código inválido ou expirado.',
@@ -418,7 +420,17 @@ function OnboardingTwo() {
 function OnboardingThree() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { onboarding, session, profile, catalog, setProfile, refreshCore } = useApp();
+  const {
+    onboarding,
+    setOnboarding,
+    session,
+    profile,
+    catalog,
+    setProfile,
+    refreshCore,
+    visualCatalog,
+    saveVisual,
+  } = useApp();
   const [name, setName] = useState(onboarding.displayName);
   const [busy, setBusy] = useState(false);
 
@@ -473,6 +485,7 @@ function OnboardingThree() {
           await api.profile.replaceSports(session.accessToken, selected);
         }
         await api.profile.replaceAvailability(session.accessToken, onboarding.windows);
+        await saveVisual(onboarding.visual);
         await refreshCore();
       }
     } catch {
@@ -486,7 +499,7 @@ function OnboardingThree() {
   return (
     <Page title="Onde e como você aparece?">
       <Row between>
-        <Txt variant="label">3 de 3 · região e avatar</Txt>
+        <Txt variant="label">3 de 3 · região e identidade</Txt>
         <Badge>final</Badge>
       </Row>
       <Progress value={100} />
@@ -525,20 +538,16 @@ function OnboardingThree() {
       </Card>
       <Card>
         <Row between>
-          <Txt variant="h3">Seu avatar</Txt>
-          <Badge>catálogo fechado</Badge>
+          <Txt variant="h3">Sua identidade</Txt>
+          <Badge>catálogo de ícones</Badge>
         </Row>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 }}>
-          <View
-            style={{
-              padding: 3,
-              borderWidth: 2,
-              borderColor: palette.lineStrong,
-              borderRadius: 60,
-            }}
-          >
-            <Avatar size={112} {...onboarding.avatar} palette={palette} />
-          </View>
+          <IdentityBadge
+            size={112}
+            identity={onboarding.visual}
+            catalog={visualCatalog}
+            palette={palette}
+          />
           <View style={{ flex: 1 }}>
             <Text
               style={{
@@ -551,38 +560,31 @@ function OnboardingThree() {
               {name || 'Seu nome'}
             </Text>
             <Text style={{ fontSize: 13, lineHeight: 18, color: palette.muted }}>
-              Escolha as camadas agora. Upload de foto não existe.
+              Escolha um ícone do catálogo. Sem boneco e sem upload de foto.
             </Text>
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <Avatar
-            size={34}
-            skin="#A6ABB1"
-            hair="#17191B"
-            shirt="#62686E"
-            style={1}
-            palette={palette}
-          />
-          <Avatar
-            size={34}
-            skin="#D5D9D6"
-            hair="#62686E"
-            shirt="#E53935"
-            style={3}
-            palette={palette}
-          />
-          <Avatar
-            size={34}
-            skin="#62686E"
-            hair="#17191B"
-            shirt="#62686E"
-            style={2}
-            glasses
-            palette={palette}
-          />
-          <TextBtn go="avatar-editor">Editar camadas</TextBtn>
-        </View>
+        <ChipRow style={{ marginTop: 12 }}>
+          {visualItems(visualCatalog, 'icon')
+            .slice(0, 8)
+            .map((item) => (
+              <Chip
+                key={item.key}
+                on={onboarding.visual.icon_key === item.key}
+                onPress={() =>
+                  setOnboarding({
+                    visual: {
+                      ...onboarding.visual,
+                      icon_key: item.key,
+                      catalog_version: catalogVersionOf(visualCatalog),
+                    },
+                  })
+                }
+              >
+                {item.name}
+              </Chip>
+            ))}
+        </ChipRow>
       </Card>
       <Field label="Nome de exibição">
         <Input
@@ -1071,7 +1073,7 @@ function Terms() {
       'Devolução é em ingressos',
       'O saldo volta para seus ingressos quando a reserva não se completa.',
     ],
-    ['Sem fotos de pessoas', 'Avatar de catálogo fechado; fotos só de quadras.'],
+    ['Sem fotos de pessoas', 'Identidade por ícones; fotos só de quadras.'],
   ];
   return (
     <Page title={readOnly ? 'Termos e privacidade' : 'Antes de começar'}>

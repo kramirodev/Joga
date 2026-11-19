@@ -12,7 +12,8 @@ import type {
 } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
-import { Avatar } from '../ui/Avatar';
+import { IdentityBadge } from '../ui/IdentityBadge';
+import { identityFromSeed } from '../ui/identity';
 import { Icon } from '../ui/icons';
 import {
   Badge,
@@ -47,6 +48,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
       network_unavailable: 'Não foi possível falar com o servidor.',
+      request_timeout: 'O servidor demorou para responder. Tente novamente.',
       clan_full: 'Clã cheio.',
       clan_cooldown: 'Aguarde antes de entrar em outro clã.',
       already_friends: 'Vocês já são amigos.',
@@ -163,13 +165,10 @@ function Friends() {
                       nav.go('profile-other', { userId: friend.id, name: friend.name })
                     }
                   >
-                    <Avatar
+                    <IdentityBadge
                       size={34}
+                      identity={identityFromSeed(friend.id)}
                       palette={palette}
-                      skin="#A6ABB1"
-                      hair="#17191B"
-                      shirt="#62686E"
-                      style={((index % 3) + 1) as 1 | 2 | 3}
                     />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -624,13 +623,10 @@ function ClanMembers() {
       <CardList>
         {members.map((member, index) => (
           <ListRow key={member.user_id} last={index === members.length - 1}>
-            <Avatar
+            <IdentityBadge
               size={34}
+              identity={identityFromSeed(member.user_id)}
               palette={palette}
-              skin="#A6ABB1"
-              hair="#17191B"
-              shirt="#62686E"
-              style={((index % 3) + 1) as 1 | 2 | 3}
             />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -784,12 +780,19 @@ function ClanChat() {
                 backgroundColor: mine ? palette.limeSoft : palette.surface,
               }}
             >
-              <Txt variant="tiny">
-                <Text style={{ fontWeight: '800', color: palette.ink }}>
-                  {mine ? 'Você' : (message.display_name ?? 'Membro')}
-                </Text>
-                {message.created_at ? ` · ${message.created_at.slice(11, 16)}` : ''}
-              </Txt>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <IdentityBadge
+                  size={24}
+                  identity={identityFromSeed(message.sender_id)}
+                  palette={palette}
+                />
+                <Txt variant="tiny">
+                  <Text style={{ fontWeight: '800', color: palette.ink }}>
+                    {mine ? 'Você' : (message.display_name ?? 'Membro')}
+                  </Text>
+                  {message.created_at ? ` · ${message.created_at.slice(11, 16)}` : ''}
+                </Txt>
+              </View>
               <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>{message.body}</Text>
             </View>
           );
@@ -1282,7 +1285,7 @@ function ReportProfile() {
               <Btn tone="primary" go="matches">
                 Ver partidas
               </Btn>
-              <Btn tone="ghost" go="queue-casual">
+              <Btn tone="ghost" onPress={() => nav.go('queue', { mode: 'casual' })}>
                 Buscar partida
               </Btn>
             </>
@@ -1791,15 +1794,7 @@ function BlockUser() {
     <Page title="Bloquear">
       <Card>
         <Row>
-          <Avatar
-            size={86}
-            skin="#62686E"
-            hair="#17191B"
-            shirt="#62686E"
-            style={2}
-            glasses
-            palette={palette}
-          />
+          <IdentityBadge size={86} identity={identityFromSeed('Marcus_rise')} palette={palette} />
           <View style={{ flex: 1 }}>
             <Txt variant="h3">Marcus_rise</Txt>
             <Txt variant="tiny">#9034 · Alpha Squad</Txt>
@@ -1838,14 +1833,7 @@ function ClanInvite() {
           const checked = selected.includes(friend.id);
           return (
             <ListRow key={friend.id} last={index === list.length - 1}>
-              <Avatar
-                size={34}
-                palette={palette}
-                skin="#A6ABB1"
-                hair="#17191B"
-                shirt="#62686E"
-                style={((index % 3) + 1) as 1 | 2 | 3}
-              />
+              <IdentityBadge size={34} identity={identityFromSeed(friend.id)} palette={palette} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                   {friend.name}{' '}
