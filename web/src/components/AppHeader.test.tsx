@@ -58,6 +58,20 @@ describe("AppHeader — moderação por capability", () => {
     expect(screen.getByRole("button", { name: "Notificações" })).toBeInTheDocument();
   });
 
+  it("esconde a administração sem platform.admin", () => {
+    renderHeader(["moderation.read"]);
+    expect(screen.queryByRole("link", { name: "Usuários" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Esportes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Quadras públicas" })).not.toBeInTheDocument();
+  });
+
+  it("mostra a administração com platform.admin", () => {
+    renderHeader(["platform.admin"]);
+    expect(screen.getByRole("link", { name: "Usuários" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Esportes" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Quadras públicas" })).toBeInTheDocument();
+  });
+
   it("troca a senha autenticada com senha atual e nova", async () => {
     const user = userEvent.setup();
     renderHeader([]);

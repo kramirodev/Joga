@@ -58,6 +58,30 @@ describe("format", () => {
     );
   });
 
+  it("trata a compra de tickets desligada e o e-mail duplicado", () => {
+    expect(formatError(new ApiError(503, "ticket_purchase_disabled"))).toBe(
+      "A compra de tickets está temporariamente indisponível. Tente novamente mais tarde.",
+    );
+    expect(formatError(new ApiError(409, "email_already_exists"))).toBe(
+      "Esse e-mail já está vinculado a outra conta. Use outro endereço.",
+    );
+    expect(formatError(new ApiError(403, "platform_admin_required"))).toBe(
+      "Sua conta não tem permissão de administração da plataforma.",
+    );
+    expect(formatError(new ApiError(409, "format_in_use"))).toBe(
+      "Esse formato já está em uso por reservas. Crie um novo formato para mudar o tamanho da equipe.",
+    );
+    expect(formatError(new ApiError(422, "pricing_not_configured"))).toBe(
+      "O preço ainda não está configurado nas seis faixas. Configure o preço antes de salvar ou publicar.",
+    );
+    expect(formatError(new ApiError(409, "venue_not_publishable"))).toBe(
+      "A quadra pública precisa de pelo menos um espaço ativo com preço configurado para ser publicada.",
+    );
+    expect(formatError(new ApiError(422, "geocoding_required"))).toBe(
+      "Informe o CEP ou as coordenadas da quadra antes de publicar.",
+    );
+  });
+
   it("informa o tempo exato de espera em rate_limited", () => {
     expect(formatError(new ApiError(429, "rate_limited", undefined, null, [], 45))).toBe(
       "Muitas tentativas. Tente novamente em 45 segundos.",
