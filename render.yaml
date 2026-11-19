@@ -41,8 +41,18 @@ services:
         value: "false"
       - key: JOGA_PHONE_REQUIRED_FOR_BOOKING
         value: "false"
+      # Cadastro aberto no demo (decisão de 2026-11-19). Emergência: fechar no
+      # dashboard (o serviço não é gerenciado por blueprint); este arquivo só
+      # muda por commit.
       - key: JOGA_SIGNUP_MODE
-        value: closed
+        value: open
+      # Limites do perfil beta explícitos para não depender de default.
+      - key: JOGA_SIGNUP_MAX_PER_IP_PER_DAY
+        value: "20"
+      - key: JOGA_EMAIL_MAX_PER_ADDRESS_PER_HOUR
+        value: "5"
+      - key: JOGA_EMAIL_MAX_PER_IP_PER_HOUR
+        value: "50"
       - key: JOGA_EMAIL_PROVIDER
         value: brevo
       - key: JOGA_EMAIL_API_KEY
@@ -53,6 +63,12 @@ services:
         value: JOGA
       - key: JOGA_EMAIL_DAILY_BUDGET
         value: "250"
+      # Drenagem da Outbox no processo da API: o cron do GitHub não entrega em
+      # até 15 min de forma confiável. O workflow continua como reserva.
+      - key: JOGA_EMAIL_INLINE_DRAIN_ENABLED
+        value: "true"
+      - key: JOGA_EMAIL_INLINE_DRAIN_INTERVAL_SECONDS
+        value: "30"
       - key: JOGA_WEB_COOKIE_SECURE
         value: "true"
       - key: JOGA_APP_VERSION_GATE_ENABLED
