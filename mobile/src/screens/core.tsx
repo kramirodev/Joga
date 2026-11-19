@@ -66,6 +66,9 @@ import {
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
+const TICKET_PURCHASE_DISABLED_TEXT =
+  'A compra de ingressos está desativada nesta versão do JOGA. Seus ingressos atuais continuam válidos e podem ser usados normalmente nas reservas.';
+
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
@@ -76,7 +79,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       ranked_restricted: 'Ranqueada indisponível no momento.',
       invalid_format: 'Formato indisponível.',
       forbidden: 'Ação não permitida.',
-      ticket_purchase_disabled: 'Compra de ingressos indisponível no momento.',
+      ticket_purchase_disabled: TICKET_PURCHASE_DISABLED_TEXT,
     };
     if (map[error.code]) {
       nav.toast(map[error.code]);
@@ -98,7 +101,7 @@ function errorDetail(error: unknown): string {
       network_unavailable: 'Não foi possível falar com o servidor.',
       invalid_visual_item: 'Item de identidade inválido.',
       visual_item_locked: 'Este item ainda não está liberado.',
-      ticket_purchase_disabled: 'Compra de ingressos indisponível no momento.',
+      ticket_purchase_disabled: TICKET_PURCHASE_DISABLED_TEXT,
     };
     if (map[error.code]) {
       return map[error.code];

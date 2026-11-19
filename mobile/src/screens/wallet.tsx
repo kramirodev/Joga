@@ -11,7 +11,6 @@ import { Text } from '../ui/text';
 import {
   Badge,
   Btn,
-  BtnRow,
   Card,
   CardList,
   Check,
@@ -38,6 +37,26 @@ import {
   TICKET_REFERENCE_CENTS,
 } from '../ui/tickets';
 import type { ScreenDef } from './types';
+
+const TICKET_PURCHASE_DISABLED_TEXT =
+  'A compra de ingressos está desativada nesta versão do JOGA. Seus ingressos atuais continuam válidos e podem ser usados normalmente nas reservas.';
+
+function PurchaseDisabledState() {
+  return (
+    <Page title="Ingressos">
+      <StateScreen
+        icon="wallet"
+        title="Compra de ingressos indisponível"
+        text={TICKET_PURCHASE_DISABLED_TEXT}
+        actions={
+          <Btn tone="primary" back>
+            Voltar
+          </Btn>
+        }
+      />
+    </Page>
+  );
+}
 
 function SourceBadge({ source }: { source: string }) {
   if (source === 'consumption' || source === 'match') return null;
@@ -233,14 +252,9 @@ function Wallet() {
           <Badge>GRÁTIS {sums.free}</Badge>
         </View>
       </Card>
-      <BtnRow>
-        <Btn tone="primary" go="store">
-          Comprar ingressos
-        </Btn>
-        <Btn tone="ghost" go="wallet-breakdown">
-          Ver detalhes
-        </Btn>
-      </BtnRow>
+      <Btn tone="ghost" go="wallet-breakdown">
+        Ver detalhes
+      </Btn>
       <Row between>
         <Txt variant="h3">Lotes ativos</Txt>
         <Txt variant="tiny">{lots.length} lotes</Txt>
@@ -440,14 +454,12 @@ function WalletBreakdown() {
         <Badge tone="blue">{lots.length}</Badge>
       </Row>
       <LotList lots={lots} />
-      <Btn tone="primary" go="store">
-        Comprar mais ingressos
-      </Btn>
     </Page>
   );
 }
 
 function MatchCost() {
+  const nav = useNav();
   const { wallet } = useApp();
   const balance = wallet?.balance ?? null;
   return (
@@ -501,10 +513,7 @@ function MatchCost() {
         O valor da quadra e o valor do JOGA aparecem em reais antes da confirmação. A taxa de 20% é
         piso de referência, não o valor final.
       </Notice>
-      <Btn tone="primary" go="store">
-        Ver pacotes de ingressos
-      </Btn>
-      <TextBtn go="queue-casual" muted>
+      <TextBtn muted onPress={() => nav.go('queue', { mode: 'casual' })}>
         Buscar partida
       </TextBtn>
     </Page>
@@ -818,6 +827,8 @@ function CheckoutPackage({ avulso }: { avulso?: boolean }) {
           }
           setTermsAccepted(false);
           setError('Aceite a versão vigente dos Termos de uso para continuar.');
+        } else if (cause instanceof ApiError && cause.code === 'ticket_purchase_disabled') {
+          setError(TICKET_PURCHASE_DISABLED_TEXT);
         } else if (cause instanceof ApiError && cause.code === 'idempotency_conflict') {
           await SecureStore.deleteItemAsync(idempotencyKey);
           setError(
@@ -952,6 +963,10 @@ function CheckoutPackage({ avulso }: { avulso?: boolean }) {
     );
   }
 
+  if (error === TICKET_PURCHASE_DISABLED_TEXT) {
+    return <PurchaseDisabledState />;
+  }
+
   if (terms && !termsAccepted && !purchase) {
     return (
       <Page title="Termos da compra">
@@ -1058,54 +1073,31 @@ function CheckoutPackage({ avulso }: { avulso?: boolean }) {
 }
 
 function InsufficientTickets() {
-  const { wallet, packs, loadStore } = useApp();
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    loadStore()
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [loadStore]);
-  const balance = wallet?.balance ?? 0;
-  const smallest = [...packs].sort((left, right) => left.tickets - right.tickets)[0] ?? null;
+  const nav = useNav();
+  const { wallet } = useApp();
+  const parseCount = (value: unknown): number | null => {
+    const parsed =
+      typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : null;
+  };
+  const available = wallet?.balance ?? parseCount(nav.params.available) ?? 0;
+  const needed =
+    parseCount(nav.params.needed) ??
+    parseCount(nav.params.required) ??
+    parseCount(nav.params.tickets) ??
+    available + 1;
   return (
-    <Page title="Completar ingressos">
+    <Page title="Ingressos insuficientes">
       <StateScreen
         icon="wallet"
-        title={`Você tem ${balance} ingressos`}
-        text="A vaga consome a quantidade de ingressos da faixa e do formato. Veja a tabela e escolha um pacote; nada é cobrado até você confirmar o Pix."
+        title="Ingressos insuficientes"
+        text={`Você precisa de ${needed} ingressos e tem ${available}. A compra de ingressos está desativada nesta versão do JOGA.`}
         actions={
-          <>
-            <Btn tone="primary" go="match-cost">
-              Ver tabela por formato
-            </Btn>
-            <Btn tone="ghost" go="store">
-              Ver pacotes
-            </Btn>
-          </>
+          <Btn tone="primary" back>
+            Voltar
+          </Btn>
         }
       />
-      <Card tone="flat">
-        <Row between>
-          <Txt variant="tiny">Saldo atual</Txt>
-          <Text style={{ fontWeight: '900' }}>{balance}</Text>
-        </Row>
-        {!loading && smallest ? (
-          <Row between style={{ marginTop: 6 }}>
-            <Txt variant="tiny">Menor pacote</Txt>
-            <Text style={{ fontWeight: '900' }}>
-              {smallest.tickets} ingressos · {cents(smallest.amount_cents)}
-            </Text>
-          </Row>
-        ) : null}
-      </Card>
     </Page>
   );
 }
@@ -1294,6 +1286,8 @@ function CheckoutPass() {
           setError(
             'A assinatura anterior tinha outro plano. Tente novamente para gerar um novo Pix.',
           );
+        } else if (cause instanceof ApiError && cause.code === 'ticket_purchase_disabled') {
+          setError(TICKET_PURCHASE_DISABLED_TEXT);
         } else {
           setError('Não foi possível abrir a cobrança Pix do passe.');
         }
@@ -1375,6 +1369,10 @@ function CheckoutPass() {
     setError(null);
     setAttempt((current) => current + 1);
   };
+
+  if (error === TICKET_PURCHASE_DISABLED_TEXT) {
+    return <PurchaseDisabledState />;
+  }
 
   if (!emailReady || creating) {
     return (
@@ -1654,7 +1652,7 @@ export const walletScreens: ScreenDef[] = [
   { id: 'store', tab: 'perfil', render: () => <Store /> },
   { id: 'checkout-package', tab: 'perfil', render: () => <CheckoutPackage /> },
   { id: 'payment-email', tab: 'perfil', render: () => <PaymentEmail /> },
-  { id: 'insufficient-tickets', tab: 'jogar', hidden: true, render: () => <InsufficientTickets /> },
+  { id: 'insufficient-tickets', tab: 'jogar', render: () => <InsufficientTickets /> },
   { id: 'buy-3', tab: 'jogar', hidden: true, render: () => <CheckoutPackage avulso /> },
   { id: 'pass', tab: 'perfil', render: () => <Pass /> },
   { id: 'checkout-pass', tab: 'perfil', render: () => <CheckoutPass /> },

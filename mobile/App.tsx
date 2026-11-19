@@ -431,7 +431,30 @@ function entryKey(entry: StackEntry): string {
   return `${entry.id}?${keys.map((key) => `${key}=${String(entry.params[key])}`).join('&')}`;
 }
 
+/** Rotas de compra de ingressos mantidas no código, mas sem caminho alcançável. */
+const PURCHASE_ROUTES = new Set(['store', 'checkout-package', 'buy-3']);
+
+function PurchaseUnavailable() {
+  return (
+    <Page title="Ingressos">
+      <StateScreen
+        icon="wallet"
+        title="Compra de ingressos indisponível"
+        text="A compra de ingressos está desativada nesta versão do JOGA. Seus ingressos atuais continuam válidos e podem ser usados normalmente nas reservas."
+        actions={
+          <Btn tone="primary" back>
+            Voltar
+          </Btn>
+        }
+      />
+    </Page>
+  );
+}
+
 function ScreenLayer({ entry }: { entry: StackEntry }) {
+  if (PURCHASE_ROUTES.has(entry.id)) {
+    return <PurchaseUnavailable />;
+  }
   const def = REGISTRY[entry.id] ?? REGISTRY.welcome;
   return <View style={{ flex: 1 }}>{def.render({ params: entry.params })}</View>;
 }
