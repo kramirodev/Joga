@@ -39,7 +39,12 @@ class VenueSpace(Base):
             "name",
             name="uq_venue_spaces_venue_name",
         ),
+        CheckConstraint(
+            "price_cents IS NULL OR price_cents >= 0",
+            name="price_non_negative",
+        ),
         Index("ix_venue_spaces_organization_venue_id", "organization_venue_id"),
+        Index("ix_venue_spaces_format_id", "format_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -48,6 +53,13 @@ class VenueSpace(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    # Fonte do formato/preço de PUBLICAÇÃO da quadra pública. A reserva usa
+    # ``VenueAvailability.price_cents``; quando este preço existe, toda janela
+    # de disponibilidade precisa ter o mesmo valor (validado no serviço).
+    format_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sport_formats.id", ondelete="RESTRICT"), nullable=True
+    )
+    price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_covered: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
@@ -113,6 +125,8 @@ class VenueAvailability(Base):
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
+    # Preço efetivo da RESERVA. Em espaço público, deve ser igual a
+    # ``VenueSpace.price_cents``; a publicação valida a igualdade.
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     slot_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     band_id: Mapped[uuid.UUID | None] = mapped_column(

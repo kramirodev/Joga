@@ -78,20 +78,20 @@ Todo item cosmético existe em exatamente um destes estados:
 
 | Estado | Regra | Exemplos |
 |---|---|---|
-| **Livre** | Disponível desde o cadastro | Bases do avatar, traços de identidade, 3 temas (incluindo alto contraste), 1 moldura, 1 celebração, parte dos acessórios, **escudo de clã**, badges de temporada, de marco e de fundador |
-| **Ganho por XP** | Exige alcançar o nível na trilha | Itens de coleção, acessórios e efeitos de trilha, títulos de marco |
-| **Perk do passe** | Liberado direto, é ajuste de aparência | 6 temas extras, paletas, cor de destaque, efeitos de perfil, molduras, animações, catálogo ampliado, **retrospectiva da temporada**, **destaque no perfil do clã** |
+| **Livre** | Disponível desde o cadastro | Ícone de perfil padrão, moldura inicial, cor de destaque padrão, ícone de entrada padrão, emote padrão, 3 temas (incluindo alto contraste), 1 celebração, **escudo de clã**, badges de temporada, de marco e de fundador |
+| **Ganho por XP** | Exige alcançar o nível na trilha | Ícones de perfil, molduras, cores de destaque, ícones de entrada, emotes, efeitos de trilha, títulos de marco |
+| **Perk do passe** | Liberado direto, é ajuste de aparência | 6 temas extras, paletas, cores de destaque, ícones de perfil, molduras, emotes, ícones de entrada, animações, catálogo ampliado, **retrospectiva da temporada**, **destaque no perfil do clã** |
 
 Regras que sustentam a tabela:
 
 1. **Item de conquista nunca é perk direto.** O dinheiro compra acesso ao catálogo e à trilha; o item só sai jogando.
-2. **Traço de identidade nunca é pago.** Tom de pele, cabelo, textura e tipo de corpo são livres para todos, sempre.
+2. **A identidade básica nunca é paga.** Ícone de perfil padrão, moldura inicial, cor de destaque padrão, ícone de entrada padrão e emote padrão são livres para todos, sempre.
 3. **Acessibilidade nunca é paga.** Tamanho de fonte, alto contraste, redução de movimento e alvos de toque ampliados ficam fora do passe.
 4. **Nada cosmético altera MMR, Trust Factor, matchmaking, troféu de clã ou qualquer resultado.**
 
 ### 6. Customização geral do app
 
-Além do avatar, o passe libera ajustes de aparência e densidade da interface:
+Além da identidade por ícones, o passe libera ajustes de aparência e densidade da interface:
 
 - temas adicionais e cor de destaque;
 - densidade dos cartões (compacta ou confortável);
@@ -144,7 +144,7 @@ Os ajustes de **acessibilidade** listados na seção 5 permanecem livres para to
 ### 11. Itens de temporada e insígnias
 
 1. Cada temporada publica **7 itens**, distribuídos pela trilha, incluindo emotes de chat.
-2. Categorias: **acessório de personagem**, **animação de lobby**, **emote/reação de chat**, **ícone de entrada** e **insígnia**.
+2. Categorias: **ícone de perfil**, **moldura**, **cor de destaque**, **ícone de entrada**, **emote/reação de chat** e **badge**. Composição sugerida: 3 ícones + 1 moldura + 1 cor + 1 emote + 1 ícone de entrada; o badge da temporada é o sétimo item.
 3. Distribuição por nível: 4, 8, 12, 17, 21, 26 e 30. O nível 30 entrega a **insígnia da temporada**.
 4. **Insígnia não é medalha.** Insígnia marca temporada ou fundador; medalha é conquista competitiva. São tipos distintos no mesmo perfil. **Medalhas entram no MVP**: o perfil reserva um bloco próprio para elas, separado das três insígnias.
 5. O perfil exibe até **3 insígnias equipadas**. Hoje existe uma: a da temporada 2026-Q4.

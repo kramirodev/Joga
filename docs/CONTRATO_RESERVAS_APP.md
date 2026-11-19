@@ -1,6 +1,7 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
-**Status:** contrato backend implementado em 2026-11-14; app mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
+**Versão:** v2026-11-20
+**Status:** contrato backend implementado em 2026-11-14; identidade visual, catálogo administrável de esportes, administração de usuários e bloqueio de compra de tickets adicionados em 2026-11-20. App mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
 
 ## 0. Preço, tickets e NFS-e (ADR 0049)
@@ -1016,3 +1017,443 @@ Resposta = `WebSessionResponse` (`access_token`, `access_expires_at`,
   redefine senha. Não há flag para reativar login por código.
 - Passkey continua preferencial e não exige senha. Telefone segue dormente por
   flag até o lançamento.
+
+## 13. Identidade visual por ícones (v2026-11-20)
+
+A identidade do jogador é um catálogo fechado de seis slots. Não existe texto
+livre, upload, URL ou avatar configurável. Toda chave é validada no servidor
+contra item ativo do tipo correto e contra desbloqueio.
+
+Slots: `icon_key`, `frame_key`, `accent_key`, `entry_key`, `emote_key`,
+`badge_key`.
+
+```http
+GET /api/v1/catalog/visual
+```
+
+```json
+{
+  "catalog_version": 1,
+  "items": [
+    {
+      "key": "icon-sport-futebol-5x5",
+      "kind": "icon",
+      "name": "Futebol 5x5",
+      "asset_ref": "icons/icon-sport-futebol-5x5.svg",
+      "season": null,
+      "unlock_state": "free"
+    }
+  ]
+}
+```
+
+- `kind`: `icon|frame|accent|entry|emote|badge`.
+- `unlock_state`: `free|xp|pass`.
+- `asset_ref` é referência interna de asset; o app nunca recebe URL arbitrária.
+
+```http
+GET /api/v1/me/visual
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "user_id": "uuid",
+  "icon_key": "icon-sport-futebol-5x5",
+  "frame_key": "frame-bronze",
+  "accent_key": "accent-lime",
+  "entry_key": "entry-invite-lobby",
+  "emote_key": "emote-joinha",
+  "badge_key": "badge-beta",
+  "catalog_version": 1
+}
+```
+
+Sem escolha gravada, a resposta usa o baseline `free` do catálogo. `PUT /api/v1/me/visual`
+substitui os seis slots e exige todos eles:
+
+```json
+{
+  "icon_key": "icon-sport-volei-6x6",
+  "frame_key": "frame-bronze",
+  "accent_key": "accent-azul",
+  "entry_key": "entry-invite-lobby",
+  "emote_key": "emote-joinha",
+  "badge_key": "badge-beta"
+}
+```
+
+- `400 invalid_visual_item`: chave inexistente, inativa ou de outro tipo.
+- `400 visual_item_locked`: item válido de XP/passe ainda não desbloqueado.
+- `401 invalid_token`: sem sessão.
+
+**Exposição pública mínima:** lobby, participantes e perfil de terceiro só
+podem receber `icon_key`, `frame_key`, `accent_key` e `badge_key`. Nunca
+`entry_key`/`emote_key` privados, nome, e-mail, telefone, CPF ou qualquer PII.
+O backend centraliza essa projeção; `MatchParticipantResponse.visual` já segue
+esse formato.
+
+## 14. Catálogo público de esportes
+
+```http
+GET /api/v1/catalog/sports
+```
+
+Resposta:
+
+```json
+{
+  "sports": [
+    {
+      "id": "uuid",
+      "slug": "futebol",
+      "name": "Futebol",
+      "icon_key": "icon-sport-futebol-5x5",
+      "sort_order": 10,
+      "active": true,
+      "formats": [
+        {
+          "id": "uuid",
+          "slug": "futebol-5x5",
+          "name": "Futebol 5x5",
+          "team_size": 5,
+          "players_per_team": 5,
+          "total_participants": 10,
+          "duration_minutes": 60,
+          "period_count": 1,
+          "score_model": "sets_points",
+          "positions": [],
+          "active": true,
+          "version": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+- Somente esportes `active=true` com ao menos um formato `active=true` aparecem.
+- `team_size` é o tamanho de cada equipe; `players_per_team` é o mesmo valor
+  exposto explicitamente para o app.
+- `score_model`: `sets_points|goals`.
+- `positions`: lista de posições; pode ser vazia.
+- `GET /api/v1/sports` continua disponível por compatibilidade com o mesmo
+  catálogo ativo.
+
+## 15. Administração de esportes (`platform.admin`)
+
+Todas as rotas exigem Allowlist `JOGA_PLATFORM_ADMINS` (user IDs) e respondem
+`403 forbidden` para jogador, OWNER ou OPERATOR de organização. Sem token:
+`401 invalid_token`.
+
+```http
+GET   /api/v1/admin/sports
+POST  /api/v1/admin/sports
+PATCH /api/v1/admin/sports/{slug}
+POST  /api/v1/admin/sports/{slug}/activate
+POST  /api/v1/admin/sports/{slug}/deactivate
+```
+
+Criação (transacional; o esporte nasce **inativo**):
+
+```json
+{
+  "slug": "futevolei",
+  "name": "Futevôlei",
+  "icon_key": "icon-sport-futevolei-3x3",
+  "sort_order": 30,
+  "formats": [
+    {
+      "slug": "futevolei-3x3",
+      "name": "Futevôlei 3x3",
+      "team_size": 3,
+      "players_per_team": 3,
+      "duration_minutes": 45,
+      "period_count": 1,
+      "score_model": "sets_points",
+      "positions": []
+    }
+  ],
+  "reason": "abertura do catálogo"
+}
+```
+
+- `409 sport_slug_conflict`: slug já existe.
+- `400 invalid_sport`: dados/formatos inválidos.
+- `400 invalid_sport_icon`: `icon_key` não é ícone ativo do catálogo visual.
+- `409 sport_not_publishable`: ativação sem formato ativo ou sem preço
+  configurado em todas as faixas.
+- Desativar não apaga formatos, preços, reservas nem histórico; apenas remove o
+  esporte do catálogo público.
+
+Seed de exemplo: `futevolei` 3x3 (`team_size=3`, `positions=[]`,
+`score_model=sets_points`) nasce **inativo**.
+
+## 16. Preço sugerido e override de tabela
+
+```http
+GET /api/v1/admin/pricing/suggest?team_size=5
+GET /api/v1/admin/pricing/suggest?team_size=4&mode=contingency
+```
+
+Fórmula vigente para cada uma das 6 faixas:
+
+```text
+k = ceil(1,2 * teto_cents / (2 * team_size * 310))
+```
+
+- `team_size` em `{3,5,6}` usa `standard` por padrão (com 20%).
+- Fora de `{3,5,6}`, o modo é obrigatório e explícito: `standard` (com 20%) ou
+  `contingency` (sem 20%). O backend não infere.
+- Resposta inclui `mode`, `calibration_cents: 310`, `tickets`, `player_price_cents`
+  (`tickets * 310`) e `invariant_ok`.
+- Invariante verificado: `k*310 >= 1,2*V/(2*team_size)` no modo padrão e
+  `k*310 >= V/(2*team_size)` na contingência.
+
+Override:
+
+```http
+PUT /api/v1/admin/pricing/band-tickets
+```
+
+```json
+{
+  "band_code": "economica_dia",
+  "team_size": 4,
+  "tickets": 5,
+  "mode": "contingency",
+  "reason": "quadra 4x4 de contingência"
+}
+```
+
+- `reason` é obrigatório.
+- `409 ticket_floor_violation`: valor abaixo do piso ou que quebra o invariante.
+- `422 pricing_mode_required`: formato fora de 3/5/6 sem escolha explícita.
+- `404 band_not_found`: faixa ativa inexistente.
+- O override é auditado em `audit_logs` e não altera faixas históricas já
+  congeladas em reservas.
+
+## 17. Administração de usuários (`platform.admin`)
+
+Toda escrita exige `reason` e gera evento append-only em `audit_logs`. O admin
+nunca lê senha, hash, token, OTP ou CPF em claro e não altera MMR, ledger,
+tickets ou resultado.
+
+```http
+GET   /api/v1/admin/users?q=&status=&page=1&page_size=20
+GET   /api/v1/admin/users/{id}
+POST  /api/v1/admin/users
+PATCH /api/v1/admin/users/{id}/email
+POST  /api/v1/admin/users/{id}/password-reset
+POST  /api/v1/admin/users/{id}/suspend
+POST  /api/v1/admin/users/{id}/reactivate
+POST  /api/v1/admin/users/{id}/sessions/revoke
+GET   /api/v1/admin/users/{id}/audit
+```
+
+Detalhe do usuário (CPF mascarado; nenhum segredo):
+
+```json
+{
+  "id": "uuid",
+  "status": "active",
+  "email": "jogador@exemplo.com",
+  "display_name": "Jogador",
+  "email_verified": true,
+  "cpf_masked": "***.***.***-99",
+  "suspended_until": null,
+  "created_at": "2026-11-20T12:00:00Z"
+}
+```
+
+- `POST /admin/users`: `email`, `password`, `display_name?`,
+  `verify_email` (opcional, auditado) e `reason`.
+- `PATCH /admin/users/{id}/email`: avisa o endereço antigo e revoga todas as
+  sessões.
+- `POST /admin/users/{id}/password-reset`: envia código; nunca devolve código,
+  hash ou token.
+- `suspend`: `reason`, `until?`; revoga sessões.
+- `reactivate`: limpa `suspended_until`; não restaura sessões antigas.
+- `sessions/revoke`: devolve `{"revoked": n}`.
+- `GET /audit`: eventos com `action`, `actor_user_id`, `reason`, `details` e
+  `created_at`.
+- `422 reason_required`: motivo vazio.
+- `409 email_already_registered` / `email_unchanged`.
+- `400 weak_password` / `invalid_email`.
+- `404 user_not_found`.
+
+Capacidade exposta na sessão do painel: `capabilities` inclui `"platform.admin"`
+quando o user ID está em `JOGA_PLATFORM_ADMINS`. Papel de organização não
+concede essa capacidade.
+
+## 18. Compra de tickets bloqueada por flag
+
+Flag `JOGA_TICKET_PURCHASE_ENABLED` tem **default `false`**.
+
+Com a flag desligada:
+
+- `POST /api/v1/me/tickets/purchases` → `503 ticket_purchase_disabled`.
+- `POST /api/v1/me/tickets/purchases/{id}/sync` → `503 ticket_purchase_disabled`.
+- `POST /api/v1/me/tickets/purchases/{id}/confirm` → `503 ticket_purchase_disabled`.
+- `GET /api/v1/me/tickets` e `GET /api/v1/me/tickets/packs` continuam `200`.
+
+O bloqueio ocorre antes de qualquer escrita: não cria `ticket_purchases`,
+`purchase_payments`, `ledger_entries` nem lotes. Passes e assinaturas não são
+afetados por esta flag.
+
+## 19. Edição de formatos de esporte (v2026-11-20)
+
+```http
+POST  /api/v1/admin/sports/{slug}/formats
+PATCH /api/v1/admin/sports/{slug}/formats/{format_id}
+POST  /api/v1/admin/sports/{slug}/formats/{format_id}/activate
+POST  /api/v1/admin/sports/{slug}/formats/{format_id}/deactivate
+```
+
+- `POST` usa o mesmo corpo de `SportFormatInput` da criação, mais `reason`.
+- `PATCH` aceita `name`, `duration_minutes`, `period_count`, `score_model`,
+  `positions`, `active` a qualquer momento.
+- `team_size` e `players_per_team` só mudam enquanto o formato **não tiver uso**
+  (fila, lobby, partida, reserva, rating ou troféu). Com uso, responde
+  `409 format_in_use`; a instrução é criar um novo formato e desativar o atual.
+- `slug` nunca é editável.
+- Toda edição relevante incrementa `sport_formats.version`.
+- A resposta administrativa inclui `in_use: bool`; o painel deve habilitar
+  `team_size`/`players_per_team` apenas quando `in_use=false`.
+- Adicionar/editar `team_size` exige célula de preço em todas as faixas ativas.
+  Sem célula: `422 pricing_not_configured`; sugerir com
+  `GET /admin/pricing/suggest?team_size=`.
+- Publicar formato sem preço válido é proibido.
+- Auditoria grava ator, formato, campos antes/depois, motivo, data e
+  `ip_hash`; não há exclusão de linha nem reescrita de reserva/partida.
+- `reason` é normalizado com `strip`; vazio/apenas espaços responde
+  `422 reason_required` em todas as escritas administrativas.
+- A visão `GET /admin/sports` inclui formatos ativos e inativos; o catálogo
+  público continua mostrando apenas ativos.
+
+## 20. Quadras públicas da plataforma (v2026-11-20)
+
+- Organização seed: slug `joga-publico`, nome “JOGA — Quadras Públicas”
+  (config `JOGA_PLATFORM_ORG_SLUG`).
+- Não aparece em listagens de estabelecimentos. `platform_admin` opera nela
+  sem membership.
+- `organization_venues.is_public` distingue a quadra pública no discovery.
+- A quadra pública é reservável nesta etapa, com preço em faixa; não há quadra
+  gratuita nem `is_bookable=false`.
+- Reservas nela funcionam sem chave Pix/CNPJ de repasse, porque o próprio JOGA
+  opera a quadra.
+
+Descoberta (aditivo):
+
+```json
+{
+  "venues": [
+    {
+      "id": "uuid",
+      "organization_id": "uuid",
+      "name": "Quadra da Praia",
+      "is_public": true,
+      "covered": false,
+      "spaces_count": 1,
+      "min_price_cents": 12000
+    }
+  ]
+}
+```
+
+`GET /discovery/bookable-venues/{id}` também expõe `is_public`.
+
+Administração:
+
+```http
+GET   /api/v1/admin/venues?active=&page=1&page_size=20
+GET   /api/v1/admin/venues/{id}
+GET   /api/v1/admin/venues/{id}/spaces
+POST  /api/v1/admin/venues
+PATCH /api/v1/admin/venues/{id}
+POST  /api/v1/admin/venues/{id}/activate
+POST  /api/v1/admin/venues/{id}/deactivate
+POST  /api/v1/admin/venues/{id}/spaces
+PATCH /api/v1/admin/venues/{id}/spaces/{space_id}
+GET   /api/v1/admin/venues/{id}/availability?space_id=
+POST  /api/v1/admin/venues/{id}/availability
+PATCH /api/v1/admin/venues/{id}/availability/{availability_id}
+DELETE /api/v1/admin/venues/{id}/availability/{availability_id}?space_id=&reason=
+GET   /api/v1/admin/venues/{id}/business-hours
+POST  /api/v1/admin/venues/{id}/business-hours
+PATCH /api/v1/admin/venues/{id}/business-hours/{business_hour_id}
+DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
+```
+
+- A lista `GET /admin/venues` devolve `spaces_count`.
+- `GET /admin/venues/{id}` devolve a quadra com `spaces[]`.
+- `GET /admin/venues/{id}/spaces` lista espaços para edição.
+- `GET .../availability` exige `?space_id=` (o painel deve enviar o espaço
+  selecionado).
+
+- `POST /admin/venues` aceita `name`, `city`, `state`, `address_line`,
+  `postal_code`, `latitude`, `longitude`, `is_public` (default `true`) e
+  `reason`; nasce `inactive`.
+- Com CEP e sem coordenada, o backend geocodifica via BrasilAPI e grava
+  `geocoding_source`/`geocoding_precision`.
+- `activate` exige nome, cidade/UF, coordenada, ao menos um espaço ativo com
+  modalidade e formato, disponibilidade semanal e preço em faixa válida.
+- Sem coordenada: `409 geocoding_required`.
+- Sem preço para o `team_size`: `422 pricing_not_configured`, sugerindo os
+  valores via `GET /admin/pricing/suggest`.
+- Demais pendências operacionais: `409 venue_not_publishable`.
+- `deactivate` remove da descoberta e preserva espaços, agenda e histórico.
+- Espaço administrativo aceita `name`, `description`, `is_covered`, `sport_id`,
+  `format_id`, `price_cents`, `status` e `reason`.
+- **Fonte de preço:** `venue_spaces.price_cents` é o preço de **publicação**;
+  `venue_availability.price_cents` é o preço efetivo da **reserva**. Em espaço
+  público os dois precisam ser iguais. Editar o preço do espaço sincroniza as
+  janelas existentes; criar/editar janela com preço divergente responde
+  `422 invalid_input`, e publicar com divergência responde
+  `422 pricing_not_configured`.
+- `venue_spaces.format_id` define o formato de publicação; a reserva continua
+  usando a modalidade vinculada (`VenueSport`) e a janela de disponibilidade.
+  Endpoints antigos de organização ignoram esses campos administrativos.
+- Disponibilidade e expediente reutilizam o contrato da organização; toda
+  escrita exige `reason` normalizado e grava auditoria append-only com
+  `ip_hash`.
+
+## 21. Códigos de erro estáveis (v2026-11-20)
+
+| Código | HTTP | Origem |
+|---|---:|---|
+| `invalid_visual_item` | 400 | Item inexistente, inativo ou de outro tipo |
+| `visual_item_locked` | 400 | Item de XP/passe não desbloqueado |
+| `invalid_sport` | 400 | Esporte/formato inválido |
+| `invalid_sport_icon` | 400 | Ícone fora do catálogo visual ativo |
+| `sport_slug_conflict` | 409 | Slug duplicado |
+| `sport_not_publishable` | 409 | Sem formato ativo ou sem preço completo |
+| `sport_not_found` | 404 | Slug inexistente |
+| `pricing_mode_required` | 422 | Formato fora de 3/5/6 sem modo explícito |
+| `invalid_pricing_mode` | 422 | Modo/tamanho inválido |
+| `band_not_found` | 404 | Faixa ativa inexistente |
+| `ticket_floor_violation` | 409 | Override abaixo do piso/invariante |
+| `reason_required` | 422 | Escrita administrativa sem motivo |
+| `invalid_user` | 400 | Parâmetros de usuário inválidos |
+| `user_not_found` | 404 | Usuário inexistente |
+| `email_already_registered` | 409 | E-mail em uso |
+| `email_unchanged` | 409 | Novo e-mail igual ao atual |
+| `weak_password` | 400 | Senha fora da política |
+| `invalid_email` | 400 | Endereço inválido |
+| `ticket_purchase_disabled` | 503 | Compra desligada por flag |
+| `format_in_use` | 409 | `team_size` imutável por uso histórico |
+| `format_not_found` | 404 | Formato inexistente no esporte |
+| `format_slug_conflict` | 409 | Slug de formato já usado no esporte |
+| `invalid_format` | 400 | Campos de formato inválidos |
+| `pricing_not_configured` | 422 | Faixa/célula de preço ausente |
+| `venue_not_publishable` | 409 | Quadra sem dados operacionais mínimos |
+| `geocoding_required` | 409 | Quadra sem coordenada publicável |
+| `geocoding_unavailable` | 503 | Provedor de CEP indisponível |
+| `invalid_postal_code` | 400 | CEP inválido |
+| `invalid_space` | 400 | Modalidade/formato/preço do espaço inválido |
+| `platform_organization_missing` | 503 | Seed da organização da plataforma ausente |
+| `forbidden` | 403 | Sem `platform.admin` ou sem vínculo exigido |
+| `invalid_token` | 401 | Sessão ausente/expirada/revogada |
+
+`reason` ausente no corpo é `422 validation_error`; `reason` apenas com espaços
+é `422 reason_required`.

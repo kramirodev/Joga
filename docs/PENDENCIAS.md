@@ -50,7 +50,7 @@ Este arquivo consolida o que ficou aberto após as Fases 11–17, com a 14D como
 | Provedor de geocoding de produção | 13F | BrasilAPI atende a Fase 1; Nominatim/Google e orçamento ainda não decididos |
 | Precisão da coordenada da BrasilAPI | 13F | Coordenadas de bairro são rotuladas como `street`; CEPs vizinhos podem receber o mesmo ponto | Avaliar `approximate` ou provedor por endereço |
 | Fallback de CEP/geocoding | 13F | BrasilAPI agrega Correios/ViaCEP/WideNet e devolve 404/504 quando todos falham; não há segundo provedor | Decidir ViaCEP (endereço) e Nominatim (coordenada) |
-| Catálogo de avatares | 17 | Decisão registrada; implementação pendente |
+| Catálogo de identidade por ícones | 17 | Decisão registrada; implementação pendente |
 | Kit da partida | 5/6/13 | Decisão registrada: **não bloqueia o lobby**; itens fixos são do estabelecimento. Implementação pendente |
 | Catálogo definitivo de equipamento | 13/17 | Pendente; catálogo inicial (bola/rede) definido na ADR 0030 |
 | Redirecionamento de quadra em recusa/expiração | 14B | Pendente |

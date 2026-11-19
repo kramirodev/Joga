@@ -125,6 +125,7 @@ class VenueCard:
     latitude: float | None
     longitude: float | None
     timezone: str
+    is_public: bool
     covered: bool
     spaces_count: int
     min_price_cents: int
@@ -151,6 +152,7 @@ class VenueDetail:
     latitude: float | None
     longitude: float | None
     timezone: str
+    is_public: bool
     photos: tuple[PhotoOption, ...]
     spaces: tuple[SpaceOption, ...]
 
@@ -220,6 +222,7 @@ class VenueDiscoveryService:
                     latitude=self._round_coordinate(venue.latitude),
                     longitude=self._round_coordinate(venue.longitude),
                     timezone=venue.timezone,
+                    is_public=venue.is_public,
                     covered=any(space.is_covered for space in spaces),
                     spaces_count=len(spaces),
                     min_price_cents=min(prices),
@@ -297,6 +300,7 @@ class VenueDiscoveryService:
             latitude=self._round_coordinate(venue.latitude),
             longitude=self._round_coordinate(venue.longitude),
             timezone=venue.timezone,
+            is_public=venue.is_public,
             photos=tuple(self._photos(venue.id)),
             spaces=tuple(space_options),
         )

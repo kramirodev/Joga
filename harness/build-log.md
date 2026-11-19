@@ -1641,3 +1641,31 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   de rede, sem expor código ou status ao jogador.
 - **Descoberta:** quadras com `is_public=true` exibem "Quadra pública" na lista
   e "Quadra da plataforma JOGA" no detalhe, sem alterar o fluxo de reserva.
+
+### 2026-11-19 - Backend da plataforma: catálogo visual, admin e quadras públicas
+
+- **Escopo:** catálogo visual e endpoint público de esportes (`/catalog/sports`);
+  administração de usuários, esportes, formatos e preço sugerido por
+  `platform.admin` (allowlist `JOGA_PLATFORM_ADMINS`); organização da plataforma
+  e quadras públicas (`JOGA_PLATFORM_ORG_SLUG`, `organization_venues.is_public`,
+  `venue_spaces.format_id`/`price_cents`); compra de ingressos desligada por
+  padrão (`JOGA_TICKET_PURCHASE_ENABLED=false`, `503 ticket_purchase_disabled`).
+- **Migrações:** `z9c0d1e2f3a4` (catálogo visual, esportes administráveis,
+  preço automático) e `b1c2d3e4f5a6` (quadras públicas da plataforma);
+  `a0b1c2d3e4f5` reancorada em `z9c0d1e2f3a4`. Head único:
+  `b1c2d3e4f5a6`.
+- **Gates locais (2026-11-19):** `pytest -q -o addopts=""` 778 passed,
+  35 skipped; `tests/test_catalog_migration.py` + `tests/test_public_venues.py`
+  com `JOGA_TEST_DATABASE_URL` 9 passed; `ruff check .` limpo;
+  `ruff format --check .` 418 arquivos; `mypy app` 206 arquivos;
+  `alembic heads` `b1c2d3e4f5a6`; `alembic check` em banco novo sem
+  operações pendentes.
+- **Correção de ambiente:** o teste de migração fixa
+  `SET search_path TO <schema>, public, extensions`, porque o CI instala o
+  PostGIS no schema `extensions`; sem isso o índice GiST de `venues`
+  (`ST_MakePoint`) falha com `UndefinedFunction`.
+- **Risco aberto:** `payout_ready` libera a organização da plataforma sem
+  chave Pix/CNPJ. O repasse do valor de uma quadra pública ainda não tem ADR
+  (prevista para a 14B); até lá, o fluxo é operado pela plataforma.
+- **Handoff:** contrato `docs/CONTRATO_RESERVAS_APP.md` v2026-11-20 para o app
+  mobile e para o painel; o painel atual ainda usa o contrato anterior.

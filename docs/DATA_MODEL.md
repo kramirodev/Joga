@@ -56,10 +56,13 @@
 | `user_regions` | Região aproximada e coordenada arredondada |
 | `venues` | Locais descobertos, geografia e endereço |
 | `postal_code_cache` | Cache de CEP/geocoding com TTL e proveniência |
+| `visual_catalog_items` | Catálogo fechado e versionado de identidade visual (ícone, moldura, cor, entrada, emote e badge) |
+| `user_visual_identity` | Seis slots equipados pelo jogador e versão do catálogo |
+| `user_visual_unlocks` | Desbloqueio explícito de item não gratuito |
 
 **Constraints relevantes:** coordenadas validadas; raio máximo; CEP normalizado; cache por CEP+número+versão do provedor. Em `user_profiles`, `cpf_ciphertext`, `cpf_key_id` e `cpf_last2` são todos nulos ou todos preenchidos (`cpf_present_consistent` desde `q1b2c3d4e5f6`); o texto claro do CPF nunca é persistido.
 
-**Lacunas conhecidas:** não há `user_avatars`; o avatar é decisão de catálogo ainda não implementada. `sport_equipment_requirements` não existe.
+**Lacunas conhecidas:** a identidade por ícones está implementada em `visual_catalog_items`, `user_visual_identity` e `user_visual_unlocks`; falta o catálogo de arte final. `sport_equipment_requirements` não existe.
 
 ---
 

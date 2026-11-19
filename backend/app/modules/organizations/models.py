@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -44,6 +45,10 @@ class Organization(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str | None] = mapped_column(String(60), nullable=True, unique=True)
+    is_platform: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
@@ -157,6 +162,9 @@ class OrganizationVenue(Base):
         nullable=False,
         default="America/Sao_Paulo",
         server_default=text("'America/Sao_Paulo'"),
+    )
+    is_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
