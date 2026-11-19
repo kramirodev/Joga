@@ -1592,3 +1592,32 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   rate limit nem integridade; headers são falsificáveis.
 - **Pendente:** gerar/distribuir o APK 1.0.1 e validar a cerimônia de passkey
   nesse build.
+
+
+### 2026-11-19 - Identidade visual, splash e Selawik
+
+- **Escopo:** assets de marca, splash/loader contínuos em `#0F1214`, ícone
+  adaptativo "J.", favicon e Selawik no mobile e no painel.
+- **Assets:** wordmark em `mobile/assets/brand/JOGA-wordmark.png` (687x183) e
+  cópia em `web/public/brand/`; `icon.png`, foreground/background/monochrome,
+  `splash-icon.png` (1024) e favicon PNG/SVG; `JOGA.png` removido da raiz.
+- **Config:** `app.json` com `backgroundColor` e splash `#0F1214`,
+  `imageWidth: 220`; `expo-font` + `expo-splash-screen`; status bar claro no
+  loader. Wordmark do splash a 920/1024 (~5% de margem) e guarda de 9 s para
+  esconder o splash mesmo sem `app.ready`.
+- **Rede:** `api/client.ts` ganhou `AbortController` com timeout de 15 s por
+  requisição; refresh pendurado não prende mais o splash.
+- **Loader:** `src/ui/BrandLoader.tsx` com cross-fade `#0F1214` <-> `#2A1214`
+  em 10 s e fundo estático com redução de movimento.
+- **Tipografia:** Selawik OFL 1.1 em `mobile/assets/fonts/` e
+  `web/public/fonts/`, mapa 400/600/700-900; licença incluída.
+- **Painel:** favicon SVG com fundo `#0F1214` arredondado, fallback PNG,
+  `theme-color #0F1214`, `@font-face` self-host e remoção de Inter da stack.
+  O `icon.png` não versionado da raiz foi removido.
+- **Gates:** mobile tsc, eslint, Prettier, `expo install --check` e
+  `expo export --platform android` verdes. Web: `tsc`, `eslint`, `vite build` e
+  CSP verdes; Prettier dos arquivos de marca verde, com 6 arquivos admin ainda
+  pendentes; `vitest` 145/152, com 7 falhas em `AdminSportsPage`/`AdminUsersPage`
+  sob trabalho concorrente, fora deste escopo.
+- **Pendente:** validar o splash em build de release em dispositivo Android/iOS
+  e conferir a máscara do launcher no aparelho.
