@@ -74,7 +74,7 @@
 | Reembolso após repasse | Estornar reserva já concluída/liberada | `VENUE_RELEASE` existe; `REVERSED` não é usado | P0: reverter/bloquear repasse |
 | Cobrança dupla Pix + crédito | Pagar a vaga por Pix e depois quitá-la com crédito | — | P0: bloquear quitação se a vaga já estiver paga |
 | Perda de crédito no T3 | Expirar reserva sem devolver crédito consumido | — | P0: devolver no T3 |
-| Abuso de identidade visual | Foto de terceiro, avatar ofensivo, impersonação | sem fotos de pessoas; avatar de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
+| Abuso de identidade visual | Foto de terceiro, ícone de perfil ofensivo, impersonação | sem fotos de pessoas; identidade de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
 | Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, CSP estrita no build | `JOGA_WEB_COOKIE_SECURE` sem validação obrigatória no boot; `frame-ancestors`/HSTS na hospedagem; revisão dedicada de XSS pendente |
 
 ## Controles transversais
@@ -107,7 +107,7 @@
 - **Médio:** push real e SMS dependem de provedor/credenciais.
 - **Médio:** cabeçalhos de segurança da hospedagem do painel (`frame-ancestors`, HSTS, `Permissions-Policy`) ainda não configurados; `JOGA_WEB_COOKIE_SECURE` não tem validação obrigatória no boot.
 - **Médio:** moderação de chat e denúncias têm backend/painel, mas o classificador local e a suspensão permanente não existem.
-- **Médio:** catálogo de avatares e moderação de nome/avatar pendentes.
+- **Médio:** catálogo de identidade por ícones e moderação de nome/ícone de perfil pendentes.
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pendentes.
 - **Médio:** storage de fotos é local; provedor de produção, criptografia, backup e limpeza de órfãos não definidos.
 - **Médio:** T2 comercial implementado; validar feriados, fusos e fechamentos.

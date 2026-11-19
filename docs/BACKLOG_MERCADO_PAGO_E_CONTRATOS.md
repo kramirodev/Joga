@@ -35,7 +35,7 @@ recebedor automático; repasse continua ledger/manual conforme ADR 0040.
 | C-04 | T3 por estabelecimento (`booking_t3_minutes`) | Pendente (P2) |
 | C-05 | Exportação financeira CSV por organização | Pendente (P2) |
 | C-06 | Revisão independente de fotos (fila e decisão) | Pendente (P2) |
-| C-07 | Catálogo de avatares e inventário | Pendente (P2) |
+| C-07 | Catálogo de identidade por ícones e inventário | Pendente (P2) |
 | C-08 | Kit da partida no lobby | Pendente (P3) |
 | C-09 | Painel B2B de ocupação | Pendente (P3) |
 
