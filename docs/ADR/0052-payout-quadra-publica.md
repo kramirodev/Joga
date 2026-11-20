@@ -1,8 +1,8 @@
-# ADR 0053 — Destino financeiro da quadra pública
+# ADR 0052 — Destino financeiro da quadra pública
 
-- **Numeração:** esta ADR ocupa o número **0053** porque o **0052** foi ocupado
-  pela ADR “Modo demo sem PSP e sem dinheiro real”, criada no mesmo dia. A
-  numeração foi conferida em `docs/ADR/` antes da entrega.
+- **Numeração:** esta ADR ocupa o número **0052**. A ADR “Modo demo sem PSP e
+  sem dinheiro real” ocupa o **0053**, conforme a numeração acordada entre as
+  duas entregas. A numeração foi conferida em `docs/ADR/`.
 - **Status:** Aprovado como direção em 2026-11-20. Implementação pendente na 14B
   (backend/PSP) e na 15B (painel). **Bloqueado para dinheiro real** até a 14B, a
   19A e os pareceres da ADR 0049.
