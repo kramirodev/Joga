@@ -36,6 +36,14 @@ export type ThemeValue = {
   setDark: (value: boolean) => void;
   fontScale: number;
   largeTargets: boolean;
+  /**
+   * Espaço que o conteúdo precisa reservar no rodapé para não ficar sob a barra
+   * de navegação do sistema. Calculado uma única vez no `Shell`:
+   * `0` quando a tab bar está visível (ela já consome o inset) e
+   * `insets.bottom` quando não está. Telas nunca chamam `useSafeAreaInsets`
+   * diretamente; sheets/modais no nível do `Shell` usam o inset bruto.
+   */
+  contentBottomInset: number;
 };
 
 export const ThemeContext = createContext<ThemeValue>({
@@ -44,6 +52,7 @@ export const ThemeContext = createContext<ThemeValue>({
   setDark: () => undefined,
   fontScale: 1,
   largeTargets: false,
+  contentBottomInset: 0,
 });
 
 export function useTheme(): ThemeValue {
