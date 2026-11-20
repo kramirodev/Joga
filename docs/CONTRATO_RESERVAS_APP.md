@@ -1,7 +1,7 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
 **Versão:** v2026-11-20
-**Status:** contrato backend implementado em 2026-11-14; identidade visual, catálogo administrável de esportes, administração de usuários e bloqueio de compra de tickets adicionados em 2026-11-20. App mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
+**Status:** contrato backend implementado em 2026-11-14; identidade visual, catálogo administrável de esportes, administração de usuários e bloqueio de compra de tickets adicionados em 2026-11-20. App mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas. A gratuidade da quadra pública (ADR 0055) e a enquete de escolha de quadra (ADR 0056) estão registradas aqui como **design a implementar**.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
 
 ## 0. Preço, tickets e NFS-e (ADR 0049)
@@ -15,6 +15,7 @@
 - O ticket é calibrado em R$ 3,10, mas **não é convertido em real no consumo**. No caminho por tickets, o ledger debita `k × 310`, credita a quadra com `space_charge_cents` e o restante em `fee_revenue`.
 - O preço pago no pacote é caixa e vira `player_credit`; não existe conta de prêmio nem desconto. O excedente do pacote acima de R$ 3,10 fica como crédito (passivo).
 - `band_code`/`tickets_per_seat` são a unidade de consumo/exibição; o preço jurídico continua sendo valor da quadra + taxa.
+- **Exceção — quadra pública:** a quadra pública é **gratuita** (ADR 0055). Não tem valor de espaço, taxa, faixa, contagem de tickets, cobrança nem repasse; a reserva registra `venue_price_cents = 0`, `fee_cents = 0` e `total_cents = 0`, sem lançamento no ledger. **A implementar.**
 - **Atenção:** em `BookingView.payments[]`, `participant_id` é o id da **vaga** (`booking_participants`), não o `user_id`. O app deve localizar o pagamento pelo participante correspondente, não comparar com `session.userId`.
 
 ## 1. Descobrir quadras reserváveis
@@ -1345,10 +1346,17 @@ POST  /api/v1/admin/sports/{slug}/formats/{format_id}/deactivate
 - Não aparece em listagens de estabelecimentos. `platform_admin` opera nela
   sem membership.
 - `organization_venues.is_public` distingue a quadra pública no discovery.
-- A quadra pública é reservável nesta etapa, com preço em faixa; não há quadra
-  gratuita nem `is_bookable=false`.
+- A quadra pública é reservável e **gratuita** (ADR 0055): sem preço de espaço,
+  taxa, faixa ou consumo de ticket. A reserva registra `venue_price_cents = 0`,
+  `fee_cents = 0` e `total_cents = 0`, com `band_code = null`, e não gera
+  lançamento no ledger. **A implementar.**
 - Reservas nela funcionam sem chave Pix/CNPJ de repasse, porque o próprio JOGA
-  opera a quadra.
+  opera a quadra; não há cobrança, receita de quadra pública nem repasse.
+- O app deve exibir “Grátis” e não abrir etapa de pagamento; o painel deve exibir
+  “Gratuita” e não mostrar faixa, preço, taxa, receita ou repasse. **A
+  implementar.**
+- Publicar quadra pública com `price_cents` maior que zero deve ser recusado, e
+  a ativação de quadra pública não exige faixa de preço. **A implementar.**
 
 Descoberta (aditivo):
 
@@ -1360,15 +1368,19 @@ Descoberta (aditivo):
       "organization_id": "uuid",
       "name": "Quadra da Praia",
       "is_public": true,
+      "is_free": true,
       "covered": false,
       "spaces_count": 1,
-      "min_price_cents": 12000
+      "min_price_cents": 0
     }
   ]
 }
 ```
 
-`GET /discovery/bookable-venues/{id}` também expõe `is_public`.
+`GET /discovery/bookable-venues/{id}` também expõe `is_public`. O campo aditivo
+`is_free` e o valor `0` em `min_price_cents` para quadra pública estão **a
+implementar** (ADR 0055). Em quadra privada, `min_price_cents` continua sendo o
+menor preço publicado.
 
 Administração:
 
@@ -1406,7 +1418,9 @@ DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
 - Com CEP e sem coordenada, o backend geocodifica via BrasilAPI e grava
   `geocoding_source`/`geocoding_precision`.
 - `activate` exige nome, cidade/UF, coordenada, ao menos um espaço ativo com
-  modalidade e formato, disponibilidade semanal e preço em faixa válida.
+  modalidade e formato, disponibilidade semanal e preço em faixa válida. Em
+  quadra pública, não exige faixa: o espaço deve estar com `price_cents = 0` e a
+  janela com o mesmo valor. **A implementar** (ADR 0055).
 - Sem coordenada: `409 geocoding_required`.
 - Sem preço para o `team_size`: `422 pricing_not_configured`, sugerindo os
   valores via `GET /admin/pricing/suggest`.
@@ -1416,9 +1430,10 @@ DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
   `format_id`, `price_cents`, `status` e `reason`.
 - **Fonte de preço:** `venue_spaces.price_cents` é o preço de **publicação**;
   `venue_availability.price_cents` é o preço efetivo da **reserva**. Em espaço
-  público os dois precisam ser iguais. Editar o preço do espaço sincroniza as
-  janelas existentes; criar/editar janela com preço divergente responde
-  `422 invalid_input`, e publicar com divergência responde
+  público os dois devem ser `0`; publicar ou editar com valor maior que zero
+  deve ser recusado. **A implementar** (ADR 0055). Editar o preço do espaço
+  sincroniza as janelas existentes; criar/editar janela com preço divergente
+  responde `422 invalid_input`, e publicar com divergência responde
   `422 pricing_not_configured`.
 - `venue_spaces.format_id` define o formato de publicação; a reserva continua
   usando a modalidade vinculada (`VenueSport`) e a janela de disponibilidade.
