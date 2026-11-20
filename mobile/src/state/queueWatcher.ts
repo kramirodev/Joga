@@ -1,33 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
-const QUEUE_POLL_MS = 5000;
+import { nextPollDelay } from './queueState';
 
-let owner: symbol | null = null;
-let timer: ReturnType<typeof setInterval> | null = null;
-let appSub: { remove(): void } | null = null;
-let pollRef: (() => void) | null = null;
-
-function stopTimer() {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
-}
-
-function startTimer() {
-  if (timer || !pollRef) {
-    return;
-  }
-  timer = setInterval(() => pollRef?.(), QUEUE_POLL_MS);
-}
+const POLL_MS = 5_000;
 
 /**
- * Uma única inscrição de polling de fila para o app inteiro. Fica pausada
- * quando o app não está em primeiro plano e é removida no unmount ou quando
- * o modo da fila muda.
+ * Único poller global da fila. Ativo enquanto houver entradas `waiting`,
+ * pausado em segundo plano, com poll imediato no foreground e backoff
+ * 5 → 10 → 20 → 30 s em falha. Um dono por app (montado no `AppProvider`).
  */
-export function useQueueWatcher(poll: () => void, enabled: boolean, scope = 'default'): void {
+export function useQueueWatcher(poll: () => Promise<void>, enabled: boolean): void {
   const latest = useRef(poll);
 
   useEffect(() => {
@@ -38,34 +21,59 @@ export function useQueueWatcher(poll: () => void, enabled: boolean, scope = 'def
     if (!enabled) {
       return;
     }
-    if (owner) {
-      if (__DEV__) {
-        console.warn('useQueueWatcher: já existe um poller ativo; inscrição ignorada.');
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    let running = false;
+    let failures = 0;
+
+    const clear = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
       }
-      return;
-    }
-    const id = Symbol(`queue-watcher:${scope}`);
-    owner = id;
-    pollRef = () => latest.current();
-    appSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        startTimer();
-      } else {
-        stopTimer();
-      }
-    });
-    if (AppState.currentState !== 'background') {
-      startTimer();
-    }
-    return () => {
-      if (owner !== id) {
+    };
+
+    const schedule = (delay: number) => {
+      clear();
+      if (cancelled || AppState.currentState === 'background') {
         return;
       }
-      owner = null;
-      pollRef = null;
-      stopTimer();
-      appSub?.remove();
-      appSub = null;
+      timer = setTimeout(run, delay);
     };
-  }, [enabled, scope]);
+
+    const run = async () => {
+      if (cancelled || running) {
+        return;
+      }
+      running = true;
+      try {
+        await latest.current();
+        failures = 0;
+      } catch {
+        failures += 1;
+      } finally {
+        running = false;
+        schedule(failures === 0 ? POLL_MS : nextPollDelay(failures));
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        failures = 0;
+        void run();
+      } else {
+        clear();
+      }
+    });
+
+    if (AppState.currentState !== 'background') {
+      void run();
+    }
+
+    return () => {
+      cancelled = true;
+      clear();
+      subscription.remove();
+    };
+  }, [enabled]);
 }

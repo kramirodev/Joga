@@ -14,6 +14,7 @@ import type {
   Substitute,
 } from '../api/types';
 import { useApp } from '../state/app';
+import { lobbyIdFromQueue } from '../state/queueState';
 import { useNav, useTheme, type Params } from '../state/context';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { IdentityBadge } from '../ui/IdentityBadge';
@@ -685,7 +686,8 @@ function VenueDetail() {
 
 function BookingRequest() {
   const nav = useNav();
-  const { session, matches, queue, loadBookings, email, emailReady, wallet } = useApp();
+  const { session, matches, queue, matchedEntry, loadBookings, email, emailReady, wallet } =
+    useApp();
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const venueId = typeof nav.params.venueId === 'string' ? nav.params.venueId : null;
@@ -704,7 +706,7 @@ function BookingRequest() {
   const lobbyId =
     (typeof nav.params.lobbyId === 'string' && nav.params.lobbyId) ||
     matches.find((match) => match.lobby_id)?.lobby_id ||
-    queue?.lobby?.id ||
+    lobbyIdFromQueue(queue, matchedEntry) ||
     null;
 
   if (!venueId || !spaceId || !startsAt || !endsAt) {

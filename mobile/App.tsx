@@ -55,6 +55,7 @@ import {
 } from './src/ui/kit';
 import { shortDateTime } from './src/ui/datetime';
 import { BrandLoader } from './src/ui/BrandLoader';
+import { QueueIndicator } from './src/ui/QueueIndicator';
 import { dark, light } from './src/ui/theme';
 import { Icon } from './src/ui/icons';
 
@@ -799,6 +800,12 @@ function Shell() {
   const screen = REGISTRY[current.id] ?? REGISTRY.welcome;
   const showTabBar = !app.suspended && signedIn && !!screen.tab;
   const canGoBack = stack.length > 1 && !app.suspended;
+  const showQueueIndicator =
+    !app.suspended &&
+    signedIn &&
+    current.id !== 'queue' &&
+    current.id !== 'queue-search' &&
+    (app.queue.length > 0 || app.matchedEntry !== null || app.queueNotice !== null);
   const toastBottom = (showTabBar ? 80 : 20) + insets.bottom;
 
   const [anim] = useState(() => new Animated.Value(1));
@@ -1076,6 +1083,9 @@ function Shell() {
                 })
               )}
             </View>
+            {showQueueIndicator ? (
+              <QueueIndicator bottomInset={showTabBar ? 0 : insets.bottom} />
+            ) : null}
             {showTabBar ? (
               <TabBar tab={tab} onSelect={nav.tabTo} bottomInset={insets.bottom} />
             ) : null}

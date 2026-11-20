@@ -1,6 +1,6 @@
-export type QueueMode = 'casual' | 'ranked';
+import type { QueueCourtPreference, QueueMode } from '../api/types';
 
-export type QueueCourtPreference = 'PUBLIC_ONLY' | 'PRIVATE_ONLY' | 'ANY';
+export type { QueueCourtPreference, QueueMode };
 
 export type QueueIntent = {
   mode: QueueMode;

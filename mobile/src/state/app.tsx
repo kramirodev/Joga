@@ -8,7 +8,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
-import { Appearance } from 'react-native';
+import { AppState, Appearance } from 'react-native';
 
 import {
   api,
@@ -45,7 +45,9 @@ import type {
   PassSubscription,
   Profile,
   Progress,
+  QueueCourtPreference,
   QueueEntry,
+  QueueMode,
   Sport,
   Stats,
   TicketPack,
@@ -63,6 +65,24 @@ import {
   type Session,
 } from '../session';
 import { DEFAULT_IDENTITY, LOCAL_VISUAL_CATALOG, normalizeIdentity } from '../ui/identity';
+import {
+  applyNetworkFailure,
+  buildSelection,
+  cancelOutcome,
+  emptySnapshot,
+  formatLabelFromCatalog,
+  isExpired,
+  isNetworkFailure,
+  isStaleRevision,
+  reconcileEntries,
+  selectionError,
+  snapshotCoversSelection,
+  snapshotFromEntries,
+  type QueueCancelOutcome,
+  type QueueReplaceOutcome,
+  type QueueSnapshot,
+} from './queueState';
+import { useQueueWatcher } from './queueWatcher';
 
 export type OnboardingState = {
   formats: string[];
@@ -99,7 +119,12 @@ type AppValue = {
   badges: Badge[];
   missions: Mission[];
   matches: MatchSummary[];
-  queue: QueueEntry | null;
+  /** Entradas `waiting` confirmadas pelo servidor (contrato 0057). */
+  queue: QueueEntry[];
+  /** Entrada `matched` devolvida no campo legado `entry`. */
+  matchedEntry: QueueEntry | null;
+  queueReconnecting: boolean;
+  queueNotice: string | null;
   ratings: Record<string, MyRating>;
   packs: TicketPack[];
   pass: PassSubscription | null;
@@ -132,13 +157,20 @@ type AppValue = {
   setPass: (pass: PassSubscription | null) => void;
   setClan: (clan: Clan | null) => void;
   setMatches: (matches: MatchSummary[]) => void;
-  setQueue: (queue: QueueEntry | null) => void;
+  setQueue: (entries: QueueEntry[], matched?: QueueEntry | null) => void;
   loadCatalog: () => Promise<Sport[]>;
   loadProfile: () => Promise<Profile | null>;
   loadWallet: () => Promise<Wallet | null>;
   loadSeason: () => Promise<void>;
   loadMatches: () => Promise<MatchSummary[]>;
-  loadQueue: () => Promise<QueueEntry | null>;
+  loadQueue: () => Promise<QueueSnapshot | null>;
+  replaceQueue: (
+    formats: string[],
+    modes: QueueMode[],
+    courtPreference?: QueueCourtPreference,
+  ) => Promise<QueueReplaceOutcome>;
+  cancelQueue: () => Promise<QueueCancelOutcome>;
+  clearQueueNotice: () => void;
   loadStore: () => Promise<void>;
   loadPass: () => Promise<void>;
   loadSocial: () => Promise<void>;
@@ -200,7 +232,10 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [badges, setBadges] = useState<Badge[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
-  const [queue, setQueue] = useState<QueueEntry | null>(null);
+  const [queue, setQueueState] = useState<QueueEntry[]>([]);
+  const [matchedEntry, setMatchedEntry] = useState<QueueEntry | null>(null);
+  const [queueReconnecting, setQueueReconnecting] = useState(false);
+  const [queueNotice, setQueueNotice] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<string, MyRating>>({});
   const [packs, setPacks] = useState<TicketPack[]>([]);
   const [pass, setPass] = useState<PassSubscription | null>(null);
@@ -227,8 +262,215 @@ export function AppProvider({ children }: PropsWithChildren) {
     useState<AccessibilityPreferences>(defaultAccessibility);
   const [visual, setVisual] = useState<VisualIdentity>(DEFAULT_IDENTITY);
   const [visualCatalog, setVisualCatalog] = useState<VisualCatalog>(LOCAL_VISUAL_CATALOG);
+  const queueSnapshotRef = useRef<QueueSnapshot>(emptySnapshot());
+  const queueRevisionRef = useRef(0);
 
   const token = session?.accessToken ?? null;
+
+  /**
+   * Ponto único de aplicação do estado da fila. A UI nunca deriva entradas da
+   * seleção local: só deste snapshot vindo do servidor.
+   */
+  const commitQueueSnapshot = useCallback(
+    (snapshot: QueueSnapshot, announceExpired = false) => {
+      const previous = queueSnapshotRef.current;
+      const present = new Set(snapshot.entries.map((entry) => entry.id));
+      if (snapshot.matched) {
+        present.add(snapshot.matched.id);
+      }
+      const vanished = previous.entries.filter(
+        (entry) => !present.has(entry.id) && isExpired(entry, Date.now()),
+      );
+      const expired = [...snapshot.expired, ...vanished].filter(
+        (entry, index, all) => all.findIndex((item) => item.id === entry.id) === index,
+      );
+      if (announceExpired && expired.length > 0) {
+        const names = Array.from(
+          new Set(expired.map((entry) => formatLabelFromCatalog(catalog, entry.format_id))),
+        );
+        setQueueNotice(
+          names.length === 1
+            ? `Sua busca por ${names[0]} expirou. Você pode buscar de novo quando quiser.`
+            : `${names.length} buscas expiraram. Você pode buscar de novo quando quiser.`,
+        );
+      }
+      queueSnapshotRef.current = snapshot;
+      setQueueState(snapshot.entries);
+      setMatchedEntry(snapshot.matched);
+    },
+    [catalog],
+  );
+
+  const setQueue = useCallback(
+    (entries: QueueEntry[], matched: QueueEntry | null = null) => {
+      queueRevisionRef.current += 1;
+      commitQueueSnapshot(snapshotFromEntries(entries, matched));
+    },
+    [commitQueueSnapshot],
+  );
+
+  const loadQueue = useCallback(async (): Promise<QueueSnapshot | null> => {
+    if (!token) {
+      commitQueueSnapshot(emptySnapshot());
+      return null;
+    }
+    const revision = queueRevisionRef.current;
+    const response = await api.queue.state(token);
+    // Uma resposta de poll iniciada antes de `PUT`/`DELETE` não pode repor
+    // entradas antigas nem reabrir a busca.
+    if (isStaleRevision(revision, queueRevisionRef.current)) {
+      return queueSnapshotRef.current;
+    }
+    const snapshot = reconcileEntries(response, Date.now());
+    commitQueueSnapshot(snapshot, true);
+    return snapshot;
+  }, [token, commitQueueSnapshot]);
+
+  const replaceQueue = useCallback(
+    async (
+      formats: string[],
+      modes: QueueMode[],
+      courtPreference: QueueCourtPreference = 'ANY',
+    ): Promise<QueueReplaceOutcome> => {
+      if (!token) {
+        return {
+          ok: false,
+          code: 'unauthenticated',
+          snapshot: queueSnapshotRef.current,
+          reconciled: false,
+        };
+      }
+      const selection = buildSelection(formats, modes);
+      if (selectionError(selection)) {
+        return {
+          ok: false,
+          code: 'invalid_selection',
+          snapshot: queueSnapshotRef.current,
+          reconciled: false,
+        };
+      }
+      queueRevisionRef.current += 1;
+      const revision = queueRevisionRef.current;
+      setQueueNotice(null);
+      try {
+        // Uma única chamada atômica com todos os formatos e modos.
+        const response = await api.queue.replace(token, {
+          formats: selection.formats,
+          modes: selection.modes,
+          court_preference: courtPreference,
+        });
+        const snapshot = reconcileEntries(response, Date.now());
+        if (revision === queueRevisionRef.current) {
+          commitQueueSnapshot(snapshot);
+        }
+        // Invalida GETs que começaram durante o PUT: eles podem trazer o
+        // estado antigo e não podem repor a fila depois da substituição.
+        queueRevisionRef.current += 1;
+        return { ok: true, snapshot, reconciled: false };
+      } catch (caught) {
+        const apiError = caught instanceof ApiError ? caught : null;
+        const code = apiError?.code ?? 'request_failed';
+        const networkFailure = isNetworkFailure(apiError?.status ?? 0, code);
+        if (networkFailure) {
+          // O PUT pode ter commitado; nunca desfazemos no cliente. Relemos.
+          try {
+            const reloaded = await api.queue.state(token);
+            if (isStaleRevision(revision, queueRevisionRef.current)) {
+              return {
+                ok: false,
+                code,
+                snapshot: queueSnapshotRef.current,
+                reconciled: true,
+              };
+            }
+            const outcome = applyNetworkFailure(queueSnapshotRef.current, reloaded, Date.now());
+            commitQueueSnapshot(outcome.snapshot);
+            queueRevisionRef.current += 1;
+            if (snapshotCoversSelection(outcome.snapshot, selection)) {
+              return { ok: true, snapshot: outcome.snapshot, reconciled: true };
+            }
+            return {
+              ok: false,
+              code,
+              snapshot: outcome.snapshot,
+              reconciled: outcome.reconciled,
+            };
+          } catch {
+            return {
+              ok: false,
+              code,
+              snapshot: queueSnapshotRef.current,
+              reconciled: false,
+            };
+          }
+        }
+        // 4xx: o backend valida tudo antes de escrever; a seleção anterior
+        // permanece. Não limpamos a lista exibida.
+        return {
+          ok: false,
+          code,
+          snapshot: queueSnapshotRef.current,
+          reconciled: false,
+        };
+      }
+    },
+    [token, commitQueueSnapshot],
+  );
+
+  const cancelQueue = useCallback(async (): Promise<QueueCancelOutcome> => {
+    if (!token) {
+      return {
+        ok: false,
+        cleared: false,
+        code: 'unauthenticated',
+        snapshot: queueSnapshotRef.current,
+      };
+    }
+    queueRevisionRef.current += 1;
+    const revision = queueRevisionRef.current;
+    try {
+      await api.queue.leave(token);
+      const empty = emptySnapshot();
+      if (revision === queueRevisionRef.current) {
+        commitQueueSnapshot(empty);
+      }
+      // GETs iniciados durante o DELETE não podem repor entradas canceladas.
+      queueRevisionRef.current += 1;
+      const confirmRevision = queueRevisionRef.current;
+      setQueueNotice(null);
+      // Confirmação best-effort: se falhar, o 204 já é a verdade.
+      try {
+        const response = await api.queue.state(token);
+        if (confirmRevision === queueRevisionRef.current) {
+          commitQueueSnapshot(reconcileEntries(response, Date.now()));
+        }
+      } catch {
+        // Mantém o estado vazio confirmado pelo DELETE.
+      }
+      return { ok: true, cleared: true, code: null, snapshot: empty };
+    } catch (caught) {
+      const apiError = caught instanceof ApiError ? caught : null;
+      const status = apiError?.status ?? 0;
+      if (cancelOutcome(status) === 'cleared') {
+        // 404 `not_queued`: já não havia fila; cancelar é idempotente.
+        const empty = emptySnapshot();
+        if (revision === queueRevisionRef.current) {
+          commitQueueSnapshot(empty);
+        }
+        queueRevisionRef.current += 1;
+        setQueueNotice(null);
+        return { ok: true, cleared: true, code: null, snapshot: empty };
+      }
+      return {
+        ok: false,
+        cleared: false,
+        code: apiError?.code ?? 'request_failed',
+        snapshot: queueSnapshotRef.current,
+      };
+    }
+  }, [token, commitQueueSnapshot]);
+
+  const clearQueueNotice = useCallback(() => setQueueNotice(null), []);
 
   const setSession = useCallback(async (tokens: Parameters<typeof saveSession>[0]) => {
     const stored = await saveSession(tokens);
@@ -255,7 +497,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     setBadges([]);
     setMissions([]);
     setMatches([]);
-    setQueue(null);
+    setQueue([], null);
     setRatings({});
     setPacks([]);
     setPass(null);
@@ -280,7 +522,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     setVisualCatalog(LOCAL_VISUAL_CATALOG);
     setAuthState(initialAuth);
     setOnboardingState(initialOnboarding);
-  }, [token]);
+  }, [token, setQueue]);
 
   const setAuth = useCallback((patch: Partial<AuthState>) => {
     setAuthState((current) => ({ ...current, ...patch }));
@@ -337,15 +579,6 @@ export function AppProvider({ children }: PropsWithChildren) {
     const result = await api.matches.list(token);
     setMatches(result.matches);
     return result.matches;
-  }, [token]);
-
-  const loadQueue = useCallback(async () => {
-    if (!token) {
-      return null;
-    }
-    const result = await api.matchmaking.state(token);
-    setQueue(result.entry);
-    return result.entry;
   }, [token]);
 
   const loadStore = useCallback(async () => {
@@ -824,6 +1057,35 @@ export function AppProvider({ children }: PropsWithChildren) {
     loadVisual().catch(() => undefined);
   }, [token, refreshCore, loadCatalog, loadVisual]);
 
+  const pollQueue = useCallback(async () => {
+    try {
+      await loadQueue();
+      setQueueReconnecting(false);
+    } catch (cause) {
+      setQueueReconnecting(true);
+      throw cause;
+    }
+  }, [loadQueue]);
+
+  // Um único poller global: ativo enquanto houver entradas `waiting`; pausa em
+  // segundo plano e faz poll imediato ao voltar. Para quando a fila zera ou
+  // quando uma entrada encontra partida.
+  useQueueWatcher(pollQueue, !!token && queue.length > 0);
+
+  useEffect(() => {
+    if (!token || queue.length > 0) {
+      return;
+    }
+    // Sem entradas ativas o watcher fica desligado; o foreground ainda
+    // reconcilia para descobrir partida encontrada/estado externo.
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        loadQueue().catch(() => undefined);
+      }
+    });
+    return () => subscription.remove();
+  }, [token, queue.length, loadQueue]);
+
   const formatForName = useCallback(
     (name: string) => {
       const target = name.toLowerCase();
@@ -879,6 +1141,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       missions,
       matches,
       queue,
+      matchedEntry,
+      queueReconnecting: queueReconnecting && queue.length > 0,
+      queueNotice,
       ratings,
       packs,
       pass,
@@ -918,6 +1183,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       loadSeason,
       loadMatches,
       loadQueue,
+      replaceQueue,
+      cancelQueue,
+      clearQueueNotice,
       loadStore,
       loadPass,
       loadSocial,
@@ -959,6 +1227,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       missions,
       matches,
       queue,
+      matchedEntry,
+      queueReconnecting,
+      queueNotice,
       ratings,
       packs,
       pass,
@@ -987,12 +1258,16 @@ export function AppProvider({ children }: PropsWithChildren) {
       setAccessibility,
       setSession,
       signOut,
+      setQueue,
       loadCatalog,
       loadProfile,
       loadWallet,
       loadSeason,
       loadMatches,
       loadQueue,
+      replaceQueue,
+      cancelQueue,
+      clearQueueNotice,
       loadStore,
       loadPass,
       loadSocial,
