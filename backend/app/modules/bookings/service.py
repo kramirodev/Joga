@@ -310,9 +310,12 @@ class BookingService:
         decision: str,
     ) -> BookingBundle:
         booking = self._lock_booking(booking_id)
+        # A confirmação é ação do jogador da vaga: a autorização vem antes de
+        # qualquer leitura de estado, para não revelar reserva e status a quem
+        # não é participante ativo (mesmo 404 do GET).
         participant = self._active_participant(booking.id, actor_user_id)
         if participant is None:
-            raise BookingForbidden
+            raise BookingNotFound
         if decision not in {"CONFIRM", "DECLINE"}:
             raise BookingInvalid
         if participant.confirmed_at is not None and decision == "CONFIRM":
@@ -708,9 +711,12 @@ class BookingService:
         """
 
         booking = self._lock_booking(booking_id)
+        # A quitação com ingressos é ação do jogador da própria vaga: a
+        # autorização vem antes de qualquer leitura de estado, para não revelar
+        # reserva e status a quem não é participante ativo (mesmo 404 do GET).
         participant = self._active_participant(booking.id, actor_user_id)
         if participant is None:
-            raise BookingForbidden
+            raise BookingNotFound
         if participant.payment_status == "PAID":
             return self._bundle(booking)
         if self._paid_payment(booking, participant) is not None:
