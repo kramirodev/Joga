@@ -173,6 +173,7 @@ def test_webhook_requires_signature_outside_local(client: TestClient, db_session
         mercado_pago_access_token=SecretStr("mp-access-token"),
         mercado_pago_webhook_secret=SecretStr("segredo"),
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        web_cookie_secure=True,
         **cpf_key_kwargs(),
     )
     api = api_client(client, db_session, settings)
