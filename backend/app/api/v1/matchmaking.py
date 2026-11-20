@@ -79,9 +79,12 @@ class QueueEntryResponse(BaseModel):
 
 class QueueStateResponse(BaseModel):
     # ``entry`` é o campo legado (última entrada waiting/matched) e continua
-    # sendo devolvido para o app atual. ``entries`` lista todas as ``waiting``.
+    # sendo devolvido para o app atual. ``entries`` lista todas as ``waiting``;
+    # ``matched`` lista as partidas encontradas ainda agendadas (lobby
+    # ``scheduled``), independentemente de o usuário ter voltado para a fila.
     entry: QueueEntryResponse | None
     entries: list[QueueEntryResponse] = Field(default_factory=list)
+    matched: list[QueueEntryResponse] = Field(default_factory=list)
 
 
 def get_matchmaking_service(
@@ -173,9 +176,11 @@ def _state_response(
 ) -> QueueStateResponse:
     entries = service.waiting_entries(user_id)
     latest = service.latest_entry(user_id)
+    matched = service.matched_entries(user_id)
     return QueueStateResponse(
         entry=_entry_response(session, latest) if latest else None,
         entries=[_entry_response(session, entry) for entry in entries],
+        matched=[_entry_response(session, entry) for entry in matched],
     )
 
 
@@ -230,7 +235,7 @@ def queue_state(
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[MatchmakingService, Depends(get_matchmaking_service)],
 ) -> QueueStateResponse:
-    """Estado atual da fila: todas as entradas aguardando, pareado ou vazio."""
+    """Estado atual da fila: entradas aguardando e partidas já encontradas."""
     return _state_response(session, service, current.user_id)
 
 

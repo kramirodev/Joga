@@ -1566,6 +1566,9 @@ Resposta `200`:
   },
   "entries": [
     { "...": "mesma forma de entry, uma por entrada waiting" }
+  ],
+  "matched": [
+    { "...": "mesma forma de entry, uma por entrada matched com lobby scheduled" }
   ]
 }
 ```
@@ -1577,11 +1580,34 @@ GET    /api/v1/matchmaking/queue
 DELETE /api/v1/matchmaking/queue
 ```
 
+Papel de cada campo na resposta `GET`/`PUT`:
+
+| Campo | Papel |
+|---|---|
+| `entry` | **Legado.** Última entrada `waiting` ou `matched` do usuário; mantido para o app antigo. |
+| `entries` | Somente entradas `waiting` (fila ativa). |
+| `matched` | Entradas `matched` com lobby `scheduled` (partidas encontradas e ainda agendadas). |
+
 - `GET` devolve `entries[]` com **todas** as entradas `waiting`, da mais recente
   para a mais antiga. O campo legado `entry` continua sendo a última entrada
   `waiting` **ou** `matched` (com `lobby` preenchido quando pareada).
+- `matched[]` devolve as entradas `status="matched"` cujo lobby está
+  `scheduled`, da mais recente para a mais antiga pelo momento do pareamento
+  (`matched_at`). É o retrato das **partidas ainda agendadas**, não o histórico:
+  lobby `cancelled` ou `completed` não aparece. Entrada `matched` sem lobby
+  (`lobby_id` nulo) também não aparece — é estado inconsistente, não uma partida
+  encontrável. O campo é independente de `entries`: voltar para a fila depois de
+  ser pareado **não** remove a partida agendada da resposta.
+- `expires_at` de uma entrada `matched` **não** é usado como filtro. Esse prazo
+  é o TTL da fila `waiting`; depois do pareamento, o ciclo de vida é do
+  lobby/partida e o horário combinado pode ser posterior ao TTL original. O app
+  deve usar `lobby` (`scheduled_start_at`/`scheduled_end_at`) para decidir o que
+  exibir.
 - `DELETE` cancela **todas** as `waiting` do usuário e responde `204`. Sem
-  nenhuma entrada ativa, responde `404 not_queued`.
+  nenhuma entrada ativa, responde `404 not_queued`. Entradas `matched` não são
+  afetadas pelo `DELETE`.
+- `PUT` devolve exatamente o mesmo formato de `GET` (`entry`, `entries`,
+  `matched`).
 
 ### 23.3 `POST` legado
 
@@ -1620,7 +1646,11 @@ substitui a seleção inteira.
 ### 23.6 Compatibilidade
 
 - O app antigo continua lendo `entry` e chamando `POST`/`DELETE`.
-- O app novo deve usar `PUT` para trocar a seleção e ler `entries`.
+- O app novo deve usar `PUT` para trocar a seleção, ler `entries` para a fila
+  ativa e `matched` para as partidas ainda agendadas. `matched` é aditivo e não
+  substitui `entry` nem `entries`; ele não é histórico (partidas encerradas ou
+  canceladas saem da lista).
 - `DELETE` mudou de "cancela uma" para "cancela todas": app antigo com uma única
   entrada não percebe diferença.
-- Nenhum campo existente foi removido; `entries` e o `PUT` são aditivos.
+- Nenhum campo existente foi removido; `entries`, `matched` e o `PUT` são
+  aditivos.

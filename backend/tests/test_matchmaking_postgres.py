@@ -681,3 +681,79 @@ def test_replace_never_leaves_two_active_entries_for_same_format_and_mode(
             session.scalars(select(QueueEntry.status).where(QueueEntry.user_id == user.id))
         )
         assert sorted(statuses) == ["cancelled", "cancelled", "waiting"]
+
+
+def test_matched_entries_lists_only_scheduled_lobbies_newest_first(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """``matched_entries`` ignora TTL da fila e histórico de lobbies encerrados."""
+    with session_factory() as session:
+        older_format = add_single_format(session, "matched-a")
+        newer_format = add_single_format(session, "matched-b")
+        cancelled_format = add_single_format(session, "matched-c")
+        completed_format = add_single_format(session, "matched-d")
+        no_lobby_format = add_single_format(session, "matched-e")
+        waiting_format = add_single_format(session, "matched-f")
+        user = add_player(session, older_format)
+        for extra_format in (
+            newer_format,
+            cancelled_format,
+            completed_format,
+            no_lobby_format,
+            waiting_format,
+        ):
+            session.add(
+                UserSportProfile(
+                    user_id=user.id,
+                    format_id=extra_format.id,
+                    level="intermediate",
+                    court_preference="ANY",
+                )
+            )
+        session.flush()
+
+        older = service(session).enqueue(user.id, older_format.id, now=NOW)
+        newer = service(session).enqueue(user.id, newer_format.id, now=NOW)
+        cancelled = service(session).enqueue(user.id, cancelled_format.id, now=NOW)
+        completed = service(session).enqueue(user.id, completed_format.id, now=NOW)
+        no_lobby = service(session).enqueue(user.id, no_lobby_format.id, now=NOW)
+        waiting = service(session).enqueue(user.id, waiting_format.id, now=NOW)
+
+        older.status = "matched"
+        older.matched_at = NOW - timedelta(hours=2)
+        # TTL vencido não invalida a partida: a autoridade é o lobby.
+        older.expires_at = NOW - timedelta(hours=1)
+        older.lobby_id = add_lobby(session, older_format, user, start=NOW + timedelta(days=1)).id
+
+        newer.status = "matched"
+        newer.matched_at = NOW
+        newer.lobby_id = add_lobby(session, newer_format, user, start=NOW + timedelta(days=2)).id
+
+        cancelled.status = "matched"
+        cancelled.matched_at = NOW + timedelta(minutes=1)
+        cancelled.lobby_id = add_lobby(
+            session,
+            cancelled_format,
+            user,
+            start=NOW + timedelta(days=3),
+            status="cancelled",
+        ).id
+
+        completed.status = "matched"
+        completed.matched_at = NOW + timedelta(minutes=2)
+        completed.lobby_id = add_lobby(
+            session,
+            completed_format,
+            user,
+            start=NOW + timedelta(days=4),
+            status="completed",
+        ).id
+
+        no_lobby.status = "matched"
+        no_lobby.matched_at = NOW + timedelta(minutes=3)
+        session.flush()
+
+        entries = service(session).matched_entries(user.id)
+
+        assert [entry.id for entry in entries] == [newer.id, older.id]
+        assert waiting.id not in {entry.id for entry in entries}
