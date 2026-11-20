@@ -15,6 +15,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.text import escape_like
 from app.modules.email.addresses import normalize_email
 from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryService
 from app.modules.email.models import UserEmail
@@ -132,11 +133,11 @@ def search_users(
 
     conditions = []
     if search:
-        term = f"%{search.strip()}%"
+        term = f"%{escape_like(search.strip())}%"
         conditions.append(
             or_(
-                UserEmail.email_normalized.ilike(term),
-                UserProfile.display_name.ilike(term),
+                UserEmail.email_normalized.ilike(term, escape="\\"),
+                UserProfile.display_name.ilike(term, escape="\\"),
             )
         )
     if status:

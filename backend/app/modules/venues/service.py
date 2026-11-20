@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.text import UnsafeText, reject_control_characters
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.organizations.models import OrganizationMembership, OrganizationVenue
@@ -1141,6 +1142,10 @@ class VenueService:
 
 
 def _clean_name(value: str, max_length: int = 120) -> str:
+    try:
+        reject_control_characters(value)
+    except UnsafeText as exc:
+        raise VenueInvalid from exc
     normalized = " ".join(value.split())
     if not 1 <= len(normalized) <= max_length:
         raise VenueInvalid
@@ -1150,6 +1155,10 @@ def _clean_name(value: str, max_length: int = 120) -> str:
 def _clean_optional(value: str | None, max_length: int) -> str | None:
     if value is None:
         return None
+    try:
+        reject_control_characters(value)
+    except UnsafeText as exc:
+        raise VenueInvalid from exc
     normalized = " ".join(value.split())
     if len(normalized) > max_length:
         raise VenueInvalid

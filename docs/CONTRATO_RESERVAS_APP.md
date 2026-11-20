@@ -261,6 +261,13 @@ Erros de schema Pydantic usam um envelope estável:
 
 `field` usa prefixo `body.`, `query.` ou `path.`. O valor enviado não é ecoado.
 
+Texto de uma linha com controles/NUL (`\x00`–`\x1f`, `\x7f`) responde
+`422 validation_error`. Texto multilinha (bio, chat, descrições, evidência de
+contestação e notas) aceita `\n`, normaliza `\r\n`/`\r` para `\n`, mas continua
+rejeitando NUL/demais controles, bidi e zero-width. `display_name` também rejeita
+CR/LF e marcas invisíveis. Nada disso chega ao banco; o app deve limpar o campo
+antes de reenviar. Acentos e emoji seguem aceitos.
+
 ## 6. Central de notificações
 
 ```http

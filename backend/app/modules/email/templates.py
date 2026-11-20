@@ -13,10 +13,10 @@ import html
 import re
 from dataclasses import dataclass
 
+from app.core.text import CONTROL_PATTERN
 from app.modules.email.models import EMAIL_KINDS
 
 CODE_PATTERN = re.compile(r"^\d{6}$")
-CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
 SUBJECTS = {
     "email_verification": "Seu código de verificação do JOGA",

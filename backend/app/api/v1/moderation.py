@@ -18,6 +18,7 @@ from app.api.v1.notifications import (
     NotificationView,
     notification_view,
 )
+from app.core.text import FreeText, MultilineText
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.moderation.models import (
@@ -79,7 +80,7 @@ class ReportCreate(BaseModel):
     target_user_id: UUID
     lobby_id: UUID
     category: str = Field(pattern="^(HARASSMENT|HATE|THREAT|SEXUAL|SPAM|OTHER)$")
-    description: str = Field(min_length=1, max_length=2000)
+    description: MultilineText = Field(min_length=1, max_length=2000)
     message_ids: list[UUID] = Field(default_factory=list, max_length=5)
 
 
@@ -114,7 +115,7 @@ class ActionListResponse(BaseModel):
 
 
 class AppealCreate(BaseModel):
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: FreeText = Field(min_length=1, max_length=1000)
 
 
 class AppealView(BaseModel):
@@ -192,13 +193,13 @@ class QueueResponse(BaseModel):
 
 class DecisionRequest(BaseModel):
     decision: str = Field(pattern="^(DISMISS|WARN|RESTRICT_RANKED|SUSPEND_TEMP)$")
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: FreeText = Field(min_length=1, max_length=1000)
     days: int = Field(default=7, ge=1, le=90)
 
 
 class AppealDecisionRequest(BaseModel):
     decision: str = Field(pattern="^(ACCEPTED|REJECTED)$")
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: FreeText = Field(min_length=1, max_length=1000)
 
 
 class OperatorCreate(BaseModel):

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
+from app.core.text import OptionalDisplayName, OptionalMultilineText
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.models import User
 from app.modules.identity.sessions import AuthenticatedSession
@@ -100,8 +101,8 @@ class ProfileResponse(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    display_name: str | None = Field(default=None, max_length=60)
-    bio: str | None = Field(default=None, max_length=280)
+    display_name: OptionalDisplayName = Field(default=None, max_length=60)
+    bio: OptionalMultilineText = Field(default=None, max_length=280)
 
 
 class SportProfileRequest(BaseModel):

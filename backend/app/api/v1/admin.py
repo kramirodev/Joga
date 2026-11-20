@@ -25,6 +25,7 @@ from app.api.v1.email_auth import (
 )
 from app.api.v1.request_context import request_ip_hash
 from app.core.config import Settings, get_settings
+from app.core.text import FreeText, OptionalDisplayName, OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.catalog.sports import (
     FormatInput,
@@ -209,8 +210,8 @@ def _user_error(exc: Exception) -> HTTPException:
 
 
 class SportFormatInput(BaseModel):
-    slug: str = Field(min_length=2, max_length=40)
-    name: str = Field(min_length=2, max_length=80)
+    slug: FreeText = Field(min_length=2, max_length=40)
+    name: FreeText = Field(min_length=2, max_length=80)
     team_size: int = Field(ge=1, le=20)
     players_per_team: int | None = Field(default=None, ge=1, le=20)
     duration_minutes: int = Field(ge=5, le=240)
@@ -220,19 +221,19 @@ class SportFormatInput(BaseModel):
 
 
 class SportCreateRequest(BaseModel):
-    slug: str = Field(min_length=2, max_length=40)
-    name: str = Field(min_length=2, max_length=80)
-    icon_key: str = Field(min_length=2, max_length=64)
+    slug: FreeText = Field(min_length=2, max_length=40)
+    name: FreeText = Field(min_length=2, max_length=80)
+    icon_key: FreeText = Field(min_length=2, max_length=64)
     sort_order: int = Field(default=0, ge=0)
     formats: list[SportFormatInput] = Field(min_length=1, max_length=10)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class SportUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=80)
-    icon_key: str | None = Field(default=None, min_length=2, max_length=64)
+    name: OptionalFreeText = Field(default=None, min_length=2, max_length=80)
+    icon_key: OptionalFreeText = Field(default=None, min_length=2, max_length=64)
     sort_order: int | None = Field(default=None, ge=0)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminSportFormatView(SportFormatView):
@@ -252,11 +253,11 @@ class AdminSportView(BaseModel):
 
 
 class SportFormatAddRequest(SportFormatInput):
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class SportFormatUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=80)
+    name: OptionalFreeText = Field(default=None, min_length=2, max_length=80)
     team_size: int | None = Field(default=None, ge=1, le=20)
     players_per_team: int | None = Field(default=None, ge=1, le=20)
     duration_minutes: int | None = Field(default=None, ge=5, le=240)
@@ -264,7 +265,7 @@ class SportFormatUpdateRequest(BaseModel):
     score_model: str | None = Field(default=None, pattern="^(sets_points|goals)$")
     positions: list[str] | None = Field(default=None, max_length=20)
     active: bool | None = None
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class SportListResponse(BaseModel):
@@ -292,7 +293,7 @@ class BandTicketsOverrideRequest(BaseModel):
     team_size: int = Field(ge=1, le=20)
     tickets: int = Field(ge=1, le=1000)
     mode: str | None = Field(default=None, pattern="^(standard|contingency)$")
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class BandTicketsOverrideResponse(BaseModel):
@@ -325,22 +326,22 @@ class AdminUserListResponse(BaseModel):
 class AdminUserCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
-    display_name: str | None = Field(default=None, max_length=60)
+    display_name: OptionalDisplayName = Field(default=None, max_length=60)
     verify_email: bool = False
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminUserEmailRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminReasonRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminSuspendRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
     until: datetime | None = None
 
 

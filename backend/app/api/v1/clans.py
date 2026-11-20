@@ -12,6 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.text import (
+    FreeText,
+    MultilineText,
+    OptionalFreeText,
+    OptionalMultilineText,
+    escape_like,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.clans.models import Clan, ClanJoinRequest, ClanMember, ClanReport
 from app.modules.clans.service import (
@@ -221,18 +228,18 @@ def _handle(exc: Exception) -> HTTPException:
 
 
 class ClanCreateRequest(BaseModel):
-    name: str = Field(min_length=3, max_length=40)
-    tag: str = Field(min_length=2, max_length=8)
-    description: str | None = Field(default=None, max_length=280)
+    name: FreeText = Field(min_length=3, max_length=40)
+    tag: FreeText = Field(min_length=2, max_length=8)
+    description: OptionalMultilineText = Field(default=None, max_length=280)
 
 
 class JoinRequestCreate(BaseModel):
-    message: str | None = Field(default=None, max_length=200)
+    message: OptionalFreeText = Field(default=None, max_length=200)
 
 
 class DecisionRequest(BaseModel):
     approve: bool
-    note: str | None = Field(default=None, max_length=200)
+    note: OptionalMultilineText = Field(default=None, max_length=200)
 
 
 class RoleRequest(BaseModel):
@@ -244,16 +251,16 @@ class TransferRequest(BaseModel):
 
 
 class MessageCreate(BaseModel):
-    body: str = Field(min_length=1, max_length=2000)
+    body: MultilineText = Field(min_length=1, max_length=2000)
 
 
 class ReportCreate(BaseModel):
-    reason: str = Field(min_length=1, max_length=300)
+    reason: FreeText = Field(min_length=1, max_length=300)
 
 
 class ReportDecision(BaseModel):
     decision: str = Field(pattern="^(KEEP_HIDDEN|RESTORE)$")
-    note: str | None = Field(default=None, max_length=300)
+    note: OptionalMultilineText = Field(default=None, max_length=300)
 
 
 @router.post("/clans", response_model=ClanSummaryView, status_code=status.HTTP_201_CREATED)
@@ -286,8 +293,10 @@ def list_clans(
 ) -> ClanListView:
     statement = select(Clan).where(Clan.status == "active")
     if q:
-        term = f"%{q.strip()}%"
-        statement = statement.where(Clan.name.ilike(term) | Clan.tag.ilike(term))
+        term = f"%{escape_like(q.strip())}%"
+        statement = statement.where(
+            Clan.name.ilike(term, escape="\\") | Clan.tag.ilike(term, escape="\\")
+        )
     clans = session.scalars(statement.order_by(Clan.name.asc()).limit(limit)).all()
     return ClanListView(clans=[_clan_view(session, clan, current.user_id) for clan in clans])
 
