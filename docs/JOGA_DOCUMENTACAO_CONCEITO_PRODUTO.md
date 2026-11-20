@@ -962,7 +962,7 @@ Se o estabelecimento já tiver sacado o valor, a recuperação deixa de ser auto
 
 A política aprovada na **ADR 0039** é:
 
-- **Fila de substitutos:** cada lobby pode manter uma fila em standby. O alvo é `(titulares - quórum mínimo) + 1`, limitado a 4; na prática, muitas vezes basta **+1 para fechar o time par**. Casual é opcional; ranqueado exige pelo menos 1 substituto em standby.
+- **Fila de substitutos:** cada lobby pode manter uma fila em standby. O alvo é `(titulares - quórum mínimo) + 1`, limitado a 4; na prática, muitas vezes basta **+1 para fechar o time par**.
 - **Substituto não é convocado** até haver vaga. Ele confirma disponibilidade em T-2h; se não confirmar, sai da fila.
 - **Antes do cutoff**, com substituto pagante: o substituído recebe reembolso; o substituto paga; T3 não reinicia.
 - **Sem substituto antes do cutoff:** o lobby é cancelado, os demais pagantes recebem reembolso e quem cancelou não recebe.
