@@ -129,6 +129,7 @@ class VenueCard:
     covered: bool
     spaces_count: int
     min_price_cents: int
+    min_tickets: int | None
     distance_km: float | None
     photo_id: uuid.UUID | None
 
@@ -187,7 +188,7 @@ class VenueDiscoveryService:
             .exists()
         )
         statement = (
-            select(OrganizationVenue)
+            select(OrganizationVenue, Organization.is_platform)
             .join(Organization, Organization.id == OrganizationVenue.organization_id)
             .where(
                 OrganizationVenue.status == "active",
@@ -203,13 +204,22 @@ class VenueDiscoveryService:
 
         region = self.session.get(UserRegion, user_id)
         cards: list[VenueCard] = []
-        for venue in self.session.scalars(statement).all():
+        for venue, is_platform in self.session.execute(statement).all():
             spaces = self._active_spaces(venue.id)
             if not spaces:
                 continue
-            prices = [row.price_cents for space in spaces for row in self._availability(space.id)]
+            availability_by_space = {space.id: self._availability(space.id) for space in spaces}
+            prices = [row.price_cents for rows in availability_by_space.values() for row in rows]
             if not prices:
                 continue
+            # Quadra pública é gratuita (ADR 0055 §2.2: organização da
+            # plataforma + `is_public`), então o app exibe "Grátis" a partir de
+            # zero ingressos, mesmo que exista tabela de faixas configurada.
+            min_tickets = (
+                0
+                if venue.is_public and is_platform
+                else self._min_tickets(spaces, availability_by_space)
+            )
             photo = self._first_photo(venue.id)
             cards.append(
                 VenueCard(
@@ -226,6 +236,7 @@ class VenueDiscoveryService:
                     covered=any(space.is_covered for space in spaces),
                     spaces_count=len(spaces),
                     min_price_cents=min(prices),
+                    min_tickets=min_tickets,
                     distance_km=self._distance(region, venue),
                     photo_id=photo.id if photo is not None else None,
                 )
@@ -415,6 +426,31 @@ class VenueDiscoveryService:
                 )
             )
         return options
+
+    def _min_tickets(
+        self,
+        spaces: list[VenueSpace],
+        availability_by_space: dict[uuid.UUID, list[VenueAvailability]],
+    ) -> int | None:
+        """Menor quantidade de ingressos entre faixas e formatos ativos.
+
+        Considera todas as faixas configuradas em todas as janelas de agenda da
+        quadra e todos os formatos ativos de cada modalidade. Retorna ``None``
+        quando nenhum formato tem ingressos configurados — nunca ``0``, que
+        ficaria ambíguo com a gratuidade da quadra pública.
+        """
+
+        tickets: list[int] = []
+        for space in spaces:
+            bands = {
+                row.band_id: self.session.get(PricingBand, row.band_id)
+                for row in availability_by_space.get(space.id, [])
+                if row.band_id is not None
+            }
+            for sport in self._sports(space.id):
+                for format_ in self._formats(sport.id, bands):
+                    tickets.extend(format_.tickets_by_band.values())
+        return min(tickets) if tickets else None
 
     def _availability_option(
         self,

@@ -93,6 +93,7 @@ class VenueCardView(BaseModel):
     covered: bool
     spaces_count: int
     min_price_cents: int
+    min_tickets: int | None
     distance_km: float | None
     photo_url: str | None
 
@@ -175,6 +176,7 @@ def list_bookable_venues(
                 covered=item.covered,
                 spaces_count=item.spaces_count,
                 min_price_cents=item.min_price_cents,
+                min_tickets=item.min_tickets,
                 distance_km=item.distance_km,
                 photo_url=_photo_url(item.id, item.photo_id) if item.photo_id else None,
             )
