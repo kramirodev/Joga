@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, View, useWindowDimensions } from 'react-native';
+import { FlatList, View, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError, describeApiError } from '../api/client';
@@ -220,6 +220,8 @@ function Home() {
           <View
             style={{
               flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 10,
               justifyContent: 'space-between',
               alignItems: 'center',
               marginTop: 14,
@@ -228,7 +230,7 @@ function Home() {
               borderTopColor: palette.lineOnInk,
             }}
           >
-            <Txt variant="tiny" color="softOnInk">
+            <Txt variant="tiny" color="softOnInk" style={{ flexShrink: 1 }}>
               Check-in em {countdown(nextMatch.check_in_opens_at)}
             </Txt>
             <Btn
@@ -302,9 +304,11 @@ function Home() {
           <Txt variant="label">Temporada {progress?.season.code ?? '2026-Q4'}</Txt>
           <Badge>{`${tier.toUpperCase()} ${level}`}</Badge>
         </Row>
-        <Row between style={{ marginTop: 8, marginBottom: 5 }}>
+        <Row between wrap gap={8} style={{ marginTop: 8, marginBottom: 5 }}>
           <Txt variant="h3">{number(xp)} XP</Txt>
-          <Txt variant="tiny">faltam {number(remainingToMax)} para o nível 30</Txt>
+          <Txt variant="tiny" style={{ flexShrink: 1, textAlign: 'right' }}>
+            faltam {number(remainingToMax)} para o nível 30
+          </Txt>
         </Row>
         <Progress value={percent} tone="orange" />
         <Row between style={{ marginTop: 8 }}>
@@ -723,88 +727,86 @@ function LobbyChat() {
     setInput('');
   };
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Page title="Chat da partida">
-        <Card tone="flat" padding={9}>
+    <Page title="Chat da partida">
+      <Card tone="flat" padding={9}>
+        <Row between>
+          <Txt variant="tiny">Mensagens deste lobby</Txt>
+          <Badge tone="green">só participantes</Badge>
+        </Row>
+      </Card>
+      <View style={{ gap: 10 }}>
+        {visible.length === 0 ? (
+          <Card tone="flat" padding={12}>
+            <Txt variant="tiny">Nenhuma mensagem ainda. Comece a conversa.</Txt>
+          </Card>
+        ) : null}
+        {visible.map((message) =>
+          message.sender === 'SISTEMA' ? (
+            <SystemNotice key={message.id}>{message.body}</SystemNotice>
+          ) : (
+            <View
+              key={message.id}
+              style={[
+                {
+                  alignSelf: message.mine ? 'flex-end' : 'flex-start',
+                  maxWidth: '88%',
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderRadius: 18,
+                  borderWidth: 1.5,
+                  borderColor: palette.line,
+                  backgroundColor: message.mine ? palette.limeSoft : palette.surface,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <IdentityBadge
+                  size={24}
+                  identity={identityFromSeed(message.senderId)}
+                  palette={palette}
+                />
+                <Txt variant="tiny" style={{ flexShrink: 1 }}>
+                  <Text style={{ fontWeight: '800', color: palette.ink }}>{message.sender}</Text>
+                  {message.time ? ` · ${message.time}` : ''}
+                </Txt>
+              </View>
+              <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>{message.body}</Text>
+            </View>
+          ),
+        )}
+        <Card tone="flat" padding={10}>
           <Row between>
-            <Txt variant="tiny">Mensagens deste lobby</Txt>
-            <Badge tone="green">só participantes</Badge>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+              <Text style={{ color: palette.muted }}>◉</Text>
+              <Txt variant="tiny" style={{ flexShrink: 1 }}>
+                O histórico fica disponível para os participantes.
+              </Txt>
+            </View>
           </Row>
         </Card>
-        <View style={{ gap: 10 }}>
-          {visible.length === 0 ? (
-            <Card tone="flat" padding={12}>
-              <Txt variant="tiny">Nenhuma mensagem ainda. Comece a conversa.</Txt>
-            </Card>
-          ) : null}
-          {visible.map((message) =>
-            message.sender === 'SISTEMA' ? (
-              <SystemNotice key={message.id}>{message.body}</SystemNotice>
-            ) : (
-              <View
-                key={message.id}
-                style={[
-                  {
-                    alignSelf: message.mine ? 'flex-end' : 'flex-start',
-                    maxWidth: '88%',
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderRadius: 18,
-                    borderWidth: 1.5,
-                    borderColor: palette.line,
-                    backgroundColor: message.mine ? palette.limeSoft : palette.surface,
-                  },
-                ]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <IdentityBadge
-                    size={24}
-                    identity={identityFromSeed(message.senderId)}
-                    palette={palette}
-                  />
-                  <Txt variant="tiny">
-                    <Text style={{ fontWeight: '800', color: palette.ink }}>{message.sender}</Text>
-                    {message.time ? ` · ${message.time}` : ''}
-                  </Txt>
-                </View>
-                <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>
-                  {message.body}
-                </Text>
-              </View>
-            ),
-          )}
-          <Card tone="flat" padding={10}>
-            <Row between>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ color: palette.muted }}>◉</Text>
-                <Txt variant="tiny">O histórico fica disponível para os participantes.</Txt>
-              </View>
-            </Row>
-          </Card>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <IconBtn icon="plus" label="Referência" modal="share" />
-          <Input
-            value={input}
-            onChangeText={setInput}
-            placeholder="Mensagem para o lobby"
-            maxLength={2000}
-            style={{ flex: 1 }}
-            onSubmitEditing={send}
-          />
-          <IconBtn icon="send" label="Enviar" ink onPress={send} />
-        </View>
-        <Row between>
-          <Txt variant="tiny">Texto apenas · 1–2.000 caracteres</Txt>
-          <TextBtn go="report-message" muted>
-            Denunciar
-          </TextBtn>
-        </Row>
-      </Page>
-    </KeyboardAvoidingView>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <IconBtn icon="plus" label="Referência" modal="share" />
+        <Input
+          value={input}
+          onChangeText={setInput}
+          placeholder="Mensagem para o lobby"
+          maxLength={2000}
+          style={{ flex: 1 }}
+          onSubmitEditing={send}
+          returnKeyType="send"
+        />
+        <IconBtn icon="send" label="Enviar" ink onPress={send} />
+      </View>
+      <Row between>
+        <Txt variant="tiny" style={{ flexShrink: 1 }}>
+          Texto apenas · 1–2.000 caracteres
+        </Txt>
+        <TextBtn go="report-message" muted>
+          Denunciar
+        </TextBtn>
+      </Row>
+    </Page>
   );
 }
 
@@ -1268,6 +1270,8 @@ function ProfileMe() {
         </Row>
         <Row
           between
+          wrap
+          gap={12}
           style={{
             marginTop: 14,
             paddingTop: 12,
@@ -1743,7 +1747,7 @@ function IdentityEditor() {
               palette={palette}
             />
             <View style={{ flex: 1 }}>
-              <Txt variant="h3" numberOfLines={1}>
+              <Txt variant="h3" numberOfLines={2}>
                 {item.name}
               </Txt>
               <Txt variant="tiny">{locked ? 'Bloqueado' : 'Liberado'}</Txt>

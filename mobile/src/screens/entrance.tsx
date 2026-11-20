@@ -112,11 +112,16 @@ function PhoneMethodUnavailable() {
 function Welcome() {
   const nav = useNav();
   const { setAuth } = useApp();
-  const { palette } = useTheme();
+  const { palette, contentBottomInset } = useTheme();
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: palette.bg }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 18, gap: 10, flexGrow: 1 }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingBottom: 18 + contentBottomInset,
+        gap: 10,
+        flexGrow: 1,
+      }}
       showsVerticalScrollIndicator={false}
     >
       <View style={{ height: 10 }} />

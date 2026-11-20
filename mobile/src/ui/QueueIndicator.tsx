@@ -21,9 +21,9 @@ import { Text } from './text';
  * bar (ou acima do inset inferior quando não há tab bar), então nunca cobre o
  * conteúdo nem empurra a navegação para fora da tela.
  */
-export function QueueIndicator({ bottomInset = 0 }: { bottomInset?: number }) {
+export function QueueIndicator() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, contentBottomInset } = useTheme();
   const {
     queue,
     matchedEntry,
@@ -89,7 +89,7 @@ export function QueueIndicator({ bottomInset = 0 }: { bottomInset?: number }) {
   };
 
   return (
-    <View style={{ flexShrink: 0, backgroundColor: palette.bg, paddingBottom: bottomInset }}>
+    <View style={{ flexShrink: 0, backgroundColor: palette.bg, paddingBottom: contentBottomInset }}>
       <View
         style={{
           marginHorizontal: 10,
