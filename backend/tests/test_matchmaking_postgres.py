@@ -622,29 +622,33 @@ def test_replace_failure_leaves_no_partial_state(
         session.add(sport)
         session.flush()
         first = add_format(session, sport=sport, slug="replace-a")
-        add_format(session, sport=sport, slug="replace-b")
+        second = add_format(session, sport=sport, slug="replace-b")
         user = add_player(session, first)
+        session.add(
+            UserSportProfile(
+                user_id=user.id,
+                format_id=second.id,
+                level="intermediate",
+                court_preference="ANY",
+            )
+        )
         old = service(session).enqueue(user.id, first.id, now=NOW)
         session.commit()
         old_id = old.id
-
-        calls = {"count": 0}
-        original = MatchmakingService._build_entry
 
         def flaky(
             self: MatchmakingService,
             *args: object,
             **kwargs: object,
         ) -> QueueEntry:
-            calls["count"] += 1
-            if calls["count"] == 2:
-                raise RuntimeError("falha simulada no meio da substituição")
-            return original(self, *args, **kwargs)  # type: ignore[arg-type]
+            raise RuntimeError("falha simulada no meio da substituição")
 
         monkeypatch.setattr(MatchmakingService, "_build_entry", flaky)
 
+        # ``first`` sai da seleção (seria cancelado) e ``second`` seria criado;
+        # a falha força o rollback dos dois lados da diferença.
         with pytest.raises(RuntimeError):
-            service(session).replace(user.id, [first.id], ["casual", "ranked"], now=NOW)
+            service(session).replace(user.id, [second.id], ["casual"], now=NOW)
         session.rollback()
 
         rows = list(session.scalars(select(QueueEntry).where(QueueEntry.user_id == user.id)))
@@ -652,35 +656,66 @@ def test_replace_failure_leaves_no_partial_state(
         assert session.scalar(select(func.count()).select_from(Lobby)) == 0
 
 
-def test_replace_never_leaves_two_active_entries_for_same_format_and_mode(
+def test_replace_preserves_common_entry_without_duplicate(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         sport_format = seed_format(session)
         user = add_player(session, sport_format)
-        service(session).enqueue(user.id, sport_format.id, now=NOW)
+        original = service(session).enqueue(user.id, sport_format.id, now=NOW)
         session.commit()
+        original_id = original.id
+        original_created_at = original.created_at
+
+        # Reenviar a mesma seleção não recria: mesmo id, mesmo created_at.
+        service(session).replace(user.id, [sport_format.id], ["casual"], now=NOW)
+        session.commit()
+
+        rows = list(session.scalars(select(QueueEntry).where(QueueEntry.user_id == user.id)))
+        assert [(row.id, row.status) for row in rows] == [(original_id, "waiting")]
+        assert rows[0].created_at == original_created_at
+
+        # Nova seleção contendo a combinação existente preserva a linha e cria
+        # apenas a que faltava.
+        sport = Sport(slug="volei", name="Volei")
+        session.add(sport)
+        session.flush()
+        volei = add_format(session, sport=sport, slug="volei-2x2", team_size=2)
+        session.add(
+            UserSportProfile(
+                user_id=user.id,
+                format_id=volei.id,
+                level="intermediate",
+                court_preference="ANY",
+            )
+        )
+        session.flush()
 
         service(session).replace(
             user.id,
-            [sport_format.id, sport_format.id],
-            ["casual", "casual"],
-            now=NOW,
+            [sport_format.id, volei.id],
+            ["casual"],
+            levels={
+                (sport_format.id, "casual"): "advanced",
+                (volei.id, "casual"): "beginner",
+            },
+            now=NOW + timedelta(hours=1),
         )
         session.commit()
 
-        statuses = list(
-            session.scalars(select(QueueEntry.status).where(QueueEntry.user_id == user.id))
-        )
-        assert sorted(statuses) == ["cancelled", "waiting"]
-
-        # Nova substituição pelo mesmo par cancela e recria sem violar o índice.
-        service(session).replace(user.id, [sport_format.id], ["casual"], now=NOW)
-        session.commit()
-        statuses = list(
-            session.scalars(select(QueueEntry.status).where(QueueEntry.user_id == user.id))
-        )
-        assert sorted(statuses) == ["cancelled", "cancelled", "waiting"]
+        by_format = {
+            row.format_id: row
+            for row in session.scalars(
+                select(QueueEntry).where(
+                    QueueEntry.user_id == user.id, QueueEntry.status == "waiting"
+                )
+            )
+        }
+        assert set(by_format) == {sport_format.id, volei.id}
+        assert by_format[sport_format.id].id == original_id
+        assert by_format[sport_format.id].created_at == original_created_at
+        assert by_format[sport_format.id].level == "advanced"
+        assert by_format[volei.id].level == "beginner"
 
 
 def test_matched_entries_lists_only_scheduled_lobbies_newest_first(

@@ -19,6 +19,7 @@ from app.modules.matchmaking.models import Lobby, QueueEntry
 from app.modules.matchmaking.service import (
     AlreadyQueued,
     InvalidFormat,
+    InvalidLevelOverride,
     InvalidMode,
     MatchmakingService,
     RankedRestricted,
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
 CourtPreference = Literal["PUBLIC_ONLY", "PRIVATE_ONLY", "ANY"]
 Mode = Literal["casual", "ranked"]
+Level = Literal["beginner", "intermediate", "advanced"]
 DEFAULT_MODES: list[Mode] = ["casual"]
 
 
@@ -39,11 +41,20 @@ class EnqueueRequest(BaseModel):
     mode: Mode = "casual"
 
 
+class QueueLevelOverride(BaseModel):
+    """Nível explícito para uma combinação ``format_id × mode`` da seleção."""
+
+    format_id: UUID
+    mode: Mode
+    level: Level
+
+
 class QueueReplaceRequest(BaseModel):
     """Seleção completa da fila: produto cartesiano ``formats × modes``."""
 
     formats: list[UUID] = Field(default_factory=list, max_length=20)
     modes: list[Mode] = Field(default_factory=lambda: list(DEFAULT_MODES), max_length=2)
+    levels: list[QueueLevelOverride] = Field(default_factory=list, max_length=40)
     court_preference: CourtPreference | None = None
 
     @field_validator("formats", "modes", mode="before")
@@ -52,6 +63,15 @@ class QueueReplaceRequest(BaseModel):
         """Deduplica antes dos limites, para repetição não virar 422."""
         if isinstance(value, list):
             return list(dict.fromkeys(value))
+        return value
+
+    @field_validator("levels")
+    @classmethod
+    def _unique_levels(cls, value: list[QueueLevelOverride]) -> list[QueueLevelOverride]:
+        """Rejeita override duplicado: a combinação precisa ser inequívoca."""
+        keys = [(item.format_id, item.mode) for item in value]
+        if len(keys) != len(set(keys)):
+            raise ValueError("override de nível duplicado para formato e modo")
         return value
 
 
@@ -191,11 +211,13 @@ def replace_queue(
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[MatchmakingService, Depends(get_matchmaking_service)],
 ) -> QueueStateResponse:
-    """Substitui a seleção de fila de forma atômica.
+    """Aplica a seleção de fila de forma atômica, preservando o que continua.
 
-    Cancela todas as entradas ``waiting`` do usuário e cria o produto
-    cartesiano de formatos e modos na mesma transação. Lista vazia apenas
-    cancela.
+    Compara o produto cartesiano ``formats × modes`` com as entradas
+    ``waiting`` do usuário: combinação que permanece mantém a mesma linha
+    (``id`` e ``created_at`` estáveis, então o tempo de espera não reinicia),
+    combinação nova é criada e combinação removida é cancelada. Lista vazia
+    cancela todas.
     """
     try:
         service.replace(
@@ -203,6 +225,7 @@ def replace_queue(
             payload.formats,
             payload.modes,
             court_preference=payload.court_preference,
+            levels={(item.format_id, item.mode): item.level for item in payload.levels},
         )
         session.commit()
     except InvalidMode:
@@ -211,6 +234,9 @@ def replace_queue(
     except InvalidFormat:
         session.rollback()
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_format") from None
+    except InvalidLevelOverride:
+        session.rollback()
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_level_override") from None
     except SportProfileRequired:
         session.rollback()
         raise _error(status.HTTP_409_CONFLICT, "sport_profile_required") from None
