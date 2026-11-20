@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+import secrets
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
@@ -92,6 +94,7 @@ class MatchmakingService:
         min_lead_minutes: int = 120,
         queue_ttl_hours: int = 24,
         default_timezone: str = "America/Sao_Paulo",
+        randomizer: random.Random | None = None,
     ) -> None:
         self._session = session
         self._algorithm = algorithm_version
@@ -101,6 +104,10 @@ class MatchmakingService:
         self._min_lead = min_lead_minutes
         self._ttl = timedelta(hours=queue_ttl_hours)
         self._timezone = default_timezone
+        # Sorteio uniforme e não determinístico (ADR 0057). Testes podem injetar
+        # outro ``random.Random`` sem alterar o comportamento de produção.
+        self._random = randomizer or secrets.SystemRandom()
+        self._busy: dict[uuid.UUID, list[tuple[datetime, datetime]]] = {}
 
     # Fila ---------------------------------------------------------------
 
@@ -176,19 +183,136 @@ class MatchmakingService:
             .limit(1)
         )
 
-    def leave(self, user_id: uuid.UUID) -> bool:
-        entry = self._session.scalar(
-            select(QueueEntry).where(
-                QueueEntry.user_id == user_id,
-                QueueEntry.status == "waiting",
+    def waiting_entries(self, user_id: uuid.UUID) -> list[QueueEntry]:
+        """Todas as entradas aguardando do usuário, da mais recente para a mais antiga."""
+        return list(
+            self._session.scalars(
+                select(QueueEntry)
+                .where(
+                    QueueEntry.user_id == user_id,
+                    QueueEntry.status == "waiting",
+                )
+                .order_by(QueueEntry.created_at.desc(), QueueEntry.id)
             )
         )
-        if entry is None:
-            return False
-        entry.status = "cancelled"
-        entry.updated_at = utcnow()
+
+    def replace(
+        self,
+        user_id: uuid.UUID,
+        format_ids: Sequence[uuid.UUID],
+        modes: Sequence[str],
+        *,
+        court_preference: str | None = None,
+        now: datetime | None = None,
+    ) -> list[QueueEntry]:
+        """Substitui atomicamente a seleção de fila do usuário.
+
+        Valida tudo antes de escrever; depois cancela as entradas ``waiting``
+        antigas e cria o produto cartesiano ``formatos × modos`` no mesmo
+        ``flush``. Lista vazia (ou modos vazios) apenas cancela a seleção.
+        """
+        unique_formats = list(dict.fromkeys(format_ids))
+        unique_modes = list(dict.fromkeys(modes))
+        for mode in unique_modes:
+            if mode not in ("casual", "ranked"):
+                raise InvalidMode("modo de partida inválido")
+
+        current = ensure_utc(now or utcnow())
+        profiles: dict[uuid.UUID, UserSportProfile] = {}
+        region = self._session.get(UserRegion, user_id)
+        if unique_formats and unique_modes:
+            if region is None:
+                raise RegionRequired("defina uma região antes de entrar na fila")
+            for format_id in unique_formats:
+                sport_format = self._session.get(SportFormat, format_id)
+                if sport_format is None or not sport_format.active:
+                    raise InvalidFormat("formato inexistente ou inativo")
+                sport_profile = self._session.scalar(
+                    select(UserSportProfile).where(
+                        UserSportProfile.user_id == user_id,
+                        UserSportProfile.format_id == format_id,
+                    )
+                )
+                if sport_profile is None:
+                    raise SportProfileRequired("defina nível e preferência para o formato")
+                profiles[format_id] = sport_profile
+            if "ranked" in unique_modes and TrustService(self._session).is_ranked_restricted(
+                user_id, now=current
+            ):
+                raise RankedRestricted("restrição temporária para partidas ranqueadas")
+
+        self._cancel_waiting(user_id, current)
+        if not unique_formats or not unique_modes:
+            return []
+
+        if region is None:
+            # Inalcançável: a validação acima já exigiria a região. Mantido
+            # explícito para o type checker, sem depender de ``assert``.
+            raise RegionRequired("defina uma região antes de entrar na fila")
+        entries: list[QueueEntry] = []
+        for format_id in unique_formats:
+            sport_profile = profiles[format_id]
+            for mode in unique_modes:
+                entries.append(
+                    self._build_entry(
+                        user_id,
+                        format_id,
+                        mode,
+                        sport_profile,
+                        region,
+                        court_preference=court_preference,
+                        now=current,
+                    )
+                )
         self._session.flush()
-        return True
+        return entries
+
+    def _build_entry(
+        self,
+        user_id: uuid.UUID,
+        format_id: uuid.UUID,
+        mode: str,
+        sport_profile: UserSportProfile,
+        region: UserRegion,
+        *,
+        court_preference: str | None,
+        now: datetime,
+    ) -> QueueEntry:
+        entry = QueueEntry(
+            user_id=user_id,
+            format_id=format_id,
+            mode=mode,
+            court_preference=court_preference or sport_profile.court_preference,
+            level=sport_profile.level,
+            status="waiting",
+            center_lat=region.center_lat,
+            center_lng=region.center_lng,
+            radius_km=region.radius_km,
+            expires_at=now + self._ttl,
+        )
+        self._session.add(entry)
+        return entry
+
+    def leave(self, user_id: uuid.UUID) -> bool:
+        """Cancela todas as entradas aguardando do usuário."""
+        return self._cancel_waiting(user_id, ensure_utc(utcnow())) > 0
+
+    def _cancel_waiting(self, user_id: uuid.UUID, now: datetime) -> int:
+        entries = list(
+            self._session.scalars(
+                select(QueueEntry).where(
+                    QueueEntry.user_id == user_id,
+                    QueueEntry.status == "waiting",
+                )
+            )
+        )
+        for entry in entries:
+            entry.status = "cancelled"
+            entry.updated_at = now
+        if entries:
+            # Cancela antes de inserir para não colidir com o índice único parcial.
+            self._session.flush()
+        return len(entries)
 
     # Worker -------------------------------------------------------------
 
@@ -232,11 +356,22 @@ class MatchmakingService:
 
     def _form_all(self, now: datetime) -> int:
         groups: dict[tuple[uuid.UUID, str], list[QueueEntry]] = defaultdict(list)
-        for entry in self._lock_waiting(now):
+        waiting = self._lock_waiting(now)
+        # O pool considera TODAS as entradas `waiting`, nunca apenas a mais
+        # recente do usuário.
+        for entry in waiting:
             groups[(entry.format_id, entry.mode)].append(entry)
 
+        self._busy = self._load_busy({entry.user_id for entry in waiting}, now)
+        # Sorteio uniforme da ordem dos grupos: quando um usuário tem entradas
+        # elegíveis em mais de um grupo, só uma vira lobby neste ciclo e a
+        # escolhida não depende da ordem de criação (ADR 0057).
+        group_keys = list(groups)
+        self._random.shuffle(group_keys)
+
         formed = 0
-        for (format_id, mode), entries in groups.items():
+        matched_users: set[uuid.UUID] = set()
+        for format_id, mode in group_keys:
             sport_format = self._session.get(SportFormat, format_id)
             if sport_format is None or not sport_format.active:
                 continue
@@ -244,11 +379,47 @@ class MatchmakingService:
             formed += self._form_group(
                 sport_format,
                 mode,
-                entries,
+                groups[(format_id, mode)],
                 now,
                 ratings=ratings,
+                exclude_users=matched_users,
             )
         return formed
+
+    def _load_busy(
+        self,
+        user_ids: set[uuid.UUID],
+        now: datetime,
+    ) -> dict[uuid.UUID, list[tuple[datetime, datetime]]]:
+        """Tempo já comprometido de cada participante.
+
+        A autoridade é o **lobby**, não a reserva: ``bookings.lobby_id`` é único
+        (1:1) e o horário é fixado em ``Lobby.scheduled_start_at``. O critério é
+        temporal — qualquer lobby de matchmaking ou manual que ainda não
+        terminou conta, exceto ``cancelled``. ``completed`` com horário futuro
+        continua ocupando pelo intervalo; ``completed`` no passado já é
+        descartado por ``scheduled_end_at > now``.
+        """
+        busy: dict[uuid.UUID, list[tuple[datetime, datetime]]] = defaultdict(list)
+        if not user_ids:
+            return busy
+        rows = self._session.execute(
+            select(
+                LobbyParticipant.user_id,
+                Lobby.scheduled_start_at,
+                Lobby.scheduled_end_at,
+            )
+            .join(Lobby, Lobby.id == LobbyParticipant.lobby_id)
+            .where(
+                LobbyParticipant.user_id.in_(user_ids),
+                Lobby.origin.in_(("matchmaking", "manual")),
+                Lobby.status != "cancelled",
+                Lobby.scheduled_end_at > now,
+            )
+        )
+        for user_id, start, end in rows:
+            busy[user_id].append((ensure_utc(start), ensure_utc(end)))
+        return busy
 
     def _ratings_for_format(self, format_id: uuid.UUID) -> dict[uuid.UUID, float]:
         rows = self._session.execute(
@@ -276,12 +447,17 @@ class MatchmakingService:
         now: datetime,
         *,
         ratings: dict[uuid.UUID, float] | None = None,
+        exclude_users: set[uuid.UUID] | None = None,
     ) -> int:
         needed = sport_format.total_participants
         if needed < 2:
             return 0
 
-        pending = list(entries)
+        pending = [
+            entry
+            for entry in entries
+            if exclude_users is None or entry.user_id not in exclude_users
+        ]
         formed = 0
         while len(pending) >= needed:
             base = pending[0]
@@ -332,6 +508,8 @@ class MatchmakingService:
                 ratings=ratings,
                 teams=teams,
             )
+            if exclude_users is not None:
+                exclude_users.update(entry.user_id for entry in selected)
             formed += 1
             pending = [entry for entry in pending if entry not in selected]
         return formed
@@ -361,6 +539,7 @@ class MatchmakingService:
             return None
 
         availability = [self._availability(entry.user_id) for entry in entries]
+        blocked = [interval for entry in entries for interval in self._busy.get(entry.user_id, ())]
         start = select_start(
             availability,
             duration_minutes=sport_format.duration_minutes,
@@ -369,6 +548,7 @@ class MatchmakingService:
             slot_minutes=self._slot_minutes,
             min_lead_minutes=self._min_lead,
             default_timezone=self._timezone,
+            blocked=blocked,
         )
         if start is None:
             return None
@@ -455,6 +635,11 @@ class MatchmakingService:
             entry.lobby_id = lobby.id
             entry.matched_at = now
             entry.updated_at = now
+        # O tempo passa a estar comprometido para todos os participantes, mesmo
+        # que outras entradas do mesmo usuário continuem `waiting`.
+        lobby_end = formation.start + timedelta(minutes=sport_format.duration_minutes)
+        for entry in entries:
+            self._busy.setdefault(entry.user_id, []).append((formation.start, lobby_end))
         self._session.flush()
         create_match_for_lobby(self._session, lobby, participants, now=now)
         return lobby

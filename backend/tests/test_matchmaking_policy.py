@@ -195,6 +195,28 @@ def test_select_start_respects_minimum_lead_time() -> None:
     assert start is None
 
 
+def test_select_start_skips_blocked_interval() -> None:
+    # 12:00 UTC = 09:00 local; com 2 h de antecedência o primeiro slot é 11:00,
+    # que cruza o lobby já agendado das 11:00–12:00.
+    now = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+
+    start = select_start(
+        [[window(2, time(10, 0), time(14, 0))]],
+        duration_minutes=60,
+        now=now,
+        min_lead_minutes=120,
+        search_days=0,
+        blocked=[
+            (
+                datetime(2026, 11, 3, 14, 0, tzinfo=UTC),
+                datetime(2026, 11, 3, 15, 0, tzinfo=UTC),
+            )
+        ],
+    )
+
+    assert start == datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
+
+
 def test_select_start_finds_next_week_window() -> None:
     now = datetime(2026, 11, 3, 10, 0, tzinfo=UTC)
 
