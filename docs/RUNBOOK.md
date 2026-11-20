@@ -449,7 +449,7 @@ JOGA_TICKET_PURCHASE_ENABLED=false
 JOGA_PHONE_HASH_SECRET=<segredo próprio do demo>
 JOGA_TOKEN_HASH_SECRET=<segredo próprio do demo>
 JOGA_CPF_KEY=<32 bytes em base64>
-JOGA_CPF_KEY_ID=demo-v1
+JOGA_CPF_KEY_ID=k1
 ```
 
 Não é preciso definir `JOGA_MERCADO_PAGO_ACCESS_TOKEN`,
@@ -458,11 +458,13 @@ O webhook do Mercado Pago responde `404 webhook_disabled` e não grava evento.
 `JOGA_DEV_FIXED_OTP` é recusado. Compra de tickets continua desligada. Ver
 `docs/ADR/0053-modo-demo-sem-psp.md`.
 
-Os workflows atuais ainda usam `JOGA_ENVIRONMENT=development` e
-`JOGA_PSP_PROVIDER=simulator`. A migração para `JOGA_ENVIRONMENT=demo` é
-aplicada pelo agente de infraestrutura com o checklist acima; até lá, o demo
-não tem as guardas server-side do modo demo. Para um ambiente com PSP real,
-defina as repository variables `JOGA_ENVIRONMENT=production` e
+O serviço web do demo já roda em `JOGA_ENVIRONMENT=demo` desde 2026-11-20
+(deploy `6a89c79`); o passo a passo da troca, as variáveis exigidas e o rollback
+estão em `docs/DEPLOY_DEMO.md` §5.1. Os workflows de e-mail
+(`.github/workflows/email-worker.yml` e `email-cleanup.yml`) ainda usam
+`JOGA_ENVIRONMENT=development` por padrão: eles só drenam a Outbox e não
+aplicam as guardas do modo demo. Para um ambiente com PSP real, defina as
+repository variables `JOGA_ENVIRONMENT=production` e
 `JOGA_PSP_PROVIDER=mercadopago` e configure os secrets do PSP (ver abaixo).
 
 Secrets do worker: `JOGA_DATABASE_URL`, `JOGA_EMAIL_API_KEY` e
@@ -674,7 +676,7 @@ O painel cobre organizações, membros/papéis, estabelecimentos e auditoria. A 
 - Endpoints: `POST/GET /api/v1/bookings`, `GET /api/v1/bookings/{id}`, confirmação de participante, substituição, cancelamento e pagamento simulado; no painel, `GET /api/v1/organizations/{org}/bookings` e ações de aceite/recusa/conclusão.
 - T1 começa na criação; T2 começa quando todas as vagas confirmam; T3 começa no aceite com hold ativo. Os prazos são independentes e controlados pelo backend.
 - T2 usa horário comercial com expediente, feriados e fechamentos (13E); validar casos de borda.
-- O pagamento é simulado apenas em ambiente `local`/`test`/`development`/`ci`; nenhum PSP real é acionado.
+- O pagamento é simulado em `local`/`test`/`development`/`ci` e no ambiente `demo` (ADR 0053); no demo, somente para participante ativo do próprio booking. Nenhum PSP real é acionado.
 - Worker de expiração:
 
 ```bash
@@ -861,6 +863,25 @@ A CI foi observada em execução no commit `3e6c692`: backend e mobile concluír
 | `401 invalid_token` após ~10 min | access token vence; o app tenta renovar pelo refresh | se o refresh falhar, entrar novamente; investigar revogação/suspensão |
 | Log da API cheio de `GET /health 404` | cliente antigo consulta `/health` em vez de `/api/v1/health/live` | corrigir o cliente; o backend expõe `/api/v1/health/ready` |
 | Expo Go não abre o app | módulo nativo `passkey-proof` e `expo-secure-store` | usar development build (`expo run:android` ou APK de debug) |
+
+### Troca de ambiente no Render não aplica sozinha
+
+**Sintoma:** mudei `JOGA_ENVIRONMENT` (ou outra variável) no Render e o serviço
+continuou com o comportamento antigo.
+
+**Diagnóstico:** o Render **não reinicia nem refaz o deploy** quando só a
+variável muda. O processo em execução segue com o ambiente carregado no boot
+anterior. Além disso, com `JOGA_ENVIRONMENT=demo` o boot **falha** se faltar
+`JOGA_CPF_KEY`/`JOGA_CPF_KEY_ID`, se `JOGA_PHONE_HASH_SECRET` ou
+`JOGA_TOKEN_HASH_SECRET` estiverem no valor padrão, se
+`JOGA_PSP_PROVIDER`/`JOGA_MONEY_MODE`/`JOGA_TICKET_PURCHASE_ENABLED` estiverem
+fora do esperado ou se `JOGA_DEV_FIXED_OTP` estiver definido; nesse caso o
+deploy não fica `live` e a revisão antiga continua servindo.
+
+**Ação e validação:** dispare *Manual Deploy → Deploy latest commit*, confira o
+log de boot e valide `GET /api/v1/health/ready` (200) e
+`GET /api/v1/app-config` (`demo_mode: true`). A ordem completa e o rollback
+estão em `docs/DEPLOY_DEMO.md` §5.1.
 
 ## 8. Limites atuais
 
