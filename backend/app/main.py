@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.environments import is_local
 from app.core.logging import configure_logging
 from app.core.observability import install_observability
 from app.modules.email.inline_drain import InlineEmailDrain
@@ -46,11 +47,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if inline_drain is not None:
                 await inline_drain.stop()
 
+    # Docs e schema só existem em ambiente local/teste. Fora deles a superfície
+    # pública não expõe inventário de rotas nem console interativo.
+    docs_enabled = is_local(resolved.environment)
+
     app = FastAPI(
         title="JOGA API",
         version="0.1.0",
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if docs_enabled else None,
+        openapi_url="/api/openapi.json" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
         lifespan=lifespan,
     )
 

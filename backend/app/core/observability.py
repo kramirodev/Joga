@@ -18,7 +18,22 @@ REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 REQUEST_ID_HEADER = "X-Request-ID"
 SKIP_LOG_PATHS = frozenset({"/api/v1/health/live", "/api/v1/health/ready"})
 
+# Aplicados a toda resposta, inclusive erros não tratados. ``no-store`` global,
+# inclusive catálogo público (decisão P3-10); header de rota é sobrescrito aqui.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+}
+
 logger = logging.getLogger("joga.http")
+
+
+def apply_standard_headers(response: Response, request_id: str) -> None:
+    """Garante request ID e headers de segurança em qualquer resposta."""
+    response.headers[REQUEST_ID_HEADER] = request_id
+    for name, value in SECURITY_HEADERS.items():
+        response.headers[name] = value
 
 
 def request_id_from(value: str | None) -> str:
@@ -62,15 +77,15 @@ def install_observability(app: FastAPI, settings: Settings | None = None) -> Non
                 duration_ms,
                 request_id,
             )
-            raise
+            # Não relança: a resposta de erro também precisa de request ID e
+            # headers de segurança. O traceback fica no log, nunca no corpo.
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": {"code": "internal_error"}},
+            )
 
         duration_ms = (time.perf_counter() - started) * 1000
-        response.headers[REQUEST_ID_HEADER] = request_id
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        # no-store global, inclusive catálogo público (decisão P3-10). Header de
-        # rota é sobrescrito aqui; cache de borda, se houver, fica no Caddy/CDN.
-        response.headers["Cache-Control"] = "no-store"
+        apply_standard_headers(response, request_id)
         if request.url.path not in SKIP_LOG_PATHS:
             logger.info(
                 "http_request method=%s path=%s status=%s duration_ms=%.2f request_id=%s",

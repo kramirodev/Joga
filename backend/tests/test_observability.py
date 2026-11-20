@@ -7,6 +7,7 @@ import logging
 from fastapi.testclient import TestClient
 
 from app.core.observability import request_id_from
+from app.main import create_app
 
 
 def test_request_id_is_generated_and_headers_are_set(client: TestClient) -> None:
@@ -59,3 +60,25 @@ def test_access_log_does_not_include_query_string(
     )
     assert "path=/api/v1/sports" in messages
     assert "secret-value" not in messages
+
+
+def test_unhandled_exception_returns_500_with_headers() -> None:
+    app = create_app()
+
+    @app.get("/__test__/boom")
+    def boom() -> None:
+        raise RuntimeError("boom-detail")
+
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        response = test_client.get(
+            "/__test__/boom",
+            headers={"X-Request-ID": "boom-request-1"},
+        )
+
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "boom-request-1"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == {"detail": {"code": "internal_error"}}
+    assert "boom-detail" not in response.text
