@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
-/** Intervalo pausado automaticamente quando o app vai para segundo plano. */
+/**
+ * Intervalo pausado automaticamente quando o app vai para segundo plano.
+ *
+ * O callback roda **imediatamente** ao habilitar e ao voltar do background:
+ * o cronômetro não pode esperar o primeiro `setInterval` para sair de 00:00.
+ */
 export function useActiveInterval(
   callback: () => void,
   milliseconds: number,
@@ -18,11 +23,14 @@ export function useActiveInterval(
       return;
     }
     let timer: ReturnType<typeof setInterval> | null = null;
+    const tick = () => latest.current();
     const start = () => {
+      // Tick imediato: cobre o mount, a habilitação e o retorno do background.
+      tick();
       if (timer) {
         return;
       }
-      timer = setInterval(() => latest.current(), milliseconds);
+      timer = setInterval(tick, milliseconds);
     };
     const stop = () => {
       if (timer) {

@@ -82,7 +82,7 @@ export function TicketConversionTable({ emphasis }: { emphasis?: FormatFamily })
     <Card>
       <Txt variant="h3">Tabela de conversão</Txt>
       <Txt variant="tiny" style={{ marginTop: 4 }}>
-        Ingressos por jogador. O servidor congela a quantidade e o preço na reserva.
+        Ingressos por jogador. Quantidade e preço são congelados na reserva.
       </Txt>
       <Row style={{ marginTop: 10 }}>
         <Txt variant="label" style={{ flex: 1.5 }}>

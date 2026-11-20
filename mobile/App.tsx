@@ -273,7 +273,7 @@ function Sheet({
     },
     cancel: {
       title: 'Cancelar participação?',
-      text: 'Você recusa a participação. Se a reserva já existe, o cutoff decide: antes dele há devolução integral em ingressos; depois dele não há devolução e um substituto pode ocupar a vaga.',
+      text: 'Você recusa a participação. Se a reserva já existe, o prazo decide: antes dele há devolução integral em ingressos; depois dele não há devolução e um substituto pode ocupar a vaga.',
       cancel: 'Manter vaga',
       confirm: 'Cancelar participação',
       danger: true,
@@ -763,12 +763,15 @@ function Shell() {
   const screen = REGISTRY[current.id] ?? REGISTRY.welcome;
   const showTabBar = !app.suspended && signedIn && !!screen.tab;
   const canGoBack = stack.length > 1 && !app.suspended;
+  // Regra única do indicador: aparece sempre que há sessão ativa, nenhuma
+  // suspensão e alguma busca/aviso — inclusive em `queue` e `queue-search`,
+  // onde o próprio indicador usa a versão compacta (uma linha) para não
+  // duplicar o conteúdo da tela.
   const showQueueIndicator =
     !app.suspended &&
     signedIn &&
-    current.id !== 'queue' &&
-    current.id !== 'queue-search' &&
     (app.queue.length > 0 || app.matchedEntry !== null || app.queueNotice !== null);
+  const compactQueueIndicator = current.id === 'queue' || current.id === 'queue-search';
   const toastBottom = (showTabBar ? 80 : 20) + insets.bottom;
   // Fonte única do inset inferior: a tab bar já reserva o espaço do sistema.
   const contentBottomInset = showTabBar ? 0 : insets.bottom;
@@ -1063,7 +1066,7 @@ function Shell() {
                 })
               )}
             </View>
-            {showQueueIndicator ? <QueueIndicator /> : null}
+            {showQueueIndicator ? <QueueIndicator compact={compactQueueIndicator} /> : null}
             {showTabBar ? (
               <TabBar tab={tab} onSelect={nav.tabTo} bottomInset={insets.bottom} />
             ) : null}

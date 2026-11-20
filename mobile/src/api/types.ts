@@ -206,12 +206,15 @@ export type QueueEntry = {
 };
 
 /**
- * Contrato 0057: `entries` traz todas as entradas `waiting`; `entry` é o campo
- * legado (última `waiting` ou `matched`) mantido para compatibilidade.
+ * Contrato 0057: `entries` traz todas as entradas `waiting`, `matched` lista as
+ * partidas encontradas com lobby `scheduled` e `entry` é o campo legado (última
+ * `waiting` ou `matched`) mantido para compatibilidade. A UI lê `matched`; o
+ * campo `entry` só entra quando o servidor antigo não devolve a lista.
  */
 export type QueueStateResponse = {
   entry: QueueEntry | null;
   entries: QueueEntry[];
+  matched?: QueueEntry[];
 };
 
 export type QueueSelectionPayload = {

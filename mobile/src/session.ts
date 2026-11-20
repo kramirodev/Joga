@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { api, ApiError } from './api/client';
+import { createSingleFlight } from './api/singleFlight';
 import type { Tokens } from './api/types';
 
 const ACCESS_KEY = 'joga.access_token';
@@ -65,8 +66,7 @@ export async function loadSession(): Promise<Session | null> {
     const expiry = new Date(expiresAt).getTime();
     if (Number.isFinite(expiry) && expiry < Date.now() + 30_000) {
       try {
-        const refreshed = await api.auth.refresh(refreshToken);
-        return saveSession(refreshed);
+        return await refreshSession(session);
       } catch (error) {
         if (error instanceof ApiError && error.status === 0) {
           return session;
@@ -83,12 +83,47 @@ export async function loadSession(): Promise<Session | null> {
   return session;
 }
 
-export async function refreshStoredSession(session: Session): Promise<Session> {
-  const refreshed = await api.auth.refresh(session.refreshToken);
-  return saveSession(refreshed);
+const refreshGate = createSingleFlight<string, Session>();
+
+/**
+ * Último par rotacionado, por refresh token de origem. Protege contra um
+ * chamador atrasado que ainda esteja com o token antigo depois do término do
+ * single-flight: o backend revoga a família inteira ao detectar reuso.
+ */
+let lastRotation: { used: string; session: Session } | null = null;
+
+/**
+ * Única porta de entrada do refresh de sessão.
+ *
+ * - serializa por refresh token: duas chamadas concorrentes aguardam a mesma
+ *   promessa e fazem **um** `POST /auth/refresh`;
+ * - grava o par rotacionado antes de liberar os chamadores, para que um
+ *   restart nunca reuse o token antigo (o backend revoga a família inteira ao
+ *   detectar reuso);
+ * - devolve a rotação já feita para um chamador atrasado com o token antigo;
+ * - não limpa sessão aqui: quem chama classifica 401/rede/suspensão.
+ */
+export function refreshSession(session: Session): Promise<Session> {
+  if (lastRotation && lastRotation.used === session.refreshToken) {
+    return Promise.resolve(lastRotation.session);
+  }
+  return refreshGate.run(session.refreshToken, async () => {
+    if (lastRotation && lastRotation.used === session.refreshToken) {
+      return lastRotation.session;
+    }
+    const refreshed = await api.auth.refresh(session.refreshToken);
+    const saved = await saveSession(refreshed);
+    lastRotation = { used: session.refreshToken, session: saved };
+    return saved;
+  });
+}
+
+export function refreshStoredSession(session: Session): Promise<Session> {
+  return refreshSession(session);
 }
 
 export async function clearSession(): Promise<void> {
+  lastRotation = null;
   await Promise.all([
     SecureStore.deleteItemAsync(ACCESS_KEY),
     SecureStore.deleteItemAsync(REFRESH_KEY),

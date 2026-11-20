@@ -277,14 +277,9 @@ export function QueueScreen() {
 
   return (
     <Page title="Buscar partida">
-      {syncing ? (
-        <Notice icon="clock">Sincronizando suas buscas ativas com o servidor…</Notice>
-      ) : null}
+      {syncing ? <Notice icon="clock">Sincronizando suas buscas…</Notice> : null}
       <Card tone="flat">
-        <Row between>
-          <Txt variant="h3">Modos</Txt>
-          <Txt variant="tiny">marque um ou os dois</Txt>
-        </Row>
+        <Txt variant="h3">Modos</Txt>
         <ChipRow style={{ marginTop: 8 }}>
           {QUEUE_MODES.map((mode) => (
             <Chip key={mode} on={modes.includes(mode)} onPress={() => toggleMode(mode)}>
@@ -292,10 +287,6 @@ export function QueueScreen() {
             </Chip>
           ))}
         </ChipRow>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Cada modo vira uma busca separada. O servidor decide as partidas; a ordem não é
-          preferência.
-        </Txt>
       </Card>
       {modes.includes('ranked') ? (
         <Card tone="blue">
@@ -308,9 +299,6 @@ export function QueueScreen() {
             </View>
             <Badge>temporada 2026-Q4</Badge>
           </Row>
-          <Txt variant="tiny" style={{ marginTop: 8 }}>
-            A divisão é recalculada na virada da temporada.
-          </Txt>
         </Card>
       ) : (
         <Card tone="green">
@@ -324,7 +312,7 @@ export function QueueScreen() {
             <Badge tone="green">sem divisão</Badge>
           </Row>
           <Txt variant="tiny" style={{ marginTop: 8 }}>
-            Partida para jogar e conhecer gente. Resultado não altera sua divisão.
+            Resultado não altera sua divisão.
           </Txt>
         </Card>
       )}
@@ -335,7 +323,7 @@ export function QueueScreen() {
         </Row>
         {options.length === 0 ? (
           <Txt variant="tiny" style={{ marginTop: 8 }}>
-            Catálogo de formatos indisponível. Tente novamente em instantes.
+            Catálogo indisponível. Tente novamente.
           </Txt>
         ) : (
           <ChipRow style={{ marginTop: 8 }}>
@@ -389,20 +377,40 @@ export function QueueScreen() {
           </Btn>
         </View>
       </Card>
-      <Card tone="flat">
-        <Row between>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt variant="label">Custo estimado</Txt>
-            <Text style={{ fontSize: 30, lineHeight: 34, fontWeight: '900', color: palette.ink }}>
-              7 <Text style={{ fontSize: 14, fontWeight: '700' }}>ingressos</Text>
-            </Text>
-          </View>
-          <Badge tone="lime">saldo {wallet?.balance ?? 18}</Badge>
-        </Row>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          O valor final aparece na confirmação da vaga.
-        </Txt>
-      </Card>
+      {court === 'Particulares' ? (
+        <Card tone="flat">
+          <Row between>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Txt variant="label">Custo estimado</Txt>
+              <Text style={{ fontSize: 30, lineHeight: 34, fontWeight: '900', color: palette.ink }}>
+                7 <Text style={{ fontSize: 14, fontWeight: '700' }}>ingressos</Text>
+              </Text>
+            </View>
+            <Badge tone="lime">{wallet ? `saldo ${wallet.balance}` : 'saldo indisponível'}</Badge>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 8 }}>
+            O valor final aparece na confirmação da vaga.
+          </Txt>
+        </Card>
+      ) : court === 'Públicas' ? (
+        <Card tone="flat">
+          <Row between>
+            <Txt variant="label">Quadra</Txt>
+            <Badge tone="green">Grátis</Badge>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 8 }}>
+            Quadra pública não consome ingressos.
+          </Txt>
+        </Card>
+      ) : (
+        <Card tone="flat">
+          <Txt variant="label">Custo</Txt>
+          <Txt variant="tiny" style={{ marginTop: 4 }}>
+            Pode ser grátis em quadra pública. O custo só aparece se a partida for em quadra
+            particular.
+          </Txt>
+        </Card>
+      )}
       <Card tone="flat">
         <Row between>
           <Txt variant="label">Buscas que serão enviadas</Txt>
@@ -413,8 +421,7 @@ export function QueueScreen() {
         </Text>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
           {selection.formats.length} {selection.formats.length === 1 ? 'esporte' : 'esportes'} ×{' '}
-          {selection.modes.length} {selection.modes.length === 1 ? 'modo' : 'modos'}. O servidor
-          substitui a seleção atual de uma vez; não somamos buscas antigas.
+          {selection.modes.length} {selection.modes.length === 1 ? 'modo' : 'modos'}
         </Txt>
       </Card>
       {hasConfirmed ? (
@@ -435,7 +442,7 @@ export function QueueScreen() {
             ) : null}
             {queue.length === 0 ? (
               <Txt variant="tiny" style={{ marginTop: 8 }}>
-                Nenhuma entrada aguardando no servidor.
+                Nenhuma busca aguardando.
               </Txt>
             ) : (
               <View style={{ marginTop: 8, gap: 8 }}>
@@ -464,13 +471,15 @@ export function QueueScreen() {
       ) : null}
       {modes.includes('ranked') ? (
         <Notice tone="blue" icon="shield">
-          Ranqueada exige pelo menos 1 substituto em standby. Fila insuficiente pode virar casual.
+          Ranqueada considera sua divisão e compatibilidade.
         </Notice>
       ) : null}
       {failure ? (
-        <Notice tone="orange" icon="alert">
-          {failure.message}
-        </Notice>
+        <Appear>
+          <Notice tone="orange" icon="alert">
+            {failure.message}
+          </Notice>
+        </Appear>
       ) : null}
       {failure?.code === 'region_required' ? (
         <Btn tone="ghost" onPress={() => nav.go('region')}>
@@ -509,9 +518,7 @@ export function QueueScreen() {
       </Btn>
       {busy ? (
         <Notice icon="clock">
-          {hasConfirmed
-            ? 'Mantendo a última lista confirmada até o servidor responder.'
-            : 'Enviando sua seleção ao servidor. Nada aparece como ativo antes da confirmação.'}
+          {hasConfirmed ? 'Atualizando sua busca…' : 'Entrando na fila…'}
         </Notice>
       ) : null}
       <Btn small tone="ghost" onPress={() => nav.go('queue-empty')}>
@@ -544,7 +551,15 @@ export function QueueSearch() {
   const routed = useRef<string | null>(null);
 
   const oldest = oldestCreatedAt(queue);
-  useActiveInterval(() => setNow(new Date()), 1000, queue.length > 0);
+  const tick = useCallback(() => setNow(new Date()), []);
+  useActiveInterval(tick, 1000, queue.length > 0);
+  // Reancora o relógio quando a entrada mais antiga muda (entrou, saiu, ou o
+  // GET trouxe `created_at` novo). Sem isso, `now` ficaria no mount e o
+  // cronômetro só sairia de 00:00 no próximo tick — ou nunca, com clock skew.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(new Date());
+  }, [oldest]);
 
   useEffect(() => {
     if (!session) {
@@ -662,7 +677,7 @@ export function QueueSearch() {
     if (syncing) {
       return (
         <Page title="Buscas ativas">
-          <LoadingState label="Sincronizando sua fila com o servidor…" />
+          <LoadingState label="Sincronizando suas buscas…" />
         </Page>
       );
     }
@@ -670,7 +685,7 @@ export function QueueSearch() {
       <Page title="Buscas ativas">
         <EmptyState
           title="Nenhuma busca ativa"
-          text="O servidor não tem entradas aguardando para você. Se você acabou de cancelar, está tudo certo. Para procurar de novo, monte a seleção de esportes e modos."
+          text="Nenhuma busca aguardando. Monte uma nova seleção para procurar partida."
           actions={
             <Btn tone="primary" onPress={() => nav.go('queue', { from: 'queue-search' })}>
               Buscar partida
@@ -702,38 +717,39 @@ export function QueueSearch() {
   return (
     <Page title="Buscas ativas">
       {matchedEntry ? (
-        <Card tone="blue">
-          <Row between>
-            <Txt variant="label">Partida encontrada</Txt>
-            <Badge>servidor</Badge>
-          </Row>
-          <Text
-            numberOfLines={2}
-            style={{ fontSize: 20, lineHeight: 24, fontWeight: '900', color: palette.ink }}
-          >
-            {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
-          </Text>
-          <Txt variant="tiny" style={{ marginTop: 6 }}>
-            Esta é a entrada que o servidor fechou. As demais continuam aguardando; a ordem não
-            escolhe vencedor.
-          </Txt>
-          {matchedEntry.lobby ? (
-            <Btn
-              tone="primary"
-              onPress={() =>
-                matchedEntry.lobby &&
-                nav.replace('lobby-found', {
-                  lobbyId: matchedEntry.lobby.id,
-                  mode: matchedEntry.mode,
-                })
-              }
+        <Appear>
+          <Card tone="blue">
+            <Row between>
+              <Txt variant="label">Partida encontrada</Txt>
+              <Badge>encontrada</Badge>
+            </Row>
+            <Text
+              numberOfLines={2}
+              style={{ fontSize: 20, lineHeight: 24, fontWeight: '900', color: palette.ink }}
             >
-              Ver partida
-            </Btn>
-          ) : (
-            <Txt variant="tiny">Preparando o lobby da partida…</Txt>
-          )}
-        </Card>
+              {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
+            </Text>
+            <Txt variant="tiny" style={{ marginTop: 6 }}>
+              As outras buscas continuam aguardando.
+            </Txt>
+            {matchedEntry.lobby ? (
+              <Btn
+                tone="primary"
+                onPress={() =>
+                  matchedEntry.lobby &&
+                  nav.replace('lobby-found', {
+                    lobbyId: matchedEntry.lobby.id,
+                    mode: matchedEntry.mode,
+                  })
+                }
+              >
+                Ver partida
+              </Btn>
+            ) : (
+              <Txt variant="tiny">Preparando o lobby da partida…</Txt>
+            )}
+          </Card>
+        </Appear>
       ) : null}
       <Appear>
         <Card>
@@ -748,7 +764,7 @@ export function QueueSearch() {
           </Row>
           {queue.length === 0 ? (
             <Txt variant="tiny" style={{ marginTop: 8 }}>
-              Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
+              A partida encontrada é a única pendência.
             </Txt>
           ) : (
             <View style={{ marginTop: 10, gap: 12 }}>
@@ -767,8 +783,7 @@ export function QueueSearch() {
         </Card>
       </Appear>
       <Notice icon="clock">
-        Não prometemos um tempo de espera. Uma combinação pode encontrar partida antes das outras; o
-        servidor decide e a tela apenas reflete.
+        Não prometemos um tempo de espera — pode fechar o aplicativo ou voltar.
       </Notice>
       {queueNotice ? (
         <Notice tone="orange" icon="alert">
@@ -789,8 +804,7 @@ export function QueueSearch() {
             Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'}?
           </Txt>
           <Txt variant="tiny" style={{ marginTop: 6 }}>
-            As buscas que ainda aguardam serão canceladas no servidor. Se já há partida encontrada,
-            ela não é cancelada aqui. Se a rede falhar, nada é removido da tela.
+            As buscas ainda aguardando serão canceladas. A partida encontrada não é cancelada aqui.
           </Txt>
           <BtnRow>
             <Btn tone="ghost" onPress={() => setConfirming(false)} disabled={busy}>
@@ -811,14 +825,9 @@ export function QueueSearch() {
           {queueNotice ? 'Dispensar aviso' : 'Reler fila'}
         </Btn>
       ) : null}
-      <Card tone="flat">
-        <Row between>
-          <Txt variant="tiny">Enquanto isso</Txt>
-          <Btn small tone="ghost" onPress={() => nav.back()}>
-            Voltar
-          </Btn>
-        </Row>
-      </Card>
+      <Btn small tone="ghost" onPress={() => nav.back()}>
+        Voltar
+      </Btn>
     </Page>
   );
 }

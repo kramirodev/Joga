@@ -221,6 +221,47 @@ test('empate: servidor devolve uma matched e outra waiting; UI reflete', () => {
   assert.equal(snapshot.entries[0].id, 'other');
 });
 
+test('matched[] do contrato 0057 é lido sem depender do entry legado', () => {
+  const winner = entry({ id: 'winner', status: 'matched', lobby: lobby('lobby-m') });
+  const snapshot = reconcileEntries(
+    {
+      entries: [entry({ id: 'waiting-1' })],
+      matched: [winner],
+      entry: null,
+    },
+    NOW,
+  );
+  assert.equal(snapshot.entries.length, 1);
+  assert.equal(snapshot.matched?.id, 'winner');
+  assert.equal(snapshot.matched?.lobby?.id, 'lobby-m');
+});
+
+test('matched[] + entry legado duplicado não duplica nem troca o vencedor', () => {
+  const winner = entry({ id: 'winner', status: 'matched', lobby: lobby('lobby-m') });
+  const snapshot = reconcileEntries(
+    {
+      entries: [winner, entry({ id: 'waiting-1' })],
+      matched: [winner],
+      entry: winner,
+    },
+    NOW,
+  );
+  assert.deepEqual(
+    snapshot.entries.map((item) => item.id),
+    ['waiting-1'],
+  );
+  assert.equal(snapshot.matched?.id, 'winner');
+  assert.equal(snapshot.duplicates, 0);
+});
+
+test('vários matched: mostra o primeiro (mais recente), sem escolher localmente', () => {
+  const newest = entry({ id: 'newest', status: 'matched', lobby: lobby('lobby-new') });
+  const older = entry({ id: 'older', status: 'matched', lobby: lobby('lobby-old') });
+  const snapshot = reconcileEntries({ entries: [], matched: [newest, older], entry: null }, NOW);
+  assert.equal(snapshot.matched?.id, 'newest');
+  assert.equal(snapshot.entries.length, 0);
+});
+
 test('expires_at vencido é removido da lista', () => {
   const expired = entry({ id: 'expired', expires_at: '2026-11-20T11:59:00Z' });
   assert.equal(isExpired(expired, NOW), true);

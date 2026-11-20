@@ -46,8 +46,8 @@ function emailError(error: unknown): EmailErrorInfo {
     return { message: 'Não foi possível concluir a ação.', unavailable: false };
   }
   const messages: Record<string, string> = {
-    network_unavailable: 'Não foi possível falar com o servidor.',
-    request_timeout: 'O servidor demorou para responder. Tente novamente.',
+    network_unavailable: 'Sem conexão. Tente novamente.',
+    request_timeout: 'A conexão demorou demais. Tente novamente.',
     invalid_email: 'Informe um e-mail válido.',
     email_domain_not_allowed: 'Este domínio de e-mail não é aceito.',
     invalid_code_or_challenge: 'Código inválido ou expirado.',
@@ -224,7 +224,7 @@ function PasswordHint({ password }: { password: string }) {
   }
   return (
     <Notice tone="orange" icon="info">
-      A senha é curta. Use pelo menos 10 caracteres. O aviso não bloqueia o envio.
+      Use pelo menos 10 caracteres.
     </Notice>
   );
 }
@@ -279,7 +279,7 @@ function EmailEntry() {
         <StateScreen
           icon="mail"
           title="E-mail indisponível nesta versão"
-          text="O cadastro por e-mail está desligado no servidor. Tente novamente quando o método estiver disponível."
+          text="O cadastro por e-mail está indisponível no momento. Tente novamente quando o método estiver disponível."
           actions={
             <>
               <Btn tone="primary" go="login">
@@ -338,7 +338,7 @@ function EmailEntry() {
             : 'Receber código'}
       </Btn>
       <Notice tone="blue" icon="info">
-        A entrega é assíncrona: o código pode levar alguns minutos. Não feche esta tela.
+        O código pode levar alguns minutos. Não feche esta tela.
       </Notice>
       <TextBtn
         muted
@@ -638,7 +638,8 @@ function SignupPassword() {
       />
       <PasswordHint password={password} />
       <Notice tone="blue" icon="shield">
-        A senha fica só no servidor. O app guarda apenas os tokens de sessão no Keychain/Keystore.
+        A senha nunca fica no aparelho. O app guarda apenas os tokens de sessão no
+        Keychain/Keystore.
       </Notice>
       {feedback ? (
         <Notice tone="orange" icon="alert">
@@ -795,7 +796,7 @@ function EmailLogin() {
         <StateScreen
           icon="mail"
           title="E-mail indisponível nesta versão"
-          text="O login por e-mail está desligado no servidor. Use a passkey para entrar ou tente mais tarde."
+          text="O login por e-mail está indisponível no momento. Use a passkey para entrar ou tente mais tarde."
           actions={
             <Btn tone="primary" go="login">
               Usar passkey
@@ -932,7 +933,7 @@ function ForgotPassword() {
         <StateScreen
           icon="mail"
           title="E-mail indisponível nesta versão"
-          text="A recuperação por e-mail está desligada no servidor. Use a passkey ou fale com o suporte."
+          text="A recuperação por e-mail está indisponível no momento. Use a passkey ou fale com o suporte."
           actions={
             <Btn tone="primary" go="login">
               Voltar para entrar
@@ -962,7 +963,7 @@ function ForgotPassword() {
         />
       </Field>
       <Notice tone="blue" icon="mail">
-        A entrega é assíncrona e pode levar alguns minutos. Não feche a próxima tela.
+        O código pode levar alguns minutos. Não feche a próxima tela.
       </Notice>
       {feedback ? (
         <Notice tone="orange" icon="alert">

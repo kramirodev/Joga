@@ -709,7 +709,7 @@ function Cpf() {
       ) : null}
       <Notice tone="blue" icon="shield">
         O CPF é armazenado de forma protegida. A NFS-e de intermediação é emitida pelo JOGA contra o
-        mesmo titular; o app não inventa número de documento.
+        mesmo titular.
       </Notice>
     </Page>
   );
@@ -842,7 +842,7 @@ function TermsPrivacy() {
     {
       icon: 'clock' as const,
       title: 'Política de cancelamento',
-      sub: 'Cutoff, T4, no-show e devolução',
+      sub: 'Prazos, faltas e devolução',
       readOnly: false,
     },
     {
@@ -885,8 +885,8 @@ function TermsPrivacy() {
         ))}
       </CardList>
       <Notice tone="blue" icon="info">
-        A versão vigente é a aprovada e publicada pelo servidor. Quando uma nova versão exige
-        aceite, a compra de crédito mostra o texto antes de abrir o Pix.
+        A versão vigente é a publicada. Quando uma nova versão exige aceite, a compra de crédito
+        mostra o texto antes de abrir o Pix.
       </Notice>
     </Page>
   );
@@ -898,8 +898,8 @@ function Support() {
   const items = [
     {
       icon: 'clock' as const,
-      title: 'Prazos, cutoff e no-show',
-      sub: 'Como T1–T9 funcionam',
+      title: 'Prazos e faltas',
+      sub: 'Como os prazos funcionam',
       toast: 'Conteúdo em implantação',
     },
     {
@@ -1087,7 +1087,7 @@ function ErrorGeneric() {
       <StateScreen
         icon="alert"
         title="Algo deu errado"
-        text="Não conseguimos carregar esta tela. Tente novamente. Se o problema continuar, o suporte tem o identificador da sessão."
+        text="Não foi possível carregar. Tente novamente ou fale com o suporte."
         actions={
           <>
             <Btn tone="primary" toast="Tentando novamente no protótipo">
@@ -1231,10 +1231,6 @@ function Decisions() {
           ))}
         </View>
       </Card>
-      <Notice tone="orange" icon="alert">
-        A decisão 7 precisa ser registrada em ADR para substituir a regra anterior de divisão que
-        não resetava.
-      </Notice>
     </Page>
   );
 }
