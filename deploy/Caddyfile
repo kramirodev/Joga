@@ -43,7 +43,15 @@
 	}
 
 	handle /api/* {
-		reverse_proxy 127.0.0.1:8000
+		# A porta do container nao e publica no Render: o unico caminho externo e
+		# a borda, que envia X-Forwarded-Proto: https. Sem trusted_proxies, o
+		# reverse_proxy descartaria esse valor e mandaria "http" ao uvicorn,
+		# gerando Location http:// atras de HTTPS. O header_up repassa o valor da
+		# borda. Se o header nao existir (health check interno/direto), o
+		# placeholder resolve vazio; o uvicorn ignora o valor vazio e usa http.
+		reverse_proxy 127.0.0.1:8000 {
+			header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+		}
 	}
 
 	handle {

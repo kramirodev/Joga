@@ -15,6 +15,11 @@ from app.core.versioning import parse_version
 DEFAULT_PHONE_HASH_SECRET = "local-development-only-change-me"
 DEFAULT_TOKEN_HASH_SECRET = "local-token-development-only-change-me"
 
+# Hosts sempre aceitos no header Host. ``testserver`` é o host padrão do
+# TestClient; os demais cobrem desenvolvimento local e sondas de loopback.
+# O host público do Render é acrescentado por ``RENDER_EXTERNAL_HOSTNAME``.
+DEFAULT_TRUSTED_HOSTS = ("localhost", "127.0.0.1", "testserver")
+
 # Cotas diárias dos planos usados pelo beta. O orçamento configurado precisa
 # ficar abaixo da cota para não esgotá-la sem margem operacional.
 EMAIL_PROVIDER_QUOTAS = {
@@ -40,6 +45,16 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=3, ge=1, le=30)
     max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     log_level: str = "INFO"
+
+    # Allowlist do header Host (TrustedHostMiddleware). Lista extra separada por
+    # vírgula, sem esquema, porta ou curinga. RENDER_EXTERNAL_HOSTNAME, quando
+    # presente, entra na allowlist porque o Render é a origem pública do demo.
+    trusted_hosts: str = ""
+    render_external_hostname: str | None = Field(
+        default=None,
+        validation_alias="RENDER_EXTERNAL_HOSTNAME",
+        max_length=253,
+    )
 
     # Gate de versão do app mobile (ADR 0051). Desativado no desenvolvimento
     # local/testes; o demo/produção pode ativá-lo sem alterar o código.
@@ -277,6 +292,19 @@ class Settings(BaseSettings):
             return EMAIL_PROVIDER_QUOTAS[self.email_provider]
         return None
 
+    @property
+    def trusted_host_list(self) -> list[str]:
+        """Allowlist efetiva do header Host, sem duplicatas e em minúsculas."""
+        hosts = list(DEFAULT_TRUSTED_HOSTS)
+        external_hostname = (self.render_external_hostname or "").strip().lower()
+        if external_hostname:
+            hosts.append(external_hostname)
+        for item in self.trusted_hosts.split(","):
+            candidate = item.strip().lower()
+            if candidate and candidate not in hosts:
+                hosts.append(candidate)
+        return hosts
+
     # Moderação (Fase 17A). Operadores são nomes internos, não usuários do app.
     moderation_operators: str = ""
     moderation_admin_user_ids: str = ""
@@ -307,6 +335,24 @@ class Settings(BaseSettings):
         """Permite ``JOGA_DEV_FIXED_OTP=`` no ambiente sem quebrar o boot."""
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("trusted_hosts", "render_external_hostname")
+    @classmethod
+    def validate_trusted_host(cls, value: str | None) -> str | None:
+        """Recusa curinga, esquema, porta ou caminho na allowlist de Host."""
+        if value is None:
+            return None
+        for item in value.split(","):
+            entry = item.strip()
+            if not entry:
+                continue
+            if "*" in entry:
+                raise ValueError("allowlist de Host nao aceita curinga")
+            if any(marker in entry for marker in ("://", "/", ":", " ")):
+                raise ValueError(
+                    "allowlist de Host aceita apenas nomes de host, sem esquema, porta ou caminho"
+                )
         return value
 
     @property
