@@ -136,6 +136,7 @@ class AdminVenueView(BaseModel):
     is_public: bool
     status: str
     spaces_count: int
+    active_spaces_count: int
     created_at: datetime
     updated_at: datetime
 
@@ -263,6 +264,12 @@ class AdminBusinessHourView(BaseModel):
 
 
 def _venue_view(session: Session, venue: OrganizationVenue) -> AdminVenueView:
+    total_spaces, active_spaces = session.execute(
+        select(
+            func.count(VenueSpace.id),
+            func.count(VenueSpace.id).filter(VenueSpace.status == "active"),
+        ).where(VenueSpace.organization_venue_id == venue.id)
+    ).one()
     return AdminVenueView(
         id=venue.id,
         organization_id=venue.organization_id,
@@ -277,14 +284,8 @@ def _venue_view(session: Session, venue: OrganizationVenue) -> AdminVenueView:
         geocoding_precision=venue.geocoding_precision,
         is_public=venue.is_public,
         status=venue.status,
-        spaces_count=int(
-            session.scalar(
-                select(func.count())
-                .select_from(VenueSpace)
-                .where(VenueSpace.organization_venue_id == venue.id)
-            )
-            or 0
-        ),
+        spaces_count=int(total_spaces),
+        active_spaces_count=int(active_spaces),
         created_at=venue.created_at,
         updated_at=venue.updated_at,
     )

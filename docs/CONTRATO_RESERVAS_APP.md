@@ -1385,7 +1385,9 @@ PATCH /api/v1/admin/venues/{id}/business-hours/{business_hour_id}
 DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
 ```
 
-- A lista `GET /admin/venues` devolve `spaces_count`.
+- A lista `GET /admin/venues` e o detalhe `GET /admin/venues/{id}` devolvem
+  `spaces_count` (total de espaços) e `active_spaces_count` (somente espaços com
+  `status = "active"`). `spaces_count` permanece para compatibilidade.
 - `GET /admin/venues/{id}` devolve a quadra com `spaces[]`.
 - `GET /admin/venues/{id}/spaces` lista espaços para edição.
 - `GET .../availability` exige `?space_id=` (o painel deve enviar o espaço
