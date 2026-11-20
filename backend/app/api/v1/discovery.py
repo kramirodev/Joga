@@ -298,7 +298,8 @@ def get_bookable_venue_photo(
         media_type=content_type,
         headers={
             "Content-Disposition": 'inline; filename="venue-photo.jpg"',
-            "Cache-Control": "private, max-age=60",
+            # Cache-Control efetivo é definido pelo middleware de
+            # observabilidade (no-store); não duplicar aqui.
         },
     )
 
