@@ -1,12 +1,13 @@
 """Testes do fluxo completo de conta e sessão (SQLite em memória)."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_challenge_service, get_sms_sender
@@ -16,10 +17,12 @@ from app.modules.identity.events import (
     AUTH_LOGIN_COMPLETED,
     AUTH_LOGOUT,
     AUTH_LOGOUT_ALL,
+    AUTH_REFRESH_GRACE_USED,
     AUTH_REFRESH_ROTATED,
     AUTH_REGISTRATION_COMPLETED,
 )
 from app.modules.identity.models import PhoneChallenge, SecurityEvent, User, UserPhone
+from app.modules.identity.models import Session as SessionRecord
 from app.modules.identity.otp import OtpPolicy, PhoneChallengeService
 from app.modules.identity.sms import RecordingSmsSender
 
@@ -203,6 +206,14 @@ def test_refresh_rotation_and_reuse(
     assert api.get("/api/v1/auth/me", headers=bearer(first["access_token"])).status_code == 401
     assert api.get("/api/v1/auth/me", headers=bearer(second["access_token"])).status_code == 200
 
+    # Fora da janela de tolerância, o reuso continua revogando a família.
+    db_session.execute(
+        update(SessionRecord)
+        .where(SessionRecord.revoked_reason == "rotated")
+        .values(revoked_at=datetime.now(UTC) - timedelta(seconds=31))
+    )
+    db_session.commit()
+
     reuse = refresh(api, first["refresh_token"])
     assert reuse.status_code == 401
     assert reuse.json() == {"detail": {"code": "refresh_reuse_detected"}}
@@ -212,6 +223,39 @@ def test_refresh_rotation_and_reuse(
 
     event_types = set(db_session.scalars(select(SecurityEvent.event_type)))
     assert AUTH_REFRESH_ROTATED in event_types
+
+
+def test_refresh_reuse_within_grace_returns_retry_without_revoking(
+    api: TestClient,
+    db_session: Session,
+    sms_sender: RecordingSmsSender,
+) -> None:
+    receipt = receipt_for(api, sms_sender, PHONE, "registration")
+    first = register(api, receipt).json()
+
+    rotated = refresh(api, first["refresh_token"])
+    assert rotated.status_code == 200, rotated.text
+    second = rotated.json()
+
+    retry = refresh(api, first["refresh_token"])
+    assert retry.status_code == 401
+    assert retry.json() == {"detail": {"code": "refresh_retry_required"}}
+
+    # A família continua ativa: o token vencedor da corrida ainda funciona.
+    assert api.get("/api/v1/auth/me", headers=bearer(second["access_token"])).status_code == 200
+    next_rotation = refresh(api, second["refresh_token"])
+    assert next_rotation.status_code == 200, next_rotation.text
+
+    events = list(
+        db_session.scalars(
+            select(SecurityEvent).where(SecurityEvent.event_type == AUTH_REFRESH_GRACE_USED)
+        )
+    )
+    assert len(events) == 1
+    assert events[0].user_id == UUID(first["user"]["id"])
+    assert events[0].details is not None
+    assert isinstance(events[0].details["age_seconds"], int)
+    assert first["refresh_token"] not in str(events[0].details)
 
 
 def test_logout_revokes_current_session(

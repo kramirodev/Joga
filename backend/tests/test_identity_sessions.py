@@ -15,6 +15,7 @@ from app.modules.identity.models import User
 from app.modules.identity.sessions import (
     InvalidAccessToken,
     InvalidRefreshToken,
+    RefreshRetryRequired,
     RefreshReuseDetected,
     SessionError,
     SessionService,
@@ -46,13 +47,14 @@ def make_user(session: Session) -> User:
     return user
 
 
-def build_service(session: Session) -> SessionService:
+def build_service(session: Session, *, grace_seconds: int = 30) -> SessionService:
     return SessionService(
         session,
         SECRET,
         access_ttl_seconds=600,
         refresh_absolute_ttl_days=30,
         refresh_idle_ttl_days=7,
+        refresh_reuse_grace_seconds=grace_seconds,
     )
 
 
@@ -111,9 +113,97 @@ def test_rotation_invalidates_old_tokens(session: Session) -> None:
         service.authenticate(issued.access_token, now=BASE_TIME + timedelta(seconds=2))
 
 
-def test_refresh_reuse_revokes_family(session: Session) -> None:
+def test_refresh_reuse_after_grace_window_revokes_family(session: Session) -> None:
     user = make_user(session)
     service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
+
+    with pytest.raises(RefreshReuseDetected):
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=32))
+
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    assert rotated_row.revoked_reason == "refresh_reuse"
+    with pytest.raises(InvalidAccessToken):
+        service.authenticate(rotated.access_token, now=BASE_TIME + timedelta(seconds=33))
+
+
+def test_refresh_grace_keeps_family_on_immediate_previous_token(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
+
+    with pytest.raises(RefreshRetryRequired) as caught:
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=2))
+
+    assert caught.value.age_seconds == 1
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    assert rotated_row.revoked_at is None
+    assert rotated_row.revoked_reason is None
+    assert service.authenticate(rotated.access_token, now=BASE_TIME + timedelta(seconds=2))
+
+    # O token mais novo continua rotacionável normalmente após a tolerância.
+    next_tokens = service.rotate(rotated.refresh_token, now=BASE_TIME + timedelta(seconds=3))
+    assert next_tokens.session_id != rotated.session_id
+
+
+def test_refresh_grace_revokes_token_two_rotations_back(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    first = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
+    second = service.rotate(first.refresh_token, now=BASE_TIME + timedelta(seconds=2))
+
+    # Dois segundos desde a rotação de ``issued``: dentro da janela, mas o
+    # token já não é o imediatamente anterior ao topo da família.
+    with pytest.raises(RefreshReuseDetected):
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=3))
+
+    second_row = session.get(SessionRecord, second.session_id)
+    assert second_row is not None
+    assert second_row.revoked_reason == "refresh_reuse"
+    for previous in (issued, first):
+        row = session.get(SessionRecord, previous.session_id)
+        assert row is not None
+        assert row.revoked_at is not None
+
+
+def test_refresh_grace_tolerates_small_clock_skew(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=10))
+
+    # Relógio da instância que atende o reuso ligeiramente atrás do vencedor.
+    with pytest.raises(RefreshRetryRequired) as caught:
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=9))
+
+    assert caught.value.age_seconds == 0
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    assert rotated_row.revoked_at is None
+
+
+def test_refresh_grace_rejects_skew_beyond_window(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=40))
+
+    with pytest.raises(RefreshReuseDetected):
+        service.rotate(issued.refresh_token, now=BASE_TIME)
+
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    assert rotated_row.revoked_reason == "refresh_reuse"
+
+
+def test_refresh_grace_disabled_matches_previous_behavior(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session, grace_seconds=0)
     issued = service.issue(user.id, now=BASE_TIME)
     rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
 
@@ -123,8 +213,31 @@ def test_refresh_reuse_revokes_family(session: Session) -> None:
     rotated_row = session.get(SessionRecord, rotated.session_id)
     assert rotated_row is not None
     assert rotated_row.revoked_reason == "refresh_reuse"
-    with pytest.raises(InvalidAccessToken):
-        service.authenticate(rotated.access_token, now=BASE_TIME + timedelta(seconds=3))
+
+
+def test_refresh_grace_never_returns_tokens_for_revoked_family(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
+    service.revoke_all(user.id, now=BASE_TIME + timedelta(seconds=2))
+
+    with pytest.raises(SessionError):
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=3))
+
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    assert rotated_row.revoked_at is not None
+
+
+def test_normal_rotation_sequence_stays_active(session: Session) -> None:
+    user = make_user(session)
+    service = build_service(session)
+    current = service.issue(user.id, now=BASE_TIME)
+
+    for offset in range(1, 4):
+        current = service.rotate(current.refresh_token, now=BASE_TIME + timedelta(seconds=offset))
+        assert service.authenticate(current.access_token, now=BASE_TIME + timedelta(seconds=offset))
 
 
 def test_refresh_absolute_expiry(session: Session) -> None:

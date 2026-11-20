@@ -50,6 +50,7 @@ import type {
   Progress,
   QueueCourtPreference,
   QueueEntry,
+  QueueLevelAssignment,
   QueueMode,
   Sport,
   Stats,
@@ -172,6 +173,7 @@ type AppValue = {
     formats: string[],
     modes: QueueMode[],
     courtPreference?: QueueCourtPreference,
+    levels?: QueueLevelAssignment[],
   ) => Promise<QueueReplaceOutcome>;
   cancelQueue: () => Promise<QueueCancelOutcome>;
   clearQueueNotice: () => void;
@@ -335,6 +337,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       formats: string[],
       modes: QueueMode[],
       courtPreference: QueueCourtPreference = 'ANY',
+      levels?: QueueLevelAssignment[],
     ): Promise<QueueReplaceOutcome> => {
       if (!token) {
         return {
@@ -357,11 +360,13 @@ export function AppProvider({ children }: PropsWithChildren) {
       const revision = queueRevisionRef.current;
       setQueueNotice(null);
       try {
-        // Uma única chamada atômica com todos os formatos e modos.
+        // Uma única chamada atômica com todos os formatos e modos. `levels` é
+        // opcional no contrato e só vai quando difere do default do servidor.
         const response = await api.queue.replace(token, {
           formats: selection.formats,
           modes: selection.modes,
           court_preference: courtPreference,
+          ...(levels && levels.length > 0 ? { levels } : {}),
         });
         const snapshot = reconcileEntries(response, Date.now());
         if (revision === queueRevisionRef.current) {

@@ -1,6 +1,8 @@
 import type {
   QueueCourtPreference,
   QueueEntry,
+  QueueLevel,
+  QueueLevelAssignment,
   QueueMode,
   QueueStateResponse,
   Sport,
@@ -15,6 +17,8 @@ import type {
  */
 
 export const QUEUE_MODES: readonly QueueMode[] = ['casual', 'ranked'];
+
+export const QUEUE_LEVELS: readonly QueueLevel[] = ['beginner', 'intermediate', 'advanced'];
 
 export const DEFAULT_QUEUE_MODES: readonly QueueMode[] = ['casual'];
 
@@ -60,6 +64,19 @@ export type QueueSummary = {
   formats: { formatId: string; count: number }[];
   modes: { mode: QueueMode; count: number }[];
   oldestCreatedAt: string | null;
+};
+
+/**
+ * O que a próxima confirmação preserva e o que cancela. Usado pela revisão do
+ * fluxo linear antes do `PUT`: nada é removido da lista confirmada antes do 2xx.
+ */
+export type QueueContinuity = {
+  /** Entradas confirmadas cuja combinação continua na seleção. */
+  kept: QueueEntry[];
+  /** Entradas confirmadas que serão canceladas ao confirmar. */
+  removed: QueueEntry[];
+  /** Combinações da seleção que ainda não existem no servidor. */
+  added: QueueCombination[];
 };
 
 export function emptySnapshot(): QueueSnapshot {
@@ -237,6 +254,101 @@ export function isStaleRevision(expected: number, current: number): boolean {
 
 function combinationKey(formatId: string, mode: QueueMode): string {
   return `${formatId}::${mode}`;
+}
+
+export function levelKey(formatId: string, mode: QueueMode): string {
+  return combinationKey(formatId, mode);
+}
+
+export function isQueueLevel(value: unknown): value is QueueLevel {
+  return value === 'beginner' || value === 'intermediate' || value === 'advanced';
+}
+
+export function levelLabel(level: QueueLevel): string {
+  if (level === 'beginner') {
+    return 'Iniciante';
+  }
+  return level === 'advanced' ? 'Avançado' : 'Intermediário';
+}
+
+/**
+ * Uma atribuição explícita de nível por entrada `(format_id, mode)`.
+ *
+ * `chosen` guarda a escolha local/servidor por chave; `fallback` resolve o
+ * default daquela combinação (nível do perfil, por exemplo). Se o valor salvo
+ * não for um nível válido, o default é usado; se o default também não for,
+ * cai em `intermediate`, o mesmo default da tela de esportes.
+ */
+export function buildLevelAssignments(
+  selection: QueueSelection,
+  chosen: Readonly<Record<string, string | undefined>>,
+  fallback: (formatId: string, mode: QueueMode) => string | null | undefined,
+): QueueLevelAssignment[] {
+  return selectionProduct(selection).map(({ formatId, mode }) => {
+    const stored = chosen[levelKey(formatId, mode)];
+    const candidate = isQueueLevel(stored) ? stored : fallback(formatId, mode);
+    return {
+      format_id: formatId,
+      mode,
+      level: isQueueLevel(candidate) ? candidate : 'intermediate',
+    };
+  });
+}
+
+/** Compara duas listas por `(format, mode)`, sem depender da ordem. */
+export function levelAssignmentsMatch(
+  left: readonly QueueLevelAssignment[],
+  right: readonly QueueLevelAssignment[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const byKey = new Map(
+    right.map((item) => [levelKey(item.format_id, item.mode), item.level] as const),
+  );
+  return left.every((item) => byKey.get(levelKey(item.format_id, item.mode)) === item.level);
+}
+
+/**
+ * Campo `levels` do `PUT`: opcional. Só é enviado quando algum nível escolhido
+ * difere do default do servidor; nesse caso leva **todas** as entradas
+ * selecionadas, para a revisão e o payload serem idênticos.
+ */
+export function optionalLevelsPayload(
+  assignments: readonly QueueLevelAssignment[],
+  serverDefaults: readonly QueueLevelAssignment[],
+): QueueLevelAssignment[] | undefined {
+  return levelAssignmentsMatch(assignments, serverDefaults) ? undefined : [...assignments];
+}
+
+/**
+ * Compara as entradas confirmadas com a seleção local. A UI usa isto apenas
+ * para explicar o efeito do próximo `PUT`; nenhuma entrada é removida antes da
+ * confirmação do servidor.
+ */
+export function queueContinuity(
+  entries: readonly QueueEntry[],
+  selection: QueueSelection,
+): QueueContinuity {
+  const product = selectionProduct(selection);
+  const wanted = new Set(product.map((item) => combinationKey(item.formatId, item.mode)));
+  const present = new Set<string>();
+  const kept: QueueEntry[] = [];
+  const removed: QueueEntry[] = [];
+  for (const entry of entries) {
+    const key = combinationKey(entry.format_id, entryMode(entry));
+    present.add(key);
+    if (wanted.has(key)) {
+      kept.push(entry);
+    } else {
+      removed.push(entry);
+    }
+  }
+  return {
+    kept,
+    removed,
+    added: product.filter((item) => !present.has(combinationKey(item.formatId, item.mode))),
+  };
 }
 
 /**
