@@ -797,7 +797,7 @@ export function AdminPublicVenuesPage() {
           <ul className="admin-list">
             {venues.map((venue) => {
               const venueActive = venue.status === "active";
-              const discoverable = venue.is_public && venueActive && venue.spaces_count > 0;
+              const discoverable = venue.is_public && venueActive && venue.active_spaces_count > 0;
               return (
                 <li key={venue.id}>
                   <div className="admin-row">

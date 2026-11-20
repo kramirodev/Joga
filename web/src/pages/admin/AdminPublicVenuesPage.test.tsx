@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../../components/ui/Toast";
 import { AuthContext } from "../../lib/auth-context";
-import type { AdminPublicVenue, AdminPublicVenueDetail } from "../../types";
+import type { AdminPublicVenue, AdminPublicVenueDetail, AdminVenueAvailability } from "../../types";
 import { AdminPublicVenuesPage } from "./AdminPublicVenuesPage";
 
 const venue: AdminPublicVenue = {
@@ -21,6 +21,7 @@ const venue: AdminPublicVenue = {
   is_public: true,
   status: "active",
   spaces_count: 1,
+  active_spaces_count: 1,
 };
 
 const venueDetail: AdminPublicVenueDetail = {
@@ -42,12 +43,31 @@ const venueDetail: AdminPublicVenueDetail = {
 
 const inactiveVenue: AdminPublicVenue = { ...venue, status: "inactive" };
 
+const availabilityOne: AdminVenueAvailability = {
+  id: "availability-1",
+  space_id: "space-1",
+  weekday: 1,
+  start_time: "08:00",
+  end_time: "22:00",
+  price_cents: 12_000,
+  slot_minutes: 60,
+};
+
+const availabilityTwo: AdminVenueAvailability = {
+  ...availabilityOne,
+  id: "availability-2",
+  weekday: 3,
+  start_time: "09:00",
+  end_time: "12:00",
+};
+
 interface StubOptions {
   venues?: AdminPublicVenue[];
   total?: number;
   pageSize?: number;
   listError?: { status: number; code: string };
   spaceError?: { status: number; code: string };
+  availability?: AdminVenueAvailability[];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -181,7 +201,7 @@ function stubApi(options: StubOptions = {}): FetchMock {
     }
 
     if (path === "/api/v1/admin/venues/venue-1/availability" && method === "GET") {
-      return jsonResponse([]);
+      return jsonResponse(options.availability ?? []);
     }
 
     if (path === "/api/v1/admin/venues/venue-1/availability" && method === "POST") {
@@ -210,6 +230,13 @@ function stubApi(options: StubOptions = {}): FetchMock {
 
     if (
       path === "/api/v1/admin/venues/venue-1/availability/availability-1" &&
+      method === "DELETE"
+    ) {
+      return new Response(null, { status: 204 });
+    }
+
+    if (
+      path === "/api/v1/admin/venues/venue-1/availability/availability-2" &&
       method === "DELETE"
     ) {
       return new Response(null, { status: 204 });
@@ -522,4 +549,65 @@ describe("AdminPublicVenuesPage", () => {
     const call = await waitForCall(fetchMock, "POST", "/api/v1/admin/venues/venue-1/activate");
     expect(call.body).toEqual({ reason: "Reabertura" });
   });
+
+  it("usa active_spaces_count no selo da descoberta", async () => {
+    stubApi({ venues: [{ ...venue, spaces_count: 2, active_spaces_count: 0 }] });
+    renderPage();
+
+    expect(await screen.findByText("Arena Pública")).toBeInTheDocument();
+    expect(screen.getByText("Fora da descoberta")).toBeInTheDocument();
+    expect(screen.queryByText("Na descoberta")).not.toBeInTheDocument();
+  });
+
+  it("edita quadra pública, carrega janelas por espaço e remove uma janela", async () => {
+    const fetchMock = stubApi({ availability: [availabilityOne, availabilityTwo] });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    const name = await screen.findByLabelText("Nome da quadra");
+    expect(name).toHaveValue("Arena Pública");
+    await user.type(screen.getByLabelText("Motivo"), "Ajuste de agenda");
+
+    await user.click(screen.getByRole("tab", { name: "3. Agenda" }));
+    const starts = await screen.findAllByLabelText("Início");
+    expect(starts).toHaveLength(2);
+    expect(starts[0]).toHaveValue("08:00");
+    expect(starts[1]).toHaveValue("09:00");
+
+    const secondWindow = starts[1].closest(".form-row");
+    expect(secondWindow).not.toBeNull();
+    await user.click(within(secondWindow as HTMLElement).getByRole("button", { name: "Remover" }));
+    expect(screen.getAllByLabelText("Início")).toHaveLength(1);
+
+    await user.click(screen.getByRole("tab", { name: "4. Prévia" }));
+    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+
+    expect(await screen.findByText("Quadra pública salva")).toBeInTheDocument();
+
+    expect(
+      calls(fetchMock).some(
+        (call) =>
+          call.method === "GET" &&
+          call.path === "/api/v1/admin/venues/venue-1/availability" &&
+          call.search.get("space_id") === "space-1",
+      ),
+    ).toBe(true);
+
+    const deleteCall = await waitForCall(
+      fetchMock,
+      "DELETE",
+      "/api/v1/admin/venues/venue-1/availability/availability-2",
+    );
+    expect(deleteCall.search.get("space_id")).toBe("space-1");
+    expect(deleteCall.search.get("reason")).toBe("Ajuste de agenda");
+
+    expect(
+      calls(fetchMock).some(
+        (call) =>
+          call.method === "DELETE" &&
+          call.path === "/api/v1/admin/venues/venue-1/availability/availability-1",
+      ),
+    ).toBe(false);
+  }, 20_000);
 });
