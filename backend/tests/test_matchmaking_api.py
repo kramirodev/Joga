@@ -713,16 +713,16 @@ def test_put_applies_level_per_entry(api: TestClient, db_session: Session) -> No
         json={
             "formats": [str(sport_format.id)],
             "modes": ["casual", "ranked"],
+            # ``level`` só se aplica a casual; ranqueada fica com o nível do perfil.
             "levels": [
                 {"format_id": str(sport_format.id), "mode": "casual", "level": "beginner"},
-                {"format_id": str(sport_format.id), "mode": "ranked", "level": "advanced"},
             ],
         },
     )
 
     assert response.status_code == 200
     levels = {item["mode"]: item["level"] for item in response.json()["entries"]}
-    assert levels == {"casual": "beginner", "ranked": "advanced"}
+    assert levels == {"casual": "beginner", "ranked": "intermediate"}
 
 
 def test_put_level_override_outside_selection_is_atomic(
@@ -1468,7 +1468,7 @@ def test_put_selections_applies_level_per_pair(api: TestClient, db_session: Sess
         headers=bearer(token),
         json={
             "selections": [
-                {"format_id": str(futebol.id), "mode": "ranked", "level": "advanced"},
+                {"format_id": str(futebol.id), "mode": "casual", "level": "advanced"},
                 {"format_id": str(volei.id), "mode": "casual", "level": "beginner"},
             ],
         },
@@ -1479,7 +1479,7 @@ def test_put_selections_applies_level_per_pair(api: TestClient, db_session: Sess
         (item["format_id"], item["mode"]): item["level"] for item in response.json()["entries"]
     }
     assert levels == {
-        (str(futebol.id), "ranked"): "advanced",
+        (str(futebol.id), "casual"): "advanced",
         (str(volei.id), "casual"): "beginner",
     }
 
@@ -1496,6 +1496,101 @@ def test_put_selections_without_level_uses_profile_level(
         "/api/v1/matchmaking/queue",
         headers=bearer(token),
         json={"selections": [{"format_id": str(sport_format.id), "mode": "casual"}]},
+    )
+
+    assert response.status_code == 200
+    assert [item["level"] for item in response.json()["entries"]] == ["advanced"]
+
+
+def test_put_selections_rejects_level_on_ranked(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, level="intermediate")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "ranked", "level": "advanced"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "level_not_applicable_for_ranked"}}
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+def test_put_selections_accepts_casual_level_and_ranked_without_level(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id, level="intermediate")
+    give_sport_profile(db_session, user_id, volei.id, level="intermediate")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                # Casual aceita nível explícito.
+                {"format_id": str(volei.id), "mode": "casual", "level": "beginner"},
+                # Ranqueada aceita o par, mas sem nível.
+                {"format_id": str(futebol.id), "mode": "ranked"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    by_pair = {(item["format_id"], item["mode"]): item for item in response.json()["entries"]}
+    assert by_pair[(str(volei.id), "casual")]["level"] == "beginner"
+    # Sem override, ranqueada continua usando o nível do perfil.
+    assert by_pair[(str(futebol.id), "ranked")]["level"] == "intermediate"
+
+
+def test_put_legacy_rejects_level_on_ranked(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, level="intermediate")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "formats": [str(sport_format.id)],
+            "modes": ["ranked"],
+            "levels": [
+                {"format_id": str(sport_format.id), "mode": "ranked", "level": "advanced"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "level_not_applicable_for_ranked"}}
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+def test_put_legacy_accepts_level_on_casual(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, level="intermediate")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "formats": [str(sport_format.id)],
+            "modes": ["casual"],
+            "levels": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "advanced"},
+            ],
+        },
     )
 
     assert response.status_code == 200

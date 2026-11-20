@@ -22,6 +22,7 @@ from app.modules.matchmaking.service import (
     InvalidFormat,
     InvalidLevelOverride,
     InvalidMode,
+    LevelNotApplicableForRanked,
     MatchmakingService,
     RankedRestricted,
     RegionRequired,
@@ -53,8 +54,10 @@ class QueueLevelOverride(BaseModel):
 class QueueSelection(BaseModel):
     """Par explícito ``format_id × mode`` da seleção da fila.
 
-    ``level`` é opcional: quando presente, vale para esse par e substitui o
-    nível do perfil; quando ausente, usa o nível atual do perfil esportivo.
+    ``level`` é opcional e só se aplica a ``mode="casual"``: quando presente,
+    vale para esse par e substitui o nível do perfil; quando ausente, usa o
+    nível atual do perfil esportivo. Em ``mode="ranked"`` o campo é rejeitado,
+    porque ranqueada pareia por MMR e divisão por rating.
     """
 
     format_id: UUID
@@ -268,6 +271,11 @@ def replace_queue(
     except DuplicateSelection:
         session.rollback()
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "duplicate_queue_selection") from None
+    except LevelNotApplicableForRanked:
+        session.rollback()
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "level_not_applicable_for_ranked"
+        ) from None
     except InvalidMode:
         session.rollback()
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_mode") from None

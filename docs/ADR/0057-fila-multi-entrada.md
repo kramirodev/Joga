@@ -124,6 +124,11 @@ de `{ format_id, mode, level? }`:
 - par `(format_id, mode)` repetido responde `422 duplicate_queue_selection`;
 - `level` do par, quando presente, substitui o nível do perfil apenas naquele
   par; ausente, vale o perfil;
+- `level` só se aplica a **casual**. Ranqueada pareia por MMR e divide times por
+  rating, então `level` em par `ranked` responde `422
+  level_not_applicable_for_ranked` (mesma regra para `levels` no contrato
+  legado). Sem nível, a entrada ranqueada continua guardando o nível do perfil,
+  que permanece sem efeito no pareamento;
 - `selections: []` cancela todas as entradas `waiting`.
 
 A substituição continua atômica e por diferença, preservando `created_at` dos

@@ -76,6 +76,15 @@ class DuplicateSelection(QueueError):
     """Par ``(format_id, mode)`` repetido na seleção explícita."""
 
 
+class LevelNotApplicableForRanked(QueueError):
+    """Nível explícito enviado para partida ranqueada.
+
+    Ranqueada pareia por MMR (``ratings``) e divide times por
+    ``balance_teams_by_rating``; ``level`` não participa do pareamento. Aceitar
+    o campo criaria expectativa falsa, então ele é rejeitado para ``ranked``.
+    """
+
+
 class RankedRestricted(QueueError):
     """Trust Factor restringe temporariamente a fila ranqueada."""
 
@@ -290,12 +299,13 @@ class MatchmakingService:
         - par novo: é criado;
         - par que saiu: é cancelado.
 
-        ``levels`` mapeia ``(format_id, mode)`` para um nível explícito. Só é
-        aceito para pares da seleção; sem override, a entrada usa o nível do
-        perfil esportivo (comportamento histórico). Preservar ``created_at`` é o
-        que sustenta o cronômetro de espera no app. Lista vazia apenas cancela a
-        seleção. Par repetido é rejeitado: duas entradas para a mesma
-        combinação seriam ambíguas.
+        ``levels`` mapeia ``(format_id, mode)`` para um nível explícito, apenas
+        em pares casuais. Só é aceito para pares da seleção; par ranqueado com
+        override é rejeitado (ranqueada pareia por MMR, não por nível). Sem
+        override, a entrada usa o nível do perfil esportivo (comportamento
+        histórico). Preservar ``created_at`` é o que sustenta o cronômetro de
+        espera no app. Lista vazia apenas cancela a seleção. Par repetido é
+        rejeitado: duas entradas para a mesma combinação seriam ambíguas.
         """
         target = list(dict.fromkeys(targets))
         if len(target) != len(targets):
@@ -307,6 +317,12 @@ class MatchmakingService:
         for override_level in override_levels.values():
             if override_level not in LEVELS:
                 raise InvalidLevelOverride("nível de entrada inválido")
+        wanted = set(target)
+        # ``level`` só governa o pareamento casual (balance_teams por nível).
+        # Ranqueada usa MMR e divisão por rating; override de nível nela seria
+        # ignorado silenciosamente, então é rejeitado antes de qualquer escrita.
+        if any(key in wanted and key[1] == "ranked" for key in override_levels):
+            raise LevelNotApplicableForRanked("nível não se aplica a partida ranqueada")
 
         current = ensure_utc(now or utcnow())
         profiles: dict[uuid.UUID, UserSportProfile] = {}
@@ -333,7 +349,6 @@ class MatchmakingService:
             ).is_ranked_restricted(user_id, now=current):
                 raise RankedRestricted("restrição temporária para partidas ranqueadas")
 
-        wanted = set(target)
         if any(key not in wanted for key in override_levels):
             raise InvalidLevelOverride("override de nível fora da seleção")
 

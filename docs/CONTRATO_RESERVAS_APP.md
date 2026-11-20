@@ -1527,7 +1527,7 @@ Content-Type: application/json
 
 {
   "selections": [
-    { "format_id": "<uuid>", "mode": "ranked", "level": "advanced" },
+    { "format_id": "<uuid>", "mode": "ranked" },
     { "format_id": "<uuid>", "mode": "casual", "level": "beginner" }
   ],
   "court_preference": "ANY"
@@ -1548,10 +1548,10 @@ Exemplo legado:
 ```json
 {
   "formats": ["<uuid>", "<uuid>"],
-  "modes": ["casual", "ranked"],
+  "modes": ["casual"],
   "levels": [
     { "format_id": "<uuid>", "mode": "casual", "level": "beginner" },
-    { "format_id": "<uuid>", "mode": "ranked", "level": "advanced" }
+    { "format_id": "<uuid>", "mode": "casual", "level": "advanced" }
   ],
   "court_preference": "ANY"
 }
@@ -1563,7 +1563,12 @@ Exemplo legado:
 - Em `selections`, o par `(format_id, mode)` é a chave: repeti-lo responde
   `422 duplicate_queue_selection` (não vale "último vence"). A ordem dos pares
   não importa.
-- `level` dentro do par é opcional e vale **apenas** para aquele par. Com
+- **`level` só se aplica a casual.** Ranqueada pareia por MMR e divide times por
+  rating; `level` não participa do pareamento. Mandar `level` para um par
+  `mode="ranked"` responde `422 level_not_applicable_for_ranked`, tanto em
+  `selections` quanto em `levels` no formato legado. Par ranqueado **sem**
+  `level` continua válido e usa o nível do perfil apenas como dado da entrada.
+- `level` dentro do par é opcional e vale **apenas** para aquele par casual. Com
   `selections`, `levels` externo não é aceito (ver acima), logo não existem duas
   fontes de nível: o `level` do par, quando presente, substitui o nível do
   perfil; quando ausente, usa o nível atual do perfil esportivo.
@@ -1573,10 +1578,10 @@ Exemplo legado:
 - `court_preference` (`PUBLIC_ONLY|PRIVATE_ONLY|ANY`) é opcional e sobrescreve a
   preferência do perfil nas entradas criadas e nas que permanecem na seleção.
 - No formato legado, `levels` é opcional: lista de `{ "format_id", "mode",
-  "level" }` que define o nível **por combinação**. Combinação sem override usa
-  o nível atual do perfil esportivo, inclusive em entrada preservada (sem
-  resetar `created_at`). `level` aceita `beginner`, `intermediate` ou
-  `advanced`.
+  "level" }` que define o nível **por combinação casual**. Combinação sem
+  override usa o nível atual do perfil esportivo, inclusive em entrada
+  preservada (sem resetar `created_at`). `level` aceita `beginner`,
+  `intermediate` ou `advanced`.
 - Override para combinação fora de `formats × modes` responde `422
   invalid_level_override`; `level` inválido ou `(format_id, mode)` repetido em
   `levels` responde `422 validation_error`. `mode` inválido em `selections`
