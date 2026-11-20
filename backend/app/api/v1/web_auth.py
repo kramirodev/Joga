@@ -54,6 +54,7 @@ from app.modules.identity.email_accounts import (
 from app.modules.identity.events import (
     AUTH_LOGIN_COMPLETED,
     AUTH_LOGOUT,
+    AUTH_REFRESH_GRACE_USED,
     AUTH_REFRESH_REUSE_DETECTED,
     AUTH_REFRESH_ROTATED,
     AUTH_REGISTRATION_COMPLETED,
@@ -69,6 +70,7 @@ from app.modules.identity.phone import hash_ip
 from app.modules.identity.sessions import (
     InvalidRefreshToken,
     IssuedTokens,
+    RefreshRetryRequired,
     RefreshReuseDetected,
     SessionService,
 )
@@ -485,6 +487,15 @@ def web_refresh(
 
     try:
         tokens = sessions.rotate(refresh_token)
+    except RefreshRetryRequired as error:
+        record_security_event(
+            session,
+            AUTH_REFRESH_GRACE_USED,
+            user_id=error.user_id,
+            details={"age_seconds": error.age_seconds},
+        )
+        session.commit()
+        raise _error(status.HTTP_401_UNAUTHORIZED, "refresh_retry_required") from None
     except RefreshReuseDetected as error:
         record_security_event(
             session,

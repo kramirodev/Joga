@@ -35,6 +35,22 @@ class RefreshReuseDetected(SessionError):
         self.user_id = user_id
 
 
+class RefreshRetryRequired(SessionError):
+    """Reuso do refresh imediatamente anterior dentro da janela de tolerância.
+
+    Corrida legítima (duas chamadas concorrentes com o mesmo refresh): a
+    família não é revogada e nenhum token é emitido. O cliente deve reler o
+    par mais recente - entregue pela chamada concorrente que venceu - e repetir
+    a operação. Emitir um par novo aqui invalidaria a resposta vencedora e
+    permitiria que um token roubado obtivesse sessão nova dentro da janela.
+    """
+
+    def __init__(self, user_id: uuid.UUID, *, age_seconds: int) -> None:
+        super().__init__("refresh token rotacionado recentemente; repetir com o mais novo")
+        self.user_id = user_id
+        self.age_seconds = age_seconds
+
+
 @dataclass(frozen=True)
 class AuthenticatedSession:
     session_id: uuid.UUID
@@ -53,6 +69,10 @@ class IssuedTokens:
     refresh_expires_at: datetime
 
 
+_REUSE_REVOKE_REASON = "refresh_reuse"
+_GRACE_MAX_SECONDS = 300
+
+
 class SessionService:
     """Emite, valida e revoga sessões; tokens são persistidos só como HMAC."""
 
@@ -64,6 +84,7 @@ class SessionService:
         access_ttl_seconds: int = 600,
         refresh_absolute_ttl_days: int = 30,
         refresh_idle_ttl_days: int = 7,
+        refresh_reuse_grace_seconds: int = 30,
     ) -> None:
         if not secret:
             raise ValueError("segredo de token não pode ser vazio")
@@ -71,11 +92,14 @@ class SessionService:
             raise ValueError("access_ttl_seconds deve ser positivo")
         if refresh_absolute_ttl_days <= 0 or refresh_idle_ttl_days <= 0:
             raise ValueError("TTLs de refresh devem ser positivos")
+        if not 0 <= refresh_reuse_grace_seconds <= _GRACE_MAX_SECONDS:
+            raise ValueError("refresh_reuse_grace_seconds deve estar entre 0 e 300")
         self._session = session
         self._secret = secret
         self._access_ttl = timedelta(seconds=access_ttl_seconds)
         self._refresh_absolute_ttl = timedelta(days=refresh_absolute_ttl_days)
         self._refresh_idle_ttl = timedelta(days=refresh_idle_ttl_days)
+        self._refresh_reuse_grace = timedelta(seconds=refresh_reuse_grace_seconds)
 
     def issue(
         self,
@@ -164,19 +188,31 @@ class SessionService:
         *,
         now: datetime | None = None,
     ) -> IssuedTokens:
-        """Rotaciona o refresh; reutilização revoga a família inteira."""
-        moment = ensure_utc(now or utcnow())
+        """Rotaciona o refresh e trata reutilização.
+
+        Reutilizar o token imediatamente anterior dentro da janela de
+        tolerância indica corrida no cliente e apenas exige nova tentativa
+        (``RefreshRetryRequired``), sem revogar a família. Fora da janela, ou
+        reutilizando token mais antigo, a família é revogada
+        (``RefreshReuseDetected``).
+        """
         token_hash = hash_token(refresh_token, self._secret, "refresh")
         row = self._session.scalar(
             select(SessionRecord)
             .where(SessionRecord.refresh_token_hash == token_hash)
             .with_for_update()
         )
+        # Capturado depois do lock: na corrida, quem perde o lock precisa de um
+        # instante igual ou posterior ao da rotação vencedora.
+        moment = ensure_utc(now or utcnow())
         if row is None:
             raise InvalidRefreshToken("refresh token inválido")
 
         if row.replaced_by_session_id is not None:
-            self._revoke_family(row.family_id, moment, "refresh_reuse")
+            age_seconds = self._grace_reuse_age(row, moment)
+            if age_seconds is not None:
+                raise RefreshRetryRequired(row.user_id, age_seconds=age_seconds)
+            self._revoke_family(row.family_id, moment, _REUSE_REVOKE_REASON)
             raise RefreshReuseDetected(row.user_id)
 
         if row.revoked_at is not None:
@@ -302,3 +338,48 @@ class SessionService:
             row.revoked_at = moment
             row.revoked_reason = reason
         self._session.flush()
+
+    def _grace_reuse_age(self, row: SessionRecord, moment: datetime) -> int | None:
+        """Devolve a idade do token substituído se o reuso é tolerável.
+
+        Só vale para o token imediatamente anterior ao topo da família, dentro
+        da janela configurada, com a família ainda ativa e sem reuso suspeito
+        registrado. Inconsistências falham fechado (``None``), levando ao
+        comportamento de revogação da família. Desvio pequeno de relógio entre
+        instâncias (rotação aparentemente no futuro) é tratado como idade zero.
+        """
+        if self._refresh_reuse_grace <= timedelta(0):
+            return None
+        if row.revoked_at is None or row.revoked_reason != "rotated":
+            return None
+
+        age = moment - ensure_utc(row.revoked_at)
+        if age < timedelta(0):
+            if -age >= self._refresh_reuse_grace:
+                return None
+            age = timedelta(0)
+        if age >= self._refresh_reuse_grace:
+            return None
+
+        replacement_id = row.replaced_by_session_id
+        if replacement_id is None:
+            return None
+        successor = self._session.get(SessionRecord, replacement_id, populate_existing=True)
+        if successor is None or successor.revoked_at is not None:
+            return None
+        if successor.replaced_by_session_id is not None:
+            # Já houve outra rotação: o token apresentado não é o penúltimo.
+            return None
+
+        suspicious = self._session.scalar(
+            select(SessionRecord.id)
+            .where(
+                SessionRecord.family_id == row.family_id,
+                SessionRecord.revoked_reason == _REUSE_REVOKE_REASON,
+            )
+            .limit(1)
+        )
+        if suspicious is not None:
+            return None
+
+        return int(age.total_seconds())

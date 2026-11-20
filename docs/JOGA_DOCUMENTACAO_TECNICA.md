@@ -354,6 +354,8 @@ O protótipo da Fase 1 deve validar Android e iOS com mecanismos nativos: Creden
 
 Access tokens de curta duração; refresh tokens opacos, aleatórios, armazenados no servidor como hash e rotacionados. Reutilização de token antigo revoga a família da sessão. Tokens ficam em Keychain/Keystore no aplicativo e em armazenamento seguro equivalente no navegador.
 
+Corridas legítimas no refresh (duas chamadas concorrentes com o mesmo token) não devem deslogar o jogador. Por isso existe uma janela de tolerância configurável (`JOGA_REFRESH_REUSE_GRACE_SECONDS`, padrão 30 s, 0 desliga, máximo 300 s; ADR 0058): reutilizar **apenas o token imediatamente anterior**, dentro da janela e com a família ainda ativa, não revoga nada e responde `401 refresh_retry_required`, registrando `auth.refresh_grace_used` (só `user_id` e idade, nunca token). O cliente deve descartar a resposta perdedora, reler o par mais recente entregue pela chamada vencedora e repetir. Fora da janela, reutilizando token mais antigo ou com a família já revogada, prevalece `401 refresh_reuse_detected` com revogação da família. O servidor não devolve tokens existentes porque persiste apenas hashes; emitir um par novo na tolerância invalidaria a resposta vencedora e daria sessão nova a um token roubado.
+
 Para áreas administrativas/comerciais, avaliar controles reforçados, reautenticação para ações financeiras e registro de auditoria.
 
 ### 5.5 Domínio técnico

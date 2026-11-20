@@ -1715,3 +1715,24 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
 - **Fora do escopo:** XSS latente em campos que aceitam `<script>` (cliente
   escapa; risco aceito) e `positions` do formato de esporte.
 
+
+### 2026-11-20 - Janela de tolerância na rotação do refresh (corrida do cliente)
+
+- **Branch:** `fix/refresh-grace-window`. `SessionService.rotate` passou a
+  tolerar o reuso do refresh **imediatamente anterior** dentro de
+  `JOGA_REFRESH_REUSE_GRACE_SECONDS` (padrão 30 s; 0 desliga; máx. 300 s), desde
+  que a família esteja ativa e sem reuso suspeito. Nesse caso não revoga nada e
+  responde `401 refresh_retry_required`; o cliente deve reler o par mais novo e
+  repetir. Fora da janela, token mais antigo ou família já revogada continuam
+  revogando a família com `401 refresh_reuse_detected`.
+- **Decisão:** não devolver tokens na tolerância. O servidor guarda apenas
+  hashes, então não há par existente a devolver; emitir um par novo invalidaria
+  a resposta vencedora e daria sessão nova a um token roubado.
+- **Auditoria:** evento `auth.refresh_grace_used` com `user_id` e
+  `age_seconds`, sem token.
+- **ADR:** 0058 registra a decisão e o porquê de não devolver par existente.
+- **Sem migração:** a idade usa `sessions.revoked_at`, já existente.
+- **Testes:** unidade (janela, fora da janela, duas rotações atrás, grace=0,
+  família revogada, skew de relógio, sequência normal), API mobile e web,
+  concorrência PostgreSQL. Suíte completa: 969 passed; `ruff check`,
+  `ruff format --check`, `mypy app` e `alembic heads` limpos.
