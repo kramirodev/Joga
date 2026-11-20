@@ -11,6 +11,7 @@ import type {
   Notification,
 } from '../api/types';
 import { useApp } from '../state/app';
+import { lobbyIdFromQueue } from '../state/queueState';
 import { useNav, useTheme } from '../state/context';
 import { IdentityBadge } from '../ui/IdentityBadge';
 import { identityFromSeed } from '../ui/identity';
@@ -1204,13 +1205,13 @@ function appealDecisionLabel(decision: string | null): string | null {
 
 function ReportProfile() {
   const nav = useNav();
-  const { session, matches, queue } = useApp();
+  const { session, matches, queue, matchedEntry } = useApp();
   const targetUserId = typeof nav.params.userId === 'string' ? nav.params.userId : null;
   const targetName = typeof nav.params.name === 'string' ? nav.params.name : 'Jogador';
   const lobbyId =
     (typeof nav.params.lobbyId === 'string' && nav.params.lobbyId) ||
     matches.find((match) => match.lobby_id)?.lobby_id ||
-    queue?.lobby?.id ||
+    lobbyIdFromQueue(queue, matchedEntry) ||
     null;
   const [category, setCategory] = useState('HARASSMENT');
   const [description, setDescription] = useState('');

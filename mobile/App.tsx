@@ -54,6 +54,7 @@ import {
 import { shortDateTime } from './src/ui/datetime';
 import { BrandLoader } from './src/ui/BrandLoader';
 import { BottomSheetFrame, useSheetClose } from './src/ui/BottomSheetFrame';
+import { QueueIndicator } from './src/ui/QueueIndicator';
 import { dark, light } from './src/ui/theme';
 import { Icon } from './src/ui/icons';
 
@@ -736,6 +737,12 @@ function Shell() {
   const screen = REGISTRY[current.id] ?? REGISTRY.welcome;
   const showTabBar = !app.suspended && signedIn && !!screen.tab;
   const canGoBack = stack.length > 1 && !app.suspended;
+  const showQueueIndicator =
+    !app.suspended &&
+    signedIn &&
+    current.id !== 'queue' &&
+    current.id !== 'queue-search' &&
+    (app.queue.length > 0 || app.matchedEntry !== null || app.queueNotice !== null);
   const toastBottom = (showTabBar ? 80 : 20) + insets.bottom;
   // Fonte única do inset inferior: a tab bar já reserva o espaço do sistema.
   const contentBottomInset = showTabBar ? 0 : insets.bottom;
@@ -1016,6 +1023,7 @@ function Shell() {
                 })
               )}
             </View>
+            {showQueueIndicator ? <QueueIndicator /> : null}
             {showTabBar ? (
               <TabBar tab={tab} onSelect={nav.tabTo} bottomInset={insets.bottom} />
             ) : null}

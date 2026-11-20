@@ -35,6 +35,8 @@ import type {
   Progress,
   Purchase,
   QueueEntry,
+  QueueSelectionPayload,
+  QueueStateResponse,
   Ranking,
   ResultView,
   Sport,
@@ -542,6 +544,25 @@ export const api = {
     },
   },
 
+  // Contrato 0057 (ADR 0057): a fila é substituída de forma atômica por
+  // `PUT /matchmaking/queue`. `POST` continua existindo apenas para a retomada
+  // single-entry do perfil de modalidades.
+  queue: {
+    replace(token: string, payload: QueueSelectionPayload) {
+      return call<QueueStateResponse>('/matchmaking/queue', {
+        method: 'PUT',
+        body: payload,
+        token,
+      });
+    },
+    state(token: string) {
+      return call<QueueStateResponse>('/matchmaking/queue', { token });
+    },
+    leave(token: string) {
+      return call<void>('/matchmaking/queue', { method: 'DELETE', token });
+    },
+  },
+
   matchmaking: {
     enqueue(
       token: string,
@@ -554,12 +575,6 @@ export const api = {
         body: { format_id: formatId, mode, court_preference: courtPreference },
         token,
       });
-    },
-    state(token: string) {
-      return call<{ entry: QueueEntry | null }>('/matchmaking/queue', { token });
-    },
-    leave(token: string) {
-      return call<void>('/matchmaking/queue', { method: 'DELETE', token });
     },
   },
 

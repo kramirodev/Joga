@@ -179,6 +179,10 @@ export type BookableVenueDetail = {
   spaces: BookableVenueSpace[];
 };
 
+export type QueueMode = 'casual' | 'ranked';
+
+export type QueueCourtPreference = 'PUBLIC_ONLY' | 'PRIVATE_ONLY' | 'ANY';
+
 export type QueueLobby = {
   id: string;
   mode: string;
@@ -199,6 +203,21 @@ export type QueueEntry = {
   created_at: string;
   expires_at: string;
   lobby: QueueLobby | null;
+};
+
+/**
+ * Contrato 0057: `entries` traz todas as entradas `waiting`; `entry` é o campo
+ * legado (última `waiting` ou `matched`) mantido para compatibilidade.
+ */
+export type QueueStateResponse = {
+  entry: QueueEntry | null;
+  entries: QueueEntry[];
+};
+
+export type QueueSelectionPayload = {
+  formats: string[];
+  modes: QueueMode[];
+  court_preference?: QueueCourtPreference | null;
 };
 
 export type MatchParticipant = {
