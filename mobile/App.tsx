@@ -5,7 +5,6 @@ import {
   Animated,
   Appearance,
   BackHandler,
-  Easing,
   Pressable,
   StyleSheet,
   View,
@@ -55,6 +54,18 @@ import { shortDateTime } from './src/ui/datetime';
 import { BrandLoader } from './src/ui/BrandLoader';
 import { BottomSheetFrame, useSheetClose } from './src/ui/BottomSheetFrame';
 import { QueueIndicator } from './src/ui/QueueIndicator';
+import {
+  combineReducedMotion,
+  distance,
+  duration,
+  dwell,
+  easing,
+  motionDuration,
+  scale,
+  spring,
+  useReducedMotion,
+  useSystemReducedMotion,
+} from './src/ui/motion';
 import { dark, light } from './src/ui/theme';
 import { Icon } from './src/ui/icons';
 
@@ -108,16 +119,20 @@ function TabButton({
   onPress: () => void;
 }) {
   const { palette, largeTargets } = useTheme();
+  const reduceMotion = useReducedMotion();
   const [focus] = useState(() => new Animated.Value(active ? 1 : 0));
 
   useEffect(() => {
+    if (reduceMotion) {
+      focus.setValue(active ? 1 : 0);
+      return;
+    }
     Animated.spring(focus, {
       toValue: active ? 1 : 0,
       useNativeDriver: true,
-      speed: 22,
-      bounciness: 0,
+      ...spring,
     }).start();
-  }, [active, focus]);
+  }, [active, focus, reduceMotion]);
 
   return (
     <Pressable
@@ -133,7 +148,7 @@ function TabButton({
         justifyContent: 'center',
         gap: 1,
         opacity: pressed ? 0.86 : 1,
-        transform: pressed ? [{ scale: 0.97 }] : [],
+        transform: pressed ? [{ scale: scale.press }] : [],
       })}
     >
       <Animated.View
@@ -159,7 +174,7 @@ function TabButton({
         style={{
           transform: [
             {
-              scale: focus.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }),
+              scale: focus.interpolate({ inputRange: [0, 1], outputRange: [1, scale.tabIcon] }),
             },
           ],
         }}
@@ -412,6 +427,7 @@ function Toast({
   bottom: number;
 }) {
   const { palette, dark } = useTheme();
+  const reduceMotion = useReducedMotion();
   const [anim] = useState(() => new Animated.Value(0));
   const hideRef = useRef(onHide);
 
@@ -422,24 +438,24 @@ function Toast({
   useEffect(() => {
     Animated.timing(anim, {
       toValue: 1,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
+      duration: motionDuration(duration.base, reduceMotion),
+      easing: easing.enter,
       useNativeDriver: true,
     }).start();
     const timer = setTimeout(() => {
       Animated.timing(anim, {
         toValue: 0,
-        duration: 160,
-        easing: Easing.in(Easing.cubic),
+        duration: motionDuration(duration.fast, reduceMotion),
+        easing: easing.exit,
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) {
           hideRef.current();
         }
       });
-    }, 2000);
+    }, dwell.toast);
     return () => clearTimeout(timer);
-  }, [anim]);
+  }, [anim, reduceMotion]);
 
   return (
     <Animated.View
@@ -451,7 +467,16 @@ function Toast({
         bottom,
         alignItems: 'center',
         opacity: anim,
-        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+        transform: reduceMotion
+          ? undefined
+          : [
+              {
+                translateY: anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [distance.toast, 0],
+                }),
+              },
+            ],
       }}
     >
       <View
@@ -724,7 +749,8 @@ function Shell() {
   const [phase, setPhase] = useState<ScreenPhase>('idle');
   const [motion, setMotion] = useState<ScreenMotion>('push');
   const palette = app.dark ? dark : light;
-  const reducedMotion = app.accessibility.reducedMotion;
+  const systemReducedMotion = useSystemReducedMotion();
+  const reducedMotion = combineReducedMotion(app.accessibility.reducedMotion, systemReducedMotion);
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const statusInset = insets.top;
@@ -807,8 +833,12 @@ function Shell() {
         }
         const run = Animated.timing(anim, {
           toValue: 1,
-          duration: reducedMotion ? 0 : nextMotion === 'tab' ? 180 : 240,
-          easing: Easing.out(Easing.cubic),
+          duration: reducedMotion
+            ? motionDuration(duration.medium, true)
+            : nextMotion === 'tab'
+              ? duration.base
+              : duration.medium,
+          easing: nextMotion === 'pop' ? easing.exit : easing.enter,
           useNativeDriver: true,
         });
         run.start(({ finished }) => {
@@ -915,9 +945,10 @@ function Shell() {
       setDark: app.setDark,
       fontScale: fontScaleFactor(app.accessibility.fontScale),
       largeTargets: app.accessibility.largeTargets,
+      reducedMotion,
       contentBottomInset,
     }),
-    [palette, app.dark, app.setDark, app.accessibility, contentBottomInset],
+    [palette, app.dark, app.setDark, app.accessibility, reducedMotion, contentBottomInset],
   );
 
   const confirmModal = () => {
@@ -947,36 +978,45 @@ function Shell() {
     nav.toast(messages[active.id] ?? 'Ação ainda não disponível no app.');
   };
 
-  const topStyle =
-    phase === 'idle'
+  const screenTransform =
+    reducedMotion || phase === 'idle'
       ? undefined
       : motion === 'tab'
-        ? {
-            transform: [
-              { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
-            ],
-          }
+        ? [
+            {
+              translateY: anim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [distance.enter, 0],
+              }),
+            },
+          ]
         : phase === 'exit'
-          ? {
-              transform: [
-                {
-                  translateX: anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, screenWidth],
-                  }),
-                },
-              ],
-            }
-          : {
-              transform: [
-                {
-                  translateX: anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [screenWidth, 0],
-                  }),
-                },
-              ],
-            };
+          ? [
+              {
+                translateX: anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, screenWidth],
+                }),
+              },
+            ]
+          : [
+              {
+                translateX: anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [screenWidth, 0],
+                }),
+              },
+            ];
+
+  const screenOpacity =
+    phase === 'idle'
+      ? undefined
+      : phase === 'exit'
+        ? anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
+        : anim.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1] });
+
+  const topStyle =
+    phase === 'idle' ? undefined : { opacity: screenOpacity, transform: screenTransform };
 
   if (!app.ready) {
     return (
