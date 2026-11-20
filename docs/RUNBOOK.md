@@ -103,6 +103,8 @@ Endpoints de identidade (Fase 3):
 | Telefone já cadastrado | `409 {"detail":{"code":"phone_already_registered"}}` |
 | Conta inexistente no login | `404 {"detail":{"code":"account_not_found"}}` |
 | Access/refresh inválido | `401 {"detail":{"code":"invalid_token"}}` ou `invalid_refresh_token` |
+| Corrida no refresh (token imediatamente anterior, dentro da janela) | `401 {"detail":{"code":"refresh_retry_required"}}`; repetir com o par mais novo |
+| Reutilização de refresh antigo | `401 {"detail":{"code":"refresh_reuse_detected"}}`; família revogada |
 | Desafio inválido/expirado/bloqueado | `400 {"detail":{"code":"invalid_code_or_challenge"}}` |
 | Telefone fora de E.164 | `400 {"detail":{"code":"invalid_phone"}}` |
 | Limite de reenvio/hora/IP | `429 {"detail":{"code":"rate_limited"}}` com `Retry-After` |

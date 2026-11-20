@@ -38,6 +38,7 @@ from app.modules.identity.events import (
     AUTH_PHONE_CHANGE_COMPLETED,
     AUTH_PHONE_CHANGE_FAILED,
     AUTH_PHONE_CHANGE_REQUESTED,
+    AUTH_REFRESH_GRACE_USED,
     AUTH_REFRESH_REUSE_DETECTED,
     AUTH_REFRESH_ROTATED,
     AUTH_REGISTRATION_COMPLETED,
@@ -90,6 +91,7 @@ from app.modules.identity.sessions import (
     InvalidAccessToken,
     InvalidRefreshToken,
     IssuedTokens,
+    RefreshRetryRequired,
     RefreshReuseDetected,
     SessionService,
 )
@@ -264,6 +266,7 @@ def get_session_service(
         access_ttl_seconds=settings.access_token_ttl_seconds,
         refresh_absolute_ttl_days=settings.refresh_absolute_ttl_days,
         refresh_idle_ttl_days=settings.refresh_idle_ttl_days,
+        refresh_reuse_grace_seconds=settings.refresh_reuse_grace_seconds,
     )
 
 
@@ -661,6 +664,19 @@ def refresh_tokens(
     """Rotaciona o refresh; reutilização revoga a família da sessão."""
     try:
         tokens = sessions.rotate(payload.refresh_token)
+    except RefreshRetryRequired as error:
+        record_security_event(
+            session,
+            AUTH_REFRESH_GRACE_USED,
+            user_id=error.user_id,
+            details={"age_seconds": error.age_seconds},
+        )
+        session.commit()
+        raise _error(
+            status.HTTP_401_UNAUTHORIZED,
+            "refresh_retry_required",
+            www_authenticate=True,
+        ) from None
     except RefreshReuseDetected as error:
         record_security_event(
             session,

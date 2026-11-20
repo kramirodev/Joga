@@ -15,7 +15,11 @@ from app.api.v1.auth import get_challenge_service, get_sms_sender
 from app.api.v1.web_auth import CSRF_COOKIE_NAME, REFRESH_COOKIE_NAME
 from app.core.config import DEFAULT_PHONE_HASH_SECRET, Settings, get_settings
 from app.infrastructure.database.dependency import get_session
-from app.modules.identity.events import AUTH_LOGOUT, AUTH_REFRESH_ROTATED
+from app.modules.identity.events import (
+    AUTH_LOGOUT,
+    AUTH_REFRESH_GRACE_USED,
+    AUTH_REFRESH_ROTATED,
+)
 from app.modules.identity.models import SecurityEvent
 from app.modules.identity.otp import OtpPolicy, PhoneChallengeService
 from app.modules.identity.sms import RecordingSmsSender
@@ -212,6 +216,48 @@ def test_web_refresh_requires_csrf_and_rotates_cookies(
 
     events = set(db_session.scalars(select(SecurityEvent.event_type)))
     assert AUTH_REFRESH_ROTATED in events
+
+
+def test_web_refresh_reuse_within_grace_does_not_revoke(
+    api: TestClient,
+    sms_sender: RecordingSmsSender,
+    db_session: Session,
+) -> None:
+    receipt = receipt_for(api, sms_sender, PHONE, "registration")
+    registered = web_register(api, receipt)
+    assert registered.status_code == 201
+    old_csrf = registered.json()["csrf_token"]
+    old_refresh = api.cookies.get(REFRESH_COOKIE_NAME)
+    assert old_refresh is not None
+
+    refreshed = api.post(
+        "/api/v1/auth/web/refresh",
+        headers={"X-CSRF-Token": old_csrf},
+    )
+    assert refreshed.status_code == 200, refreshed.text
+    new_csrf = refreshed.json()["csrf_token"]
+
+    retry = api.post(
+        "/api/v1/auth/web/refresh",
+        headers={
+            "Cookie": f"{REFRESH_COOKIE_NAME}={old_refresh}; {CSRF_COOKIE_NAME}={old_csrf}",
+            "X-CSRF-Token": old_csrf,
+        },
+    )
+    assert retry.status_code == 401
+    assert retry.json() == {"detail": {"code": "refresh_retry_required"}}
+
+    # A família não foi revogada: o cookie vencedor continua renovando.
+    assert api.cookies.get(REFRESH_COOKIE_NAME) is not None
+    assert api.cookies.get(CSRF_COOKIE_NAME) == new_csrf
+    following = api.post(
+        "/api/v1/auth/web/refresh",
+        headers={"X-CSRF-Token": new_csrf},
+    )
+    assert following.status_code == 200, following.text
+
+    events = set(db_session.scalars(select(SecurityEvent.event_type)))
+    assert AUTH_REFRESH_GRACE_USED in events
 
 
 def test_web_logout_revokes_session_and_clears_cookies(

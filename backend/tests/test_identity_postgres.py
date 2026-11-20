@@ -27,7 +27,7 @@ from app.modules.identity.otp import (
     ResendTooSoon,
 )
 from app.modules.identity.phone import hash_phone
-from app.modules.identity.sessions import RefreshReuseDetected, SessionService
+from app.modules.identity.sessions import RefreshRetryRequired, RefreshReuseDetected, SessionService
 from app.modules.identity.sms import RecordingSmsSender
 
 TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
@@ -160,7 +160,7 @@ def test_concurrent_request_allows_only_one_challenge(
     assert sorted(results) == ["ok", "resend"]
 
 
-def test_concurrent_refresh_rotation_only_one_succeeds(
+def test_concurrent_refresh_rotation_grants_grace_to_loser(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -193,6 +193,9 @@ def test_concurrent_refresh_rotation_only_one_succeeds(
                 service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(seconds=1))
                 session.commit()
                 return "ok"
+            except RefreshRetryRequired:
+                session.commit()
+                return "retry"
             except RefreshReuseDetected:
                 session.commit()
                 return "reuse"
@@ -203,7 +206,7 @@ def test_concurrent_refresh_rotation_only_one_succeeds(
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _: rotate_once(), range(2)))
 
-    assert sorted(results) == ["ok", "reuse"]
+    assert sorted(results) == ["ok", "retry"]
 
 
 def test_phone_hash_is_persisted_as_hmac(
