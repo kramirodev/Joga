@@ -5,9 +5,11 @@ real não é versionada (repositório público); consulte o dashboard do Render.
 Cadastro **aberto** desde 2026-11-19. A Outbox é drenada **no processo da API**
 (task inline a cada 30 s) e o workflow do GitHub fica como reserva; a Outbox
 remota está DISPATCHED e as entregas `password_reset`/`security_alert` estão
-`sent`.
+`sent`. Desde 2026-11-20 o serviço roda em **`JOGA_ENVIRONMENT=demo`** (ADR
+0053): documentação interativa desabilitada, webhook do Mercado Pago desligado e
+compra de tickets bloqueada (seção 5.1).
 
-**Data:** 2026-11-19 (última atualização)
+**Data:** 2026-11-20 (última atualização)
 
 ## 1. O que é e o que não é
 
@@ -89,7 +91,7 @@ IPv4 e mantém compatibilidade com migração.
 Tudo marcado como **segredo** vai no dashboard, nunca no Git.
 
 ```text
-JOGA_ENVIRONMENT=development
+JOGA_ENVIRONMENT=demo                  # desde 2026-11-20; ver seção 5.1
 JOGA_DATABASE_URL                      # segredo: Session pooler + ?sslmode=require
 JOGA_PHONE_HASH_SECRET                 # segredo
 JOGA_TOKEN_HASH_SECRET                 # segredo
@@ -116,6 +118,9 @@ JOGA_PSP_PROVIDER=simulator
 JOGA_MONEY_MODE=simulated
 JOGA_FISCAL_MODE=disabled
 JOGA_CUSTODY_MODEL=B
+JOGA_TICKET_PURCHASE_ENABLED=false     # obrigatório false em demo (ADR 0053)
+JOGA_PLATFORM_ADMINS=9f556105-a328-4a6a-bc8d-6276c6b3f1ba
+                                       # operador@demo.joga.test; uuid já listado na seção 7
 JOGA_WEBAUTHN_RP_ID=<host do Render, sem https>
 JOGA_WEBAUTHN_ORIGIN_WEB=https://<host do Render>
 JOGA_APP_VERSION_GATE_ENABLED=true
@@ -126,35 +131,28 @@ JOGA_MEDIA_ROOT=/app/backend/var/media
 DEMO_BASIC_AUTH_HASH                   # segredo: hash bcrypt do Caddy
 ```
 
-`JOGA_ENVIRONMENT=development` é deliberado: fora de
-`local/test/development/ci` o boot exige Mercado Pago com token e webhook
-(`backend/app/core/config.py`). Por isso o demo é `development` e o acesso fica
-atrás de basic auth.
+`JOGA_ENVIRONMENT=demo` **não** exige Mercado Pago: o boot aceita o perfil sem
+`JOGA_MERCADO_PAGO_*` e constrói sempre o PSP simulador. Ele **exige** as guardas
+descritas na seção 5.1; qualquer desvio falha no boot em vez de degradar.
 
-### Risco aceito: `development` até o modo demo (2026-11-20)
+### Risco encerrado: `development` até o modo demo (2026-11-20)
 
-**Decisão:** o demo permanece em `JOGA_ENVIRONMENT=development` até o modo demo
-do backend (opção B) estar em `main`. Não há PSP, credencial do Mercado Pago,
-dinheiro real nem checkout do passe nesta fase. `JOGA_TICKET_PURCHASE_ENABLED`
-permanece `false` (o default do código); a variável será declarada
-explicitamente no Render depois do merge do modo demo.
-
-**O que fica exposto enquanto isso:** em `development`, a simulação de
+**Estado anterior (até 2026-11-20):** o demo rodou em
+`JOGA_ENVIRONMENT=development`, um ambiente local. Nesse perfil, a simulação de
 pagamento de reserva, a confirmação de passe sem PSP e o webhook sem assinatura
-continuam aceitos pelo código. Eles exigem sessão autenticada quando aplicável,
-mas não substituem as guardas de produção. O risco é aceito porque:
+continuavam aceitos pelo código. O risco era aceito porque o valor era simulado
+(`JOGA_MONEY_MODE=simulated`), não havia PSP nem checkout do passe, o demo era
+privado e a correção definitiva (modo demo explícito) estava decidida.
 
-- o valor é simulado (`JOGA_MONEY_MODE=simulated`) e não há PSP configurado;
-- o checkout do passe não é requisito desta fase;
-- o demo é privado, sem dado financeiro real e sem clientes;
-- a correção definitiva (modo demo explícito, com `simulate`/webhook bloqueados
-  e checkout do passe indisponível) está decidida e será implementada na opção
-  B, sem depender de Mercado Pago.
+**Estado atual:** as guardas do modo demo estão aplicadas desde 2026-11-20
+(seção 5.1), conforme o ADR 0053. Webhook responde `404 webhook_disabled`, compra
+de tickets responde `503 ticket_purchase_disabled`, a documentação interativa
+(`/api/docs`, `/api/openapi.json`, `/redoc`) responde 404 e o app recebe
+`demo_mode: true` em `/api/v1/app-config`.
 
-**Gatilhos de revisão:** qualquer dinheiro real ou PSP; demo público ou
-longevo; dados de usuários reais; necessidade de checkout do passe; incidente
-de integridade financeira. Nesses casos, o modo demo precisa estar em `main` e
-as guardas de produção ligadas antes de expor o ambiente.
+**Gatilhos de revisão:** qualquer dinheiro real, PSP real ou dado de usuário
+real exige voltar a este documento e revisar as guardas antes de expor o
+ambiente.
 
 ### Cadastro aberto e kill switch
 
@@ -264,6 +262,120 @@ limit permanecem no servidor. Ver ADR 0051.
 **Estado no demo (2026-11-19):** gate ativo com 29 variáveis; mobile 1.0.0
 recebe 426, mobile 1.0.1 passa, painel e curl continuam liberados.
 
+## 5.1 Troca para o ambiente demo (2026-11-20)
+
+**Executado em 2026-11-20:** o serviço `joga-demo` passou de
+`JOGA_ENVIRONMENT=development` para `demo` no deploy de `6a89c79` (`main`). O
+deploy terminou **live** e o ambiente passou a responder com as guardas
+server-side do ADR 0053.
+
+O procedimento abaixo é a ordem reproduzível. O ponto crítico é que mudar
+variável no Render **não reinicia o processo**: sem o deploy do passo 3, o
+serviço continua rodando com o ambiente antigo.
+
+### Ordem obrigatória
+
+1. **Deploy do código.** Publique o `main` que contém o modo demo e aguarde o
+   status **live**. Aplicar `JOGA_ENVIRONMENT=demo` antes de a imagem ter o
+   perfil demo faz o boot cair no ramo de produção, que exige
+   `JOGA_PSP_PROVIDER=mercadopago` e credenciais do Mercado Pago; o deploy
+   falha.
+2. **Aplicar as variáveis** no dashboard/API do Render (tabela abaixo).
+3. **Disparar um deploy** (*Manual Deploy → Deploy latest commit*) para
+   reiniciar o serviço e reler o ambiente. A mudança de variável sozinha não
+   reinicia nada.
+4. **Validar** com os comandos de "Validação" antes de liberar o demo.
+
+### Variáveis aplicadas nesta troca
+
+| Variável | Valor | Observação |
+|---|---|---|
+| `JOGA_ENVIRONMENT` | `demo` | muda a classificação de ambiente; ver ADR 0053 |
+| `JOGA_TICKET_PURCHASE_ENABLED` | `false` | o boot demo recusa `true` |
+| `JOGA_PLATFORM_ADMINS` | `9f556105-a328-4a6a-bc8d-6276c6b3f1ba` | operador `operador@demo.joga.test` (UUID já listado na seção 7) |
+
+### Perfil exigido pelo boot demo
+
+Além das variáveis já existentes no serviço, o boot com `JOGA_ENVIRONMENT=demo`
+valida este conjunto (nomes apenas; segredos ficam no Render):
+
+```text
+JOGA_ENVIRONMENT=demo
+JOGA_PSP_PROVIDER=simulator            # obrigatório
+JOGA_MONEY_MODE=simulated              # obrigatório
+JOGA_TICKET_PURCHASE_ENABLED=false     # obrigatório
+JOGA_PHONE_HASH_SECRET                 # segredo próprio do demo, nunca o default
+JOGA_TOKEN_HASH_SECRET                 # segredo próprio do demo, nunca o default
+JOGA_CPF_KEY                           # segredo: 32 bytes em base64
+JOGA_CPF_KEY_ID                        # identificador da chave já configurada
+JOGA_PLATFORM_ADMINS                   # operador do seed, para /admin/venues
+```
+
+Não são exigidos `JOGA_MERCADO_PAGO_ACCESS_TOKEN`,
+`JOGA_MERCADO_PAGO_WEBHOOK_SECRET` nem `JOGA_MERCADO_PAGO_NOTIFICATION_URL`.
+`JOGA_DEV_FIXED_OTP` é recusado no boot demo. Faltando CPF, segredo de hash ou
+qualquer flag acima, o boot falha e o deploy não fica `live`.
+
+### Validação
+
+A URL real não é versionada; pegue o host no dashboard do Render.
+
+```bash
+export BASE_URL="https://<url-do-demo>"
+
+curl -s -o /dev/null -w 'ready=%{http_code}\n' "$BASE_URL/api/v1/health/ready"
+curl -s -o /dev/null -w 'docs=%{http_code}\n' "$BASE_URL/api/docs"
+curl -s -o /dev/null -w 'openapi=%{http_code}\n' "$BASE_URL/api/openapi.json"
+curl -s -o /dev/null -w 'redoc=%{http_code}\n' "$BASE_URL/redoc"
+curl -s -o /dev/null -w 'webhook=%{http_code}\n' -X POST "$BASE_URL/api/v1/payments/mercadopago/webhook"
+curl -s -o /dev/null -w 'tickets=%{http_code}\n' -X POST "$BASE_URL/api/v1/me/tickets/purchases" -H 'Content-Type: application/json' -d '{}'
+curl -s -o /dev/null -w 'admin_venues=%{http_code}\n' "$BASE_URL/api/v1/admin/venues"
+curl -s -o /dev/null -w 'catalog=%{http_code}\n' "$BASE_URL/api/v1/catalog/visual"
+curl -s "$BASE_URL/api/v1/app-config"
+curl -sI "$BASE_URL/api/v1/health/ready"
+```
+
+Resultado observado após a troca:
+
+| Verificação | Resultado |
+|---|---|
+| `GET /api/v1/health/ready` | 200 |
+| `GET /api/docs`, `GET /api/openapi.json`, `GET /redoc` | 404 (documentação desabilitada em demo) |
+| `POST /api/v1/payments/mercadopago/webhook` | 404 `webhook_disabled`, antes de ler o corpo |
+| `POST /api/v1/me/tickets/purchases` | 503 `ticket_purchase_disabled` |
+| `GET /api/v1/admin/venues` sem sessão | 401 |
+| `GET /api/v1/catalog/visual` | 200 |
+| `GET /api/v1/app-config` | 200 com `demo_mode: true` |
+
+Headers conferidos na borda (Caddy): `Strict-Transport-Security`,
+`Content-Security-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` e
+`Cache-Control: no-store`.
+
+### Rollback
+
+O rollback é voltar ao perfil anterior, ciente de que isso **reabre** os caminhos
+que o modo demo fecha:
+
+1. no dashboard/API do Render, definir `JOGA_ENVIRONMENT=development`
+   (mantenha `JOGA_PSP_PROVIDER=simulator` e `JOGA_MONEY_MODE=simulated`);
+2. disparar um deploy para reiniciar o serviço;
+3. validar `/api/docs` (volta a responder), o webhook (volta a aceitar evento
+   sem assinatura) e o `/api/v1/app-config` (`demo_mode` volta a `false`).
+
+O rollback reabre a documentação interativa e o webhook sem assinatura, e
+devolve a simulação de pagamento sem as guardas do modo demo. Use apenas como
+emergência, registre o motivo e reverta assim que possível.
+
+### `render.yaml` está defasado
+
+O blueprint versionado ainda declara `JOGA_ENVIRONMENT=development` e não contém
+`JOGA_TICKET_PURCHASE_ENABLED` nem `JOGA_PLATFORM_ADMINS`; o serviço em execução
+foi alterado pelo dashboard/API. **Não edite o `render.yaml` sem ordem
+explícita.** Se o Blueprint for sincronizado ou o serviço recriado a partir dele,
+atualize essas três entradas antes — do contrário o demo volta para
+`development` e reabre docs e webhook.
+
 ## 6. Banco: migração e cuidados
 
 O `backend/.env` aponta para o Postgres **local** de propósito. Para migrar o
@@ -341,8 +453,8 @@ O web service foi criado pela API do Render, somente para o demo:
 | Plano | `free` (sem cartão, sem upgrade, sem trial) |
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
-| Variáveis | 34, nomes conferidos na API; valores secretos só no Render |
-| Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API; o auto-deploy não disparou de novo) |
+| Variáveis | 34, com `JOGA_ENVIRONMENT` agora `demo`; somam-se `JOGA_TICKET_PURCHASE_ENABLED=false` e `JOGA_PLATFORM_ADMINS` (seção 5.1); valores secretos só no Render |
+| Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API); `6a89c79` **live** em 2026-11-20, já em `JOGA_ENVIRONMENT=demo` |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
 O build Docker foi executado pelo Render a partir do HEAD; o container subiu, as
@@ -447,6 +559,17 @@ O `SameSite=strict` é o valor emitido pelo Starlette; equivale semanticamente a
 
 O `render.yaml` local e o da `main` não contêm a URL pública; a origem WebAuthn
 segue `sync: false` no dashboard.
+
+### Modo demo (2026-11-20)
+
+A troca para `JOGA_ENVIRONMENT=demo` foi validada no deploy `6a89c79`: health
+`ready` 200; `/api/docs`, `/api/openapi.json` e `/redoc` 404; webhook 404
+`webhook_disabled`; compra de tickets 503; `/api/v1/admin/venues` anônimo 401;
+`/api/v1/catalog/visual` 200; `/api/v1/app-config` com `demo_mode: true`; e
+headers de segurança na borda (`Strict-Transport-Security`,
+`Content-Security-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+`Cache-Control: no-store`). Comandos e tabela completa na seção 5.1.
 
 ### Executado localmente (API + Postgres local, sem Caddy)
 
