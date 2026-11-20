@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.text import UnsafeText, reject_control_characters
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import AuditLog, User
@@ -781,6 +782,7 @@ def _ensure_can_manage_target(actor_role: Role, target_role: Role) -> None:
 
 
 def _clean_organization_name(value: str) -> str:
+    _reject_control(value)
     normalized = " ".join(value.split())
     if not 2 <= len(normalized) <= 120:
         raise InvalidInput
@@ -788,6 +790,7 @@ def _clean_organization_name(value: str) -> str:
 
 
 def _clean_venue_name(value: str) -> str:
+    _reject_control(value)
     normalized = " ".join(value.split())
     if not 2 <= len(normalized) <= 120:
         raise InvalidInput
@@ -846,10 +849,18 @@ def _clean_geocoding(
 def _clean_optional(value: str | None, *, max_length: int) -> str | None:
     if value is None:
         return None
+    _reject_control(value)
     normalized = " ".join(value.split())
     if len(normalized) > max_length:
         raise InvalidInput
     return normalized or None
+
+
+def _reject_control(value: str) -> None:
+    try:
+        reject_control_characters(value)
+    except UnsafeText as exc:
+        raise InvalidInput from exc
 
 
 def _clean_state(value: str | None) -> str | None:

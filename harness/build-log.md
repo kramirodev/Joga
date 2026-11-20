@@ -1685,3 +1685,33 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   6 passed; `ruff check` e `ruff format --check` limpos.
 - **Fora do escopo:** nenhuma mudança em `Caddyfile`, `Dockerfile`, variáveis de
   ambiente, deploy ou banco.
+
+### 2026-11-20 - Higiene de texto de entrada (NUL/controle/bidi) e curingas de filtro
+
+- **Branch:** `fix/higiene-entrada`. Helper novo `backend/app/core/text.py`:
+  `CONTROL_PATTERN` (`\x00`–`\x1f`, `\x7f`), `MULTILINE_CONTROL_PATTERN`
+  (idem, exceto `\n`), `INVISIBLE_PATTERN` (zero-width, bidi, soft hyphen),
+  tipos Pydantic `FreeText`/`OptionalFreeText`/`MultilineText`/
+  `OptionalMultilineText`/`DisplayName`/`OptionalDisplayName` e `escape_like`.
+- **Política:** texto de uma linha com controle/NUL responde
+  `422 validation_error`. Texto multilinha aceita `\n`, normaliza `\r\n`/`\r`
+  para `\n` antes das validações e rejeita NUL/demais controles, bidi e
+  zero-width. `display_name` rejeita também CR/LF e invisíveis. Acentos e emoji
+  seguem aceitos.
+- **Campos cobertos:** perfil (`display_name`, `bio` multilinha); chat de lobby
+  e de clã (multilinha); clã (nome, tag, descrição, mensagem de entrada, notas,
+  denúncia); organização; estabelecimento/quadra (nome, cidade, `address_line`,
+  descrição multilinha); legenda de foto (Form, via `VenueService`); motivos de
+  cancelamento, bloqueio, encerramento, revisão, moderação, estorno/contestação
+  e no-show; `display_name` no cadastro e-mail/web e no admin; catálogo
+  administrativo (`name`/`slug`/`icon_key` de esporte e formato).
+  `CONTROL_PATTERN` duplicado em e-mail/templates passou a importar o helper.
+- **Filtros:** `q` de clãs e de usuários admin e `city` da vitrine escapam
+  `%`/`_`/`\` do usuário; busca por substring continua funcionando.
+- **Testes:** `backend/tests/test_text_hygiene.py` (51 casos) cobre NUL por
+  endpoint, multilinha com `\n` e normalização CRLF, bidi/zero-width/CRLF,
+  acento/emoji, `q=%`/`city=%` e catálogo admin. Suíte completa com banco:
+  901 passed. `ruff check`, `ruff format --check` e `mypy app` limpos.
+- **Fora do escopo:** XSS latente em campos que aceitam `<script>` (cliente
+  escapa; risco aceito) e `positions` do formato de esporte.
+

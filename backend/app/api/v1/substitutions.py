@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.text import OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import BookingSubstitution
 from app.modules.bookings.service import BookingNotFound
@@ -56,7 +57,7 @@ class AssignSubstituteRequest(BaseModel):
 
 
 class NoShowRequest(BaseModel):
-    reason: str | None = Field(default=None, max_length=200)
+    reason: OptionalFreeText = Field(default=None, max_length=200)
 
 
 class SubstitutionView(BaseModel):

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.text import FreeText, OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.models import OrganizationVenue
@@ -38,11 +39,11 @@ router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
 class OrganizationCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
+    name: FreeText = Field(min_length=2, max_length=120)
 
 
 class OrganizationUpdate(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
+    name: FreeText = Field(min_length=2, max_length=120)
 
 
 class OrganizationView(BaseModel):
@@ -89,10 +90,10 @@ class MemberListResponse(BaseModel):
 
 
 class VenueCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-    city: str | None = Field(default=None, max_length=120)
+    name: FreeText = Field(min_length=2, max_length=120)
+    city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: str | None = Field(default=None, max_length=200)
+    address_line: OptionalFreeText = Field(default=None, max_length=200)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     postal_code: str | None = Field(default=None, max_length=9)
@@ -110,10 +111,10 @@ class VenueCreate(BaseModel):
 
 
 class VenueUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=120)
-    city: str | None = Field(default=None, max_length=120)
+    name: OptionalFreeText = Field(default=None, min_length=2, max_length=120)
+    city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: str | None = Field(default=None, max_length=200)
+    address_line: OptionalFreeText = Field(default=None, max_length=200)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     postal_code: str | None = Field(default=None, max_length=9)

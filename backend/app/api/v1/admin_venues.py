@@ -17,6 +17,7 @@ from app.api.v1.admin_reason import clean_reason
 from app.api.v1.geo import get_postal_code_service
 from app.api.v1.request_context import request_ip_hash
 from app.core.config import Settings, get_settings
+from app.core.text import FreeText, OptionalFreeText, OptionalMultilineText
 from app.infrastructure.database.dependency import get_session
 from app.modules.catalog.platform_venues import (
     GeocodingRequired,
@@ -153,49 +154,49 @@ class AdminVenueListResponse(BaseModel):
 
 
 class AdminVenueCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    city: str | None = Field(default=None, max_length=120)
+    name: FreeText = Field(min_length=1, max_length=120)
+    city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: str | None = Field(default=None, max_length=200)
+    address_line: OptionalFreeText = Field(default=None, max_length=200)
     postal_code: str | None = Field(default=None, max_length=9)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     is_public: bool = True
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminVenueUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120)
-    city: str | None = Field(default=None, max_length=120)
+    name: OptionalFreeText = Field(default=None, min_length=1, max_length=120)
+    city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: str | None = Field(default=None, max_length=200)
+    address_line: OptionalFreeText = Field(default=None, max_length=200)
     postal_code: str | None = Field(default=None, max_length=9)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     is_public: bool | None = None
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminSpaceCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    description: str | None = Field(default=None, max_length=280)
+    name: FreeText = Field(min_length=1, max_length=120)
+    description: OptionalMultilineText = Field(default=None, max_length=280)
     is_covered: bool = False
     sport_id: UUID
     format_id: UUID
     price_cents: int = Field(gt=0, le=100_000_000)
     status: Literal["active", "inactive"] = "active"
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminSpaceUpdateRequest(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120)
-    description: str | None = Field(default=None, max_length=280)
+    name: OptionalFreeText = Field(default=None, min_length=1, max_length=120)
+    description: OptionalMultilineText = Field(default=None, max_length=280)
     is_covered: bool | None = None
     sport_id: UUID | None = None
     format_id: UUID | None = None
     price_cents: int | None = Field(default=None, gt=0, le=100_000_000)
     status: Literal["active", "inactive"] | None = None
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminSpaceView(BaseModel):
@@ -219,7 +220,7 @@ class AdminAvailabilityCreate(BaseModel):
     end_time: time
     price_cents: int = Field(ge=0, le=100_000_000)
     slot_minutes: int = Field(default=60, ge=15, le=240)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminAvailabilityUpdate(BaseModel):
@@ -229,7 +230,7 @@ class AdminAvailabilityUpdate(BaseModel):
     end_time: time | None = None
     price_cents: int | None = Field(default=None, ge=0, le=100_000_000)
     slot_minutes: int | None = Field(default=None, ge=15, le=240)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminAvailabilityView(BaseModel):
@@ -246,14 +247,14 @@ class AdminBusinessHourCreate(BaseModel):
     weekday: int = Field(ge=1, le=7)
     opens_at: time
     closes_at: time
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminBusinessHourUpdate(BaseModel):
     weekday: int | None = Field(default=None, ge=1, le=7)
     opens_at: time | None = None
     closes_at: time | None = None
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class AdminBusinessHourView(BaseModel):
@@ -611,7 +612,7 @@ def deactivate_admin_venue(
 
 
 class AdminReasonRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 @router.post(

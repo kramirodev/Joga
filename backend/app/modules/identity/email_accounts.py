@@ -7,7 +7,6 @@ o e-mail e redefinir a senha. Login usa e-mail + senha; não há login por códi
 from __future__ import annotations
 
 import hmac
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -15,6 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.text import CONTROL_PATTERN
 from app.modules.email.addresses import hash_email, normalize_email
 from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryService
 from app.modules.email.models import UserEmail
@@ -28,8 +28,6 @@ from app.modules.identity.models import PhoneChallenge, User, UserPassword
 from app.modules.identity.otp import ChallengePurpose
 from app.modules.identity.passwords import PasswordService
 from app.modules.profile.models import UserProfile
-
-CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class EmailAccountError(Exception):
