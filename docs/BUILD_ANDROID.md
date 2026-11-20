@@ -58,6 +58,12 @@ Set-Location C:\m
 pnpm exec expo prebuild --platform android --no-install
 ```
 
+> **Atenção:** `prebuild` (principalmente `--clean`) recria `android/` e pode gerar
+> um novo `debug.keystore`. O release do demo é assinado com essa chave, e a
+> troca muda o SHA-256 do certificado, quebra o `assetlinks.json` publicado e
+> impede a atualização por cima de um APK já instalado. Antes de qualquer
+> `prebuild --clean`, faça backup e restaure o keystore (§7.1).
+
 ### 3.2 Configurar `EXPO_PUBLIC_API_URL`
 
 Defina a URL da API antes de iniciar o Metro ou gerar o bundle. Para aparelho conectado por USB com `adb reverse`:
@@ -132,3 +138,121 @@ Se o build local no Windows continuar bloqueado:
 - O procedimento foi descoberto no ambiente Windows deste projeto; versões diferentes de CMake/Ninja podem tratar caminhos longos de outra forma.
 - A cópia para `C:\m` é uma cópia de trabalho. Não versionar `C:\m`, `android/build`, `android/app/build`, `android/.gradle` nem `android/app/.cxx`.
 - `EXPO_PUBLIC_API_URL` é configuração de build, não segredo. Nunca colocar chaves, tokens ou credenciais em `.env` versionado.
+
+## 7. Release do demo: assinatura, guarda de URL e MAX_PATH
+
+### 7.1 Assinatura do demo (chave de debug)
+
+O release do demo **não tem keystore de produção**. `mobile/android/app/build.gradle`
+usa `signingConfigs.debug` também no `release`:
+
+| Item | Valor |
+|---|---|
+| Keystore | `mobile/android/app/debug.keystore` (dentro de `android/`, git-ignorado) |
+| Alias | `androiddebugkey` |
+| Senha do keystore e da chave | `android` (padrão do template React Native) |
+| SHA-256 do certificado | `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C` |
+| Uso | **Somente demo.** Não serve para Play Store, produção, KYC ou distribuição pública. |
+
+O keystore **não é versionado** (fica em `android/`, recriado por `prebuild`). O
+backup operacional deste host está **fora do repositório**, em:
+
+```text
+$env:USERPROFILE\.joga\keystores\joga-demo-debug.keystore
+```
+
+SHA-256 do arquivo do backup: `221E0A3106AA4C3CCC154E0A418B55020B3F9EA6E84F92E8749CD9E2F39F5E58`.
+Guarde o backup em local durável e privado; ele é a única forma de manter a mesma
+assinatura. Sem ele, `prebuild --clean` gera outra chave, o fingerprint muda e
+quebra duas coisas: o `assetlinks.json` do demo e a atualização por cima do APK
+já instalado.
+
+Se o fingerprint mudar, atualize `web/public/.well-known/assetlinks.json`
+(mesmo `package_name` e novo SHA-256) e publique no host do demo. A publicação é
+ação externa separada, sujeita a autorização; gerar o arquivo não é deploy.
+Ferramenta: `harness/proofs/passkeys/scripts/passkeys_tool.py`.
+
+### 7.2 Guarda de `EXPO_PUBLIC_API_URL`
+
+`mobile/app.config.js` (versionado) falha o bundle quando a variável está vazia,
+aponta para `127.0.0.1`/`localhost` ou não é HTTPS, sempre que o build é de
+release. O build de release precisa declarar explicitamente:
+
+```powershell
+$env:JOGA_RELEASE_BUILD = '1'
+$env:EXPO_PUBLIC_API_URL = 'https://<host-do-demo>/api/v1'
+```
+
+Sem a variável ou com valor local, `gradlew ... assembleRelease/bundleRelease`
+para antes de empacotar. Em desenvolvimento (`expo start`), `127.0.0.1` continua
+válido.
+
+Prova de que o bundle embutido usa o demo:
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [IO.Compression.ZipFile]::OpenRead('C:\m\android\app\build\outputs\apk\release\app-release.apk')
+$entry = $zip.Entries | Where-Object { $_.FullName -eq 'assets/index.android.bundle' }
+$reader = New-Object IO.StreamReader($entry.Open())
+$text = $reader.ReadToEnd()
+$reader.Close(); $zip.Dispose()
+
+if (-not $env:EXPO_PUBLIC_API_URL) { throw 'EXPO_PUBLIC_API_URL nao definido' }
+$expected = ([uri]$env:EXPO_PUBLIC_API_URL).Host
+if ($expected -in @('127.0.0.1', 'localhost')) {
+  throw 'EXPO_PUBLIC_API_URL aponta para local, nao para o demo'
+}
+if (-not $expected -or $text -notmatch [regex]::Escape($expected)) {
+  throw 'Bundle sem o host do demo'
+}
+```
+
+> O fallback `http://127.0.0.1:8000/api/v1` continua no bundle como valor de
+> desenvolvimento em `mobile/src/api/client.ts`. A prova do release é a presença
+> do host do demo **e** o fato de o build ter passado pela guarda do
+> `app.config.js` com `JOGA_RELEASE_BUILD=1`; ausência de URL local no texto do
+> bundle não é um critério válido.
+
+### 7.3 Ajuste de MAX_PATH reproduzível
+
+O `android/` é regenerado por `prebuild`; qualquer ajuste manual nele precisa ser
+reaplicado de forma explícita. O caminho curto `C:\m` resolve o MAX_PATH sem
+mudar a arquitetura (Expo/RN/CMake continuam os mesmos), mas o argumento de
+CMake não é versionado.
+
+**Não use `CMAKE_OBJECT_PATH_MAX=200`.** Medido no build de 2026-11-20 em
+`C:\m`, o maior caminho de objeto gerado é **248 caracteres**. Com 200, o CMake
+tenta encurtar o caminho para `C_/m/...`, avisa que não cabe e o Ninja falha com
+`mkdir(...): No such file or directory`. Com 250 (o padrão do CMake 3.22.1),
+nenhum caminho excede o limite e o build passa. Portanto: raiz curta **e** 250
+(ou simplesmente remover a linha). O valor 200 existente em `android/app/build.gradle`
+deve ser corrigido para 250 antes do build.
+
+Receita usada no build de 2026-11-20:
+
+```powershell
+robocopy C:\prog\joga\mobile C:\m /E /XD node_modules build .gradle .cxx dist .expo .kotlin /NFL /NDL /NJH /NJS /NP
+Set-Location C:\m
+pnpm install --frozen-lockfile
+# O build.gradle gerado precisa do limite de caminho de objeto:
+#   arguments "-DCMAKE_OBJECT_PATH_MAX=250"
+# Se o prebuild recriar o arquivo, reaplique a linha acima e restaure o keystore.
+Set-Location C:\m\android
+$env:JAVA_HOME = 'C:\prog\joga\.tools\jdk-17.0.21+9'
+$env:ANDROID_HOME = 'C:\prog\joga\.tools\android-sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:JOGA_RELEASE_BUILD = '1'
+$env:EXPO_PUBLIC_API_URL = 'https://<host-do-demo>/api/v1'
+.\gradlew.bat assembleRelease bundleRelease '-PreactNativeArchitectures=arm64-v8a,armeabi-v7a' --console=plain --no-daemon
+```
+
+Não copie `android/build`, `android/app/build`, `android/.gradle` nem
+`android/app/.cxx` para `C:\m`: o `autolinking.json` grava caminho absoluto e
+reintroduz `C:\prog\joga`. Confira com:
+
+```powershell
+Get-ChildItem C:\m\android -Recurse -Filter autolinking.json |
+  Select-String -Pattern 'C:\\prog\\joga'
+```
+
+O comando não deve retornar ocorrências.
