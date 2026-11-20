@@ -10,6 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.core.config import Settings
 from app.core.versioning import parse_version
 from app.main import create_app
+from tests.settings_helpers import demo_settings
 
 OLD = "1.0.0"
 MIN = "1.0.1"
@@ -154,6 +155,20 @@ def test_app_config_reports_update_required() -> None:
     assert web.json()["update_required"] is False
     assert old.json()["min_supported_version"] == MIN
     assert old.json()["version_gate_enabled"] is True
+
+
+def test_app_config_reports_demo_mode() -> None:
+    with TestClient(create_app(demo_settings())) as client:
+        response = client.get("/api/v1/app-config")
+    assert response.status_code == 200
+    assert response.json()["demo_mode"] is True
+
+
+def test_app_config_reports_demo_mode_false_outside_demo() -> None:
+    with TestClient(create_app(gate_settings())) as client:
+        response = client.get("/api/v1/app-config")
+    assert response.status_code == 200
+    assert response.json()["demo_mode"] is False
 
 
 def test_websocket_gate_closes_old_mobile() -> None:

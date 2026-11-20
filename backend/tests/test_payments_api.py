@@ -18,6 +18,7 @@ from app.modules.payments.dependency import get_psp_adapter
 from app.modules.payments.models import PspWebhookEvent
 from app.modules.payments.service import PaymentService
 from tests.compliance_helpers import cpf_key_kwargs
+from tests.settings_helpers import demo_settings
 
 
 def api_client(client: TestClient, db_session: Session, settings: Settings) -> TestClient:
@@ -252,3 +253,18 @@ def test_webhook_failure_rolls_back_partial_processing(
     assert event is not None
     assert event.event_type == "order"
     assert event.last_error == "PspUnavailable"
+
+
+def test_webhook_is_disabled_in_demo_without_writing(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session, demo_settings())
+    response = api.post(
+        "/api/v1/payments/mercadopago/webhook",
+        json={"id": "evt-demo", "type": "order", "data": {"id": "ORD-DEMO"}},
+        headers={"x-signature": "ts=1,v1=qualquer", "x-request-id": "req-demo"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "webhook_disabled"}}
+    assert db_session.scalar(select(PspWebhookEvent)) is None

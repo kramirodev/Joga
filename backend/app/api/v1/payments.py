@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
+from app.core.environments import is_demo, is_local
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import Booking
 from app.modules.bookings.service import BookingNotFound, BookingService
@@ -53,7 +54,6 @@ from app.modules.payments.service import (
 )
 
 router = APIRouter(tags=["payments"])
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
 
 class PaymentSyncResponse(BaseModel):
@@ -346,6 +346,8 @@ async def mercadopago_webhook(
     adapter: Annotated[PspAdapter, Depends(get_psp_adapter)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str]:
+    if is_demo(settings.environment):
+        raise _error("webhook_disabled", status.HTTP_404_NOT_FOUND)
     raw = await request.body()
     try:
         payload = json.loads(raw.decode("utf-8")) if raw else {}
@@ -365,7 +367,7 @@ async def mercadopago_webhook(
         else None
     )
     if secret is None:
-        if settings.environment.lower() not in LOCAL_ENVIRONMENTS:
+        if not is_local(settings.environment):
             raise _error("webhook_secret_required", status.HTTP_401_UNAUTHORIZED)
     elif not verify_webhook_signature(
         secret=secret,

@@ -35,6 +35,7 @@ from app.modules.tickets.service import expire_due as expire_tickets
 from app.modules.tickets.service import get_balance
 from tests.compliance_helpers import cpf_key_kwargs
 from tests.helpers_results import make_token, make_user
+from tests.settings_helpers import demo_settings
 
 START = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 
@@ -101,6 +102,38 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
     )
     assert confirm.status_code == 403
     assert confirm.json() == {"detail": {"code": "confirmation_requires_psp"}}
+
+
+def test_confirm_subscription_is_allowed_for_owner_in_demo(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    user_id = make_user(db_session)
+    token = make_token(db_session, user_id)
+
+    created = api.post(
+        "/api/v1/me/pass/subscriptions",
+        headers=bearer(token),
+        json={"plan_code": "craque"},
+    )
+    assert created.status_code == 201, created.text
+
+    client.app.dependency_overrides[get_settings] = lambda: demo_settings()
+    demo_tokens = SessionService(
+        db_session,
+        "demo-token-hash-secret",
+        access_ttl_seconds=600,
+        refresh_absolute_ttl_days=30,
+        refresh_idle_ttl_days=7,
+    ).issue(user_id)
+    db_session.commit()
+    confirm = api.post(
+        f"/api/v1/me/pass/subscriptions/{created.json()['id']}/confirm",
+        headers=bearer(demo_tokens.access_token),
+    )
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["status"] == "active"
+    assert confirm.json()["paid_at"] is not None
 
 
 def test_pass_purchase_is_idempotent_while_pending(client: TestClient, db_session: Session) -> None:

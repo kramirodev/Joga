@@ -9,11 +9,11 @@ from typing import Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.environments import is_demo, is_local
 from app.core.versioning import parse_version
 
 DEFAULT_PHONE_HASH_SECRET = "local-development-only-change-me"
 DEFAULT_TOKEN_HASH_SECRET = "local-token-development-only-change-me"
-LOCAL_ENVIRONMENTS = {"local", "test", "development", "ci"}
 
 # Cotas diárias dos planos usados pelo beta. O orçamento configurado precisa
 # ficar abaixo da cota para não esgotá-la sem margem operacional.
@@ -326,7 +326,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def reject_default_secret_outside_local(self) -> Self:
+    def validate_environment_profile(self) -> Self:
         token = (
             self.mercado_pago_access_token.get_secret_value().strip()
             if self.mercado_pago_access_token is not None
@@ -334,8 +334,23 @@ class Settings(BaseSettings):
         )
         if self.psp_provider == "mercadopago" and not token:
             raise ValueError("JOGA_MERCADO_PAGO_ACCESS_TOKEN é obrigatório com psp=mercadopago")
-        if self.environment.lower() in LOCAL_ENVIRONMENTS:
+        if is_local(self.environment):
             return self
+        if is_demo(self.environment):
+            if self.psp_provider != "simulator":
+                raise ValueError("JOGA_PSP_PROVIDER=simulator é obrigatório no ambiente demo")
+            if self.money_mode != "simulated":
+                raise ValueError("JOGA_MONEY_MODE=simulated é obrigatório no ambiente demo")
+            if self.ticket_purchase_enabled:
+                raise ValueError(
+                    "JOGA_TICKET_PURCHASE_ENABLED=false é obrigatório no ambiente demo"
+                )
+            if self.dev_fixed_otp is not None:
+                raise ValueError("JOGA_DEV_FIXED_OTP não pode ser usado no ambiente demo")
+            self._require_non_default_hash_secrets()
+            return self
+        if self.dev_fixed_otp is not None:
+            raise ValueError("JOGA_DEV_FIXED_OTP só pode ser usado em ambiente local")
         if self.psp_provider != "mercadopago":
             raise ValueError("JOGA_PSP_PROVIDER=mercadopago é obrigatório fora do ambiente local")
         webhook_secret = (
@@ -353,6 +368,10 @@ class Settings(BaseSettings):
                 "JOGA_MERCADO_PAGO_NOTIFICATION_URL deve ser uma URL HTTPS pública "
                 "fora do ambiente local"
             )
+        self._require_non_default_hash_secrets()
+        return self
+
+    def _require_non_default_hash_secrets(self) -> None:
         secrets = {
             "JOGA_PHONE_HASH_SECRET": (
                 self.phone_hash_secret.get_secret_value(),
@@ -366,9 +385,6 @@ class Settings(BaseSettings):
         for name, (value, default) in secrets.items():
             if value == default:
                 raise ValueError(f"{name} deve ser definido fora do ambiente local")
-        if self.dev_fixed_otp is not None:
-            raise ValueError("JOGA_DEV_FIXED_OTP só pode ser usado em ambiente local")
-        return self
 
     @model_validator(mode="after")
     def validate_cpf_key(self) -> Self:
@@ -395,14 +411,14 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} deve ter 32 bytes")
             if raw == b"\x00" * 32:
                 raise ValueError(f"{name} não pode ser o placeholder de desenvolvimento")
-        if self.environment.lower() not in LOCAL_ENVIRONMENTS and self.cpf_key is None:
+        if not is_local(self.environment) and self.cpf_key is None:
             raise ValueError("JOGA_CPF_KEY é obrigatório fora do ambiente local")
         return self
 
     @model_validator(mode="after")
     def validate_auth_phase_flags(self) -> Self:
         """Falha no boot em combinações de credencial inválidas (ADR 0050)."""
-        local = self.environment.lower() in LOCAL_ENVIRONMENTS
+        local = is_local(self.environment)
 
         if not (self.auth_email_enabled or self.auth_phone_enabled):
             raise ValueError("pelo menos uma credencial deve estar habilitada")
