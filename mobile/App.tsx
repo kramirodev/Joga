@@ -6,9 +6,7 @@ import {
   Appearance,
   BackHandler,
   Easing,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   View,
   useWindowDimensions,
@@ -55,6 +53,7 @@ import {
 } from './src/ui/kit';
 import { shortDateTime } from './src/ui/datetime';
 import { BrandLoader } from './src/ui/BrandLoader';
+import { BottomSheetFrame, useSheetClose } from './src/ui/BottomSheetFrame';
 import { dark, light } from './src/ui/theme';
 import { Icon } from './src/ui/icons';
 
@@ -238,8 +237,6 @@ function Sheet({
   onConfirm: () => void;
 }) {
   const { palette } = useAppTheme();
-  const [progress] = useState(() => new Animated.Value(0));
-  const closing = useRef(false);
   const content: Record<
     string,
     { title: string; text: string; cancel: string; confirm: string; danger?: boolean }
@@ -296,115 +293,55 @@ function Sheet({
   };
   const item = content[id] ?? content.confirm;
 
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [progress]);
-
-  const requestClose = (after?: () => void) => {
-    if (closing.current) {
-      return;
-    }
-    closing.current = true;
-    Animated.timing(progress, {
-      toValue: 0,
-      duration: 170,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-      after?.();
-    });
-  };
-
   return (
-    <Modal visible transparent animationType="none" onRequestClose={() => requestClose()}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: 'rgba(23,25,27,.5)', opacity: progress },
-          ]}
-        />
-        <Pressable style={{ flex: 1, justifyContent: 'flex-end' }} onPress={() => requestClose()}>
-          <Animated.View
-            style={{
-              backgroundColor: palette.surface,
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              borderTopWidth: 1.5,
-              borderColor: palette.lineStrong,
-              maxHeight: '78%',
-              transform: [
-                { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [320, 0] }) },
-              ],
-            }}
-          >
-            <ScrollView
-              bounces={false}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{
-                paddingHorizontal: 16,
-                paddingTop: 16,
-                paddingBottom: 26,
-              }}
-            >
-              <View
-                style={{
-                  width: 44,
-                  height: 5,
-                  borderRadius: 999,
-                  backgroundColor: palette.lineStrong,
-                  alignSelf: 'center',
-                  marginBottom: 14,
-                }}
-              />
-              <Txt variant="h2" style={{ fontSize: 20, marginBottom: 6 }}>
-                {item.title}
-              </Txt>
-              <Txt variant="sub" style={{ fontSize: 13, marginBottom: 12 }}>
-                {item.text}
-              </Txt>
-              {id === 'filter' ? (
-                <View style={{ marginBottom: 12 }}>
-                  <ChipRow>
-                    <Badge>Futebol 5x5</Badge>
-                    <Badge>Vôlei 6x6</Badge>
-                    <Badge>Coberta</Badge>
-                    <Badge>Até 10 km</Badge>
-                  </ChipRow>
-                </View>
-              ) : null}
-              {id === 'share' ? (
-                <Card tone="flat" style={{ marginBottom: 12 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Icon name="cal" size={16} color={palette.ink} />
-                    <Txt variant="tiny">Partida, quadra ou referência do JOGA</Txt>
-                  </View>
-                </Card>
-              ) : null}
-              <BtnRow>
-                <Btn tone="ghost" onPress={() => requestClose()}>
-                  {item.cancel}
-                </Btn>
-                <Btn
-                  tone={item.danger ? 'danger' : 'primary'}
-                  onPress={() => requestClose(onConfirm)}
-                >
-                  {item.confirm}
-                </Btn>
-              </BtnRow>
-            </ScrollView>
-          </Animated.View>
-        </Pressable>
-      </View>
-    </Modal>
+    <BottomSheetFrame
+      visible
+      onClose={onClose}
+      title={item.title}
+      subtitle={item.text}
+      accessibilityLabel={item.title}
+      footer={<SheetActions item={item} onConfirm={onConfirm} />}
+    >
+      {id === 'filter' ? (
+        <View style={{ marginBottom: 12 }}>
+          <ChipRow>
+            <Badge>Futebol 5x5</Badge>
+            <Badge>Vôlei 6x6</Badge>
+            <Badge>Coberta</Badge>
+            <Badge>Até 10 km</Badge>
+          </ChipRow>
+        </View>
+      ) : null}
+      {id === 'share' ? (
+        <Card tone="flat">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Icon name="cal" size={16} color={palette.ink} />
+            <Txt variant="tiny">Partida, quadra ou referência do JOGA</Txt>
+          </View>
+        </Card>
+      ) : null}
+    </BottomSheetFrame>
+  );
+}
+
+/** Botões do sheet compartilhado; usam o fechamento animado do frame. */
+function SheetActions({
+  item,
+  onConfirm,
+}: {
+  item: { cancel: string; confirm: string; danger?: boolean };
+  onConfirm: () => void;
+}) {
+  const close = useSheetClose();
+  return (
+    <BtnRow>
+      <Btn tone="ghost" onPress={() => close()}>
+        {item.cancel}
+      </Btn>
+      <Btn tone={item.danger ? 'danger' : 'primary'} onPress={() => close(onConfirm)}>
+        {item.confirm}
+      </Btn>
+    </BtnRow>
   );
 }
 
@@ -800,6 +737,8 @@ function Shell() {
   const showTabBar = !app.suspended && signedIn && !!screen.tab;
   const canGoBack = stack.length > 1 && !app.suspended;
   const toastBottom = (showTabBar ? 80 : 20) + insets.bottom;
+  // Fonte única do inset inferior: a tab bar já reserva o espaço do sistema.
+  const contentBottomInset = showTabBar ? 0 : insets.bottom;
 
   const [anim] = useState(() => new Animated.Value(1));
 
@@ -969,8 +908,9 @@ function Shell() {
       setDark: app.setDark,
       fontScale: fontScaleFactor(app.accessibility.fontScale),
       largeTargets: app.accessibility.largeTargets,
+      contentBottomInset,
     }),
-    [palette, app.dark, app.setDark, app.accessibility],
+    [palette, app.dark, app.setDark, app.accessibility, contentBottomInset],
   );
 
   const confirmModal = () => {

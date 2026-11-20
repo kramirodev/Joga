@@ -1,17 +1,16 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import type { PropsWithChildren, ReactNode, Ref } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
   KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
   type StyleProp,
+  type TextInputInstance,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
@@ -27,6 +26,7 @@ import Svg, {
 
 import type { VisualIdentity } from '../api/types';
 import { useNav, useTheme } from '../state/context';
+import { BottomSheetFrame as SheetFrame, useSheetClose } from './BottomSheetFrame';
 import { IdentityBadge } from './IdentityBadge';
 import { Icon, type IconName } from './icons';
 import { Text } from './text';
@@ -456,11 +456,12 @@ export function Btn({
     >
       {icon ? <Icon name={icon} size={18} color={textColor} /> : null}
       <Text
-        numberOfLines={1}
+        numberOfLines={2}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
         maxFontSizeMultiplier={1.2}
         style={{
+          flexShrink: 1,
           fontSize: small ? 14 : 15,
           lineHeight: small ? 18 : 20,
           fontWeight: '800',
@@ -496,13 +497,14 @@ export function TextBtn({
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
       style={{
-        minHeight: largeTargets ? 56 : 46,
+        minHeight: largeTargets ? 56 : 48,
         justifyContent: 'center',
         paddingHorizontal: 2,
       }}
     >
       <Text
         style={{
+          flexShrink: 1,
           fontSize: 14,
           lineHeight: 18,
           fontWeight: muted ? '700' : '800',
@@ -550,10 +552,10 @@ export function IconBtn({
       accessibilityRole="button"
       accessibilityLabel={label}
       style={({ pressed }) => ({
-        width: largeTargets ? 54 : 46,
-        height: largeTargets ? 54 : 46,
+        width: largeTargets ? 54 : 48,
+        height: largeTargets ? 54 : 48,
         flexShrink: 0,
-        borderRadius: largeTargets ? 27 : 23,
+        borderRadius: largeTargets ? 27 : 24,
         borderWidth: 1.5,
         borderColor: border,
         backgroundColor: bg,
@@ -619,7 +621,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: !!on }}
       style={({ pressed }) => ({
-        minHeight: largeTargets ? 54 : 46,
+        minHeight: largeTargets ? 54 : 48,
         borderRadius: 999,
         borderWidth: 1.5,
         borderColor: border,
@@ -634,7 +636,9 @@ export function Chip({
       })}
     >
       {icon ? <Icon name={icon} size={14} color={color} /> : null}
-      <Text style={{ fontSize: 13, lineHeight: 14, fontWeight: '700', color }}>{children}</Text>
+      <Text style={{ flexShrink: 1, fontSize: 13, lineHeight: 14, fontWeight: '700', color }}>
+        {children}
+      </Text>
       {lock ? <Icon name="lock" size={14} color={color} /> : null}
     </Pressable>
   );
@@ -683,9 +687,11 @@ export function SegBtn({
       accessibilityState={{ selected: !!on }}
       style={({ pressed }) => ({
         flex: 1,
-        minHeight: largeTargets ? 54 : 46,
+        minWidth: 0,
+        minHeight: largeTargets ? 54 : 48,
         borderRadius: 8,
         paddingHorizontal: 6,
+        paddingVertical: 6,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: on ? (dark ? palette.surface2 : palette.ink) : 'transparent',
@@ -695,9 +701,9 @@ export function SegBtn({
       })}
     >
       <Text
-        numberOfLines={1}
+        numberOfLines={2}
         adjustsFontSizeToFit
-        minimumFontScale={0.8}
+        minimumFontScale={0.7}
         style={{
           fontSize: 13,
           lineHeight: 16,
@@ -733,11 +739,15 @@ export function Field({ label, children }: PropsWithChildren<{ label: string }>)
   );
 }
 
-export function Input(props: TextInputProps) {
+export function Input({
+  inputRef,
+  ...props
+}: TextInputProps & { inputRef?: Ref<TextInputInstance> }) {
   const { palette, largeTargets, fontScale } = useTheme();
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
+      ref={inputRef}
       {...props}
       maxFontSizeMultiplier={1.3}
       placeholderTextColor={palette.muted}
@@ -820,7 +830,7 @@ export function Select({
   value?: string;
   onChange?: (value: string) => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, largeTargets } = useTheme();
   const [open, setOpen] = useState(false);
   const [internal, setInternal] = useState(value ?? options[0] ?? '');
   const current = value ?? internal;
@@ -828,9 +838,11 @@ export function Select({
     <>
       <Pressable
         onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={current}
         style={{
           width: '100%',
-          minHeight: 52,
+          minHeight: largeTargets ? 58 : 52,
           borderWidth: 1.5,
           borderColor: palette.lineStrong,
           borderRadius: 12,
@@ -840,59 +852,68 @@ export function Select({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 10,
         }}
       >
-        <Text style={{ fontSize: 14, color: palette.ink }}>{current}</Text>
+        <Text style={{ flexShrink: 1, fontSize: 14, color: palette.ink }}>{current}</Text>
         <Icon name="next" size={16} color={palette.muted} />
       </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <SheetFrame visible={open} onClose={() => setOpen(false)} accessibilityLabel="Escolher opção">
+        <SelectOptions
+          options={options}
+          current={current}
+          onSelect={(option) => {
+            setInternal(option);
+            onChange?.(option);
+          }}
+        />
+      </SheetFrame>
+    </>
+  );
+}
+
+function SelectOptions({
+  options,
+  current,
+  onSelect,
+}: {
+  options: string[];
+  current: string;
+  onSelect: (option: string) => void;
+}) {
+  const { palette } = useTheme();
+  const close = useSheetClose();
+  return (
+    <View>
+      {options.map((option) => (
         <Pressable
-          onPress={() => setOpen(false)}
-          style={{ flex: 1, backgroundColor: 'rgba(23,25,27,.5)', justifyContent: 'flex-end' }}
+          key={option}
+          accessibilityRole="button"
+          accessibilityState={{ selected: option === current }}
+          onPress={() => {
+            onSelect(option);
+            close();
+          }}
+          style={{
+            minHeight: 50,
+            justifyContent: 'center',
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderBottomColor: palette.line,
+          }}
         >
-          <Pressable
-            onPress={() => undefined}
+          <Text
             style={{
-              backgroundColor: palette.surface,
-              borderTopLeftRadius: 22,
-              borderTopRightRadius: 22,
-              borderTopWidth: 1.5,
-              borderColor: palette.lineStrong,
-              padding: 16,
-              paddingBottom: 26,
-              gap: 4,
+              fontSize: 15,
+              fontWeight: option === current ? '800' : '500',
+              color: option === current ? palette.lime : palette.ink,
             }}
           >
-            {options.map((option) => (
-              <Pressable
-                key={option}
-                onPress={() => {
-                  setInternal(option);
-                  onChange?.(option);
-                  setOpen(false);
-                }}
-                style={{
-                  minHeight: 50,
-                  justifyContent: 'center',
-                  borderBottomWidth: 1,
-                  borderBottomColor: palette.line,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: option === current ? '800' : '500',
-                    color: option === current ? palette.lime : palette.ink,
-                  }}
-                >
-                  {option}
-                </Text>
-              </Pressable>
-            ))}
-          </Pressable>
+            {option}
+          </Text>
         </Pressable>
-      </Modal>
-    </>
+      ))}
+    </View>
   );
 }
 
@@ -923,7 +944,7 @@ export function Check({
         }
         onChange?.(!value);
       }}
-      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 44 }}
+      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 48 }}
     >
       <View
         style={{
@@ -1913,7 +1934,7 @@ export function Page({
   /** Desliga o ScrollView para telas que hospedam uma FlatList própria. */
   scroll?: boolean;
 }>) {
-  const { palette } = useTheme();
+  const { palette, contentBottomInset } = useTheme();
   const nav = useNav();
   const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollKey = `${nav.id}:${JSON.stringify(nav.params ?? {})}`;
@@ -1949,7 +1970,7 @@ export function Page({
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           accessibilityRole="header"
-          numberOfLines={1}
+          numberOfLines={2}
           adjustsFontSizeToFit
           minimumFontScale={0.82}
           maxFontSizeMultiplier={1.2}
@@ -1966,7 +1987,7 @@ export function Page({
         </Text>
         {sub ? (
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             maxFontSizeMultiplier={1.3}
             style={{ fontSize: 13, lineHeight: 18, color: palette.muted, marginTop: 2 }}
           >
@@ -1980,14 +2001,12 @@ export function Page({
 
   if (!scroll) {
     return (
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: palette.bg }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.bg }} behavior="padding">
         <View
           style={{
             flex: 1,
             paddingHorizontal: flush ? 0 : 16,
+            paddingBottom: contentBottomInset,
             alignItems: center ? 'center' : 'stretch',
           }}
         >
@@ -1999,16 +2018,12 @@ export function Page({
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: palette.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.bg }} behavior="padding">
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
         onScroll={(event) => {
           pageScrollOffsets.set(scrollKey, event.nativeEvent.contentOffset.y);
         }}
@@ -2017,7 +2032,7 @@ export function Page({
         onContentSizeChange={restoreOffset}
         contentContainerStyle={{
           paddingHorizontal: flush ? 0 : 16,
-          paddingBottom: 26,
+          paddingBottom: 26 + contentBottomInset,
           gap: 14,
           alignItems: center ? 'center' : 'stretch',
         }}

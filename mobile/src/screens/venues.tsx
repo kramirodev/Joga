@@ -302,7 +302,7 @@ function Venues() {
                     flexWrap: 'wrap',
                   }}
                 >
-                  <Txt variant="h3" numberOfLines={1} style={{ flexShrink: 1 }}>
+                  <Txt variant="h3" numberOfLines={2} style={{ flexShrink: 1 }}>
                     {venue.name}
                   </Txt>
                   {venue.is_public === true ? <PublicVenueBadge /> : null}
