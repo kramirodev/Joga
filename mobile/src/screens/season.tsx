@@ -227,7 +227,7 @@ function Season() {
           ))}
         </View>
         <Txt variant="tiny" style={{ marginTop: 8 }}>
-          7 itens por temporada · free e passe
+          7 itens por temporada · grátis e passe
         </Txt>
       </Card>
       <Card onPress={() => nav.go('badges')}>
@@ -329,7 +329,7 @@ function Node({
             color: current ? '#17191B' : palette.limeDeep,
           }}
         >
-          {item === 30 ? 'insígnia' : track === 'pass' ? 'passe' : 'free'}
+          {item === 30 ? 'insígnia' : track === 'pass' ? 'passe' : 'grátis'}
         </Text>
       ) : null}
     </Pressable>
@@ -499,12 +499,12 @@ function SeasonTrack() {
               <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 13, color: palette.muted }}>
                 {item.track === 'pass'
                   ? 'Trilha do passe · empréstimo'
-                  : 'Trilha free · permanente'}{' '}
+                  : 'Trilha gratuita · permanente'}{' '}
                 · {item.level > level + 1 ? 'bloqueado por XP' : 'disponível'}
               </Text>
             </View>
             <Badge tone={item.track === 'pass' ? 'blue' : 'lime'}>
-              {item.track === 'pass' ? 'PASSE' : 'FREE'}
+              {item.track === 'pass' ? 'PASSE' : 'GRÁTIS'}
             </Badge>
             <Text style={{ color: palette.muted }}>›</Text>
           </Pressable>
@@ -549,16 +549,16 @@ function RewardClaim() {
         <Txt variant="display" style={{ fontSize: 30, marginTop: 10, marginBottom: 4 }}>
           {itemName}
         </Txt>
-        <Txt variant="tiny">Item de temporada · {itemTrack === 'pass' ? 'passe' : 'free'}</Txt>
+        <Txt variant="tiny">Item de temporada · {itemTrack === 'pass' ? 'passe' : 'grátis'}</Txt>
       </Card>
       <Card>
         <Kv label="Tipo" value={itemName} />
-        <Kv label="Origem" value={itemTrack === 'pass' ? 'Trilha do passe' : 'Trilha free'} />
+        <Kv label="Origem" value={itemTrack === 'pass' ? 'Trilha do passe' : 'Trilha gratuita'} />
         <Kv label="Estado" value="Disponível para resgate" />
         <Kv label="Expira" value="Fim da temporada" />
       </Card>
       <Notice tone="blue" icon="info">
-        Itens free são creditados automaticamente no fechamento; itens de passe exigem resgate
+        Itens gratuitos são creditados automaticamente no fechamento; itens de passe exigem resgate
         manual.
       </Notice>
       <Btn tone="primary" onPress={claim} disabled={busy}>
@@ -636,7 +636,7 @@ function ItemLockedPass() {
               Conhecer o passe
             </Btn>
             <Btn tone="ghost" back>
-              Continuar free
+              Continuar grátis
             </Btn>
           </>
         }
@@ -813,7 +813,7 @@ function Inventory() {
     <Page title="Inventário">
       <ChipRow>
         <Chip on>Todos</Chip>
-        <Chip>Free</Chip>
+        <Chip>Grátis</Chip>
         <Chip>XP</Chip>
         <Chip>Passe</Chip>
       </ChipRow>
@@ -822,7 +822,7 @@ function Inventory() {
           ['Moldura Ouro', 'XP · nível 24', 'EQUIPADA', 'default'],
           ['Animação de lobby', 'Passe · empréstimo', 'EQUIPADA', 'blue'],
           ['Emote “boa jogada”', 'XP · nível 12', 'DISPONÍVEL', 'default'],
-          ['Tema alto contraste', 'Free', 'EQUIPADA', 'green'],
+          ['Tema alto contraste', 'Grátis', 'EQUIPADA', 'green'],
           ['Efeito de perfil', 'Passe · revogado', 'HISTÓRICO', 'red'],
         ].map(([name, sub, status, tone], index, all) => (
           <ListRow key={name} last={index === all.length - 1}>
@@ -899,7 +899,7 @@ function SeasonClosing() {
       <StateScreen
         icon="clock"
         title="Temporada em fechamento"
-        text="Faltam 3 dias. Resgate as recompensas pendentes. Itens free são creditados automaticamente; itens de passe não reclamados são perdidos."
+        text="Faltam 3 dias. Resgate as recompensas pendentes. Itens gratuitos são creditados automaticamente; itens de passe não reclamados são perdidos."
         actions={
           <>
             <Btn tone="primary" go="season-track">
@@ -926,7 +926,7 @@ function SeasonEnded() {
       <StateScreen
         icon="trophy"
         title="2026-Q4 encerrada"
-        text="Você terminou no nível Ouro 23 e na divisão Platina IV. A nova temporada começa em 01 dez. O nível e a divisão são recalculados; streak e itens permanentes ficam."
+        text="Você terminou no nível Ouro 23 e na divisão Platina IV. A nova temporada começa em 01 dez. O nível e a divisão são recalculados; sequência e itens permanentes ficam."
         actions={
           <>
             <Btn tone="primary" go="retrospective">

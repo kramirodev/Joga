@@ -66,8 +66,8 @@ const TICKET_PURCHASE_DISABLED_TEXT =
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
-      network_unavailable: 'Não foi possível falar com o servidor.',
-      request_timeout: 'O servidor demorou para responder. Tente novamente.',
+      network_unavailable: 'Sem conexão. Tente novamente.',
+      request_timeout: 'A conexão demorou demais. Tente novamente.',
       region_required: 'Defina sua região antes de entrar na fila.',
       sport_profile_required: 'Escolha uma modalidade no seu perfil.',
       already_queued: 'Você já está em uma fila.',
@@ -81,7 +81,7 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
       return;
     }
     if (error.status === 0) {
-      nav.toast('Não foi possível falar com o servidor. Tente novamente.');
+      nav.toast('Sem conexão. Tente novamente.');
       return;
     }
     // Não mascara respostas inesperadas: status, código e corpo ficam no relatório.
@@ -97,8 +97,8 @@ function toastError(nav: { toast: (message: string) => void }, error: unknown) {
 function errorDetail(error: unknown): string {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
-      network_unavailable: 'Não foi possível falar com o servidor.',
-      request_timeout: 'O servidor demorou para responder. Tente novamente.',
+      network_unavailable: 'Sem conexão. Tente novamente.',
+      request_timeout: 'A conexão demorou demais. Tente novamente.',
       invalid_visual_item: 'Item de identidade inválido.',
       visual_item_locked: 'Este item ainda não está liberado.',
       ticket_purchase_disabled: TICKET_PURCHASE_DISABLED_TEXT,
@@ -107,7 +107,7 @@ function errorDetail(error: unknown): string {
       return map[error.code];
     }
     if (error.status === 0) {
-      return 'Não foi possível falar com o servidor. Tente novamente.';
+      return 'Sem conexão. Tente novamente.';
     }
     return `Falha inesperada (${describeApiError(error)}).`;
   }
@@ -321,7 +321,6 @@ function Home() {
       </Card>
       <Row between>
         <Txt variant="h3">Explorar</Txt>
-        <Txt variant="tiny">Tudo à mão</Txt>
       </Row>
       <CardList>
         {[
@@ -401,7 +400,7 @@ function QueueRestricted() {
       <StateScreen
         icon="lock"
         title="Ranqueada indisponível por 7 dias"
-        text="Dois no-shows em 30 dias acionaram uma restrição temporária. O casual continua liberado."
+        text="Duas faltas sem aviso em 30 dias acionaram uma restrição temporária. O casual continua liberado."
         actions={
           <>
             <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
@@ -510,8 +509,8 @@ function LobbyDetail() {
         </Txt>
       </Card>
       <View style={{ flexDirection: 'row', gap: 7 }}>
-        <TimerCard label="T1" value="ok" note="participação" tone="done" />
-        <TimerCard label="T2" value="ok" note="quadra aceitou" tone="done" />
+        <TimerCard label="Participação" value="ok" note="confirmada" tone="done" />
+        <TimerCard label="Quadra" value="ok" note="reserva aceita" tone="done" />
       </View>
       <Card tone="lime">
         <Row between wrap style={{ rowGap: 8 }}>
@@ -550,7 +549,7 @@ function LobbyDetail() {
           </>
         ) : (
           <Notice tone="blue" icon="users">
-            Os participantes aparecem quando a partida for carregada pelo servidor.
+            Os participantes aparecem quando a partida carregar.
           </Notice>
         )}
       </View>
@@ -616,7 +615,7 @@ function LobbyT1() {
   return (
     <Page title="Confirme sua participação">
       <TimerCard
-        label="T1 · confirmação de participação"
+        label="Prazo de confirmação"
         value={match ? countdown(match.confirmation_deadline) : '--'}
         note={match ? `até ${timeOnly(match.confirmation_deadline)}` : 'aguardando partida'}
         tone="on"
@@ -635,8 +634,7 @@ function LobbyT1() {
         <Kv label="Ingressos" value="Definidos pela faixa e formato" />
       </Card>
       <Notice tone="lime" icon="wallet">
-        Ao confirmar, o servidor consome os ingressos da faixa congelada na reserva. O app não
-        calcula o preço.
+        Ao confirmar, os ingressos da reserva são consumidos.
       </Notice>
       <Btn tone="primary" onPress={confirm}>
         Confirmar participação
@@ -855,7 +853,7 @@ function LobbyInvite() {
       />
       {list.length === 0 ? (
         <Notice tone="blue" icon="users">
-          Nenhum amigo disponível para convidar. A amizade é criada fora deste fluxo.
+          Nenhum amigo disponível para convidar.
         </Notice>
       ) : null}
       <CardList>
@@ -901,7 +899,7 @@ function LobbyInvite() {
         })}
       </CardList>
       <Notice tone="blue" icon="info">
-        Convite não garante vaga. Aceite respeita lotação, bloqueio e estado do lobby.
+        Convite não garante vaga.
       </Notice>
       <Btn tone="primary" onPress={send} disabled={selected.length === 0}>
         Enviar convites
@@ -969,7 +967,7 @@ function LobbyInviteReceived() {
         <Kv label="Recebido em" value={dateOnly(invite.created_at)} />
       </Card>
       <Notice tone="blue" icon="info">
-        Aceitar não garante vaga até o lobby validar lotação, bloqueio e estado no servidor.
+        Aceitar não garante vaga.
       </Notice>
       <Btn tone="primary" onPress={() => decide('accept')} disabled={busy}>
         {busy ? 'Respondendo…' : 'Aceitar convite'}
@@ -1103,7 +1101,7 @@ function LobbyVote() {
         </View>
         <Row between>
           <Txt variant="tiny">6 sim · 2 não · 2 sem voto</Txt>
-          <Txt variant="tiny">quórum 50%</Txt>
+          <Txt variant="tiny">maioria de 50%</Txt>
         </Row>
       </Card>
       <Notice tone="orange" icon="alert">
@@ -1131,7 +1129,7 @@ function LobbyVote() {
       </BtnRow>
       {vote ? (
         <Notice tone="lime" icon="check">
-          Seu voto foi registrado. O resultado aparece para todos quando a votação encerrar.
+          Voto registrado. O resultado aparece quando a votação encerrar.
         </Notice>
       ) : null}
     </Page>
@@ -1537,7 +1535,7 @@ function ProfileOther() {
             —
           </Txt>
           <Txt variant="tiny" align="center">
-            streak
+            sequência
           </Txt>
         </Card>
       </View>
@@ -1769,9 +1767,7 @@ function IdentityEditor() {
       if (result.synced) {
         nav.back();
       } else {
-        setError(
-          result.error ?? 'Identidade salva neste aparelho. Sincronização com o servidor pendente.',
-        );
+        setError(result.error ?? 'Identidade salva neste aparelho. Sincronização pendente.');
       }
     } finally {
       setBusy(false);
@@ -1999,8 +1995,7 @@ function Sports() {
   return (
     <Page title="Modalidades e formatos">
       <Notice tone="blue" icon="info">
-        Escolha um ou mais formatos do catálogo e ajuste nível e quadra. O perfil é salvo no
-        servidor.
+        Escolha formatos, nível e quadra.
       </Notice>
       {error ? (
         <Notice tone="orange" icon="alert">
@@ -2096,7 +2091,7 @@ function Sports() {
         </Card>
       ))}
       <Notice tone="orange" icon="info">
-        Nível autodeclarado não é divisão. A divisão só aparece em partidas ranqueadas.
+        Nível autodeclarado; a divisão aparece na ranqueada.
       </Notice>
       <Btn tone="primary" onPress={save} disabled={busy || loading}>
         {busy ? 'Salvando…' : 'Salvar modalidades'}
@@ -2288,7 +2283,7 @@ function RegionCepLocked() {
       <StateScreen
         icon="lock"
         title="CEP é do passe"
-        text="O plano gratuito busca pela localização do aparelho. O CEP permite declarar intenção em qualquer lugar e sobrecarrega o motor com partidas que não vão acontecer."
+        text="O plano gratuito usa a localização do aparelho. O CEP permite buscar em outra região."
         actions={
           <>
             <Btn tone="primary" go="pass">

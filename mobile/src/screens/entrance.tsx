@@ -43,8 +43,8 @@ import type { ScreenDef } from './types';
 function errorText(error: unknown): string {
   if (error instanceof ApiError) {
     const messages: Record<string, string> = {
-      network_unavailable: 'Não foi possível falar com o servidor.',
-      request_timeout: 'O servidor demorou para responder. Tente novamente.',
+      network_unavailable: 'Sem conexão. Tente novamente.',
+      request_timeout: 'A conexão demorou demais. Tente novamente.',
       invalid_phone: 'Telefone inválido.',
       rate_limited: 'Muitas tentativas. Aguarde um pouco.',
       invalid_code_or_challenge: 'Código inválido ou expirado.',
@@ -93,7 +93,7 @@ function PhoneMethodUnavailable() {
       <StateScreen
         icon="lock"
         title="Telefone indisponível nesta versão"
-        text="O beta usa e-mail para entrar. O caminho por telefone continua preservado para o lançamento e voltará quando a credencial for habilitada."
+        text="O beta usa e-mail para entrar. O acesso por telefone volta no lançamento."
         actions={
           <>
             <Btn tone="primary" go="login">
@@ -1073,7 +1073,10 @@ function Terms() {
   }, [readOnly]);
   const items = [
     ['O JOGA intermedeia a reserva', 'A quadra é a fornecedora; o ingresso é crédito de serviço.'],
-    ['Cancelamento tem cutoff', 'Antes do cutoff, T4; depois, no-show.'],
+    [
+      'Cancelamento tem prazo',
+      'Antes do prazo, o valor volta em ingressos; depois, falta sem aviso.',
+    ],
     [
       'Devolução é em ingressos',
       'O saldo volta para seus ingressos quando a reserva não se completa.',
@@ -1102,8 +1105,8 @@ function Terms() {
           </Card>
         ) : (
           <Notice tone="orange" icon="info">
-            Nenhuma versão dos Termos foi aprovada e publicada pelo servidor ainda. Quando existir,
-            o texto vigente aparece aqui e a compra de crédito exige o aceite.
+            Nenhuma versão dos Termos foi publicada ainda. Quando existir, o texto vigente aparece
+            aqui e a compra de crédito exige o aceite.
           </Notice>
         )
       ) : null}

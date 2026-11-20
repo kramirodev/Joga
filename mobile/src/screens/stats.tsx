@@ -65,7 +65,7 @@ function Stats() {
       <Card>
         <Row between>
           <Txt variant="h3">Quadras mais usadas</Txt>
-          <Badge tone="green">FREE</Badge>
+          <Badge tone="green">GRÁTIS</Badge>
         </Row>
         <View style={{ marginTop: 6 }}>
           {venues.length ? (
@@ -134,8 +134,8 @@ function Stats() {
         )}
       </Card>
       <Notice tone="blue" icon="info">
-        Free vê a lista de quadras e os horários com mais vaga; o passe vê mapa, densidade e
-        ocupação.
+        Plano gratuito vê a lista de quadras e os horários com mais vaga; o passe vê mapa, densidade
+        e ocupação.
       </Notice>
       <BtnRow>
         <Btn tone="primary" onPress={() => nav.go(hasPass ? 'network' : 'stats-locked')}>
@@ -431,7 +431,7 @@ function Network() {
         <StateScreen
           icon="lock"
           title="Painel completo do passe"
-          text="O mapa de calor, a densidade competitiva e a ocupação por quadra são do passe. A lista de quadras mais usadas e os horários com mais vaga continuam livres."
+          text="Mapa, densidade e ocupação são do passe. A lista de quadras e os horários com mais vaga continuam livres."
           actions={
             <>
               <Btn tone="primary" go="pass">
@@ -575,7 +575,7 @@ function NetworkSample() {
       <StateScreen
         icon="lock"
         title="Amostra insuficiente"
-        text="A Arena Nova teve 12 partidas concluídas em 30 dias. O painel exige 20 para exibir densidade e ocupação sem risco de reidentificação."
+        text="A Arena Nova teve 12 partidas em 30 dias. O painel exige 20 para exibir densidade e ocupação."
         actions={
           <>
             <Btn tone="primary" go="network">
@@ -597,7 +597,7 @@ function StatsLocked() {
       <StateScreen
         icon="lock"
         title="Painel completo do passe"
-        text="O mapa de calor, a densidade competitiva e a ocupação por quadra são do passe. A lista de quadras mais usadas e os horários com mais vaga continuam livres."
+        text="Mapa, densidade e ocupação são do passe. A lista de quadras e os horários com mais vaga continuam livres."
         actions={
           <>
             <Btn tone="primary" go="pass">

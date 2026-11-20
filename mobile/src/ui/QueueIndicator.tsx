@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { useApp } from '../state/app';
@@ -23,8 +23,12 @@ import { Text } from './text';
  * Indicador persistente da fila multi-entrada. Fica no fluxo, logo acima da tab
  * bar (ou acima do inset inferior quando não há tab bar), então nunca cobre o
  * conteúdo nem empurra a navegação para fora da tela.
+ *
+ * Visibilidade: uma única regra no `Shell` — aparece sempre que há sessão,
+ * nenhuma suspensão e alguma busca/aviso. Nas telas `queue` e `queue-search` o
+ * `Shell` pede a versão compacta (uma linha), para não duplicar a lista.
  */
-export function QueueIndicator() {
+export function QueueIndicator({ compact = false }: { compact?: boolean }) {
   const nav = useNav();
   const { palette, contentBottomInset } = useTheme();
   const {
@@ -41,8 +45,16 @@ export function QueueIndicator() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const since = oldestCreatedAt(queue) ?? matchedEntry?.created_at ?? null;
 
-  useActiveInterval(() => setNow(new Date()), 1000, queue.length > 0);
+  const tick = useCallback(() => setNow(new Date()), []);
+  useActiveInterval(tick, 1000, queue.length > 0);
+  // Mesmo reancoramento do QueueSearch: a troca de entrada mais antiga precisa
+  // refletir na hora, não no próximo segundo.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(new Date());
+  }, [since]);
 
   if (queue.length === 0 && !matchedEntry && !queueNotice) {
     return null;
@@ -69,7 +81,6 @@ export function QueueIndicator() {
       ]
         .filter(Boolean)
         .join(' · '));
-  const since = oldestCreatedAt(queue) ?? matchedEntry?.created_at ?? null;
   const cancelTarget = queue.length;
 
   const cancel = async () => {
@@ -92,6 +103,19 @@ export function QueueIndicator() {
     setBusy(false);
   };
 
+  const timer = since ? (
+    <Text
+      style={{
+        fontSize: 13,
+        fontWeight: '800',
+        color: palette.ink,
+        fontVariant: ['tabular-nums'],
+      }}
+    >
+      {elapsed(since, now)}
+    </Text>
+  ) : null;
+
   return (
     <Appear style={{ flexShrink: 0 }}>
       <View
@@ -110,22 +134,18 @@ export function QueueIndicator() {
             gap: 8,
           }}
         >
-          <Pressable
-            onPress={() => setExpanded((current) => !current)}
-            accessibilityRole="button"
-            accessibilityState={{ expanded }}
-            accessibilityLabel={`${title}. ${subtitle}. Toque para ${expanded ? 'recolher' : 'ver detalhes'}.`}
-            style={({ pressed }) => ({
-              minHeight: 48,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              opacity: pressed ? 0.9 : 1,
-              transform: pressed ? [{ scale: scale.card }] : [],
-            })}
-          >
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {compact ? (
+            <View
+              style={{
+                minHeight: 48,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <View
+                style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              >
                 {queue.length > 0 ? <PulseDot color={palette.limeDeep} size={7} /> : null}
                 <Text
                   numberOfLines={1}
@@ -135,148 +155,175 @@ export function QueueIndicator() {
                   {title}
                 </Text>
               </View>
-              {subtitle ? (
-                <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
-                  {subtitle}
-                </Text>
-              ) : (
-                <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
-                  A partida encontrada é a única pendência.
-                </Text>
-              )}
+              {timer}
+              {nav.id === 'queue' ? (
+                <Btn small tone="ghost" onPress={() => nav.go('queue-search')}>
+                  Ver
+                </Btn>
+              ) : null}
             </View>
-            {queueReconnecting ? (
-              <Text style={{ fontSize: 11, fontWeight: '800', color: palette.orange }}>
-                reconectando
-              </Text>
-            ) : null}
-            {since ? (
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: '800',
-                  color: palette.ink,
-                  fontVariant: ['tabular-nums'],
-                }}
+          ) : (
+            <>
+              <Pressable
+                onPress={() => setExpanded((current) => !current)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded }}
+                accessibilityLabel={`${title}. ${subtitle || 'Sem detalhes'}. Toque para ${expanded ? 'recolher' : 'ver detalhes'}.`}
+                style={({ pressed }) => ({
+                  minHeight: 48,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                  opacity: pressed ? 0.9 : 1,
+                  transform: pressed ? [{ scale: scale.card }] : [],
+                })}
               >
-                {elapsed(since, now)}
-              </Text>
-            ) : null}
-            <Text style={{ fontSize: 14, color: palette.muted }}>{expanded ? '▾' : '▸'}</Text>
-          </Pressable>
-          {expanded ? (
-            <View style={{ gap: 8 }}>
-              {matchedEntry ? (
-                <View style={{ gap: 4 }}>
-                  <Txt variant="tiny">
-                    O servidor fechou esta entrada; as demais seguem aguardando.
-                  </Txt>
-                  {matchedEntry.lobby ? (
-                    <Btn
-                      tone="primary"
-                      small
-                      onPress={() =>
-                        matchedEntry.lobby &&
-                        nav.go('lobby-found', {
-                          lobbyId: matchedEntry.lobby.id,
-                          mode: matchedEntry.mode,
-                        })
-                      }
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {queue.length > 0 ? <PulseDot color={palette.limeDeep} size={7} /> : null}
+                    <Text
+                      numberOfLines={1}
+                      accessibilityLiveRegion="polite"
+                      style={{ flexShrink: 1, fontSize: 14, fontWeight: '900', color: palette.ink }}
                     >
-                      Ver partida
-                    </Btn>
+                      {title}
+                    </Text>
+                  </View>
+                  {subtitle ? (
+                    <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
+                      {subtitle}
+                    </Text>
                   ) : null}
                 </View>
-              ) : null}
-              {queue.length > 0 ? (
-                <ScrollView
-                  style={{ maxHeight: 168 }}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={{ gap: 10 }}>
-                    {queue.map((entry) => (
-                      <View
-                        key={entry.id}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                      >
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text
-                            numberOfLines={1}
-                            style={{ fontSize: 13, fontWeight: '800', color: palette.ink }}
-                          >
-                            {formatLabelFromCatalog(catalog, entry.format_id)}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: palette.muted }}>
-                            {modeLabel(entryMode(entry))}
-                          </Text>
-                        </View>
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: '700',
-                            color: palette.ink,
-                            fontVariant: ['tabular-nums'],
-                          }}
+                {queueReconnecting ? (
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: palette.orange }}>
+                    reconectando
+                  </Text>
+                ) : null}
+                {timer}
+                <Text style={{ fontSize: 14, color: palette.muted }}>{expanded ? '▾' : '▸'}</Text>
+              </Pressable>
+              {expanded ? (
+                <View style={{ gap: 8 }}>
+                  {matchedEntry ? (
+                    <View style={{ gap: 4 }}>
+                      <Txt variant="tiny">As outras buscas continuam aguardando.</Txt>
+                      {matchedEntry.lobby ? (
+                        <Btn
+                          tone="primary"
+                          small
+                          onPress={() =>
+                            matchedEntry.lobby &&
+                            nav.go('lobby-found', {
+                              lobbyId: matchedEntry.lobby.id,
+                              mode: matchedEntry.mode,
+                            })
+                          }
                         >
-                          {elapsed(entry.created_at, now)}
-                        </Text>
+                          Ver partida
+                        </Btn>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  {queue.length > 0 ? (
+                    <ScrollView
+                      style={{ maxHeight: 168 }}
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator={false}
+                    >
+                      <View style={{ gap: 10 }}>
+                        {queue.map((entry) => (
+                          <View
+                            key={entry.id}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                          >
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text
+                                numberOfLines={1}
+                                style={{ fontSize: 13, fontWeight: '800', color: palette.ink }}
+                              >
+                                {formatLabelFromCatalog(catalog, entry.format_id)}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: palette.muted }}>
+                                {modeLabel(entryMode(entry))}
+                              </Text>
+                            </View>
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontWeight: '700',
+                                color: palette.ink,
+                                fontVariant: ['tabular-nums'],
+                              }}
+                            >
+                              {elapsed(entry.created_at, now)}
+                            </Text>
+                          </View>
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                </ScrollView>
-              ) : null}
-              {error ? (
-                <Notice tone="orange" icon="alert">
-                  {error}
-                </Notice>
-              ) : null}
-              {queueNotice ? (
-                <View style={{ gap: 6 }}>
-                  <Notice tone="orange" icon="alert">
-                    {queueNotice}
-                  </Notice>
-                  <Btn small tone="ghost" onPress={clearQueueNotice}>
-                    Dispensar aviso
-                  </Btn>
+                    </ScrollView>
+                  ) : null}
+                  {error ? (
+                    <Notice tone="orange" icon="alert">
+                      {error}
+                    </Notice>
+                  ) : null}
+                  {queueNotice ? (
+                    <View style={{ gap: 6 }}>
+                      <Notice tone="orange" icon="alert">
+                        {queueNotice}
+                      </Notice>
+                      <Btn small tone="ghost" onPress={clearQueueNotice}>
+                        Dispensar aviso
+                      </Btn>
+                    </View>
+                  ) : null}
+                  {confirming ? (
+                    <View style={{ gap: 6 }}>
+                      <Txt variant="tiny">
+                        Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'}{' '}
+                        aguardando? A partida encontrada, se houver, continua.
+                      </Txt>
+                      <BtnRow>
+                        <Btn
+                          small
+                          tone="ghost"
+                          onPress={() => setConfirming(false)}
+                          disabled={busy}
+                        >
+                          Manter
+                        </Btn>
+                        <Btn small tone="danger" onPress={cancel} disabled={busy}>
+                          {busy ? 'Cancelando…' : 'Cancelar tudo'}
+                        </Btn>
+                      </BtnRow>
+                    </View>
+                  ) : (
+                    <BtnRow>
+                      <Btn small tone="ghost" onPress={() => nav.go('queue-search')}>
+                        Ver
+                      </Btn>
+                      <Btn
+                        small
+                        tone="ghost"
+                        onPress={() => nav.go('queue', { from: 'queue-search' })}
+                      >
+                        Alterar
+                      </Btn>
+                      <Btn
+                        small
+                        tone="danger"
+                        onPress={() => setConfirming(true)}
+                        disabled={busy || queue.length === 0}
+                      >
+                        Cancelar
+                      </Btn>
+                    </BtnRow>
+                  )}
                 </View>
               ) : null}
-              {confirming ? (
-                <View style={{ gap: 6 }}>
-                  <Txt variant="tiny">
-                    Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'} aguardando?
-                    A partida encontrada, se houver, não é cancelada aqui. Se a rede falhar, as
-                    entradas continuam aqui.
-                  </Txt>
-                  <BtnRow>
-                    <Btn small tone="ghost" onPress={() => setConfirming(false)} disabled={busy}>
-                      Manter
-                    </Btn>
-                    <Btn small tone="danger" onPress={cancel} disabled={busy}>
-                      {busy ? 'Cancelando…' : 'Cancelar tudo'}
-                    </Btn>
-                  </BtnRow>
-                </View>
-              ) : (
-                <BtnRow>
-                  <Btn small tone="ghost" onPress={() => nav.go('queue-search')}>
-                    Ver
-                  </Btn>
-                  <Btn small tone="ghost" onPress={() => nav.go('queue', { from: 'queue-search' })}>
-                    Alterar
-                  </Btn>
-                  <Btn
-                    small
-                    tone="danger"
-                    onPress={() => setConfirming(true)}
-                    disabled={busy || queue.length === 0}
-                  >
-                    Cancelar
-                  </Btn>
-                </BtnRow>
-              )}
-            </View>
-          ) : null}
+            </>
+          )}
         </View>
       </View>
     </Appear>

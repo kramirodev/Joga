@@ -93,8 +93,8 @@ function toastError(nav: ToastNav, error: unknown, shortage?: TicketShortage) {
       band_missing: 'A quadra não definiu a faixa de preço para este horário.',
       booking_not_found: 'Reserva não encontrada.',
       forbidden: 'Você não participa deste lobby.',
-      network_unavailable: 'Não foi possível falar com o servidor.',
-      request_timeout: 'O servidor demorou para responder. Tente novamente.',
+      network_unavailable: 'Sem conexão. Tente novamente.',
+      request_timeout: 'A conexão demorou demais. Tente novamente.',
       invalid_transition: 'Esta ação não é válida no estado atual da reserva.',
       cancellation_closed: 'O prazo de cancelamento desta reserva já passou.',
       presence_window_closed: 'O pré-check-in ou a confirmação de presença está fora da janela.',
@@ -108,7 +108,7 @@ function toastError(nav: ToastNav, error: unknown, shortage?: TicketShortage) {
       return;
     }
     if (error.status === 0) {
-      nav.toast('Não foi possível falar com o servidor. Tente novamente.');
+      nav.toast('Sem conexão. Tente novamente.');
       return;
     }
     nav.toast('Não foi possível concluir a ação.');
@@ -657,7 +657,7 @@ function VenueDetail() {
         </Row>
         <Row between style={{ marginTop: 8 }}>
           <Txt variant="tiny">Confirmação</Txt>
-          <Txt variant="tiny">transacional no servidor</Txt>
+          <Txt variant="tiny">confirmada na reserva</Txt>
         </Row>
       </Card>
       {detail.spaces.length ? (
@@ -677,8 +677,7 @@ function VenueDetail() {
         />
       )}
       <Notice tone="blue" icon="info">
-        Horários são referência. A reserva só é confirmada depois da validação de agenda, pagamento
-        e aceite da quadra.
+        Horários são referência. A reserva é confirmada após agenda, pagamento e aceite da quadra.
       </Notice>
     </Page>
   );
@@ -731,7 +730,7 @@ function BookingRequest() {
         <StateScreen
           icon="users"
           title="Escolha um lobby primeiro"
-          text="A reserva é feita para um lobby existente, com o grupo que vai jogar. Entre em uma partida ou lobby e volte para escolher o horário."
+          text="Entre em uma partida ou lobby e volte para escolher o horário."
           actions={
             <>
               <Btn tone="primary" onPress={() => nav.go('queue', { mode: 'casual' })}>
@@ -852,13 +851,13 @@ function BookingRequest() {
           </Row>
           <Txt variant="tiny" style={{ marginTop: 8 }}>
             Estimativa com o ingresso de referência a {cents(TICKET_REFERENCE_CENTS)}. Os valores
-            finais são congelados pelo servidor na confirmação.
+            finais são congelados na confirmação.
           </Txt>
         </Card>
       ) : null}
       {family ? <TicketConversionTable emphasis={family} /> : null}
       <TimerCard
-        label="T2 · resposta do estabelecimento"
+        label="Prazo do estabelecimento"
         value="até 60 min"
         note="30 min comercial · máximo 60 min"
         tone="on"
@@ -1105,7 +1104,7 @@ function BookingT1T2() {
       <Page title="Acompanhar reserva">
         <EmptyState
           title="Nenhuma reserva em andamento"
-          text="Solicite uma quadra para acompanhar T1 e T2 por aqui."
+          text="Solicite uma quadra para acompanhar os prazos por aqui."
           actions={
             <Btn tone="primary" go="venues">
               Ver quadras
@@ -1183,7 +1182,7 @@ function BookingT1T2() {
         </>
       ) : null}
       <TimerCard
-        label="T1 · participação"
+        label="Prazo de participação"
         value={
           t1?.status === 'CLOSED' || t1?.status === 'DONE'
             ? 'concluído'
@@ -1193,7 +1192,7 @@ function BookingT1T2() {
         tone="done"
       />
       <TimerCard
-        label="T2 · resposta da quadra"
+        label="Prazo da quadra"
         value={t2 ? zonedTimeOnly(t2.deadline_at, booking.timezone) : 'aguardando'}
         note={`${booking.organization_venue_name} · prazo ${t2 ? zonedTimeOnly(t2.deadline_at, booking.timezone) : '—'}`}
         tone="on"
@@ -1283,8 +1282,7 @@ function BookingConfirmed() {
             <Txt variant="h3">Documento fiscal</Txt>
             <Txt variant="tiny" style={{ marginTop: 6 }}>
               O estabelecimento emite a NFS-e de uso do espaço contra o seu CPF. O JOGA emite a
-              NFS-e de intermediação. O app não inventa número nem referência quando o documento
-              ainda não foi emitido.
+              NFS-e de intermediação.
             </Txt>
             <Row between style={{ marginTop: 10 }}>
               <Txt variant="tiny">Referência da NFS-e</Txt>
@@ -1363,7 +1361,7 @@ function CancelCutoff() {
   return (
     <Page title="Cancelar participação">
       <TimerCard
-        label="Cutoff de cancelamento"
+        label="Prazo de cancelamento"
         value="7h 12min"
         note="até 14:00 · 6 h antes da partida"
         tone="on"
@@ -1372,7 +1370,11 @@ function CancelCutoff() {
         <Txt variant="h3">Se você cancelar agora</Txt>
         <View style={{ marginTop: 6 }}>
           {[
-            ['T4 abre para substituto', '25% do tempo restante, piso 30 min, teto 12 h', 'orange'],
+            [
+              'Vaga aberta para substituto',
+              '25% do tempo restante, piso 30 min, teto 12 h',
+              'orange',
+            ],
             ['Você não recebe reembolso', 'Se um substituto pagar, seu ingresso volta', 'orange'],
             [
               'Os demais ficam protegidos',
@@ -1409,10 +1411,11 @@ function CancelCutoff() {
         </View>
       </Card>
       <Notice tone="red" icon="alert">
-        Depois do cutoff não existe cancelamento voluntário com reembolso. A ausência é no-show.
+        Depois desse prazo não há cancelamento com reembolso. A ausência é registrada como falta sem
+        aviso.
       </Notice>
       <Btn tone="danger" modal="cancel">
-        Cancelar e abrir T4
+        Cancelar e buscar substituto
       </Btn>
       <Btn tone="ghost" back>
         Manter vaga
@@ -1427,7 +1430,7 @@ function CancelClosed() {
       <StateScreen
         icon="lock"
         title="Cancelamento fechado"
-        text="A partida começa em 4h 58min. O cutoff de 6h já passou. Se você não comparecer, será no-show, sem reembolso, e um substituto pode ocupar a vaga já paga."
+        text="A partida começa em 4h 58min. O prazo de cancelamento de 6h já passou. Se você não comparecer, a falta fica registrada sem reembolso, e um substituto pode ocupar a vaga já paga."
         actions={
           <>
             <Btn tone="primary" back>
@@ -1517,7 +1520,7 @@ function CheckinPresence() {
           <Badge tone="lime">GPS</Badge>
         </Row>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
-          O servidor valida a distância e a precisão informadas pelo GPS do aparelho.
+          A distância e a precisão do GPS são validadas no check-in.
         </Txt>
       </Card>
       <Btn tone="primary" icon="check" onPress={confirm} disabled={busy}>
@@ -1677,7 +1680,7 @@ function Substitutes() {
     <Page title="Fila de substitutos">
       <Card>
         <Row between>
-          <Txt variant="h3">Standby</Txt>
+          <Txt variant="h3">Fila de substitutos</Txt>
           <Badge tone="lime">{items.length} na fila</Badge>
         </Row>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
@@ -1700,13 +1703,13 @@ function Substitutes() {
               <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
             </View>
             <Badge tone={item.ready ? 'green' : 'default'}>
-              {item.ready ? 'PRONTO' : 'STANDBY'}
+              {item.ready ? 'PRONTO' : 'AGUARDANDO'}
             </Badge>
           </ListRow>
         ))}
       </CardList>
       <Notice tone="blue" icon="info">
-        No ranqueado, a fila exige pelo menos 1 substituto em standby. Casual é opcional.
+        Ranqueada considera sua divisão e compatibilidade.
       </Notice>
       <Btn tone="primary" onPress={enter}>
         Entrar na fila
@@ -1769,7 +1772,7 @@ function SubstituteCalled() {
       <Page title="Vaga aberta">
         <EmptyState
           title="Nenhum chamado ativo"
-          text="Quando uma vaga abrir e você for chamado, o aceite aparece aqui com o prazo do servidor."
+          text="Quando uma vaga abrir e você for chamado, o aceite aparece aqui com o prazo da chamada."
           actions={
             <>
               <Btn tone="primary" go="booking-history">
@@ -1790,7 +1793,7 @@ function SubstituteCalled() {
       <StateScreen
         icon="bolt"
         title={'Vaga\naberta'}
-        text="Você foi chamado para uma vaga desta reserva. O aceite é validado pelo servidor e respeita o prazo da chamada."
+        text="Você foi chamado para uma vaga desta reserva. O aceite respeita o prazo da chamada."
       />
       <Card>
         <Kv label="Quadra" value={booking.organization_venue_name} />
@@ -1823,8 +1826,8 @@ function NoShow() {
     <Page title="Ausência registrada">
       <StateScreen
         icon="alert"
-        title="No-show registrado"
-        text="Você não confirmou presença até T-15m. A vaga pode ser ocupada por um substituto da fila, sem nova cobrança. Não há reembolso depois do cutoff."
+        title="Falta sem aviso registrada"
+        text="Você não confirmou presença até 15 min antes. A vaga pode ser ocupada por um substituto, sem nova cobrança. Não há reembolso depois do prazo."
         actions={
           <>
             <Btn tone="primary" go="support">
@@ -1941,7 +1944,7 @@ function ReportResult() {
       <TimerCard
         label="Prazo de relato"
         value={result?.deadline ? timeOnly(result.deadline) : '--:--'}
-        note={result ? `rodada ${result.round ?? 1}` : 'aguardando o servidor'}
+        note={result ? `rodada ${result.round ?? 1}` : 'aguardando resultado'}
         tone="on"
       />
       <Notice tone="blue" icon="info">
@@ -2145,8 +2148,8 @@ function ResultReview() {
         />
       </Card>
       <Notice tone="blue" icon="shield">
-        A divisão só muda quando o servidor fecha o resultado. Evidências e votos de terceiros não
-        são expostos.
+        A divisão só muda depois do resultado fechado. Evidências e votos de terceiros não são
+        expostos.
       </Notice>
       {result.dispute_id ? (
         <Btn tone="ghost" go="support">
@@ -2716,7 +2719,7 @@ function BookingPayment() {
         </Notice>
       ) : (
         <Notice tone="blue" icon="wallet">
-          A reserva será confirmada após o pagamento. Esta tela atualiza sozinha a cada 7 segundos.
+          A reserva será confirmada após o pagamento. A tela atualiza automaticamente.
         </Notice>
       )}
     </Page>

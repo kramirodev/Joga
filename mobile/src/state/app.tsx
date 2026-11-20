@@ -14,10 +14,13 @@ import {
   api,
   ApiError,
   setRefreshHandler,
+  setSessionExpiredHandler,
   setSuspensionHandler,
   setUpdateRequiredHandler,
+  type RefreshResult,
 } from '../api/client';
 import { startRealtime, stopRealtime, subscribeRealtime } from '../api/realtime';
+import { classifyRefreshFailure } from '../api/refreshPolicy';
 import {
   defaultAccessibility,
   loadAccessibility,
@@ -61,6 +64,7 @@ import type {
 import {
   clearSession,
   loadSession,
+  refreshSession,
   refreshStoredSession,
   saveSession,
   type Session,
@@ -484,15 +488,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     setSessionState(stored);
   }, []);
 
-  const signOut = useCallback(async () => {
-    if (token) {
-      try {
-        await api.auth.logout(token);
-      } catch {
-        // A sessao local e encerrada mesmo se o servidor nao responder.
-      }
-    }
-    await clearSession();
+  /** Limpa estado local de sessão sem chamar `/auth/logout`. */
+  const resetSessionState = useCallback(() => {
     sessionRef.current = null;
     setSessionState(null);
     setProfile(null);
@@ -527,7 +524,42 @@ export function AppProvider({ children }: PropsWithChildren) {
     setVisualCatalog(LOCAL_VISUAL_CATALOG);
     setAuthState(initialAuth);
     setOnboardingState(initialOnboarding);
-  }, [token, setQueue]);
+  }, [setQueue]);
+
+  const signOut = useCallback(async () => {
+    if (token) {
+      try {
+        await api.auth.logout(token);
+      } catch {
+        // A sessao local e encerrada mesmo se o servidor nao responder.
+      }
+    }
+    await clearSession();
+    resetSessionState();
+  }, [token, resetSessionState]);
+
+  /**
+   * Sessão inválida (401 pós-refresh que não é suspensão): o token já não vale,
+   * então não chamamos `/auth/logout` — isso geraria outro 401. Limpa o estado
+   * local e o `Shell` volta para a tela de entrada/login.
+   */
+  const expireSession = useCallback(
+    (accessToken?: string | null) => {
+      // Um 401 atrasado de um token antigo não pode derrubar a sessão atual.
+      if (!sessionRef.current) {
+        return;
+      }
+      if (accessToken && sessionRef.current.accessToken !== accessToken) {
+        return;
+      }
+      if (__DEV__) {
+        console.warn('[session] sessão inválida; voltando ao login sem suspensão.');
+      }
+      resetSessionState();
+      void clearSession().catch(() => undefined);
+    },
+    [resetSessionState],
+  );
 
   const setAuth = useCallback((patch: Partial<AuthState>) => {
     setAuthState((current) => ({ ...current, ...patch }));
@@ -895,7 +927,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       if (!current) {
         return;
       }
-      await api.auth.me(current.accessToken);
+      await api.auth.me(current.accessToken, true);
       setSuspended(false);
       const after = sessionRef.current;
       if (after && after.accessToken !== current.accessToken) {
@@ -912,42 +944,13 @@ export function AppProvider({ children }: PropsWithChildren) {
     let active = true;
     (async () => {
       try {
+        // `loadSession` já faz o refresh single-flight quando o access token
+        // está perto de expirar e limpa a sessão em 401. Não repetimos aqui.
         const stored = await loadSession();
-        if (stored) {
-          try {
-            let current = stored;
-            if (
-              stored.accessExpiresAt &&
-              new Date(stored.accessExpiresAt).getTime() < Date.now() + 30_000
-            ) {
-              current = await refreshStoredSession(stored);
-            }
-            if (active) {
-              sessionRef.current = current;
-              setSessionState(current);
-              setSuspended(current.userStatus === 'suspended');
-            }
-          } catch (error) {
-            if (error instanceof ApiError && error.code === 'account_suspended') {
-              // Fallback para servidor antigo: preserva a sessão e abre a tela de suspensão.
-              if (active) {
-                sessionRef.current = stored;
-                setSessionState(stored);
-                setSuspended(true);
-              }
-            } else if (error instanceof ApiError && error.status === 401) {
-              // Apenas credencial inválida encerra a sessão.
-              sessionRef.current = null;
-              await clearSession();
-            } else {
-              // Rede indisponível no cold start: mantém a sessão salva e abre o app.
-              if (active) {
-                sessionRef.current = stored;
-                setSessionState(stored);
-                setSuspended(stored.userStatus === 'suspended');
-              }
-            }
-          }
+        if (stored && active) {
+          sessionRef.current = stored;
+          setSessionState(stored);
+          setSuspended(stored.userStatus === 'suspended');
         }
       } finally {
         if (active) {
@@ -986,32 +989,48 @@ export function AppProvider({ children }: PropsWithChildren) {
       setRefreshHandler(null);
       return;
     }
-    setRefreshHandler(async () => {
+    setRefreshHandler(async (): Promise<RefreshResult> => {
       const current = sessionRef.current;
       if (!current) {
-        return null;
+        return { ok: false, reason: 'expired' };
       }
       try {
         const refreshed = await refreshStoredSession(current);
+        // Uma sessão nova pode ter assumido durante o refresh; nesse caso ela
+        // manda, e não sobrescrevemos com um resultado antigo.
+        const latest = sessionRef.current;
+        if (latest && latest.refreshToken !== current.refreshToken) {
+          return { ok: true, token: latest.accessToken };
+        }
         sessionRef.current = refreshed;
         setSessionState(refreshed);
-        setSuspended(refreshed.userStatus === 'suspended');
-        return refreshed.accessToken;
-      } catch (error) {
-        if (error instanceof ApiError && error.code === 'account_suspended') {
+        if (refreshed.userStatus === 'suspended') {
           setSuspended(true);
-          return null;
+          return { ok: false, reason: 'suspended' };
         }
-        if (error instanceof ApiError && error.status === 401) {
-          sessionRef.current = null;
-          await clearSession();
-          setSessionState(null);
+        setSuspended(false);
+        return { ok: true, token: refreshed.accessToken };
+      } catch (error) {
+        const apiError = error instanceof ApiError ? error : null;
+        const reason = classifyRefreshFailure(apiError?.status ?? 0, apiError?.code);
+        // Uma sessão nova pode ter assumido durante o refresh: não derrube a
+        // sessão atual com o resultado de um token antigo.
+        if (sessionRef.current?.refreshToken !== current.refreshToken) {
+          return { ok: false, reason: 'unavailable' };
         }
-        return null;
+        if (reason === 'suspended') {
+          setSuspended(true);
+        }
+        return { ok: false, reason };
       }
     });
     return () => setRefreshHandler(null);
   }, [token]);
+
+  useEffect(() => {
+    setSessionExpiredHandler((accessToken) => expireSession(accessToken));
+    return () => setSessionExpiredHandler(null);
+  }, [expireSession]);
 
   useEffect(() => {
     setSuspensionHandler(() => {
@@ -1090,6 +1109,51 @@ export function AppProvider({ children }: PropsWithChildren) {
     });
     return () => subscription.remove();
   }, [token, queue.length, loadQueue]);
+
+  // Refresh oportunista no foreground: uma única tentativa, serializada pelo
+  // mesmo single-flight de `session.ts` (nunca dois POSTs para o mesmo token).
+  // Só roda quando o access token está perto de expirar; token válido não gira.
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        return;
+      }
+      const current = sessionRef.current;
+      if (!current) {
+        return;
+      }
+      const expiresAt = Date.parse(current.accessExpiresAt);
+      if (Number.isFinite(expiresAt) && expiresAt > Date.now() + 60_000) {
+        return;
+      }
+      refreshSession(current)
+        .then((refreshed) => {
+          if (sessionRef.current?.refreshToken !== current.refreshToken) {
+            return;
+          }
+          sessionRef.current = refreshed;
+          setSessionState(refreshed);
+          setSuspended(refreshed.userStatus === 'suspended');
+        })
+        .catch((error) => {
+          if (sessionRef.current?.refreshToken !== current.refreshToken) {
+            return;
+          }
+          const apiError = error instanceof ApiError ? error : null;
+          const reason = classifyRefreshFailure(apiError?.status ?? 0, apiError?.code);
+          if (reason === 'suspended') {
+            setSuspended(true);
+          } else if (reason === 'expired') {
+            expireSession(current.accessToken);
+          }
+          // `unavailable`: mantém a sessão; a próxima chamada tenta de novo.
+        });
+    });
+    return () => subscription.remove();
+  }, [token, expireSession]);
 
   const formatForName = useCallback(
     (name: string) => {

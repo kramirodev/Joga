@@ -148,14 +148,17 @@ export function modeLabel(mode: QueueMode): string {
 }
 
 /**
- * Combina `entries` (todas as `waiting`) com o campo legado `entry` (última
- * `waiting` ou `matched`), sem duplicar por id.
+ * Combina `entries` (todas as `waiting`) com `matched` (partidas encontradas
+ * com lobby agendado), sem duplicar por id. O campo legado `entry` só é usado
+ * quando o servidor não devolve `matched` — ele pode repetir uma `waiting` ou a
+ * entrada encontrada.
  */
 export function reconcileEntries(
   response: QueueStateResponse | null | undefined,
   now: number = Date.now(),
 ): QueueSnapshot {
   const waiting = Array.isArray(response?.entries) ? response.entries : [];
+  const matchedEntries = Array.isArray(response?.matched) ? response.matched : [];
   const latest = response?.entry ?? null;
   const seen = new Set<string>();
   const entries: QueueEntry[] = [];
@@ -190,6 +193,11 @@ export function reconcileEntries(
 
   for (const entry of waiting) {
     consider(entry, true);
+  }
+  // `matched` vem do mais recente para o mais antigo; a UI representa a
+  // primeira partida encontrada e as demais continuam no histórico do servidor.
+  for (const entry of matchedEntries) {
+    consider(entry, false);
   }
   consider(latest, false);
 
@@ -480,9 +488,9 @@ export function queueFailureMessage(code: string | null | undefined): string {
       return 'Já havia uma atualização em andamento. Relemos sua fila; tente novamente.';
     case 'request_timeout':
     case 'network_unavailable':
-      return 'A conexão falhou. Relemos sua fila no servidor antes de tentar novamente.';
+      return 'A conexão falhou. Vamos reler sua fila antes de tentar novamente.';
     case 'not_queued':
-      return 'Não há buscas ativas no servidor.';
+      return 'Não há buscas ativas.';
     default:
       return 'Não foi possível atualizar a busca. Tente novamente.';
   }

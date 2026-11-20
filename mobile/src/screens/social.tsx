@@ -48,8 +48,8 @@ import type { ScreenDef } from './types';
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {
     const map: Record<string, string> = {
-      network_unavailable: 'Não foi possível falar com o servidor.',
-      request_timeout: 'O servidor demorou para responder. Tente novamente.',
+      network_unavailable: 'Sem conexão. Tente novamente.',
+      request_timeout: 'A conexão demorou demais. Tente novamente.',
       clan_full: 'Clã cheio.',
       clan_cooldown: 'Aguarde antes de entrar em outro clã.',
       already_friends: 'Vocês já são amigos.',
@@ -854,7 +854,7 @@ function ClanRanking() {
       {list.length === 0 ? (
         <EmptyState
           title="Ranking indisponível"
-          text="O ranking aparece quando o servidor publica a temporada e os clãs têm partidas elegíveis."
+          text="O ranking aparece quando a temporada é publicada e os clãs têm partidas elegíveis."
         />
       ) : null}
       <CardList>
@@ -1056,7 +1056,7 @@ function Notifications() {
         <StateScreen
           icon="wifi-off"
           title="Não foi possível carregar as notificações"
-          text="Verifique a conexão e tente novamente. O histórico continua salvo no servidor."
+          text="Verifique a conexão e tente novamente. Seu histórico continua salvo."
           actions={
             <Btn tone="primary" onPress={retry}>
               Tentar novamente
@@ -1280,7 +1280,7 @@ function ReportProfile() {
         <StateScreen
           icon="users"
           title="Escolha um lobby"
-          text="O contexto da denúncia vem de um lobby em comum. Entre em uma partida e abra a denúncia pelo perfil do jogador."
+          text="Abra a denúncia pelo perfil do jogador de um lobby em comum."
           actions={
             <>
               <Btn tone="primary" go="matches">
@@ -1351,8 +1351,7 @@ function ReportProfile() {
         <Txt variant="tiny">{description.length} / 2.000</Txt>
       </Row>
       <Notice tone="blue" icon="shield">
-        A denúncia é privada. O alvo não vê quem denunciou. Não há punição automática; a triagem é
-        interna e não expõe prioridade ou severidade.
+        A denúncia é privada. O alvo não vê quem denunciou; não há punição automática.
       </Notice>
       <Btn tone="primary" onPress={submit} disabled={!canSubmit || busy}>
         {busy ? 'Enviando…' : 'Enviar denúncia'}
@@ -1645,7 +1644,7 @@ function ModerationStatus() {
         <StateScreen
           icon="wifi-off"
           title="Não foi possível carregar a moderação"
-          text="Verifique a conexão e tente novamente. O histórico continua salvo no servidor."
+          text="Verifique a conexão e tente novamente. Seu histórico continua salvo."
           actions={
             <Btn tone="primary" onPress={retry}>
               Tentar novamente
@@ -1661,7 +1660,7 @@ function ModerationStatus() {
       <Page title="Moderação">
         <EmptyState
           title="Nenhuma denúncia ou medida"
-          text="Quando você denunciar um jogador ou receber uma medida, o status aparece aqui. A triagem interna não é exposta."
+          text="Suas denúncias e medidas aparecem aqui. A triagem não é exposta."
         />
       </Page>
     );
@@ -1886,7 +1885,7 @@ function ClanFull() {
       <StateScreen
         icon="users"
         title="Clã cheio"
-        text="30 de 30 membros. Você pode entrar na lista de interesse; se abrir vaga, o convite respeita a ordem e a permanência mínima."
+        text="30 de 30 membros. Entre na lista de interesse; convites seguem a ordem."
         actions={
           <>
             <Btn tone="primary" disabled>

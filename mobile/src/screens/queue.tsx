@@ -23,6 +23,7 @@ import {
   queueFailureMessage,
   selectionError,
   selectionFromEntries,
+  selectionProduct,
   selectionProductCount,
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
@@ -95,6 +96,7 @@ function ConfigLine({ label, value }: { label: string; value: string }) {
 function SportConfigCard({
   formatId,
   catalog,
+  modes,
   levelRows,
   court,
   profileReady,
@@ -105,6 +107,7 @@ function SportConfigCard({
 }: {
   formatId: string;
   catalog: readonly Sport[];
+  modes: readonly QueueMode[];
   levelRows: readonly LevelRow[];
   court: CourtChoice;
   profileReady: boolean | null;
@@ -119,7 +122,7 @@ function SportConfigCard({
         {formatName(catalog, formatId)}
       </Txt>
       <View style={{ marginTop: 10, gap: 8 }}>
-        <ConfigLine label="Modos" value={modesLabel(levelRows.map((row) => row.mode))} />
+        <ConfigLine label="Modos" value={modesLabel(modes)} />
         <ConfigLine label="Quadra" value={court} />
         <ConfigLine
           label="Perfil"
@@ -347,19 +350,31 @@ export function QueueScreen() {
     [profileLevelFor, serverLevels],
   );
 
+  // O nível só se aplica a casual (ADR 0057 + PR #44): ranqueada usa divisão.
+  // O `PUT` continua no formato `formats`/`modes`/`levels` nesta rodada; a
+  // conversão para `selections` fica para a rodada de modo por esporte.
+  const levelSelection = useMemo(
+    () =>
+      buildSelection(
+        selection.formats,
+        selection.modes.filter((mode) => mode === 'casual'),
+      ),
+    [selection.formats, selection.modes],
+  );
+
   const levelAssignments = useMemo(
-    () => buildLevelAssignments(selection, levels, defaultLevelFor),
-    [defaultLevelFor, levels, selection],
+    () => buildLevelAssignments(levelSelection, levels, defaultLevelFor),
+    [defaultLevelFor, levelSelection, levels],
   );
 
   // Default que o backend aplica quando `levels` está ausente: nível do perfil.
   const backendDefaults = useMemo(
-    () => buildLevelAssignments(selection, {}, (formatId) => profileLevelFor(formatId)),
-    [profileLevelFor, selection],
+    () => buildLevelAssignments(levelSelection, {}, (formatId) => profileLevelFor(formatId)),
+    [levelSelection, profileLevelFor],
   );
 
   // Só envia o campo opcional quando a revisão difere do default do servidor;
-  // quando envia, vai uma atribuição explícita para cada entrada selecionada.
+  // quando envia, vai uma atribuição explícita para cada entrada casual.
   const payloadLevels = useMemo(
     () => optionalLevelsPayload(levelAssignments, backendDefaults),
     [backendDefaults, levelAssignments],
@@ -367,13 +382,27 @@ export function QueueScreen() {
 
   const levelRowsFor = useCallback(
     (formatId: string): LevelRow[] =>
-      selection.modes.map((mode) => ({
+      levelSelection.modes.map((mode) => ({
         mode,
         level:
           levelAssignments.find((item) => item.format_id === formatId && item.mode === mode)
             ?.level ?? 'intermediate',
       })),
-    [levelAssignments, selection.modes],
+    [levelAssignments, levelSelection.modes],
+  );
+
+  // Revisão cobre todas as entradas (inclusive ranqueada); o nível aparece só
+  // quando existe, ou seja, nas entradas casuais.
+  const reviewRows = useMemo(
+    () =>
+      selectionProduct(selection).map(({ formatId, mode }) => ({
+        formatId,
+        mode,
+        level:
+          levelAssignments.find((item) => item.format_id === formatId && item.mode === mode)
+            ?.level ?? null,
+      })),
+    [levelAssignments, selection],
   );
 
   // Mantém o rascunho enquanto o usuário está no formulário. O servidor só é
@@ -567,7 +596,15 @@ export function QueueScreen() {
     }
   }, [clearQueueNotice, court, hasConfirmed, nav, payloadLevels, replaceQueue, selection, session]);
 
-  useActiveInterval(() => setNow(new Date()), 1000, showOverview && queue.length > 0);
+  const oldestQueue = oldestCreatedAt(queue);
+  const tick = useCallback(() => setNow(new Date()), []);
+  useActiveInterval(tick, 1000, queue.length > 0 && (showOverview || step === 2));
+  // Reancora quando a entrada mais antiga muda (GET/PUT) e garante que o
+  // cronômetro não fique preso em 00:00 até o próximo tick.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(new Date());
+  }, [oldestQueue]);
 
   const stepOneBack =
     hasConfirmed && !(nav.params.from === 'queue-search' && nav.canGoBack) ? backToOverview : null;
@@ -575,19 +612,18 @@ export function QueueScreen() {
   if (syncing) {
     return (
       <Page title="Buscar partida" sub="Sincronizando suas buscas">
-        <LoadingState label="Sincronizando suas buscas ativas com o servidor…" />
+        <LoadingState label="Sincronizando suas buscas…" />
       </Page>
     );
   }
 
   if (showOverview) {
-    const oldest = oldestCreatedAt(queue);
     return (
       <Page title="Buscar partida" sub="Suas buscas ativas">
         {syncError ? (
           <View style={{ gap: 8 }}>
             <Notice tone="orange" icon="alert">
-              Não foi possível reler suas buscas no servidor.
+              Não foi possível reler suas buscas.
             </Notice>
             <TextBtn onPress={() => void reloadQueue()}>Tentar novamente</TextBtn>
           </View>
@@ -614,9 +650,9 @@ export function QueueScreen() {
                 ))}
               </View>
             ) : null}
-            {oldest ? (
+            {oldestQueue ? (
               <Txt variant="tiny" style={{ marginTop: 4, fontVariant: ['tabular-nums'] }}>
-                Mais antiga: {elapsed(oldest, now)}
+                Mais antiga: {elapsed(oldestQueue, now)}
               </Txt>
             ) : null}
             {matchedEntry ? (
@@ -627,9 +663,7 @@ export function QueueScreen() {
                   {modeLabel(entryMode(matchedEntry))}
                   {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
                 </Txt>
-                <Txt variant="tiny">
-                  As demais buscas continuam aguardando. A entrada encontrada vem do servidor.
-                </Txt>
+                <Txt variant="tiny">As outras buscas continuam aguardando.</Txt>
               </View>
             ) : null}
           </Card>
@@ -660,7 +694,7 @@ export function QueueScreen() {
       {syncError ? (
         <View style={{ gap: 8 }}>
           <Notice tone="orange" icon="alert">
-            Não foi possível reler suas buscas no servidor.
+            Não foi possível reler suas buscas.
           </Notice>
           <TextBtn onPress={() => void reloadQueue()}>Tentar novamente</TextBtn>
         </View>
@@ -688,10 +722,7 @@ export function QueueScreen() {
                 <LoadingState label="Carregando esportes…" />
               ) : formats.length === 0 ? (
                 <View style={{ gap: 8, marginTop: 8 }}>
-                  <Txt variant="tiny">
-                    Não foi possível carregar o catálogo de esportes agora. Tente novamente em
-                    instantes.
-                  </Txt>
+                  <Txt variant="tiny">Catálogo indisponível. Tente novamente.</Txt>
                   <TextBtn onPress={() => void retryCatalog()}>Tentar novamente</TextBtn>
                 </View>
               ) : (
@@ -764,8 +795,7 @@ export function QueueScreen() {
             <Card tone="flat">
               <Txt variant="h2">Ajuste cada esporte</Txt>
               <Txt variant="tiny" style={{ marginTop: 4 }}>
-                Modos e quadra valem para todos. O horário de disponibilidade é único e também vale
-                para todos.
+                Nível por esporte; modos e quadra valem para todos.
               </Txt>
             </Card>
 
@@ -781,9 +811,7 @@ export function QueueScreen() {
                     {modeLabel(entryMode(matchedEntry))}
                     {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
                   </Txt>
-                  <Txt variant="tiny">
-                    As demais buscas continuam aguardando; esta é a entrada que o servidor fechou.
-                  </Txt>
+                  <Txt variant="tiny">As outras buscas continuam aguardando.</Txt>
                   <TextBtn onPress={() => nav.go('queue-search')}>Ver partida</TextBtn>
                 </Card>
               </Appear>
@@ -794,7 +822,7 @@ export function QueueScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Txt variant="h3">Vale para todos os esportes</Txt>
                   <Txt variant="tiny" style={{ marginTop: 4 }}>
-                    Modos e quadra são compartilhados. O nível é definido em cada esporte.
+                    Nível em cada esporte.
                   </Txt>
                 </View>
                 <Badge>compartilhado</Badge>
@@ -813,18 +841,22 @@ export function QueueScreen() {
                   </Chip>
                 ))}
               </ChipRow>
-              <Txt variant="tiny" style={{ marginTop: 8 }}>
-                Cada modo vira uma busca separada para cada esporte.
-              </Txt>
               {rankedSelected ? (
+                <View style={{ marginTop: 4, gap: 2 }}>
+                  <Txt variant="tiny">
+                    Divisão:{' '}
+                    {rating?.provisional
+                      ? 'provisória'
+                      : rating
+                        ? divisionLabel(rating.division)
+                        : 'carregando'}
+                  </Txt>
+                  <Txt variant="tiny">Ranqueada considera sua divisão e compatibilidade.</Txt>
+                </View>
+              ) : null}
+              {selection.modes.includes('casual') ? (
                 <Txt variant="tiny" style={{ marginTop: 4 }}>
-                  Sua divisão:{' '}
-                  {rating?.provisional
-                    ? 'provisória'
-                    : rating
-                      ? divisionLabel(rating.division)
-                      : 'carregando'}
-                  . Ranqueada considera sua divisão e compatibilidade.
+                  Casual não altera sua divisão.
                 </Txt>
               ) : null}
               <Txt variant="label" style={{ marginTop: 12 }}>
@@ -844,6 +876,7 @@ export function QueueScreen() {
                 key={formatId}
                 formatId={formatId}
                 catalog={catalog}
+                modes={selection.modes}
                 levelRows={levelRowsFor(formatId)}
                 court={court}
                 profileReady={profile ? profileFormatIds.includes(formatId) : null}
@@ -863,9 +896,6 @@ export function QueueScreen() {
                 {availabilityTitle}
               </Txt>
               <Txt variant="tiny">{availabilitySub}</Txt>
-              <Txt variant="tiny" style={{ marginTop: 6 }}>
-                O mesmo horário vale para todos os esportes; não há horário por esporte.
-              </Txt>
               <TextBtn onPress={() => nav.go('availability')}>
                 {windows.length > 0 ? 'Editar horários' : 'Adicionar horários'}
               </TextBtn>
@@ -889,16 +919,40 @@ export function QueueScreen() {
               </TextBtn>
             </Card>
 
-            <Card tone="flat">
-              <Row between>
-                <Txt variant="label">Custo estimado</Txt>
-                <Badge tone="lime">saldo {wallet?.balance ?? 18}</Badge>
-              </Row>
-              <Txt variant="num" style={{ marginTop: 4 }}>
-                7 ingressos
-              </Txt>
-              <Txt variant="tiny">O valor final aparece na confirmação da vaga.</Txt>
-            </Card>
+            {court === 'Particulares' ? (
+              <Card tone="flat">
+                <Row between>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Txt variant="label">Custo estimado</Txt>
+                    <Txt variant="num" style={{ marginTop: 4 }}>
+                      7 ingressos
+                    </Txt>
+                  </View>
+                  <Badge tone="lime">
+                    {wallet ? `saldo ${wallet.balance}` : 'saldo indisponível'}
+                  </Badge>
+                </Row>
+                <Txt variant="tiny">O valor final aparece na confirmação da vaga.</Txt>
+              </Card>
+            ) : court === 'Públicas' ? (
+              <Card tone="flat">
+                <Row between>
+                  <Txt variant="label">Quadra</Txt>
+                  <Badge tone="green">Grátis</Badge>
+                </Row>
+                <Txt variant="tiny" style={{ marginTop: 4 }}>
+                  Quadra pública não consome ingressos.
+                </Txt>
+              </Card>
+            ) : (
+              <Card tone="flat">
+                <Txt variant="label">Custo</Txt>
+                <Txt variant="tiny" style={{ marginTop: 4 }}>
+                  Pode ser grátis em quadra pública. O custo só aparece se a partida for em quadra
+                  particular.
+                </Txt>
+              </Card>
+            )}
 
             <Animated.View style={{ opacity: listOpacity }}>
               <Card tone="flat">
@@ -909,20 +963,20 @@ export function QueueScreen() {
                 <Txt variant="h2" style={{ marginTop: 4 }}>
                   {count} {count === 1 ? 'busca' : 'buscas'}
                 </Txt>
-                {levelAssignments.length === 0 ? (
+                {reviewRows.length === 0 ? (
                   <Txt variant="tiny" style={{ marginTop: 6 }}>
                     Escolha pelo menos um esporte e um modo para continuar.
                   </Txt>
                 ) : (
                   <View style={{ marginTop: 10, gap: 8 }}>
-                    {levelAssignments.map((assignment) => (
+                    {reviewRows.map((row) => (
                       <Txt
-                        key={`${assignment.format_id}:${assignment.mode}`}
+                        key={`${row.formatId}:${row.mode}`}
                         variant="sub"
                         style={{ flexShrink: 1 }}
                       >
-                        {formatName(catalog, assignment.format_id)} · {modeLabel(assignment.mode)} ·{' '}
-                        {levelLabel(assignment.level)}
+                        {formatName(catalog, row.formatId)} · {modeLabel(row.mode)}
+                        {row.level ? ` · ${levelLabel(row.level)}` : ''}
                       </Txt>
                     ))}
                   </View>
@@ -934,7 +988,12 @@ export function QueueScreen() {
                       ? 'busca já ativa continua'
                       : 'buscas já ativas continuam'}{' '}
                     com o mesmo tempo de espera.
-                    {keptSince ? ` Mais antiga desde ${timeOnly(keptSince)}.` : ''}
+                    {keptSince ? ` Desde ${timeOnly(keptSince)}.` : ''}
+                  </Txt>
+                ) : null}
+                {keptSince ? (
+                  <Txt variant="tiny" style={{ marginTop: 4, fontVariant: ['tabular-nums'] }}>
+                    Mais antiga: {elapsed(keptSince, now)}
                   </Txt>
                 ) : null}
                 {continuity.removed.length > 0 ? (
@@ -1018,7 +1077,14 @@ export function QueueSearch() {
   const routed = useRef<string | null>(null);
 
   const oldest = oldestCreatedAt(queue);
-  useActiveInterval(() => setNow(new Date()), 1000, queue.length > 0);
+  const tick = useCallback(() => setNow(new Date()), []);
+  useActiveInterval(tick, 1000, queue.length > 0);
+  // Reancora o relógio quando a entrada mais antiga muda (entrou, saiu, ou o
+  // GET trouxe `created_at` novo).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNow(new Date());
+  }, [oldest]);
 
   useEffect(() => {
     if (!session) {
@@ -1136,7 +1202,7 @@ export function QueueSearch() {
     if (syncing) {
       return (
         <Page title="Buscas ativas">
-          <LoadingState label="Sincronizando sua fila com o servidor…" />
+          <LoadingState label="Sincronizando suas buscas…" />
         </Page>
       );
     }
@@ -1144,7 +1210,7 @@ export function QueueSearch() {
       <Page title="Buscas ativas">
         <EmptyState
           title="Nenhuma busca ativa"
-          text="O servidor não tem entradas aguardando para você. Se você acabou de cancelar, está tudo certo. Para procurar de novo, monte a seleção de esportes e modos."
+          text="Nenhuma busca aguardando. Monte uma nova seleção para procurar partida."
           actions={
             <Btn tone="primary" onPress={() => nav.go('queue', { from: 'queue-search' })}>
               Buscar partida
@@ -1176,38 +1242,39 @@ export function QueueSearch() {
   return (
     <Page title="Buscas ativas">
       {matchedEntry ? (
-        <Card tone="blue">
-          <Row between>
-            <Txt variant="label">Partida encontrada</Txt>
-            <Badge>servidor</Badge>
-          </Row>
-          <Text
-            numberOfLines={2}
-            style={{ fontSize: 20, lineHeight: 24, fontWeight: '900', color: palette.ink }}
-          >
-            {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
-          </Text>
-          <Txt variant="tiny" style={{ marginTop: 6 }}>
-            Esta é a entrada que o servidor fechou. As demais continuam aguardando; a ordem não
-            escolhe vencedor.
-          </Txt>
-          {matchedEntry.lobby ? (
-            <Btn
-              tone="primary"
-              onPress={() =>
-                matchedEntry.lobby &&
-                nav.replace('lobby-found', {
-                  lobbyId: matchedEntry.lobby.id,
-                  mode: matchedEntry.mode,
-                })
-              }
+        <Appear>
+          <Card tone="blue">
+            <Row between>
+              <Txt variant="label">Partida encontrada</Txt>
+              <Badge>encontrada</Badge>
+            </Row>
+            <Text
+              numberOfLines={2}
+              style={{ fontSize: 20, lineHeight: 24, fontWeight: '900', color: palette.ink }}
             >
-              Ver partida
-            </Btn>
-          ) : (
-            <Txt variant="tiny">Preparando o lobby da partida…</Txt>
-          )}
-        </Card>
+              {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
+            </Text>
+            <Txt variant="tiny" style={{ marginTop: 6 }}>
+              As outras buscas continuam aguardando.
+            </Txt>
+            {matchedEntry.lobby ? (
+              <Btn
+                tone="primary"
+                onPress={() =>
+                  matchedEntry.lobby &&
+                  nav.replace('lobby-found', {
+                    lobbyId: matchedEntry.lobby.id,
+                    mode: matchedEntry.mode,
+                  })
+                }
+              >
+                Ver partida
+              </Btn>
+            ) : (
+              <Txt variant="tiny">Preparando o lobby da partida…</Txt>
+            )}
+          </Card>
+        </Appear>
       ) : null}
       <Appear>
         <Card>
@@ -1222,7 +1289,7 @@ export function QueueSearch() {
           </Row>
           {queue.length === 0 ? (
             <Txt variant="tiny" style={{ marginTop: 8 }}>
-              Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
+              A partida encontrada é a única pendência.
             </Txt>
           ) : (
             <View style={{ marginTop: 10, gap: 12 }}>
@@ -1241,8 +1308,7 @@ export function QueueSearch() {
         </Card>
       </Appear>
       <Notice icon="clock">
-        Não prometemos um tempo de espera. Uma combinação pode encontrar partida antes das outras; o
-        servidor decide e a tela apenas reflete.
+        Não prometemos um tempo de espera — pode fechar o aplicativo ou voltar.
       </Notice>
       {queueNotice ? (
         <Notice tone="orange" icon="alert">
@@ -1263,8 +1329,7 @@ export function QueueSearch() {
             Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'}?
           </Txt>
           <Txt variant="tiny" style={{ marginTop: 6 }}>
-            As buscas que ainda aguardam serão canceladas no servidor. Se já há partida encontrada,
-            ela não é cancelada aqui. Se a rede falhar, nada é removido da tela.
+            As buscas ainda aguardando serão canceladas. A partida encontrada não é cancelada aqui.
           </Txt>
           <BtnRow>
             <Btn tone="ghost" onPress={() => setConfirming(false)} disabled={busy}>
@@ -1285,14 +1350,9 @@ export function QueueSearch() {
           {queueNotice ? 'Dispensar aviso' : 'Reler fila'}
         </Btn>
       ) : null}
-      <Card tone="flat">
-        <Row between>
-          <Txt variant="tiny">Enquanto isso</Txt>
-          <Btn small tone="ghost" onPress={() => nav.back()}>
-            Voltar
-          </Btn>
-        </Row>
-      </Card>
+      <Btn small tone="ghost" onPress={() => nav.back()}>
+        Voltar
+      </Btn>
     </Page>
   );
 }

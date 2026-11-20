@@ -213,7 +213,7 @@ function Wallet() {
           }
           text={
             failure === 'unavailable'
-              ? 'O servidor não conseguiu confirmar seu saldo agora. Não mostramos zero porque o saldo real pode ser diferente. Tente novamente.'
+              ? 'Não foi possível carregar seu saldo agora. Tente novamente.'
               : 'Verifique a conexão e tente novamente. Seu saldo não foi alterado.'
           }
           actions={
@@ -244,7 +244,6 @@ function Wallet() {
         </Txt>
         <Txt variant="tiny" color="softOnInk">
           ingressos disponíveis
-          {wallet?.source === 'ledger' ? ' · saldo conferido no servidor' : ''}
         </Txt>
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
           <Badge>PASSE {sums.pass}</Badge>
@@ -382,7 +381,7 @@ function WalletBreakdown() {
               ? 'Saldo temporariamente indisponível'
               : 'Não foi possível carregar seus ingressos'
           }
-          text="O servidor não confirmou o saldo agora. Não mostramos zero porque o saldo real pode ser diferente."
+          text="Não foi possível carregar seu saldo agora."
           actions={
             <Btn tone="primary" onPress={reload}>
               Tentar novamente
@@ -472,8 +471,7 @@ function MatchCost() {
       <Card>
         <Txt variant="h3">Tabela de conversão</Txt>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
-          Ingressos por jogador, definidos pela faixa de preço da quadra e pelo formato. O servidor
-          congela a quantidade na reserva.
+          Ingressos por jogador, definidos pela faixa e pelo formato.
         </Txt>
         <Row style={{ marginTop: 10 }}>
           <Txt variant="label" style={{ flex: 1.4 }}>
@@ -510,8 +508,8 @@ function MatchCost() {
         ))}
       </Card>
       <Notice tone="blue" icon="info">
-        O valor da quadra e o valor do JOGA aparecem em reais antes da confirmação. A taxa de 20% é
-        piso de referência, não o valor final.
+        Valores em reais aparecem antes da confirmação. A taxa de 20% é referência, não o valor
+        final.
       </Notice>
       <TextBtn muted onPress={() => nav.go('queue', { mode: 'casual' })}>
         Buscar partida
@@ -599,8 +597,7 @@ function Store() {
         Pacotes pré-pagos. O ingresso é pessoal, não transferível e não vira dinheiro.
       </Txt>
       <Notice tone="blue" icon="info">
-        Crédito comprado não expira. O preço do pacote vira crédito em reais; o ingresso é a unidade
-        de consumo da tabela por faixa e formato.
+        Crédito comprado não expira. O ingresso é a unidade de consumo por faixa e formato.
       </Notice>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         {options.map((option, index) => (
@@ -1064,8 +1061,7 @@ function CheckoutPackage({ avulso }: { avulso?: boolean }) {
         </>
       ) : (
         <Notice tone="blue" icon="wallet">
-          Seus ingressos entram no saldo após o pagamento. Esta tela atualiza sozinha a cada 7
-          segundos.
+          Seus ingressos entram no saldo após o pagamento. A tela atualiza automaticamente.
         </Notice>
       )}
     </Page>
@@ -1488,8 +1484,8 @@ function CheckoutPass() {
         </>
       ) : (
         <Notice tone="blue" icon="lock">
-          A franquia é entregue mês a mês. O cancelamento vale para o próximo ciclo. Esta tela
-          atualiza sozinha a cada 7 segundos.
+          A franquia é entregue mês a mês. O cancelamento vale para o próximo ciclo. A tela atualiza
+          automaticamente.
         </Notice>
       )}
     </Page>
@@ -1626,7 +1622,7 @@ function RefundTickets() {
       <StateScreen
         icon="wallet"
         title="Devolução em ingressos"
-        text="Quando a quadra não confirma ou a reserva expira antes do cutoff, os ingressos voltam para o seu saldo. Depois do cutoff ou em no-show não há devolução."
+        text="Se a quadra não confirmar ou a reserva expirar antes do prazo, os ingressos voltam para o seu saldo. Depois do prazo ou em falta sem aviso não há devolução."
         actions={
           <>
             <Btn tone="primary" go="wallet">

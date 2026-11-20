@@ -105,12 +105,20 @@ export function describeApiError(error: unknown): string {
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
-let refreshHandler: (() => Promise<string | null>) | null = null;
-let refreshPromise: Promise<string | null> | null = null;
+/**
+ * Resultado explícito do refresh. `unavailable` cobre rede/timeout/5xx: não
+ * desloga nem acusa suspensão; a tela mostra o erro de conexão.
+ */
+export type RefreshResult =
+  { ok: true; token: string } | { ok: false; reason: 'suspended' | 'expired' | 'unavailable' };
+
+let refreshHandler: (() => Promise<RefreshResult>) | null = null;
+let refreshPromise: Promise<RefreshResult> | null = null;
 let suspensionHandler: (() => void) | null = null;
+let sessionExpiredHandler: ((token?: string | null) => void) | null = null;
 let updateRequiredHandler: (() => void) | null = null;
 
-export function setRefreshHandler(handler: (() => Promise<string | null>) | null) {
+export function setRefreshHandler(handler: (() => Promise<RefreshResult>) | null) {
   refreshHandler = handler;
   if (!handler) {
     refreshPromise = null;
@@ -119,6 +127,11 @@ export function setRefreshHandler(handler: (() => Promise<string | null>) | null
 
 export function setSuspensionHandler(handler: (() => void) | null) {
   suspensionHandler = handler;
+}
+
+/** Sessão inválida (qualquer 401 pós-refresh que não seja suspensão). */
+export function setSessionExpiredHandler(handler: ((token?: string | null) => void) | null) {
+  sessionExpiredHandler = handler;
 }
 
 export function setUpdateRequiredHandler(handler: (() => void) | null) {
@@ -130,6 +143,8 @@ type Init = {
   body?: unknown;
   token?: string | null;
   headers?: Record<string, string>;
+  /** Não dispara o handler de sessão expirada (ex.: revalidar suspensão). */
+  keepSession?: boolean;
 };
 
 async function call<T>(path: string, init: Init = {}, allowRefresh = true): Promise<T> {
@@ -165,23 +180,48 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
     updateRequiredHandler?.();
   }
 
+  let unauthorizedHandled = false;
+
   if (response.status === 401 && init.token && allowRefresh && refreshHandler) {
+    const refreshToken = init.token;
     if (!refreshPromise) {
       refreshPromise = refreshHandler().finally(() => {
         refreshPromise = null;
       });
     }
     const refreshed = await refreshPromise;
-    if (refreshed) {
+    if (refreshed.ok) {
       try {
-        return await call<T>(path, { ...init, token: refreshed }, false);
+        return await call<T>(path, { ...init, token: refreshed.token }, false);
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
-          suspensionHandler?.();
-          throw new ApiError(401, 'account_suspended');
+          // Só o corpo explícito do servidor pode acusar suspensão. Qualquer
+          // outro 401 pós-refresh é sessão inválida: limpa e volta ao login.
+          if (error.code === 'account_suspended') {
+            suspensionHandler?.();
+          } else if (!init.keepSession) {
+            sessionExpiredHandler?.(refreshed.token);
+          }
+          unauthorizedHandled = true;
         }
         throw error;
       }
+    }
+    if (refreshed.reason === 'suspended') {
+      suspensionHandler?.();
+      unauthorizedHandled = true;
+      throw new ApiError(401, 'account_suspended');
+    }
+    if (refreshed.reason === 'expired') {
+      if (!init.keepSession) {
+        sessionExpiredHandler?.(refreshToken);
+      }
+      unauthorizedHandled = true;
+    }
+    // `unavailable` (rede/timeout/5xx): mantém a sessão e deixa o erro original
+    // chegar à tela; não desloga nem acusa suspensão.
+    if (refreshed.reason === 'unavailable') {
+      unauthorizedHandled = true;
     }
   }
 
@@ -210,12 +250,22 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
         code = detail[0].msg;
       }
     }
-    throw new ApiError(
+    const error = new ApiError(
       response.status,
       code,
       retryAfterSeconds(response.headers.get('Retry-After')),
       body,
     );
+    // Sem refresh disponível, um 401 com token ainda é sessão inválida — mas
+    // nunca suspensão, a menos que o corpo diga `account_suspended`.
+    if (error.status === 401 && init.token && allowRefresh && !unauthorizedHandled) {
+      if (error.code === 'account_suspended') {
+        suspensionHandler?.();
+      } else if (!init.keepSession) {
+        sessionExpiredHandler?.(init.token);
+      }
+    }
+    throw error;
   }
   return body as T;
 }
@@ -288,8 +338,8 @@ export const api = {
         body: { refresh_token: refreshToken },
       });
     },
-    me(token: string) {
-      return call<{ id: string; status: string }>('/auth/me', { token });
+    me(token: string, keepSession = false) {
+      return call<{ id: string; status: string }>('/auth/me', { token, keepSession });
     },
     logout(token: string) {
       return call<void>('/auth/logout', { method: 'POST', token });
