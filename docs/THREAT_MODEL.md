@@ -98,6 +98,45 @@
 - Reservas são escopadas por participante ou organização; hold e confirmação usam lock transacional.
 - T1/T2/T3 são registrados em timers independentes; o pagamento simulado é bloqueado fora de ambiente local/teste.
 
+## Decisão P3-10: cache e rate limit do catálogo público (2026-11-20)
+
+**Registro canônico:** ADR 0054.
+
+**Decisão:** manter `Cache-Control: no-store` em todas as respostas da API,
+inclusive no catálogo público (`GET /api/v1/catalog/sports` e
+`GET /api/v1/catalog/visual`). Não cachear na borda nesta fase.
+
+**Motivos:**
+
+- o `no-store` é um padrão de segurança global do middleware
+  (`backend/app/core/observability.py`) e evita cache de resposta autenticada
+  por engano;
+- o Caddy padrão não tem cache HTTP; cachear exigiria CDN ou plugin, com custo,
+  invalidação e risco de servir catálogo desatualizado;
+- o catálogo é pequeno e mudado por ação administrativa, então o ganho não
+  justifica a complexidade agora;
+- uma regra ampla de cache em `/api/v1/catalog/*` poderia alcançar rotas
+  privadas futuras.
+
+**Código morto removido:** `backend/app/api/v1/discovery.py` definia
+`Cache-Control: private, max-age=60` na foto de quadra. O middleware sobrescreve
+qualquer header definido na rota com `no-store`; o header foi removido e o
+efetivo continua sendo o do middleware. O teste
+`test_photo_upload_review_serving_and_removal` cobre `no-store`.
+
+**Rate limit:** não adicionar rate limit ao catálogo público. O módulo
+`app/modules/ratelimit` usa `RateLimitCounter` com escrita/lock no PostgreSQL
+por escopo/chave/janela; aplicá-lo a requisições anônimas do catálogo criaria
+uma escrita em banco por leitura, pior que o abuso que tentaria conter. Risco
+aceito: o catálogo é somente leitura, autenticado por sessão quando aplicável
+(nas rotas de descoberta), e não altera estado. Se houver abuso, a mitigação
+deve ser de borda (proxy/CDN com rate limit), não no app.
+
+**Gatilhos de revisão:** adoção de CDN/edge cache; aumento de tráfego anônimo ou
+custo de banco; necessidade de catálogo público sem autenticação; incidente de
+abuso; ou mudança para cache com invalidação explícita. Nesse caso, criar
+allowlist de paths públicos, TTL curto e teste de invalidação.
+
 ## Riscos residuais e bloqueios
 
 - **Alto:** revisão LGPD/jurídica definitiva ainda não feita.
@@ -116,6 +155,7 @@
 - **Alto:** ledger de dupla entrada não integrado e taxa não persistida; correção na 14E.
 - **Médio:** webhook do Mercado Pago ainda não foi validado com credenciais reais; testes usam HTTP simulado.
 - **Médio:** e-mail do pagador é obrigatório na Orders API e o cadastro atual é por telefone.
+- **Baixo:** catálogo público sem cache de borda e sem rate limit dedicado; risco aceito na decisão P3-10 (2026-11-20).
 - **Baixo:** cobertura de UI mobile e testes em aparelho são manuais.
 
 ## Critérios para piloto

@@ -131,6 +131,31 @@ DEMO_BASIC_AUTH_HASH                   # segredo: hash bcrypt do Caddy
 (`backend/app/core/config.py`). Por isso o demo é `development` e o acesso fica
 atrás de basic auth.
 
+### Risco aceito: `development` até o modo demo (2026-11-20)
+
+**Decisão:** o demo permanece em `JOGA_ENVIRONMENT=development` até o modo demo
+do backend (opção B) estar em `main`. Não há PSP, credencial do Mercado Pago,
+dinheiro real nem checkout do passe nesta fase. `JOGA_TICKET_PURCHASE_ENABLED`
+permanece `false` (o default do código); a variável será declarada
+explicitamente no Render depois do merge do modo demo.
+
+**O que fica exposto enquanto isso:** em `development`, a simulação de
+pagamento de reserva, a confirmação de passe sem PSP e o webhook sem assinatura
+continuam aceitos pelo código. Eles exigem sessão autenticada quando aplicável,
+mas não substituem as guardas de produção. O risco é aceito porque:
+
+- o valor é simulado (`JOGA_MONEY_MODE=simulated`) e não há PSP configurado;
+- o checkout do passe não é requisito desta fase;
+- o demo é privado, sem dado financeiro real e sem clientes;
+- a correção definitiva (modo demo explícito, com `simulate`/webhook bloqueados
+  e checkout do passe indisponível) está decidida e será implementada na opção
+  B, sem depender de Mercado Pago.
+
+**Gatilhos de revisão:** qualquer dinheiro real ou PSP; demo público ou
+longevo; dados de usuários reais; necessidade de checkout do passe; incidente
+de integridade financeira. Nesses casos, o modo demo precisa estar em `main` e
+as guardas de produção ligadas antes de expor o ambiente.
+
 ### Cadastro aberto e kill switch
 
 O demo está com `JOGA_SIGNUP_MODE=open` desde 2026-11-19 para validar o
@@ -192,6 +217,35 @@ No Render, cole o hash em `DEMO_BASIC_AUTH_HASH` (secret). O Caddyfile lê a
 variável em tempo de execução; sem ela, o Caddy falha fechado. A diretiva
 `basic_auth` do Caddy exige o par `<usuário> <hash>` — por isso o Caddyfile tem
 `demo {$DEMO_BASIC_AUTH_HASH}` e não apenas o hash.
+
+### Rate limit do basic auth: risco aceito (2026-11-20)
+
+O `basic_auth` do Caddy **não tem rate limit** e não será adicionado nesta fase.
+**Decisão:** manter senha forte e aceitar o risco; não usar Cloudflare (não há
+domínio próprio) nem plugin/xcaddy (custo desproporcional). A imagem, o
+`Dockerfile` e o `Caddyfile` não mudam por causa disso.
+
+**Por que o risco é aceito:**
+
+- o basic auth protege apenas o SPA estático em `/`; `/api/*` fica fora e tem
+  autenticação, autorização e rate limit próprios no backend;
+- o demo é privado, não indexado e não contém dado financeiro real;
+- a senha é aleatória, com 24+ caracteres, e o hash bcrypt fica somente no
+  Render;
+- o pior caso é tentativa de força bruta contra uma senha longa, sem acesso
+  direto a dados além do próprio SPA.
+
+**Gatilhos de revisão:** domínio próprio; demo público ou longevo; painel
+passando a servir dado fora da API; aumento anormal de respostas 401 no Caddy;
+incidente de acesso ao painel. Nesses casos, reavaliar Cloudflare/proxy com
+rate limit ou autenticação mais forte.
+
+**Rotação:** gerar a senha com CSPRNG (24+ caracteres) e o hash com
+`caddy hash-password` (bcrypt custo 14); aplicar o hash em
+`DEMO_BASIC_AUTH_HASH` no Render, reiniciar e testar `GET /` sem credencial
+(401) e com `demo:<senha>` (200). Em 2026-11-20 foi gerada uma credencial nova e
+mantida fora do Git; o hash **não foi aplicado** porque não houve autorização
+para alterar variáveis de ambiente. A aplicação fica para a janela do modo demo.
 
 ### Gate de versão do app mobile
 

@@ -1669,3 +1669,19 @@ Adicionar abaixo uma entrada por execução concluída ou bloqueada, sem apagar 
   (prevista para a 14B); até lá, o fluxo é operado pela plataforma.
 - **Handoff:** contrato `docs/CONTRATO_RESERVAS_APP.md` v2026-11-20 para o app
   mobile e para o painel; o painel atual ainda usa o contrato anterior.
+
+### 2026-11-20 - P3-10: cache e rate limit do catálogo público
+
+- **Decisão:** ADR 0054 e `docs/THREAT_MODEL.md`; manter
+  `Cache-Control: no-store` em todas as respostas da API, inclusive no catálogo
+  público, e não adicionar cache/rate limit no catálogo.
+- **Código:** removido o `Cache-Control: private, max-age=60` de
+  `backend/app/api/v1/discovery.py` (código morto, sobrescrito pelo middleware);
+  comentário no middleware registra a intenção global.
+- **Rate limit:** não adicionado. `RateLimitCounter` grava e bloqueia linha no
+  PostgreSQL por escopo/chave/janela; aplicá-lo a leitura anônima seria pior que
+  o problema. Risco aceito como baixo; mitigação futura deve ser de borda.
+- **Gates:** `pytest tests/test_venues_api.py::test_photo_upload_review_serving_and_removal tests/test_observability.py -q`
+  6 passed; `ruff check` e `ruff format --check` limpos.
+- **Fora do escopo:** nenhuma mudança em `Caddyfile`, `Dockerfile`, variáveis de
+  ambiente, deploy ou banco.

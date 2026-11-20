@@ -68,6 +68,8 @@ def install_observability(app: FastAPI, settings: Settings | None = None) -> Non
         response.headers[REQUEST_ID_HEADER] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        # no-store global, inclusive catálogo público (decisão P3-10). Header de
+        # rota é sobrescrito aqui; cache de borda, se houver, fica no Caddy/CDN.
         response.headers["Cache-Control"] = "no-store"
         if request.url.path not in SKIP_LOG_PATHS:
             logger.info(
