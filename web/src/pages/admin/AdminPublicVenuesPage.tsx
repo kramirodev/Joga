@@ -28,9 +28,11 @@ import {
 } from "../../lib/validation";
 import type {
   AdminPublicVenue,
+  AdminPublicVenueDetail,
   AdminPublicVenueSpace,
-  AdminVenueAvailability,
-  AdminVenueBusinessHour,
+  AdminPublicVenueSpacePayload,
+  AdminVenueAvailabilityPayload,
+  AdminVenueBusinessHourPayload,
 } from "../../types";
 import { AdminForbiddenState } from "./AdminShared";
 
@@ -56,20 +58,22 @@ type Step = (typeof STEPS)[number]["id"];
 interface SpaceDraft {
   id?: string;
   name: string;
-  sport_slug: string;
+  sport_id: string;
   format_id: string;
   price: string;
   status: "active" | "inactive";
-  in_use?: boolean;
 }
 
 interface AvailabilityDraft {
+  id?: string;
+  space_index: number;
   weekday: string;
   start_time: string;
   end_time: string;
 }
 
 interface BusinessHourDraft {
+  id?: string;
   weekday: string;
   opens_at: string;
   closes_at: string;
@@ -84,6 +88,7 @@ interface VenueDraft {
   latitude: string;
   longitude: string;
   reason: string;
+  venue_status: "active" | "inactive";
   spaces: SpaceDraft[];
   availability: AvailabilityDraft[];
   business_hours: BusinessHourDraft[];
@@ -92,15 +97,15 @@ interface VenueDraft {
 function makeSpaceDraft(): SpaceDraft {
   return {
     name: "",
-    sport_slug: "",
+    sport_id: "",
     format_id: "",
     price: "",
     status: "active",
   };
 }
 
-function makeAvailabilityDraft(): AvailabilityDraft {
-  return { weekday: "1", start_time: "08:00", end_time: "22:00" };
+function makeAvailabilityDraft(spaceIndex = 0): AvailabilityDraft {
+  return { space_index: spaceIndex, weekday: "1", start_time: "08:00", end_time: "22:00" };
 }
 
 function makeBusinessHourDraft(): BusinessHourDraft {
@@ -117,8 +122,9 @@ function makeEmptyVenueDraft(): VenueDraft {
     latitude: "",
     longitude: "",
     reason: "",
+    venue_status: "inactive",
     spaces: [makeSpaceDraft()],
-    availability: [makeAvailabilityDraft()],
+    availability: [makeAvailabilityDraft(0)],
     business_hours: [makeBusinessHourDraft()],
   };
 }
@@ -127,24 +133,24 @@ function toSpaceDraft(space: AdminPublicVenueSpace): SpaceDraft {
   return {
     id: space.id,
     name: space.name,
-    sport_slug: space.sport_slug,
-    format_id: space.format_id,
-    price: moneyInputFromCents(space.price_cents),
+    sport_id: space.sport_id ?? "",
+    format_id: space.format_id ?? "",
+    price: moneyInputFromCents(space.price_cents ?? 0),
     status: space.status,
-    in_use: space.in_use,
   };
 }
 
-function toVenueDraft(venue: AdminPublicVenue): VenueDraft {
+function toVenueDraft(venue: AdminPublicVenueDetail): VenueDraft {
   return {
     name: venue.name,
-    city: venue.city,
-    state: venue.state,
-    address_line: venue.address_line,
+    city: venue.city ?? "",
+    state: venue.state ?? "",
+    address_line: venue.address_line ?? "",
     postal_code: venue.postal_code ?? "",
-    latitude: String(venue.latitude),
-    longitude: String(venue.longitude),
+    latitude: venue.latitude === null ? "" : String(venue.latitude),
+    longitude: venue.longitude === null ? "" : String(venue.longitude),
     reason: "",
+    venue_status: venue.status === "active" ? "active" : "inactive",
     spaces: venue.spaces.length > 0 ? venue.spaces.map(toSpaceDraft) : [makeSpaceDraft()],
     availability: [],
     business_hours: [],
@@ -248,7 +254,6 @@ export function AdminPublicVenuesPage() {
   async function openEdit(venue: AdminPublicVenue) {
     setFormMode("edit");
     setEditingId(venue.id);
-    setDraft(toVenueDraft(venue));
     setErrors({});
     setFormError(null);
     setStep("data");
@@ -256,23 +261,28 @@ export function AdminPublicVenuesPage() {
     setCepMessage(null);
     setFormLoading(true);
     try {
-      const [availability, businessHours] = await Promise.all([
-        api.getAdminPublicVenueAvailability(venue.id),
-        api.getAdminPublicVenueBusinessHours(venue.id),
-      ]);
-      setDraft((current) => ({
-        ...current,
-        availability: availability.availability.map((item) => ({
+      const detail = await api.getAdminPublicVenue(venue.id);
+      const availabilityLists = await Promise.all(
+        detail.spaces.map((space) => api.listAdminPublicVenueAvailability(detail.id, space.id)),
+      );
+      const businessHours = await api.listAdminPublicVenueBusinessHours(detail.id);
+      const nextDraft = toVenueDraft(detail);
+      nextDraft.availability = availabilityLists.flatMap((list, spaceIndex) =>
+        list.map((item) => ({
+          id: item.id,
+          space_index: spaceIndex,
           weekday: String(item.weekday),
           start_time: item.start_time,
           end_time: item.end_time,
         })),
-        business_hours: businessHours.business_hours.map((item) => ({
-          weekday: String(item.weekday),
-          opens_at: item.opens_at,
-          closes_at: item.closes_at,
-        })),
+      );
+      nextDraft.business_hours = businessHours.map((item) => ({
+        id: item.id,
+        weekday: String(item.weekday),
+        opens_at: item.opens_at,
+        closes_at: item.closes_at,
       }));
+      setDraft(nextDraft);
     } catch (caught) {
       setFormError(caught);
     } finally {
@@ -330,6 +340,12 @@ export function AdminPublicVenuesPage() {
     setDraft((current) => ({
       ...current,
       spaces: current.spaces.filter((_space, position) => position !== index),
+      availability: current.availability
+        .filter((window) => window.space_index !== index)
+        .map((window) => ({
+          ...window,
+          space_index: window.space_index > index ? window.space_index - 1 : window.space_index,
+        })),
     }));
     setErrors({});
   }
@@ -344,10 +360,10 @@ export function AdminPublicVenuesPage() {
     setErrors({});
   }
 
-  function addAvailability() {
+  function addAvailability(spaceIndex: number) {
     setDraft((current) => ({
       ...current,
-      availability: [...current.availability, makeAvailabilityDraft()],
+      availability: [...current.availability, makeAvailabilityDraft(spaceIndex)],
     }));
   }
 
@@ -466,7 +482,7 @@ export function AdminPublicVenuesPage() {
       const prefix = `venue-space-${index}`;
       const nameError = textError(space.name, { label: "o nome do espaço", min: 2, max: 120 });
       if (nameError) next[`${prefix}-name`] = nameError;
-      if (!space.sport_slug) next[`${prefix}-sport`] = "Escolha a modalidade.";
+      if (!space.sport_id) next[`${prefix}-sport`] = "Escolha a modalidade.";
       if (!space.format_id) next[`${prefix}-format`] = "Escolha o formato.";
       const priceCents = moneyToCents(space.price);
       if (priceCents === null || priceCents <= 0) {
@@ -500,6 +516,16 @@ export function AdminPublicVenuesPage() {
       const error = timeRangeError(window.opens_at, window.closes_at);
       if (error) next[`venue-hours-${index}-time`] = error;
     });
+    const publishing = formMode === "create" ? publishNow : current.venue_status === "active";
+    if (publishing) {
+      current.spaces.forEach((space, index) => {
+        if (space.status !== "active") return;
+        if (!current.availability.some((window) => window.space_index === index)) {
+          next[`venue-space-${index}-availability`] =
+            "Adicione ao menos uma janela semanal para publicar este espaço.";
+        }
+      });
+    }
     return next;
   }
 
@@ -622,11 +648,12 @@ export function AdminPublicVenuesPage() {
       }
 
       const savedSpaces: SpaceDraft[] = draft.spaces.map((space) => ({ ...space }));
+      const savedIds: string[] = [];
       for (let index = 0; index < savedSpaces.length; index += 1) {
         const space = savedSpaces[index];
-        const payload = {
+        const payload: AdminPublicVenueSpacePayload = {
           name: normalizeWhitespace(space.name),
-          sport_slug: space.sport_slug,
+          sport_id: space.sport_id,
           format_id: space.format_id,
           price_cents: moneyToCents(space.price) ?? 0,
           status: space.status,
@@ -635,28 +662,62 @@ export function AdminPublicVenuesPage() {
         const saved = space.id
           ? await api.updateAdminPublicVenueSpace(venueId, space.id, payload)
           : await api.createAdminPublicVenueSpace(venueId, payload);
+        savedIds[index] = saved.id;
         savedSpaces[index] = { ...space, id: saved.id };
-        setDraft((current) => ({ ...current, spaces: savedSpaces.map((item) => ({ ...item })) }));
+      }
+      setDraft((current) => ({ ...current, spaces: savedSpaces.map((item) => ({ ...item })) }));
+
+      // Agenda: o backend guarda uma linha por janela; reconciliar por espaço.
+      for (let index = 0; index < savedSpaces.length; index += 1) {
+        const spaceId = savedIds[index];
+        const priceCents = moneyToCents(savedSpaces[index].price) ?? 0;
+        const currentRows = await api.listAdminPublicVenueAvailability(venueId, spaceId);
+        const desired = draft.availability.filter((window) => window.space_index === index);
+        const desiredIds = new Set(desired.map((window) => window.id).filter(Boolean));
+        for (const row of currentRows) {
+          if (!desiredIds.has(row.id)) {
+            await api.deleteAdminPublicVenueAvailability(venueId, row.id, spaceId, reason);
+          }
+        }
+        for (const window of desired) {
+          const payload: AdminVenueAvailabilityPayload = {
+            space_id: spaceId,
+            weekday: Number(window.weekday),
+            start_time: window.start_time,
+            end_time: window.end_time,
+            price_cents: priceCents,
+            reason,
+          };
+          if (window.id) {
+            await api.updateAdminPublicVenueAvailability(venueId, window.id, payload);
+          } else {
+            await api.createAdminPublicVenueAvailability(venueId, payload);
+          }
+        }
       }
 
-      await api.replaceAdminPublicVenueAvailability(
-        venueId,
-        draft.availability.map<AdminVenueAvailability>((window) => ({
-          weekday: Number(window.weekday),
-          start_time: window.start_time,
-          end_time: window.end_time,
-        })),
-        reason,
+      const currentHours = await api.listAdminPublicVenueBusinessHours(venueId);
+      const desiredHourIds = new Set(
+        draft.business_hours.map((window) => window.id).filter(Boolean),
       );
-      await api.replaceAdminPublicVenueBusinessHours(
-        venueId,
-        draft.business_hours.map<AdminVenueBusinessHour>((window) => ({
+      for (const row of currentHours) {
+        if (!desiredHourIds.has(row.id)) {
+          await api.deleteAdminPublicVenueBusinessHour(venueId, row.id, reason);
+        }
+      }
+      for (const window of draft.business_hours) {
+        const payload: AdminVenueBusinessHourPayload = {
           weekday: Number(window.weekday),
           opens_at: window.opens_at,
           closes_at: window.closes_at,
-        })),
-        reason,
-      );
+          reason,
+        };
+        if (window.id) {
+          await api.updateAdminPublicVenueBusinessHour(venueId, window.id, payload);
+        } else {
+          await api.createAdminPublicVenueBusinessHour(venueId, payload);
+        }
+      }
 
       if (publishNow) {
         await api.activateAdminPublicVenue(venueId, reason);
@@ -735,10 +796,8 @@ export function AdminPublicVenuesPage() {
         ) : (
           <ul className="admin-list">
             {venues.map((venue) => {
-              const discoverable =
-                venue.is_public &&
-                venue.active &&
-                venue.spaces.some((space) => space.status === "active");
+              const venueActive = venue.status === "active";
+              const discoverable = venue.is_public && venueActive && venue.spaces_count > 0;
               return (
                 <li key={venue.id}>
                   <div className="admin-row">
@@ -749,12 +808,12 @@ export function AdminPublicVenuesPage() {
                       <span>
                         <strong>{venue.name}</strong>
                         <small>
-                          {venue.city}/{venue.state} · {venue.spaces.length} espaço(s)
+                          {venue.city ?? "—"}/{venue.state ?? "—"} · {venue.spaces_count} espaço(s)
                         </small>
                       </span>
                     </span>
-                    <span className={venue.active ? "badge badge--success" : "badge badge--muted"}>
-                      {venue.active ? "Ativa" : "Inativa"}
+                    <span className={venueActive ? "badge badge--success" : "badge badge--muted"}>
+                      {venueActive ? "Ativa" : "Inativa"}
                     </span>
                     <span className={discoverable ? "badge badge--info" : "badge badge--muted"}>
                       {discoverable ? "Na descoberta" : "Fora da descoberta"}
@@ -767,7 +826,7 @@ export function AdminPublicVenuesPage() {
                       >
                         Editar
                       </button>
-                      {venue.active ? (
+                      {venueActive ? (
                         <button
                           type="button"
                           className="button button--small button--danger"
@@ -951,7 +1010,7 @@ export function AdminPublicVenuesPage() {
                         </p>
                       ) : null}
                       {draft.spaces.map((space, index) => {
-                        const sport = sports.find((item) => item.slug === space.sport_slug);
+                        const sport = sports.find((item) => item.id === space.sport_id);
                         return (
                           <div key={index} className="format-editor">
                             <div className="format-editor__header">
@@ -982,13 +1041,13 @@ export function AdminPublicVenuesPage() {
                               <SelectField
                                 id={`venue-space-${index}-sport`}
                                 label="Modalidade"
-                                value={space.sport_slug}
+                                value={space.sport_id}
                                 onChange={(event) => {
                                   const nextSport = sports.find(
-                                    (item) => item.slug === event.target.value,
+                                    (item) => item.id === event.target.value,
                                   );
                                   updateSpace(index, {
-                                    sport_slug: event.target.value,
+                                    sport_id: event.target.value,
                                     format_id: nextSport?.formats[0]?.id ?? "",
                                   });
                                 }}
@@ -997,7 +1056,7 @@ export function AdminPublicVenuesPage() {
                               >
                                 <option value="">Selecione</option>
                                 {sports.map((item) => (
-                                  <option key={item.slug} value={item.slug}>
+                                  <option key={item.id} value={item.id}>
                                     {item.name}
                                   </option>
                                 ))}
@@ -1043,12 +1102,6 @@ export function AdminPublicVenuesPage() {
                                 <option value="inactive">Inativo</option>
                               </SelectField>
                             </div>
-                            {space.in_use ? (
-                              <p className="hint">
-                                Espaço em uso por reservas. Alterações de formato podem ser
-                                recusadas pelo backend.
-                              </p>
-                            ) : null}
                           </div>
                         );
                       })}
@@ -1066,61 +1119,104 @@ export function AdminPublicVenuesPage() {
                         description="Janelas recorrentes por dia da semana."
                         level={3}
                       />
-                      {draft.availability.map((window, index) => (
-                        <div key={index} className="form-row form-row--three">
-                          <SelectField
-                            id={`venue-availability-${index}-weekday`}
-                            label="Dia"
-                            value={window.weekday}
-                            onChange={(event) =>
-                              updateAvailability(index, { weekday: event.target.value })
-                            }
-                          >
-                            {WEEKDAYS.map((day) => (
-                              <option key={day.value} value={day.value}>
-                                {day.label}
-                              </option>
+                      {draft.spaces.map((space, spaceIndex) => {
+                        const windows = draft.availability
+                          .map((window, position) => ({ window, position }))
+                          .filter((item) => item.window.space_index === spaceIndex);
+                        const priceCents = moneyToCents(space.price);
+                        return (
+                          <div key={spaceIndex} className="format-editor">
+                            <div className="format-editor__header">
+                              <strong>{space.name || `Espaço ${spaceIndex + 1}`}</strong>
+                              <small>
+                                Preço da janela:{" "}
+                                {priceCents !== null && priceCents > 0
+                                  ? formatMoney(priceCents)
+                                  : "defina o preço do espaço"}
+                              </small>
+                            </div>
+                            {errors[`venue-space-${spaceIndex}-availability`] ? (
+                              <p
+                                className="field__error"
+                                role="alert"
+                                tabIndex={-1}
+                                id={`venue-space-${spaceIndex}-availability`}
+                              >
+                                {errors[`venue-space-${spaceIndex}-availability`]}
+                              </p>
+                            ) : null}
+                            {windows.length === 0 ? (
+                              <p className="hint">
+                                Nenhuma janela. Adicione ao menos uma para publicar o espaço.
+                              </p>
+                            ) : null}
+                            {windows.map(({ window, position }) => (
+                              <div
+                                key={window.id ?? `${spaceIndex}-${position}`}
+                                className="form-row form-row--three"
+                              >
+                                <SelectField
+                                  id={`venue-availability-${position}-weekday`}
+                                  label="Dia"
+                                  value={window.weekday}
+                                  onChange={(event) =>
+                                    updateAvailability(position, {
+                                      weekday: event.target.value,
+                                    })
+                                  }
+                                >
+                                  {WEEKDAYS.map((day) => (
+                                    <option key={day.value} value={day.value}>
+                                      {day.label}
+                                    </option>
+                                  ))}
+                                </SelectField>
+                                <TextField
+                                  id={`venue-availability-${position}-start`}
+                                  label="Início"
+                                  type="time"
+                                  value={window.start_time}
+                                  onChange={(event) =>
+                                    updateAvailability(position, {
+                                      start_time: event.target.value,
+                                    })
+                                  }
+                                  required
+                                />
+                                <TextField
+                                  id={`venue-availability-${position}-end`}
+                                  label="Fim"
+                                  type="time"
+                                  value={window.end_time}
+                                  onChange={(event) =>
+                                    updateAvailability(position, {
+                                      end_time: event.target.value,
+                                    })
+                                  }
+                                  error={errors[`venue-availability-${position}-time`]}
+                                  required
+                                />
+                                <button
+                                  type="button"
+                                  className="button button--small button--ghost"
+                                  onClick={() => removeAvailability(position)}
+                                >
+                                  <TrashIcon size={15} />
+                                  Remover
+                                </button>
+                              </div>
                             ))}
-                          </SelectField>
-                          <TextField
-                            id={`venue-availability-${index}-start`}
-                            label="Início"
-                            type="time"
-                            value={window.start_time}
-                            onChange={(event) =>
-                              updateAvailability(index, { start_time: event.target.value })
-                            }
-                            required
-                          />
-                          <TextField
-                            id={`venue-availability-${index}-end`}
-                            label="Fim"
-                            type="time"
-                            value={window.end_time}
-                            onChange={(event) =>
-                              updateAvailability(index, { end_time: event.target.value })
-                            }
-                            error={errors[`venue-availability-${index}-time`]}
-                            required
-                          />
-                          <button
-                            type="button"
-                            className="button button--small button--ghost"
-                            onClick={() => removeAvailability(index)}
-                          >
-                            <TrashIcon size={15} />
-                            Remover
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="button button--small"
-                        onClick={addAvailability}
-                      >
-                        <PlusIcon size={15} />
-                        Adicionar janela
-                      </button>
+                            <button
+                              type="button"
+                              className="button button--small"
+                              onClick={() => addAvailability(spaceIndex)}
+                            >
+                              <PlusIcon size={15} />
+                              Adicionar janela
+                            </button>
+                          </div>
+                        );
+                      })}
 
                       <SectionHeading
                         title="Expediente"
@@ -1212,8 +1308,9 @@ export function AdminPublicVenuesPage() {
                             <div key={index} className="public-venue-preview__space">
                               <strong>{space.name || `Espaço ${index + 1}`}</strong>
                               <small>
-                                {space.sport_slug || "modalidade"} ·{" "}
-                                {formatMoney(moneyToCents(space.price) ?? 0)}
+                                {sports.find((item) => item.id === space.sport_id)?.name ??
+                                  "modalidade"}{" "}
+                                · {formatMoney(moneyToCents(space.price) ?? 0)}
                               </small>
                               <span className="badge badge--muted">
                                 {space.status === "active" ? "Ativo" : "Inativo"}

@@ -4,6 +4,7 @@ import type {
   AdminPricingSuggestionResponse,
   AdminPublicVenue,
   AdminPublicVenueCreatePayload,
+  AdminPublicVenueDetail,
   AdminPublicVenueListResponse,
   AdminPublicVenueSpace,
   AdminPublicVenueSpacePayload,
@@ -17,9 +18,9 @@ import type {
   AdminUserDetail,
   AdminUserListResponse,
   AdminVenueAvailability,
-  AdminVenueAvailabilityResponse,
+  AdminVenueAvailabilityPayload,
   AdminVenueBusinessHour,
-  AdminVenueBusinessHoursResponse,
+  AdminVenueBusinessHourPayload,
   AuditListResponse,
   Booking,
   BookingFinancialResponse,
@@ -1286,6 +1287,14 @@ export const api = {
     });
   },
 
+  getAdminPublicVenue(venueId: string): Promise<AdminPublicVenueDetail> {
+    return request<AdminPublicVenueDetail>(adminVenuePath(venueId));
+  },
+
+  listAdminPublicVenueSpaces(venueId: string): Promise<AdminPublicVenueSpace[]> {
+    return request<AdminPublicVenueSpace[]>(`${adminVenuePath(venueId)}/spaces`);
+  },
+
   createAdminPublicVenueSpace(
     venueId: string,
     payload: AdminPublicVenueSpacePayload,
@@ -1310,33 +1319,90 @@ export const api = {
     );
   },
 
-  getAdminPublicVenueAvailability(venueId: string): Promise<AdminVenueAvailabilityResponse> {
-    return request<AdminVenueAvailabilityResponse>(`${adminVenuePath(venueId)}/availability`);
+  listAdminPublicVenueAvailability(
+    venueId: string,
+    spaceId: string,
+  ): Promise<AdminVenueAvailability[]> {
+    const query = new URLSearchParams({ space_id: spaceId });
+    return request<AdminVenueAvailability[]>(
+      `${adminVenuePath(venueId)}/availability?${query.toString()}`,
+    );
   },
 
-  replaceAdminPublicVenueAvailability(
+  createAdminPublicVenueAvailability(
     venueId: string,
-    availability: AdminVenueAvailability[],
-    reason: string,
-  ): Promise<AdminVenueAvailabilityResponse> {
-    return request<AdminVenueAvailabilityResponse>(`${adminVenuePath(venueId)}/availability`, {
-      method: "PUT",
-      body: JSON.stringify({ availability, reason }),
+    payload: AdminVenueAvailabilityPayload,
+  ): Promise<AdminVenueAvailability> {
+    return request<AdminVenueAvailability>(`${adminVenuePath(venueId)}/availability`, {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
 
-  getAdminPublicVenueBusinessHours(venueId: string): Promise<AdminVenueBusinessHoursResponse> {
-    return request<AdminVenueBusinessHoursResponse>(`${adminVenuePath(venueId)}/business-hours`);
+  updateAdminPublicVenueAvailability(
+    venueId: string,
+    availabilityId: string,
+    payload: AdminVenueAvailabilityPayload,
+  ): Promise<AdminVenueAvailability> {
+    return request<AdminVenueAvailability>(
+      `${adminVenuePath(venueId)}/availability/${encodeURIComponent(availabilityId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
-  replaceAdminPublicVenueBusinessHours(
+  deleteAdminPublicVenueAvailability(
     venueId: string,
-    businessHours: AdminVenueBusinessHour[],
+    availabilityId: string,
+    spaceId: string,
     reason: string,
-  ): Promise<AdminVenueBusinessHoursResponse> {
-    return request<AdminVenueBusinessHoursResponse>(`${adminVenuePath(venueId)}/business-hours`, {
-      method: "PUT",
-      body: JSON.stringify({ business_hours: businessHours, reason }),
+  ): Promise<void> {
+    const query = new URLSearchParams({ space_id: spaceId, reason });
+    return request<void>(
+      `${adminVenuePath(venueId)}/availability/${encodeURIComponent(availabilityId)}?${query.toString()}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listAdminPublicVenueBusinessHours(venueId: string): Promise<AdminVenueBusinessHour[]> {
+    return request<AdminVenueBusinessHour[]>(`${adminVenuePath(venueId)}/business-hours`);
+  },
+
+  createAdminPublicVenueBusinessHour(
+    venueId: string,
+    payload: AdminVenueBusinessHourPayload,
+  ): Promise<AdminVenueBusinessHour> {
+    return request<AdminVenueBusinessHour>(`${adminVenuePath(venueId)}/business-hours`, {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
+  },
+
+  updateAdminPublicVenueBusinessHour(
+    venueId: string,
+    businessHourId: string,
+    payload: AdminVenueBusinessHourPayload,
+  ): Promise<AdminVenueBusinessHour> {
+    return request<AdminVenueBusinessHour>(
+      `${adminVenuePath(venueId)}/business-hours/${encodeURIComponent(businessHourId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  deleteAdminPublicVenueBusinessHour(
+    venueId: string,
+    businessHourId: string,
+    reason: string,
+  ): Promise<void> {
+    const query = new URLSearchParams({ reason });
+    return request<void>(
+      `${adminVenuePath(venueId)}/business-hours/${encodeURIComponent(businessHourId)}?${query.toString()}`,
+      { method: "DELETE" },
+    );
   },
 };

@@ -440,6 +440,12 @@ export function formatError(error: unknown): string {
       return "A quadra pública precisa de pelo menos um espaço ativo com preço configurado para ser publicada.";
     case "geocoding_required":
       return "Informe o CEP ou as coordenadas da quadra antes de publicar.";
+    case "geocoding_unavailable":
+      return "O serviço de CEP está indisponível agora. Tente novamente ou informe as coordenadas manualmente.";
+    case "invalid_space":
+      return "Modalidade, formato ou preço do espaço inválido. Revise o espaço e tente novamente.";
+    case "platform_organization_missing":
+      return "A organização de quadras públicas não está configurada. Fale com o suporte.";
     case "invalid_sport_icon":
       return "Ícone inválido. Use uma chave ativa do catálogo visual, como icon-sport-futebol-5x5.";
     case "invalid_sport":

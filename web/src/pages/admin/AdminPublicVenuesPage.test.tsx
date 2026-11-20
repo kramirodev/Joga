@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../../components/ui/Toast";
 import { AuthContext } from "../../lib/auth-context";
-import type { AdminPublicVenue } from "../../types";
+import type { AdminPublicVenue, AdminPublicVenueDetail } from "../../types";
 import { AdminPublicVenuesPage } from "./AdminPublicVenuesPage";
 
 const venue: AdminPublicVenue = {
@@ -19,23 +19,28 @@ const venue: AdminPublicVenue = {
   latitude: -22.9068,
   longitude: -43.1729,
   is_public: true,
-  active: true,
+  status: "active",
+  spaces_count: 1,
+};
+
+const venueDetail: AdminPublicVenueDetail = {
+  ...venue,
   spaces: [
     {
       id: "space-1",
       venue_id: "venue-1",
       name: "Quadra 1",
-      sport_slug: "futebol",
+      description: null,
+      is_covered: false,
+      sport_id: "sport-1",
       format_id: "format-1",
-      sport_name: "Futebol",
-      format_name: "Futebol 5x5",
       price_cents: 12_000,
       status: "active",
     },
   ],
 };
 
-const inactiveVenue: AdminPublicVenue = { ...venue, active: false };
+const inactiveVenue: AdminPublicVenue = { ...venue, status: "inactive" };
 
 interface StubOptions {
   venues?: AdminPublicVenue[];
@@ -146,11 +151,19 @@ function stubApi(options: StubOptions = {}): FetchMock {
     }
 
     if (path === "/api/v1/admin/venues" && method === "POST") {
-      return jsonResponse({ ...venue, spaces: [] });
+      return jsonResponse({ ...venue, id: "venue-1", status: "inactive", spaces_count: 0 });
+    }
+
+    if (path === "/api/v1/admin/venues/venue-1" && method === "GET") {
+      return jsonResponse(venueDetail);
     }
 
     if (path === "/api/v1/admin/venues/venue-1" && method === "PATCH") {
       return jsonResponse(venue);
+    }
+
+    if (path === "/api/v1/admin/venues/venue-1/spaces" && method === "GET") {
+      return jsonResponse(venueDetail.spaces);
     }
 
     if (path === "/api/v1/admin/venues/venue-1/spaces" && method === "POST") {
@@ -160,43 +173,70 @@ function stubApi(options: StubOptions = {}): FetchMock {
           options.spaceError.status,
         );
       }
-      return jsonResponse(venue.spaces[0]);
+      return jsonResponse(venueDetail.spaces[0]);
     }
 
     if (path === "/api/v1/admin/venues/venue-1/spaces/space-1" && method === "PATCH") {
-      return jsonResponse(venue.spaces[0]);
+      return jsonResponse(venueDetail.spaces[0]);
     }
 
     if (path === "/api/v1/admin/venues/venue-1/availability" && method === "GET") {
+      return jsonResponse([]);
+    }
+
+    if (path === "/api/v1/admin/venues/venue-1/availability" && method === "POST") {
       return jsonResponse({
-        availability: [{ weekday: 1, start_time: "08:00", end_time: "22:00" }],
+        id: "availability-1",
+        space_id: "space-1",
+        weekday: 1,
+        start_time: "08:00",
+        end_time: "22:00",
+        price_cents: 12_000,
+        slot_minutes: 60,
       });
     }
 
-    if (path === "/api/v1/admin/venues/venue-1/availability" && method === "PUT") {
+    if (path === "/api/v1/admin/venues/venue-1/availability/availability-1" && method === "PATCH") {
       return jsonResponse({
-        availability: [{ weekday: 1, start_time: "08:00", end_time: "22:00" }],
+        id: "availability-1",
+        space_id: "space-1",
+        weekday: 1,
+        start_time: "08:00",
+        end_time: "22:00",
+        price_cents: 12_000,
+        slot_minutes: 60,
       });
+    }
+
+    if (
+      path === "/api/v1/admin/venues/venue-1/availability/availability-1" &&
+      method === "DELETE"
+    ) {
+      return new Response(null, { status: 204 });
     }
 
     if (path === "/api/v1/admin/venues/venue-1/business-hours" && method === "GET") {
-      return jsonResponse({
-        business_hours: [{ weekday: 1, opens_at: "06:00", closes_at: "23:00" }],
-      });
+      return jsonResponse([]);
     }
 
-    if (path === "/api/v1/admin/venues/venue-1/business-hours" && method === "PUT") {
-      return jsonResponse({
-        business_hours: [{ weekday: 1, opens_at: "06:00", closes_at: "23:00" }],
-      });
+    if (path === "/api/v1/admin/venues/venue-1/business-hours" && method === "POST") {
+      return jsonResponse({ id: "hours-1", weekday: 1, opens_at: "06:00", closes_at: "23:00" });
+    }
+
+    if (path === "/api/v1/admin/venues/venue-1/business-hours/hours-1" && method === "PATCH") {
+      return jsonResponse({ id: "hours-1", weekday: 1, opens_at: "06:00", closes_at: "23:00" });
+    }
+
+    if (path === "/api/v1/admin/venues/venue-1/business-hours/hours-1" && method === "DELETE") {
+      return new Response(null, { status: 204 });
     }
 
     if (path.endsWith("/activate") && method === "POST") {
-      return jsonResponse({ ...venue, active: true });
+      return jsonResponse({ ...venue, status: "active" });
     }
 
     if (path.endsWith("/deactivate") && method === "POST") {
-      return jsonResponse({ ...venue, active: false });
+      return jsonResponse({ ...venue, status: "inactive" });
     }
 
     return jsonResponse({ detail: { code: "not_found" } }, 404);
@@ -260,7 +300,7 @@ async function fillSpace(
   await user.click(screen.getByRole("tab", { name: "2. Espaços" }));
   await screen.findByRole("option", { name: "Futebol" });
   await user.type(screen.getByLabelText("Nome do espaço"), "Quadra Central");
-  await user.selectOptions(screen.getByLabelText("Modalidade"), "futebol");
+  await user.selectOptions(screen.getByLabelText("Modalidade"), "sport-1");
   await user.selectOptions(screen.getByLabelText("Formato"), "format-1");
   await user.type(screen.getByLabelText("Preço do espaço"), "120,00");
   if (options.active === false) {
@@ -401,7 +441,7 @@ describe("AdminPublicVenuesPage", () => {
     const spaceCall = await waitForCall(fetchMock, "POST", "/api/v1/admin/venues/venue-1/spaces");
     expect(spaceCall.body).toMatchObject({
       name: "Quadra Central",
-      sport_slug: "futebol",
+      sport_id: "sport-1",
       format_id: "format-1",
       price_cents: 12_000,
       status: "active",
@@ -410,16 +450,28 @@ describe("AdminPublicVenuesPage", () => {
 
     const availabilityCall = await waitForCall(
       fetchMock,
-      "PUT",
+      "POST",
       "/api/v1/admin/venues/venue-1/availability",
     );
-    expect(availabilityCall.body?.reason).toBe("Abertura de quadra pública");
+    expect(availabilityCall.body).toMatchObject({
+      space_id: "space-1",
+      weekday: 1,
+      start_time: "08:00",
+      end_time: "22:00",
+      price_cents: 12_000,
+      reason: "Abertura de quadra pública",
+    });
     const hoursCall = await waitForCall(
       fetchMock,
-      "PUT",
+      "POST",
       "/api/v1/admin/venues/venue-1/business-hours",
     );
-    expect(hoursCall.body?.reason).toBe("Abertura de quadra pública");
+    expect(hoursCall.body).toMatchObject({
+      weekday: 1,
+      opens_at: "06:00",
+      closes_at: "23:00",
+      reason: "Abertura de quadra pública",
+    });
     const activateCall = await waitForCall(
       fetchMock,
       "POST",

@@ -601,29 +601,37 @@ export interface AdminPublicVenueSpace {
   id: string;
   venue_id: string;
   name: string;
-  sport_slug: string;
-  format_id: string;
-  sport_name?: string;
-  format_name?: string;
-  price_cents: number;
+  description: string | null;
+  is_covered: boolean;
+  sport_id: string | null;
+  format_id: string | null;
+  price_cents: number | null;
   status: "active" | "inactive";
-  in_use?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface AdminPublicVenue {
   id: string;
+  organization_id?: string;
   name: string;
-  city: string;
-  state: string;
-  address_line: string;
+  city: string | null;
+  state: string | null;
+  address_line: string | null;
   postal_code: string | null;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
+  geocoding_source?: string | null;
+  geocoding_precision?: string | null;
   is_public: boolean;
-  active: boolean;
-  spaces: AdminPublicVenueSpace[];
+  status: "active" | "inactive" | string;
+  spaces_count: number;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface AdminPublicVenueDetail extends AdminPublicVenue {
+  spaces: AdminPublicVenueSpace[];
 }
 
 export interface AdminPublicVenueListResponse {
@@ -659,7 +667,9 @@ export interface AdminPublicVenueUpdatePayload {
 
 export interface AdminPublicVenueSpacePayload {
   name: string;
-  sport_slug: string;
+  description?: string | null;
+  is_covered?: boolean;
+  sport_id: string;
   format_id: string;
   price_cents: number;
   status: "active" | "inactive";
@@ -667,23 +677,37 @@ export interface AdminPublicVenueSpacePayload {
 }
 
 export interface AdminVenueAvailability {
+  id: string;
+  space_id: string;
   weekday: number;
   start_time: string;
   end_time: string;
+  price_cents: number;
+  slot_minutes: number;
 }
 
-export interface AdminVenueAvailabilityResponse {
-  availability: AdminVenueAvailability[];
+export interface AdminVenueAvailabilityPayload {
+  space_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  price_cents: number;
+  slot_minutes?: number;
+  reason: string;
 }
 
 export interface AdminVenueBusinessHour {
+  id: string;
   weekday: number;
   opens_at: string;
   closes_at: string;
 }
 
-export interface AdminVenueBusinessHoursResponse {
-  business_hours: AdminVenueBusinessHour[];
+export interface AdminVenueBusinessHourPayload {
+  weekday: number;
+  opens_at: string;
+  closes_at: string;
+  reason: string;
 }
 
 export interface ChallengeResponse {
