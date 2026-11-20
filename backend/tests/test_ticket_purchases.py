@@ -39,6 +39,7 @@ def production_settings() -> Settings:
         mercado_pago_access_token="mp-access-token",
         mercado_pago_webhook_secret="mp-webhook-secret",
         mercado_pago_notification_url="https://api.joga.example/payments/mercadopago/webhook",
+        web_cookie_secure=True,
         **cpf_key_kwargs(),
     )
 

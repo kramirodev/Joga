@@ -106,7 +106,8 @@ class Settings(BaseSettings):
     refresh_idle_ttl_days: int = Field(default=7, ge=1, le=90)
 
     # Painel web: refresh em cookie HttpOnly e CSRF em cookie legível.
-    # Em produção, JOGA_WEB_COOKIE_SECURE deve ser true (HTTPS).
+    # Fora do ambiente local, JOGA_WEB_COOKIE_SECURE deve ser true: o boot
+    # falha se o cookie de sessão puder trafegar sem Secure.
     web_cookie_secure: bool = False
 
     # WebAuthn/passkeys. A origem Android é derivada do certificado de debug da
@@ -385,6 +386,18 @@ class Settings(BaseSettings):
         for name, (value, default) in secrets.items():
             if value == default:
                 raise ValueError(f"{name} deve ser definido fora do ambiente local")
+
+    @model_validator(mode="after")
+    def validate_web_cookie_secure(self) -> Self:
+        """Recusa boot com cookie de sessão sem ``Secure`` fora do local.
+
+        Em local/teste o painel roda em HTTP e o cookie sem ``Secure`` é
+        aceitável. Fora disso, depender de alguém lembrar da variável é frágil:
+        o boot falha em vez de emitir um refresh token interceptável.
+        """
+        if not is_local(self.environment) and not self.web_cookie_secure:
+            raise ValueError("JOGA_WEB_COOKIE_SECURE=true é obrigatório fora do ambiente local")
+        return self
 
     @model_validator(mode="after")
     def validate_cpf_key(self) -> Self:
