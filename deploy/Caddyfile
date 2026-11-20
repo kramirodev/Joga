@@ -12,6 +12,29 @@
 # Nunca coloque a senha em claro neste arquivo ou no Git.
 
 :{$PORT} {
+	# TLS termina na borda do Render: o processo recebe HTTP e a borda envia
+	# X-Forwarded-Proto. HSTS só sai quando a requisição original foi HTTPS.
+	# Um HSTS enviado em HTTP seria ignorado pelo navegador; a condição evita
+	# anunciar HTTPS em um host que não o oferece.
+	@https header X-Forwarded-Proto https
+	header @https {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# Headers de segurança em todas as respostas (SPA, API e assetlinks).
+	# ``?`` só define quando a resposta ainda não trouxe o header: a API já
+	# envia nosniff/referrer-policy em todas as respostas, e repetir o valor no
+	# proxy criaria headers duplicados. A CSP repete e amplia o <meta> do SPA:
+	# adiciona frame-ancestors, que não funciona em meta. O painel não usa
+	# câmera, microfone nem geolocalização.
+	header {
+		?X-Content-Type-Options "nosniff"
+		?Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self'"
+	}
+
 	# Android Digital Asset Links: precisa ser aberto e sem basic auth para o
 	# Credential Manager verificar o app. Expoe somente este arquivo estatico.
 	handle /.well-known/assetlinks.json {

@@ -75,7 +75,7 @@
 | Cobrança dupla Pix + crédito | Pagar a vaga por Pix e depois quitá-la com crédito | — | P0: bloquear quitação se a vaga já estiver paga |
 | Perda de crédito no T3 | Expirar reserva sem devolver crédito consumido | — | P0: devolver no T3 |
 | Abuso de identidade visual | Foto de terceiro, ícone de perfil ofensivo, impersonação | sem fotos de pessoas; identidade de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
-| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, CSP estrita no build | `JOGA_WEB_COOKIE_SECURE` sem validação obrigatória no boot; `frame-ancestors`/HSTS na hospedagem; revisão dedicada de XSS pendente |
+| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, CSP estrita no build e no header do Caddy, `frame-ancestors 'none'`, HSTS condicional | `JOGA_WEB_COOKIE_SECURE` sem validação obrigatória no boot; revisão dedicada de XSS pendente |
 
 ## Controles transversais
 
@@ -137,6 +137,40 @@ custo de banco; necessidade de catálogo público sem autenticação; incidente 
 abuso; ou mudança para cache com invalidação explícita. Nesse caso, criar
 allowlist de paths públicos, TTL curto e teste de invalidação.
 
+## Superfície pública intencional (2026-11-20)
+
+Rotas sem sessão autenticada. Qualquer inclusão fora desta lista é regressão e
+deve ser justificada em ADR e coberta por teste.
+
+| Rota | Controle compensatório | Motivo |
+|---|---|---|
+| `GET /api/v1/health/live` e `/ready` | sem PII; `ready` não expõe detalhe de conexão | monitores e health check do Render não enviam credencial |
+| `GET /api/v1/app-config` | somente versão/URL de atualização e flag de demo | app consulta antes do login para se atualizar (ADR 0051) |
+| `GET /api/v1/legal/terms/current` | devolve apenas a versão aprovada vigente | termos precisam ser lidos antes do cadastro |
+| `GET /api/v1/catalog/sports` e `/catalog/visual` | catálogo fechado, somente leitura, sem MMR ou dados de terceiros | identidade visual e esportes exibidos antes do login |
+| `POST /api/v1/auth/*` (challenges, verify, registration, login, refresh, passkeys) | OTP/passkey, cooldown, rate limit, uso único, hash de token | criam ou renovam a própria sessão |
+| `POST /api/v1/auth/email/*` (code, verify, register, login, password/reset) | OTP por e-mail, limite por endereço/IP, cooldown, orçamento diário | cadastro/login por e-mail (ADR 0050) |
+| `POST /api/v1/auth/web/*` (registration, login, refresh, logout) | cookie `HttpOnly`/`SameSite=Strict`, CSRF de duplo envio, rate limit | sessão do painel web |
+| `POST /api/v1/payments/mercadopago/webhook` | assinatura HMAC, consulta server-to-server, idempotência | callback do PSP (sem sessão do jogador) |
+| `GET /.well-known/assetlinks.json` | somente o arquivo estático; nenhum diretório listado | Digital Asset Links do Android |
+
+**Docs e schema desligados fora de local:** `docs_url`, `openapi_url` e
+`redoc_url` do FastAPI são `None` quando `environment` não é local/teste
+(`app.main` usa `is_local` de `app.core.environments`). Fora de local,
+`/api/docs`, `/api/openapi.json` e `/redoc` respondem 404; em local/teste
+continuam disponíveis. O objeto `app.openapi()` ainda pode ser gerado
+internamente (testes e ferramentas), mas não é servido por HTTP.
+
+**Headers de borda:** o `deploy/Caddyfile` envia `X-Content-Type-Options:
+nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
+`Permissions-Policy` (câmera, microfone e geolocalização desligados) e CSP com
+`frame-ancestors 'none'` em todas as respostas. HSTS
+(`max-age=31536000; includeSubDomains`) só é enviado quando
+`X-Forwarded-Proto: https`, porque o TLS termina na borda do Render e o
+processo recebe HTTP. O middleware da API mantém `no-store`, `nosniff` e
+`no-referrer`, inclusive em respostas 500 não tratadas, que também carregam
+`X-Request-ID` e corpo genérico `internal_error`.
+
 ## Riscos residuais e bloqueios
 
 - **Alto:** revisão LGPD/jurídica definitiva ainda não feita.
@@ -144,7 +178,7 @@ allowlist de paths públicos, TTL curto e teste de invalidação.
 - **Médio:** rate limiting global/borda e proteção contra abuso distribuído incompletos.
 - **Médio:** Redis/fan-out multi-processo e múltiplas instâncias não implementados.
 - **Médio:** push real e SMS dependem de provedor/credenciais.
-- **Médio:** cabeçalhos de segurança da hospedagem do painel (`frame-ancestors`, HSTS, `Permissions-Policy`) ainda não configurados; `JOGA_WEB_COOKIE_SECURE` não tem validação obrigatória no boot.
+- **Médio:** HSTS, CSP de header, `frame-ancestors` e `Permissions-Policy` agora saem do Caddy; `JOGA_WEB_COOKIE_SECURE` continua sem validação obrigatória no boot.
 - **Médio:** moderação de chat e denúncias têm backend/painel, mas o classificador local e a suspensão permanente não existem.
 - **Médio:** catálogo de identidade por ícones e moderação de nome/ícone de perfil pendentes.
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pendentes.
