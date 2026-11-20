@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.environments import is_demo, is_local
 from app.modules.bookings.models import (
     TERMINAL_BOOKING_STATUSES,
     Booking,
@@ -79,7 +80,6 @@ from app.modules.venues.models import (
     VenueSport,
 )
 
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 SPACE_BLOCKING_STATUSES = frozenset(
     {"HOLD_CONFIRMED", "PAYMENT_PENDING", "SUBSTITUTING", "CONFIRMED"}
 )
@@ -605,7 +605,8 @@ class BookingService:
         actor_user_id: uuid.UUID,
         booking_id: uuid.UUID,
     ) -> BookingBundle:
-        if get_settings().environment.lower() not in LOCAL_ENVIRONMENTS:
+        environment = get_settings().environment
+        if not (is_local(environment) or is_demo(environment)):
             raise BookingForbidden
         booking = self._lock_booking(booking_id)
         if booking.status == "CONFIRMED":

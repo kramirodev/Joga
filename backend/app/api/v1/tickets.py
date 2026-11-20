@@ -17,6 +17,7 @@ from app.api.v1.auth_guards import require_ticket_purchase_enabled
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.api.v1.request_context import request_ip_hash, request_user_agent_hash
 from app.core.config import Settings, get_settings
+from app.core.environments import is_local
 from app.infrastructure.database.dependency import get_session
 from app.modules.idempotency import service as idempotency
 from app.modules.identity.sessions import AuthenticatedSession
@@ -51,8 +52,6 @@ from app.modules.tickets.service import (
 router = APIRouter(prefix="/me/tickets", tags=["tickets"])
 
 logger = logging.getLogger("joga.tickets.api")
-
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
 
 class TicketEntryView(BaseModel):
@@ -372,7 +371,7 @@ def confirm_ticket_purchase(
 ) -> PurchaseView:
     """Confirma o pagamento em ambiente local, sem PSP. Só para desenvolvimento."""
 
-    if settings.environment.lower() not in LOCAL_ENVIRONMENTS:
+    if not is_local(settings.environment):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "confirmation_requires_psp"},

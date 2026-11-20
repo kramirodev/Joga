@@ -20,6 +20,7 @@ from app.modules.organizations.models import (
 from app.modules.organizations.permissions import Role
 from app.modules.venues.models import VenueAvailability, VenueSpace
 from tests.helpers_results import make_format, make_token, make_user
+from tests.settings_helpers import demo_settings, production_settings
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
@@ -205,6 +206,61 @@ def test_happy_path_t1_t2_t3(
     assert body["status"] == "CONFIRMED"
     assert body["hold"]["status"] == "RELEASED"
     assert {item["payment_status"] for item in body["participants"]} == {"PAID"}
+
+
+def _accepted_booking(api: TestClient, context: dict) -> dict:
+    booking = create_booking(api, context, context["lobbies"][0])
+    confirm_all(api, context, booking["id"])
+    accepted = api.post(
+        f"/api/v1/organizations/{context['organization'].id}/bookings/{booking['id']}/accept",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert accepted.status_code == 200, accepted.text
+    return accepted.json()
+
+
+def test_simulated_payment_is_allowed_in_demo_for_participant(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _accepted_booking(api, context)
+    monkeypatch.setattr("app.modules.bookings.service.get_settings", demo_settings)
+
+    paid = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert paid.status_code == 200, paid.text
+    assert paid.json()["payments"][0]["status"] == "PAID"
+
+    outsider = make_user(db_session)
+    forbidden = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(make_token(db_session, outsider)),
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json() == {"detail": {"code": "forbidden"}}
+
+
+def test_simulated_payment_is_forbidden_in_production(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _accepted_booking(api, context)
+    monkeypatch.setattr("app.modules.bookings.service.get_settings", production_settings)
+
+    response = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(context["tokens"][0]),
+    )
+    assert response.status_code == 403
+    assert response.json() == {"detail": {"code": "forbidden"}}
 
 
 def test_accept_before_confirmation_and_payment_before_accept_are_rejected(

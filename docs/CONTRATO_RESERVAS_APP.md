@@ -1454,6 +1454,36 @@ DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
 | `platform_organization_missing` | 503 | Seed da organização da plataforma ausente |
 | `forbidden` | 403 | Sem `platform.admin` ou sem vínculo exigido |
 | `invalid_token` | 401 | Sessão ausente/expirada/revogada |
+| `webhook_disabled` | 404 | Webhook do Mercado Pago recebido no ambiente demo |
 
 `reason` ausente no corpo é `422 validation_error`; `reason` apenas com espaços
 é `422 reason_required`.
+
+## 22. Modo demonstração sem PSP (v2026-11-20)
+
+`GET /api/v1/app-config` passa a devolver o campo aditivo `demo_mode`:
+
+```json
+{
+  "min_supported_version": "1.0.1",
+  "latest_version": "1.0.1",
+  "update_url": null,
+  "version_gate_enabled": true,
+  "update_required": false,
+  "demo_mode": true
+}
+```
+
+- `demo_mode` é `true` somente com `JOGA_ENVIRONMENT=demo`; local/teste e
+  produção devolvem `false`.
+- No demo, o PSP é sempre o simulador e `JOGA_MONEY_MODE=simulated`; nenhuma
+  chamada de rede ao Mercado Pago é feita.
+- `POST /api/v1/bookings/{id}/payments/simulate` libera apenas participante
+  ativo do próprio booking; qualquer outro usuário recebe `403 forbidden`.
+- `POST /api/v1/me/pass/subscriptions/{id}/confirm` libera apenas o dono da
+  assinatura; produção continua `403 confirmation_requires_psp`.
+- `POST /api/v1/payments/mercadopago/webhook` responde
+  `404 webhook_disabled` e não persiste evento.
+- A compra de tickets continua desligada por flag (`503
+  ticket_purchase_disabled`) e não há dinheiro real, repasse, custódia ou
+  NFS-e no demo.

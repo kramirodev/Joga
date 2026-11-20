@@ -438,11 +438,31 @@ A entrega é feita por workflows agendados fora do web service:
 - `.github/workflows/email-cleanup.yml`: `17 3 * * *` (1x/dia) chama
   `python -m scripts.cleanup_email --outbox-hours 1 --delivery-days 90`.
 
-**Perfil do demo.** Os workflows usam `JOGA_ENVIRONMENT=development` e
-`JOGA_PSP_PROVIDER=simulator` por padrão, sem credenciais de Mercado Pago. O
-demo não tem PSP real; o boot em `production` exigiria token, webhook e URL
-HTTPS e falharia antes de drenar a fila. Para um ambiente com PSP real, defina
-as repository variables `JOGA_ENVIRONMENT=production` e
+**Perfil do demo (`JOGA_ENVIRONMENT=demo`).** O demo não tem PSP real. O boot
+exige as guardas abaixo e falha se qualquer uma estiver fora do esperado:
+
+```text
+JOGA_ENVIRONMENT=demo
+JOGA_PSP_PROVIDER=simulator
+JOGA_MONEY_MODE=simulated
+JOGA_TICKET_PURCHASE_ENABLED=false
+JOGA_PHONE_HASH_SECRET=<segredo próprio do demo>
+JOGA_TOKEN_HASH_SECRET=<segredo próprio do demo>
+JOGA_CPF_KEY=<32 bytes em base64>
+JOGA_CPF_KEY_ID=demo-v1
+```
+
+Não é preciso definir `JOGA_MERCADO_PAGO_ACCESS_TOKEN`,
+`JOGA_MERCADO_PAGO_WEBHOOK_SECRET` nem `JOGA_MERCADO_PAGO_NOTIFICATION_URL`.
+O webhook do Mercado Pago responde `404 webhook_disabled` e não grava evento.
+`JOGA_DEV_FIXED_OTP` é recusado. Compra de tickets continua desligada. Ver
+`docs/ADR/0053-modo-demo-sem-psp.md`.
+
+Os workflows atuais ainda usam `JOGA_ENVIRONMENT=development` e
+`JOGA_PSP_PROVIDER=simulator`. A migração para `JOGA_ENVIRONMENT=demo` é
+aplicada pelo agente de infraestrutura com o checklist acima; até lá, o demo
+não tem as guardas server-side do modo demo. Para um ambiente com PSP real,
+defina as repository variables `JOGA_ENVIRONMENT=production` e
 `JOGA_PSP_PROVIDER=mercadopago` e configure os secrets do PSP (ver abaixo).
 
 Secrets do worker: `JOGA_DATABASE_URL`, `JOGA_EMAIL_API_KEY` e

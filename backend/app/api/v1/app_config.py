@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.core.client_version import update_required_for
 from app.core.config import Settings, get_settings
+from app.core.environments import is_demo
 
 router = APIRouter(prefix="/app-config", tags=["app-config"])
 
@@ -27,6 +28,7 @@ class AppConfigView(BaseModel):
     update_url: str | None
     version_gate_enabled: bool
     update_required: bool
+    demo_mode: bool
 
 
 @router.get("", response_model=AppConfigView)
@@ -41,6 +43,7 @@ def read_app_config(
         update_url=settings.app_update_url,
         version_gate_enabled=settings.app_version_gate_enabled,
         update_required=update_required_for(request, settings),
+        demo_mode=is_demo(settings.environment),
     )
 
 

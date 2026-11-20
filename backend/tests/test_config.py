@@ -1,12 +1,17 @@
 """Testes de configuração e da verificação de banco."""
 
+from datetime import date
+
 import pytest
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import create_engine
 
-from app.core.config import DEFAULT_PHONE_HASH_SECRET, Settings
+from app.core.config import DEFAULT_PHONE_HASH_SECRET, DEFAULT_TOKEN_HASH_SECRET, Settings
+from app.core.environments import is_demo, is_local, is_production
 from app.infrastructure.database.engine import Database
+from app.modules.payments.adapter import SimulatorPspAdapter, build_psp_adapter
 from tests.compliance_helpers import cpf_key_kwargs
+from tests.settings_helpers import demo_settings
 
 
 def production_psp_kwargs(**overrides: object) -> dict[str, object]:
@@ -102,6 +107,76 @@ def test_local_keeps_simulator_default_without_webhook_secret() -> None:
 
     assert settings.psp_provider == "simulator"
     assert settings.mercado_pago_webhook_secret is None
+
+
+def test_environment_helpers_classify_local_demo_and_production() -> None:
+    assert is_local("local")
+    assert is_local("test")
+    assert is_local("development")
+    assert is_local("ci")
+    assert is_demo("demo")
+    assert is_production("production")
+    assert is_production("staging")
+    assert not is_production("demo")
+    assert not is_production("local")
+
+
+def test_demo_boots_with_simulator_without_mercadopago() -> None:
+    settings = demo_settings()
+
+    assert settings.environment == "demo"
+    assert settings.psp_provider == "simulator"
+    assert settings.money_mode == "simulated"
+    assert settings.ticket_purchase_enabled is False
+    assert settings.mercado_pago_access_token is None
+    assert settings.mercado_pago_webhook_secret is None
+    assert settings.mercado_pago_notification_url is None
+    assert isinstance(build_psp_adapter(settings), SimulatorPspAdapter)
+
+
+def test_demo_rejects_ticket_purchase() -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(ticket_purchase_enabled=True)
+
+
+def test_demo_rejects_mercadopago() -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(
+            psp_provider="mercadopago",
+            mercado_pago_access_token=SecretStr("mp-access-token"),
+        )
+
+
+def test_demo_rejects_real_money_mode() -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(
+            money_mode="real",
+            legal_approval_ref="parecer",
+            legal_approval_sha256="a" * 64,
+            legal_approval_date=date.today(),
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"phone_hash_secret": DEFAULT_PHONE_HASH_SECRET},
+        {"token_hash_secret": DEFAULT_TOKEN_HASH_SECRET},
+    ],
+)
+def test_demo_rejects_default_hash_secrets(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(**overrides)
+
+
+def test_demo_rejects_fixed_development_otp() -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(dev_fixed_otp="123456")
+
+
+def test_demo_requires_cpf_key() -> None:
+    with pytest.raises(ValidationError):
+        demo_settings(cpf_key=None, cpf_key_id=None)
 
 
 def test_database_check_runs_trivial_query() -> None:

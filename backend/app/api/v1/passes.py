@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_session
 from app.api.v1.payment_views import PurchasePaymentView, purchase_payment_view
 from app.core.config import Settings, get_settings
+from app.core.environments import is_demo, is_local
 from app.infrastructure.database.dependency import get_session
 from app.modules.idempotency import service as idempotency
 from app.modules.identity.clock import utcnow
@@ -46,8 +47,6 @@ from app.modules.payments.purchase import (
 )
 
 router = APIRouter(prefix="/me/pass", tags=["pass"])
-
-LOCAL_ENVIRONMENTS = frozenset({"local", "test", "development", "ci"})
 
 
 class PassPlanView(BaseModel):
@@ -299,9 +298,9 @@ def confirm_subscription(
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PassSubscriptionView:
-    """Ativa sem PSP em ambiente local. Em produção exige webhook ou sync."""
+    """Ativa sem PSP em ambiente local ou demo. Em produção exige webhook ou sync."""
 
-    if settings.environment.lower() not in LOCAL_ENVIRONMENTS:
+    if not (is_local(settings.environment) or is_demo(settings.environment)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "confirmation_requires_psp"},
