@@ -196,6 +196,37 @@ class MatchmakingService:
             )
         )
 
+    def matched_entries(self, user_id: uuid.UUID) -> list[QueueEntry]:
+        """Entradas pareadas cujo lobby continua agendado.
+
+        Só entram as ``matched`` ligadas a um lobby ``scheduled``: partidas
+        ``cancelled``/``completed`` são histórico e não devem reaparecer como
+        "partida encontrada" no app. Entrada ``matched`` sem ``lobby_id`` também
+        é excluída — é um estado inconsistente, não uma partida encontrável.
+        Ordem: ``matched_at`` decrescente, com ``created_at``/``id`` como
+        desempate.
+
+        Não há filtro por ``expires_at``: esse prazo governa apenas a
+        permanência na fila ``waiting``; depois do pareamento, o ciclo de vida é
+        do lobby e o horário combinado pode ser posterior ao TTL da entrada.
+        """
+        return list(
+            self._session.scalars(
+                select(QueueEntry)
+                .join(Lobby, Lobby.id == QueueEntry.lobby_id)
+                .where(
+                    QueueEntry.user_id == user_id,
+                    QueueEntry.status == "matched",
+                    Lobby.status == "scheduled",
+                )
+                .order_by(
+                    QueueEntry.matched_at.desc().nulls_last(),
+                    QueueEntry.created_at.desc(),
+                    QueueEntry.id,
+                )
+            )
+        )
+
     def replace(
         self,
         user_id: uuid.UUID,
