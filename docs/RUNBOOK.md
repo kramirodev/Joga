@@ -198,6 +198,75 @@ Set-Location C:\prog\joga\backend
 
 Nova migração: `.venv\Scripts\python.exe -m alembic revision -m "descricao"` e revisão manual do arquivo. Toda alteração de schema passa por migração; não editar o banco manualmente. A migração baseline `af763231ef2f` é intencionalmente vazia; `3c9d51a7e2b4`, `d4a7f2c9e610` e `a7c3e9f2b415` criam identidade, access/recibo e desafios de passkey; `b8d2f4a6c910` cria catálogo, perfil, disponibilidade, região e locais (com seeds `futebol-5x5` e `volei-6x6`); `c5e1a7d3f208` cria fila, lobbies, participantes e rodadas; `d7f2b9c4e615` cria partidas, participantes e transições; `e1a4c7d9b230` cria resultados, disputas, capitão e idempotência; `f2b5d8e1a7c3` cria contadores de rate limiting.
 
+### Reparo do catálogo visual em bancos antigos
+
+A revisão `a0b1c2d3e4f5` passou a apontar para `z9c0d1e2f3a4`. Um banco que
+aplicou `a0b1c2d3e4f5` **antes** de `z9c0d1e2f3a4` existir avança para
+`b1c2d3e4f5a6` sem criar os objetos de `z9`: o Alembic não reaplica uma revisão
+ancestral retroativamente. O sintoma é `500` em `/api/v1/catalog/sports`,
+`/api/v1/catalog/visual` e `/api/v1/sports`, com `alembic_version` em
+`b1c2d3e4f5a6`.
+
+A revisão de reparo `c1d2e3f4a5b6` roda depois de `b1c2d3e4f5a6` e é aditiva e
+idempotente: cria somente o que falta (colunas, constraints, índices, tabelas e
+seeds de `z9`) e não apaga dados. Em banco novo ela não altera nada. O downgrade
+é intencionalmente no-op; não use `alembic downgrade` como rollback desse
+reparo.
+
+Diagnóstico somente de leitura (o resultado deve ser `t` para tudo depois do
+reparo):
+
+```sql
+SELECT version_num FROM alembic_version;
+SELECT to_regclass('visual_catalog_items') IS NOT NULL AS tem_catalogo,
+       to_regclass('user_visual_identity') IS NOT NULL AS tem_identidade,
+       to_regclass('user_visual_unlocks') IS NOT NULL AS tem_unlocks;
+SELECT count(*) AS colunas_z9
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+  AND ((table_name = 'sports' AND column_name IN ('icon_key', 'sort_order'))
+    OR (table_name = 'sport_formats'
+        AND column_name IN ('players_per_team', 'period_count', 'score_model', 'positions')));
+SELECT count(*) AS itens_catalogo FROM visual_catalog_items;
+SELECT count(*) AS seed_futevolei FROM sports WHERE slug = 'futevolei';
+```
+
+Procedimento no demo (requer autorização explícita para o deploy):
+
+1. Faça um backup recuperável do banco (snapshot do Supabase ou `pg_dump`)
+   antes de qualquer alteração.
+2. Faça o deploy do commit que contém `c1d2e3f4a5b6`. O `deploy/start.sh` roda
+   `alembic upgrade head` com três tentativas no boot.
+3. Confirme a cabeça e o schema:
+
+   ```powershell
+   Set-Location C:\prog\joga\backend
+   $env:JOGA_DATABASE_URL = "postgresql+psycopg://<usuario>:<senha>@<host>:5432/postgres?sslmode=require"
+   .venv\Scripts\python.exe -m alembic current
+   .venv\Scripts\python.exe -m alembic check
+   ```
+
+   `current` deve mostrar `c1d2e3f4a5b6 (head)` e `check` deve retornar
+   “No new upgrade operations detected”.
+
+4. Verifique os endpoints públicos: `/api/v1/health/ready`,
+   `/api/v1/catalog/sports`, `/api/v1/catalog/visual` e `/api/v1/sports` devem
+   responder `200`.
+5. Repita o `upgrade head` ou rode o deploy novamente para confirmar que o
+   reparo é repetível; não deve haver erro nem duplicação de seeds.
+
+Reprodução local em PostgreSQL descartável:
+
+```powershell
+Set-Location C:\prog\joga\backend
+$env:JOGA_TEST_DATABASE_URL = "postgresql+psycopg://joga:joga@127.0.0.1:5434/joga"
+.venv\Scripts\python.exe -m pytest -q -o addopts="" tests\test_catalog_migration.py
+```
+
+O teste `test_repair_migration_heals_legacy_database` recria o estado antigo
+(schema em `b1c2d3e4f5a6` sem `z9`), aplica o reparo, valida `alembic check`, os
+três endpoints `200`, o downgrade no-op e a reexecução sobre schema parcial.
+
 ### Verificações do backend
 
 ```powershell
