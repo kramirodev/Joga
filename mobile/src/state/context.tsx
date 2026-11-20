@@ -37,6 +37,12 @@ export type ThemeValue = {
   fontScale: number;
   largeTargets: boolean;
   /**
+   * Preferência efetiva de movimento: a interna (`accessibility.reducedMotion`)
+   * combinada com `AccessibilityInfo.isReduceMotionEnabled()`. Publicada pelo
+   * `Shell` para que qualquer componente saiba se pode animar.
+   */
+  reducedMotion: boolean;
+  /**
    * Espaço que o conteúdo precisa reservar no rodapé para não ficar sob a barra
    * de navegação do sistema. Calculado uma única vez no `Shell`:
    * `0` quando a tab bar está visível (ela já consome o inset) e
@@ -52,6 +58,7 @@ export const ThemeContext = createContext<ThemeValue>({
   setDark: () => undefined,
   fontScale: 1,
   largeTargets: false,
+  reducedMotion: false,
   contentBottomInset: 0,
 });
 

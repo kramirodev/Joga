@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { AccessibilityInfo, Animated, View } from 'react-native';
 
 import { describeApiError, ApiError } from '../api/client';
 import type { QueueEntry, QueueLevel, QueueMode, Sport } from '../api/types';
@@ -27,6 +27,7 @@ import {
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { divisionLabel, elapsed, timeOnly, WEEKDAY_NAMES } from '../ui/datetime';
+import { Appear } from '../ui/Appear';
 import {
   Badge,
   Btn,
@@ -42,6 +43,8 @@ import {
   TextBtn,
   Txt,
 } from '../ui/kit';
+import { duration, easing, motionDuration, useReducedMotion } from '../ui/motion';
+import { PulseDot } from '../ui/PulseDot';
 import { Text } from '../ui/text';
 
 const COURT_OPTIONS = ['Públicas', 'Particulares', 'Tanto faz'] as const;
@@ -169,6 +172,7 @@ function SportConfigCard({
 
 export function QueueScreen() {
   const nav = useNav();
+  const { palette } = useTheme();
   const {
     catalog,
     profile,
@@ -489,6 +493,32 @@ export function QueueScreen() {
     setStep(2);
   }, [selection]);
 
+  const reduceMotion = useReducedMotion();
+  const [listOpacity] = useState(() => new Animated.Value(1));
+  const confirmedSignature = useMemo(
+    () => `${queue.map((entry) => entry.id).join('|')}|${matchedEntry?.id ?? ''}`,
+    [matchedEntry?.id, queue],
+  );
+  const signatureRef = useRef(confirmedSignature);
+
+  // A lista confirmada só muda depois do 2xx do PUT ou de um GET. Durante a
+  // chamada ela permanece visível e esmaecida; ao confirmar, volta em 180 ms.
+  useEffect(() => {
+    const changed = signatureRef.current !== confirmedSignature;
+    signatureRef.current = confirmedSignature;
+    if (changed && !busy) {
+      listOpacity.setValue(0.6);
+    }
+    const animation = Animated.timing(listOpacity, {
+      toValue: busy ? 0.55 : 1,
+      duration: motionDuration(duration.base, reduceMotion),
+      easing: easing.standard,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [busy, confirmedSignature, listOpacity, reduceMotion]);
+
   const submit = useCallback(async () => {
     if (busyRef.current) {
       return;
@@ -517,6 +547,9 @@ export function QueueScreen() {
       if (result.ok) {
         touched.current = false;
         queueDraft = null;
+        AccessibilityInfo.announceForAccessibility(
+          hasConfirmed ? 'Busca atualizada.' : 'Busca iniciada.',
+        );
         if (nav.params.from === 'queue-search') {
           nav.back();
         } else {
@@ -532,7 +565,7 @@ export function QueueScreen() {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [clearQueueNotice, court, nav, payloadLevels, replaceQueue, selection, session]);
+  }, [clearQueueNotice, court, hasConfirmed, nav, payloadLevels, replaceQueue, selection, session]);
 
   useActiveInterval(() => setNow(new Date()), 1000, showOverview && queue.length > 0);
 
@@ -559,42 +592,48 @@ export function QueueScreen() {
             <TextBtn onPress={() => void reloadQueue()}>Tentar novamente</TextBtn>
           </View>
         ) : null}
-        <Card tone="blue">
-          <Row between>
-            <Txt variant="label">Buscas ativas</Txt>
-            <Badge>{queue.length}</Badge>
-          </Row>
-          <Txt variant="h2" style={{ marginTop: 4 }}>
-            {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
-          </Txt>
-          {queue.length > 0 ? (
-            <View style={{ marginTop: 8, gap: 4 }}>
-              {queue.map((entry) => (
-                <Txt key={entry.id} variant="tiny">
-                  {formatName(catalog, entry.format_id)} · {modeLabel(entryMode(entry))}
-                  {isQueueLevel(entry.level) ? ` · ${levelLabel(entry.level)}` : ''}
-                </Txt>
-              ))}
-            </View>
-          ) : null}
-          {oldest ? (
-            <Txt variant="tiny" style={{ marginTop: 4 }}>
-              Mais antiga: {elapsed(oldest, now)}
+        <Animated.View style={{ opacity: listOpacity }}>
+          <Card tone="blue">
+            <Row between>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />
+                <Txt variant="label">Buscas ativas</Txt>
+              </View>
+              <Badge>{queue.length}</Badge>
+            </Row>
+            <Txt variant="h2" style={{ marginTop: 4 }}>
+              {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
             </Txt>
-          ) : null}
-          {matchedEntry ? (
-            <View style={{ marginTop: 10 }}>
-              <Txt variant="label">Partida encontrada</Txt>
-              <Txt variant="lead" weight="800">
-                {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
-                {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+            {queue.length > 0 ? (
+              <View style={{ marginTop: 8, gap: 4 }}>
+                {queue.map((entry) => (
+                  <Txt key={entry.id} variant="tiny">
+                    {formatName(catalog, entry.format_id)} · {modeLabel(entryMode(entry))}
+                    {isQueueLevel(entry.level) ? ` · ${levelLabel(entry.level)}` : ''}
+                  </Txt>
+                ))}
+              </View>
+            ) : null}
+            {oldest ? (
+              <Txt variant="tiny" style={{ marginTop: 4, fontVariant: ['tabular-nums'] }}>
+                Mais antiga: {elapsed(oldest, now)}
               </Txt>
-              <Txt variant="tiny">
-                As demais buscas continuam aguardando. A entrada encontrada vem do servidor.
-              </Txt>
-            </View>
-          ) : null}
-        </Card>
+            ) : null}
+            {matchedEntry ? (
+              <View style={{ marginTop: 10 }}>
+                <Txt variant="label">Partida encontrada</Txt>
+                <Txt variant="lead" weight="800">
+                  {formatName(catalog, matchedEntry.format_id)} ·{' '}
+                  {modeLabel(entryMode(matchedEntry))}
+                  {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+                </Txt>
+                <Txt variant="tiny">
+                  As demais buscas continuam aguardando. A entrada encontrada vem do servidor.
+                </Txt>
+              </View>
+            ) : null}
+          </Card>
+        </Animated.View>
         {queueNotice ? (
           <View style={{ gap: 8 }}>
             <Notice tone="orange" icon="alert">
@@ -614,6 +653,7 @@ export function QueueScreen() {
   }
 
   const sub = step === 1 ? 'Passo 1 de 2 · Esportes' : 'Passo 2 de 2 · Ajustes';
+  const keptSince = oldestCreatedAt(continuity.kept);
 
   return (
     <Page title="Buscar partida" sub={sub}>
@@ -636,305 +676,321 @@ export function QueueScreen() {
         </View>
       ) : null}
 
-      {step === 1 ? (
-        <>
-          <Card>
-            <Row between>
-              <Txt variant="h3">Esportes</Txt>
-              <Txt variant="tiny">{formats.length} no catálogo</Txt>
-            </Row>
-            {catalogBusy ? (
-              <LoadingState label="Carregando esportes…" />
-            ) : formats.length === 0 ? (
-              <View style={{ gap: 8, marginTop: 8 }}>
-                <Txt variant="tiny">
-                  Não foi possível carregar o catálogo de esportes agora. Tente novamente em
-                  instantes.
+      <Appear key={step} trigger={step} style={{ gap: 14 }}>
+        {step === 1 ? (
+          <>
+            <Card>
+              <Row between>
+                <Txt variant="h3">Esportes</Txt>
+                <Txt variant="tiny">{formats.length} no catálogo</Txt>
+              </Row>
+              {catalogBusy ? (
+                <LoadingState label="Carregando esportes…" />
+              ) : formats.length === 0 ? (
+                <View style={{ gap: 8, marginTop: 8 }}>
+                  <Txt variant="tiny">
+                    Não foi possível carregar o catálogo de esportes agora. Tente novamente em
+                    instantes.
+                  </Txt>
+                  <TextBtn onPress={() => void retryCatalog()}>Tentar novamente</TextBtn>
+                </View>
+              ) : (
+                <ChipRow style={{ marginTop: 8 }}>
+                  {formats.map((format) => (
+                    <Chip
+                      key={format.id}
+                      on={selected.includes(format.id)}
+                      onPress={() => toggleFormat(format.id)}
+                    >
+                      {format.name}
+                    </Chip>
+                  ))}
+                </ChipRow>
+              )}
+            </Card>
+
+            <Card tone="flat">
+              <Row between>
+                <Txt variant="label">Serão enviadas</Txt>
+                <Badge>{count}</Badge>
+              </Row>
+              <Txt variant="num" style={{ marginTop: 4 }}>
+                {count} {count === 1 ? 'busca' : 'buscas'}
+              </Txt>
+              <Txt variant="tiny" style={{ marginTop: 4 }}>
+                {selection.formats.length} {selection.formats.length === 1 ? 'esporte' : 'esportes'}{' '}
+                × {selection.modes.length} {selection.modes.length === 1 ? 'modo' : 'modos'}.
+                {selection.modes.length > 0 ? ` ${modesLabel(selection.modes)}.` : ''}
+              </Txt>
+              {hasConfirmed && continuity.kept.length > 0 ? (
+                <Txt variant="tiny" style={{ marginTop: 6 }}>
+                  {continuity.kept.length}{' '}
+                  {continuity.kept.length === 1
+                    ? 'busca ativa continua'
+                    : 'buscas ativas continuam'}{' '}
+                  com o mesmo tempo de espera.
                 </Txt>
-                <TextBtn onPress={() => void retryCatalog()}>Tentar novamente</TextBtn>
+              ) : null}
+              {hasConfirmed && continuity.removed.length > 0 ? (
+                <Txt variant="tiny" style={{ marginTop: 4 }}>
+                  {continuity.removed.length}{' '}
+                  {continuity.removed.length === 1
+                    ? 'busca ativa será cancelada'
+                    : 'buscas ativas serão canceladas'}{' '}
+                  ao confirmar.
+                </Txt>
+              ) : null}
+            </Card>
+
+            {failure ? (
+              <View style={{ gap: 8 }}>
+                <Notice tone="orange" icon="alert">
+                  {failure.message}
+                </Notice>
               </View>
-            ) : (
+            ) : null}
+
+            <Btn
+              tone="primary"
+              onPress={goToStep2}
+              disabled={catalogBusy || formats.length === 0 || selectionError(selection) !== null}
+            >
+              Continuar
+            </Btn>
+            {stepOneBack ? <TextBtn onPress={stepOneBack}>Voltar</TextBtn> : null}
+          </>
+        ) : (
+          <>
+            <Card tone="flat">
+              <Txt variant="h2">Ajuste cada esporte</Txt>
+              <Txt variant="tiny" style={{ marginTop: 4 }}>
+                Modos e quadra valem para todos. O horário de disponibilidade é único e também vale
+                para todos.
+              </Txt>
+            </Card>
+
+            {matchedEntry ? (
+              <Appear>
+                <Card tone="blue">
+                  <Row between>
+                    <Txt variant="label">Partida encontrada</Txt>
+                    <Badge>enquanto você ajustava</Badge>
+                  </Row>
+                  <Txt variant="lead" weight="800">
+                    {formatName(catalog, matchedEntry.format_id)} ·{' '}
+                    {modeLabel(entryMode(matchedEntry))}
+                    {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+                  </Txt>
+                  <Txt variant="tiny">
+                    As demais buscas continuam aguardando; esta é a entrada que o servidor fechou.
+                  </Txt>
+                  <TextBtn onPress={() => nav.go('queue-search')}>Ver partida</TextBtn>
+                </Card>
+              </Appear>
+            ) : null}
+
+            <Card tone="blue">
+              <Row between>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Txt variant="h3">Vale para todos os esportes</Txt>
+                  <Txt variant="tiny" style={{ marginTop: 4 }}>
+                    Modos e quadra são compartilhados. O nível é definido em cada esporte.
+                  </Txt>
+                </View>
+                <Badge>compartilhado</Badge>
+              </Row>
+              <Txt variant="label" style={{ marginTop: 10 }}>
+                Modos
+              </Txt>
               <ChipRow style={{ marginTop: 8 }}>
-                {formats.map((format) => (
+                {QUEUE_MODES.map((mode) => (
                   <Chip
-                    key={format.id}
-                    on={selected.includes(format.id)}
-                    onPress={() => toggleFormat(format.id)}
+                    key={mode}
+                    on={selection.modes.includes(mode)}
+                    onPress={() => toggleMode(mode)}
                   >
-                    {format.name}
+                    {modeLabel(mode)}
                   </Chip>
                 ))}
               </ChipRow>
-            )}
-          </Card>
-
-          <Card tone="flat">
-            <Row between>
-              <Txt variant="label">Serão enviadas</Txt>
-              <Badge>{count}</Badge>
-            </Row>
-            <Txt variant="num" style={{ marginTop: 4 }}>
-              {count} {count === 1 ? 'busca' : 'buscas'}
-            </Txt>
-            <Txt variant="tiny" style={{ marginTop: 4 }}>
-              {selection.formats.length} {selection.formats.length === 1 ? 'esporte' : 'esportes'} ×{' '}
-              {selection.modes.length} {selection.modes.length === 1 ? 'modo' : 'modos'}.
-              {selection.modes.length > 0 ? ` ${modesLabel(selection.modes)}.` : ''}
-            </Txt>
-            {hasConfirmed && continuity.kept.length > 0 ? (
-              <Txt variant="tiny" style={{ marginTop: 6 }}>
-                {continuity.kept.length}{' '}
-                {continuity.kept.length === 1 ? 'busca ativa continua' : 'buscas ativas continuam'}{' '}
-                com o mesmo tempo de espera.
+              <Txt variant="tiny" style={{ marginTop: 8 }}>
+                Cada modo vira uma busca separada para cada esporte.
               </Txt>
-            ) : null}
-            {hasConfirmed && continuity.removed.length > 0 ? (
-              <Txt variant="tiny" style={{ marginTop: 4 }}>
-                {continuity.removed.length}{' '}
-                {continuity.removed.length === 1
-                  ? 'busca ativa será cancelada'
-                  : 'buscas ativas serão canceladas'}{' '}
-                ao confirmar.
+              {rankedSelected ? (
+                <Txt variant="tiny" style={{ marginTop: 4 }}>
+                  Sua divisão:{' '}
+                  {rating?.provisional
+                    ? 'provisória'
+                    : rating
+                      ? divisionLabel(rating.division)
+                      : 'carregando'}
+                  . Ranqueada considera sua divisão e compatibilidade.
+                </Txt>
+              ) : null}
+              <Txt variant="label" style={{ marginTop: 12 }}>
+                Preferência de quadra
               </Txt>
-            ) : null}
-          </Card>
+              <ChipRow style={{ marginTop: 8 }}>
+                {COURT_OPTIONS.map((item) => (
+                  <Chip key={item} on={court === item} onPress={() => chooseCourt(item)}>
+                    {item}
+                  </Chip>
+                ))}
+              </ChipRow>
+            </Card>
 
-          {failure ? (
-            <View style={{ gap: 8 }}>
-              <Notice tone="orange" icon="alert">
-                {failure.message}
-              </Notice>
-            </View>
-          ) : null}
+            {selection.formats.map((formatId) => (
+              <SportConfigCard
+                key={formatId}
+                formatId={formatId}
+                catalog={catalog}
+                levelRows={levelRowsFor(formatId)}
+                court={court}
+                profileReady={profile ? profileFormatIds.includes(formatId) : null}
+                kept={continuity.kept.filter((entry) => entry.format_id === formatId)}
+                removed={continuity.removed.filter((entry) => entry.format_id === formatId)}
+                onCompleteProfile={() => nav.go('sports')}
+                onLevelChange={(mode, level) => changeLevel(formatId, mode, level)}
+              />
+            ))}
 
-          <Btn
-            tone="primary"
-            onPress={goToStep2}
-            disabled={catalogBusy || formats.length === 0 || selectionError(selection) !== null}
-          >
-            Continuar
-          </Btn>
-          {stepOneBack ? <TextBtn onPress={stepOneBack}>Voltar</TextBtn> : null}
-        </>
-      ) : (
-        <>
-          <Card tone="flat">
-            <Txt variant="h2">Ajuste cada esporte</Txt>
-            <Txt variant="tiny" style={{ marginTop: 4 }}>
-              Modos e quadra valem para todos. O horário de disponibilidade é único e também vale
-              para todos.
-            </Txt>
-          </Card>
-
-          {matchedEntry ? (
-            <Card tone="blue">
+            <Card>
               <Row between>
-                <Txt variant="label">Partida encontrada</Txt>
-                <Badge>enquanto você ajustava</Badge>
+                <Txt variant="h3">Horário de disponibilidade</Txt>
+                <Badge>para todos</Badge>
               </Row>
-              <Txt variant="lead" weight="800">
-                {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
-                {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+              <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
+                {availabilityTitle}
+              </Txt>
+              <Txt variant="tiny">{availabilitySub}</Txt>
+              <Txt variant="tiny" style={{ marginTop: 6 }}>
+                O mesmo horário vale para todos os esportes; não há horário por esporte.
+              </Txt>
+              <TextBtn onPress={() => nav.go('availability')}>
+                {windows.length > 0 ? 'Editar horários' : 'Adicionar horários'}
+              </TextBtn>
+            </Card>
+
+            <Card>
+              <Row between>
+                <Txt variant="h3">Região</Txt>
+                <Badge>{profile?.region ? `${profile.region.radius_km} km` : 'definir'}</Badge>
+              </Row>
+              <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
+                {profile?.region?.city ?? 'Sem região definida'}
               </Txt>
               <Txt variant="tiny">
-                As demais buscas continuam aguardando; esta é a entrada que o servidor fechou.
+                {profile?.region
+                  ? 'A busca usa sua região e o raio definido.'
+                  : 'Defina sua região para buscar partida.'}
               </Txt>
-              <TextBtn onPress={() => nav.go('queue-search')}>Ver partida</TextBtn>
+              <TextBtn onPress={() => nav.go('region')}>
+                {profile?.region ? 'Trocar região' : 'Definir região'}
+              </TextBtn>
             </Card>
-          ) : null}
 
-          <Card tone="blue">
-            <Row between>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Txt variant="h3">Vale para todos os esportes</Txt>
-                <Txt variant="tiny" style={{ marginTop: 4 }}>
-                  Modos e quadra são compartilhados. O nível é definido em cada esporte.
+            <Card tone="flat">
+              <Row between>
+                <Txt variant="label">Custo estimado</Txt>
+                <Badge tone="lime">saldo {wallet?.balance ?? 18}</Badge>
+              </Row>
+              <Txt variant="num" style={{ marginTop: 4 }}>
+                7 ingressos
+              </Txt>
+              <Txt variant="tiny">O valor final aparece na confirmação da vaga.</Txt>
+            </Card>
+
+            <Animated.View style={{ opacity: listOpacity }}>
+              <Card tone="flat">
+                <Row between>
+                  <Txt variant="label">Revisão</Txt>
+                  <Badge>{count}</Badge>
+                </Row>
+                <Txt variant="h2" style={{ marginTop: 4 }}>
+                  {count} {count === 1 ? 'busca' : 'buscas'}
                 </Txt>
-              </View>
-              <Badge>compartilhado</Badge>
-            </Row>
-            <Txt variant="label" style={{ marginTop: 10 }}>
-              Modos
-            </Txt>
-            <ChipRow style={{ marginTop: 8 }}>
-              {QUEUE_MODES.map((mode) => (
-                <Chip
-                  key={mode}
-                  on={selection.modes.includes(mode)}
-                  onPress={() => toggleMode(mode)}
-                >
-                  {modeLabel(mode)}
-                </Chip>
-              ))}
-            </ChipRow>
-            <Txt variant="tiny" style={{ marginTop: 8 }}>
-              Cada modo vira uma busca separada para cada esporte.
-            </Txt>
-            {rankedSelected ? (
-              <Txt variant="tiny" style={{ marginTop: 4 }}>
-                Sua divisão:{' '}
-                {rating?.provisional
-                  ? 'provisória'
-                  : rating
-                    ? divisionLabel(rating.division)
-                    : 'carregando'}
-                . Ranqueada considera sua divisão e compatibilidade.
-              </Txt>
-            ) : null}
-            <Txt variant="label" style={{ marginTop: 12 }}>
-              Preferência de quadra
-            </Txt>
-            <ChipRow style={{ marginTop: 8 }}>
-              {COURT_OPTIONS.map((item) => (
-                <Chip key={item} on={court === item} onPress={() => chooseCourt(item)}>
-                  {item}
-                </Chip>
-              ))}
-            </ChipRow>
-          </Card>
-
-          {selection.formats.map((formatId) => (
-            <SportConfigCard
-              key={formatId}
-              formatId={formatId}
-              catalog={catalog}
-              levelRows={levelRowsFor(formatId)}
-              court={court}
-              profileReady={profile ? profileFormatIds.includes(formatId) : null}
-              kept={continuity.kept.filter((entry) => entry.format_id === formatId)}
-              removed={continuity.removed.filter((entry) => entry.format_id === formatId)}
-              onCompleteProfile={() => nav.go('sports')}
-              onLevelChange={(mode, level) => changeLevel(formatId, mode, level)}
-            />
-          ))}
-
-          <Card>
-            <Row between>
-              <Txt variant="h3">Horário de disponibilidade</Txt>
-              <Badge>para todos</Badge>
-            </Row>
-            <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
-              {availabilityTitle}
-            </Txt>
-            <Txt variant="tiny">{availabilitySub}</Txt>
-            <Txt variant="tiny" style={{ marginTop: 6 }}>
-              O mesmo horário vale para todos os esportes; não há horário por esporte.
-            </Txt>
-            <TextBtn onPress={() => nav.go('availability')}>
-              {windows.length > 0 ? 'Editar horários' : 'Adicionar horários'}
-            </TextBtn>
-          </Card>
-
-          <Card>
-            <Row between>
-              <Txt variant="h3">Região</Txt>
-              <Badge>{profile?.region ? `${profile.region.radius_km} km` : 'definir'}</Badge>
-            </Row>
-            <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
-              {profile?.region?.city ?? 'Sem região definida'}
-            </Txt>
-            <Txt variant="tiny">
-              {profile?.region
-                ? 'A busca usa sua região e o raio definido.'
-                : 'Defina sua região para buscar partida.'}
-            </Txt>
-            <TextBtn onPress={() => nav.go('region')}>
-              {profile?.region ? 'Trocar região' : 'Definir região'}
-            </TextBtn>
-          </Card>
-
-          <Card tone="flat">
-            <Row between>
-              <Txt variant="label">Custo estimado</Txt>
-              <Badge tone="lime">saldo {wallet?.balance ?? 18}</Badge>
-            </Row>
-            <Txt variant="num" style={{ marginTop: 4 }}>
-              7 ingressos
-            </Txt>
-            <Txt variant="tiny">O valor final aparece na confirmação da vaga.</Txt>
-          </Card>
-
-          <Card tone="flat">
-            <Row between>
-              <Txt variant="label">Revisão</Txt>
-              <Badge>{count}</Badge>
-            </Row>
-            <Txt variant="h2" style={{ marginTop: 4 }}>
-              {count} {count === 1 ? 'busca' : 'buscas'}
-            </Txt>
-            {levelAssignments.length === 0 ? (
-              <Txt variant="tiny" style={{ marginTop: 6 }}>
-                Escolha pelo menos um esporte e um modo para continuar.
-              </Txt>
-            ) : (
-              <View style={{ marginTop: 10, gap: 8 }}>
-                {levelAssignments.map((assignment) => (
-                  <Txt
-                    key={`${assignment.format_id}:${assignment.mode}`}
-                    variant="sub"
-                    style={{ flexShrink: 1 }}
-                  >
-                    {formatName(catalog, assignment.format_id)} · {modeLabel(assignment.mode)} ·{' '}
-                    {levelLabel(assignment.level)}
+                {levelAssignments.length === 0 ? (
+                  <Txt variant="tiny" style={{ marginTop: 6 }}>
+                    Escolha pelo menos um esporte e um modo para continuar.
                   </Txt>
-                ))}
+                ) : (
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {levelAssignments.map((assignment) => (
+                      <Txt
+                        key={`${assignment.format_id}:${assignment.mode}`}
+                        variant="sub"
+                        style={{ flexShrink: 1 }}
+                      >
+                        {formatName(catalog, assignment.format_id)} · {modeLabel(assignment.mode)} ·{' '}
+                        {levelLabel(assignment.level)}
+                      </Txt>
+                    ))}
+                  </View>
+                )}
+                {continuity.kept.length > 0 ? (
+                  <Txt variant="tiny" style={{ marginTop: 10 }}>
+                    {continuity.kept.length}{' '}
+                    {continuity.kept.length === 1
+                      ? 'busca já ativa continua'
+                      : 'buscas já ativas continuam'}{' '}
+                    com o mesmo tempo de espera.
+                    {keptSince ? ` Mais antiga desde ${timeOnly(keptSince)}.` : ''}
+                  </Txt>
+                ) : null}
+                {continuity.removed.length > 0 ? (
+                  <Txt variant="tiny" style={{ marginTop: 4 }}>
+                    {continuity.removed.length}{' '}
+                    {continuity.removed.length === 1
+                      ? 'busca ativa será cancelada'
+                      : 'buscas ativas serão canceladas'}{' '}
+                    ao confirmar.
+                  </Txt>
+                ) : null}
+              </Card>
+            </Animated.View>
+
+            {failure ? (
+              <View style={{ gap: 8 }}>
+                <Notice tone="orange" icon="alert">
+                  {failure.message}
+                </Notice>
+                {failure.code === 'region_required' ? (
+                  <TextBtn onPress={() => nav.go('region')}>Definir região</TextBtn>
+                ) : failure.code === 'sport_profile_required' ? (
+                  <TextBtn onPress={() => nav.go('sports')}>Completar modalidades</TextBtn>
+                ) : failure.code === 'ranked_restricted' ? (
+                  <TextBtn
+                    onPress={() => {
+                      setModes(['casual']);
+                      setFailure(null);
+                    }}
+                  >
+                    Buscar só casual
+                  </TextBtn>
+                ) : failure.code === 'network_unavailable' || failure.code === 'request_timeout' ? (
+                  <TextBtn onPress={() => void reloadQueue()}>Reler fila</TextBtn>
+                ) : null}
               </View>
-            )}
-            {continuity.kept.length > 0 ? (
-              <Txt variant="tiny" style={{ marginTop: 10 }}>
-                {continuity.kept.length}{' '}
-                {continuity.kept.length === 1
-                  ? 'busca já ativa continua'
-                  : 'buscas já ativas continuam'}{' '}
-                com o mesmo tempo de espera.
-              </Txt>
             ) : null}
-            {continuity.removed.length > 0 ? (
-              <Txt variant="tiny" style={{ marginTop: 4 }}>
-                {continuity.removed.length}{' '}
-                {continuity.removed.length === 1
-                  ? 'busca ativa será cancelada'
-                  : 'buscas ativas serão canceladas'}{' '}
-                ao confirmar.
-              </Txt>
-            ) : null}
-          </Card>
 
-          {failure ? (
-            <View style={{ gap: 8 }}>
-              <Notice tone="orange" icon="alert">
-                {failure.message}
-              </Notice>
-              {failure.code === 'region_required' ? (
-                <TextBtn onPress={() => nav.go('region')}>Definir região</TextBtn>
-              ) : failure.code === 'sport_profile_required' ? (
-                <TextBtn onPress={() => nav.go('sports')}>Completar modalidades</TextBtn>
-              ) : failure.code === 'ranked_restricted' ? (
-                <TextBtn
-                  onPress={() => {
-                    setModes(['casual']);
-                    setFailure(null);
-                  }}
-                >
-                  Buscar só casual
-                </TextBtn>
-              ) : failure.code === 'network_unavailable' || failure.code === 'request_timeout' ? (
-                <TextBtn onPress={() => void reloadQueue()}>Reler fila</TextBtn>
-              ) : null}
-            </View>
-          ) : null}
-
-          <Btn
-            tone="primary"
-            icon="search"
-            onPress={submit}
-            disabled={busy || count === 0 || selection.formats.length === 0}
-          >
-            {busy ? 'Atualizando busca…' : hasConfirmed ? 'Atualizar busca' : 'Confirmar busca'}
-          </Btn>
-          <TextBtn onPress={() => setStep(1)}>Voltar</TextBtn>
-        </>
-      )}
+            <Btn
+              tone="primary"
+              icon="search"
+              onPress={submit}
+              disabled={busy || count === 0 || selection.formats.length === 0}
+            >
+              {busy
+                ? hasConfirmed
+                  ? 'Atualizando busca…'
+                  : 'Entrando…'
+                : hasConfirmed
+                  ? 'Atualizar busca'
+                  : 'Confirmar busca'}
+            </Btn>
+            <TextBtn onPress={() => setStep(1)}>Voltar</TextBtn>
+          </>
+        )}
+      </Appear>
     </Page>
   );
 }
@@ -1005,6 +1061,7 @@ export function QueueSearch() {
       return;
     }
     routed.current = lobby.id;
+    AccessibilityInfo.announceForAccessibility('Partida encontrada.');
     nav.replace('lobby-found', { lobbyId: lobby.id, mode: matchedEntry.mode });
   }, [matchedEntry, nav]);
 
@@ -1017,6 +1074,7 @@ export function QueueSearch() {
     const result = await cancelQueue();
     if (result.ok) {
       setBusy(false);
+      AccessibilityInfo.announceForAccessibility('Buscas canceladas.');
       nav.reset('home');
       nav.toast('Buscas canceladas.');
       return;
@@ -1061,7 +1119,14 @@ export function QueueSearch() {
           {entry.radius_km} km · desde {timeOnly(entry.created_at)}
         </Text>
       </View>
-      <Text style={{ fontSize: 15, fontWeight: '800', color: palette.ink }}>
+      <Text
+        style={{
+          fontSize: 15,
+          fontWeight: '800',
+          color: palette.ink,
+          fontVariant: ['tabular-nums'],
+        }}
+      >
         {elapsed(entry.created_at, now)}
       </Text>
     </Row>
@@ -1144,32 +1209,37 @@ export function QueueSearch() {
           )}
         </Card>
       ) : null}
-      <Card>
-        <Row between>
-          <Txt variant="h3">
-            {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
+      <Appear>
+        <Card>
+          <Row between>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />
+              <Txt variant="h3">
+                {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
+              </Txt>
+            </View>
+            {queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
+          </Row>
+          {queue.length === 0 ? (
+            <Txt variant="tiny" style={{ marginTop: 8 }}>
+              Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
+            </Txt>
+          ) : (
+            <View style={{ marginTop: 10, gap: 12 }}>
+              {grouped.map((group) => (
+                <View key={group.mode} style={{ gap: 8 }}>
+                  {modeCount > 1 ? <Txt variant="label">{modeLabel(group.mode)}</Txt> : null}
+                  {group.entries.map(renderEntry)}
+                </View>
+              ))}
+            </View>
+          )}
+          <Txt variant="tiny" style={{ marginTop: 10, fontVariant: ['tabular-nums'] }}>
+            {oldest ? `Mais antiga: ${elapsed(oldest, now)}` : 'Sem entradas aguardando.'}
+            {profile?.region?.city ? ` · ${profile.region.city}` : ''}
           </Txt>
-          {queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
-        </Row>
-        {queue.length === 0 ? (
-          <Txt variant="tiny" style={{ marginTop: 8 }}>
-            Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
-          </Txt>
-        ) : (
-          <View style={{ marginTop: 10, gap: 12 }}>
-            {grouped.map((group) => (
-              <View key={group.mode} style={{ gap: 8 }}>
-                {modeCount > 1 ? <Txt variant="label">{modeLabel(group.mode)}</Txt> : null}
-                {group.entries.map(renderEntry)}
-              </View>
-            ))}
-          </View>
-        )}
-        <Txt variant="tiny" style={{ marginTop: 10 }}>
-          {oldest ? `Mais antiga: ${elapsed(oldest, now)}` : 'Sem entradas aguardando.'}
-          {profile?.region?.city ? ` · ${profile.region.city}` : ''}
-        </Txt>
-      </Card>
+        </Card>
+      </Appear>
       <Notice icon="clock">
         Não prometemos um tempo de espera. Uma combinação pode encontrar partida antes das outras; o
         servidor decide e a tela apenas reflete.

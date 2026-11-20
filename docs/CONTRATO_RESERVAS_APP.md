@@ -1528,23 +1528,51 @@ Content-Type: application/json
 {
   "formats": ["<uuid>", "<uuid>"],
   "modes": ["casual", "ranked"],
+  "levels": [
+    { "format_id": "<uuid>", "mode": "casual", "level": "beginner" },
+    { "format_id": "<uuid>", "mode": "ranked", "level": "advanced" }
+  ],
   "court_preference": "ANY"
 }
 ```
 
-- `formats` e `modes` são listas; o servidor deduplica e cria o produto
+- `formats` e `modes` são listas; o servidor deduplica e aplica o produto
   cartesiano `formats × modes` como entradas `waiting`.
 - `modes` omitido usa `["casual"]`. `[]` explícito (ou `formats: []`) não cria
   nada.
 - `court_preference` (`PUBLIC_ONLY|PRIVATE_ONLY|ANY`) é opcional e sobrescreve a
-  preferência do perfil em todas as entradas criadas.
-- `level`, `center_lat`, `center_lng` e `radius_km` **não fazem parte do
-  contrato**: nível, coordenadas e raio vêm do perfil esportivo e da região
-  gravada no servidor. Campos extras no corpo são ignorados; o cliente não
-  escolhe nível para fins competitivos nem localização por requisição.
-- A operação é **atômica**: valida todos os formatos, perfis, região e restrição
-  ranqueada antes de escrever; depois cancela todas as `waiting` do usuário e
-  insere as novas na mesma transação. Falha não deixa estado parcial.
+  preferência do perfil nas entradas criadas e nas que permanecem na seleção.
+- `levels` é opcional: lista de `{ "format_id", "mode", "level" }` que define o
+  nível **por combinação**. Combinação sem override usa o nível atual do perfil
+  esportivo, inclusive em entrada preservada (sem resetar `created_at`).
+  `level` aceita `beginner`, `intermediate` ou `advanced`.
+- Override para combinação fora de `formats × modes` responde `422
+  invalid_level_override`; `level` inválido ou `(format_id, mode)` repetido em
+  `levels` responde `422 validation_error`. A validação acontece antes de
+  qualquer escrita.
+- `center_lat`, `center_lng` e `radius_km` **não fazem parte do contrato**:
+  coordenadas e raio vêm da região gravada no servidor. Campos extras no corpo
+  são ignorados; o cliente não escolhe localização por requisição.
+- O `level` do `PUT` vale apenas para as entradas daquela seleção; `POST`
+  continua usando o nível do perfil.
+- A operação é **atômica** e **incremental** (diff): valida todos os
+  formatos, perfis, região e restrição ranqueada antes de escrever. Depois
+  compara o produto `formats × modes` com as entradas `waiting` existentes:
+  - combinação que permanece: mantém a **mesma entrada** (`id`, `created_at`,
+    `expires_at` e `matched_at` inalterados); `court_preference` e `level` são
+    atualizados no lugar, quando enviados;
+  - combinação nova: é criada, já com o `level` do override ou do perfil;
+  - combinação que saiu: vira `cancelled`.
+  Tudo na mesma transação; falha não deixa estado parcial.
+- Entrada preservada que recebe override muda o `level` sem reiniciar
+  `created_at`; o cronômetro continua de onde estava.
+- Preservar `created_at` é o que sustenta o cronômetro: o tempo de espera do
+  app (`agora - created_at`) continua de onde estava. Adicionar um formato à
+  seleção não reinicia a espera dos formatos que já estavam na fila.
+- Entradas `matched` não são tocadas pelo `PUT`: só as `waiting` entram no
+  diff e o cancelamento só atinge linhas ainda `waiting`.
+- Reenviar a mesma seleção é idempotente: nenhuma linha é recriada,
+  cancelada ou duplicada.
 - Limites: até 20 formatos e 2 modos (produto máximo de 40 entradas por
   requisição).
 
@@ -1642,6 +1670,7 @@ substitui a seleção inteira.
 | `409` | `queue_conflict` | Conflito de concorrência no `PUT`; repetir |
 | `409` | `already_queued` | `POST` duplicado para a mesma combinação |
 | `404` | `not_queued` | `DELETE` sem entradas `waiting` |
+| `422` | `invalid_level_override` | `levels` para combinação fora de `formats × modes` |
 
 ### 23.6 Compatibilidade
 

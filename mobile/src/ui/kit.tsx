@@ -2,7 +2,6 @@ import type { PropsWithChildren, ReactNode, Ref } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Easing,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
@@ -26,9 +25,21 @@ import Svg, {
 
 import type { VisualIdentity } from '../api/types';
 import { useNav, useTheme } from '../state/context';
+import { Appear } from './Appear';
 import { BottomSheetFrame as SheetFrame, useSheetClose } from './BottomSheetFrame';
 import { IdentityBadge } from './IdentityBadge';
 import { Icon, type IconName } from './icons';
+import {
+  duration,
+  dwell,
+  easing,
+  loops,
+  motionDuration,
+  reduced,
+  scale,
+  useReducedMotion,
+  useSelectionScale,
+} from './motion';
 import { Text } from './text';
 import { space, type, type TextVariant } from './theme';
 
@@ -185,7 +196,7 @@ export function Card({
           accessibilityLabel={accessibilityLabel}
           style={({ pressed }) => [
             cardStyle,
-            pressed ? { opacity: 0.9, transform: [{ scale: 0.994 }] } : null,
+            pressed ? { opacity: 0.9, transform: [{ scale: scale.card }] } : null,
           ]}
         >
           {children}
@@ -446,7 +457,7 @@ export function Btn({
         borderColor,
         backgroundColor,
         opacity: action.disabled ? 0.38 : pressed ? 0.92 : 1,
-        transform: pressed && !action.disabled ? [{ scale: 0.985 }] : [],
+        transform: pressed && !action.disabled ? [{ scale: scale.button }] : [],
         paddingHorizontal: small ? 14 : 16,
         flexDirection: 'row',
         alignItems: 'center',
@@ -494,13 +505,17 @@ export function TextBtn({
   const run = useAction();
   return (
     <Pressable
+      disabled={action.disabled}
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
-      style={{
+      accessibilityState={{ disabled: !!action.disabled }}
+      style={({ pressed }) => ({
         minHeight: largeTargets ? 56 : 48,
         justifyContent: 'center',
         paddingHorizontal: 2,
-      }}
+        opacity: action.disabled ? 0.38 : pressed ? 0.62 : 1,
+        transform: pressed && !action.disabled ? [{ scale: scale.press }] : [],
+      })}
     >
       <Text
         style={{
@@ -562,7 +577,7 @@ export function IconBtn({
         alignItems: 'center',
         justifyContent: 'center',
         opacity: pressed ? 0.85 : 1,
-        transform: pressed ? [{ scale: 0.94 }] : [],
+        transform: pressed ? [{ scale: scale.iconButton }] : [],
       })}
     >
       <Icon name={icon} size={20} color={color} />
@@ -592,6 +607,7 @@ export function Chip({
 }>) {
   const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
+  const selectionScale = useSelectionScale(!!on);
   let bg = palette.surface;
   let border = palette.lineStrong;
   let color = palette.ink;
@@ -618,32 +634,34 @@ export function Chip({
     }
   };
   return (
-    <Pressable
-      onPress={press}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ selected: !!on }}
-      style={({ pressed }) => ({
-        minHeight: largeTargets ? 54 : 48,
-        borderRadius: 999,
-        borderWidth: 1.5,
-        borderColor: border,
-        backgroundColor: bg,
-        paddingHorizontal: 12,
-        paddingVertical: 9,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        opacity: pressed ? 0.9 : 1,
-        transform: pressed ? [{ scale: 0.98 }] : [],
-      })}
-    >
-      {icon ? <Icon name={icon} size={14} color={color} /> : null}
-      <Text style={{ flexShrink: 1, fontSize: 13, lineHeight: 14, fontWeight: '700', color }}>
-        {children}
-      </Text>
-      {lock ? <Icon name="lock" size={14} color={color} /> : null}
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale: selectionScale }] }}>
+      <Pressable
+        onPress={press}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityState={{ selected: !!on }}
+        style={({ pressed }) => ({
+          minHeight: largeTargets ? 54 : 48,
+          borderRadius: 999,
+          borderWidth: 1.5,
+          borderColor: border,
+          backgroundColor: bg,
+          paddingHorizontal: 12,
+          paddingVertical: 9,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          opacity: pressed ? 0.9 : 1,
+          transform: pressed ? [{ scale: scale.chip }] : [],
+        })}
+      >
+        {icon ? <Icon name={icon} size={14} color={color} /> : null}
+        <Text style={{ flexShrink: 1, fontSize: 13, lineHeight: 14, fontWeight: '700', color }}>
+          {children}
+        </Text>
+        {lock ? <Icon name="lock" size={14} color={color} /> : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -683,41 +701,44 @@ export function SegBtn({
 }: PropsWithChildren<{ on?: boolean; go?: string; onPress?: () => void }>) {
   const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
+  const selectionScale = useSelectionScale(!!on);
   return (
-    <Pressable
-      onPress={() => (go ? nav.go(go) : onPress?.())}
-      accessibilityRole="button"
-      accessibilityState={{ selected: !!on }}
-      style={({ pressed }) => ({
-        flex: 1,
-        minWidth: 0,
-        minHeight: largeTargets ? 54 : 48,
-        borderRadius: 8,
-        paddingHorizontal: 6,
-        paddingVertical: 6,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: on ? (dark ? palette.surface2 : palette.ink) : 'transparent',
-        borderWidth: on && dark ? 1 : 0,
-        borderColor: on && dark ? palette.lime : 'transparent',
-        opacity: pressed ? 0.88 : 1,
-      })}
-    >
-      <Text
-        numberOfLines={2}
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-        style={{
-          fontSize: 13,
-          lineHeight: 16,
-          fontWeight: '800',
-          color: on ? (dark ? palette.lime : palette.onInk) : palette.muted,
-          textAlign: 'center',
-        }}
+    <Animated.View style={{ flex: 1, minWidth: 0, transform: [{ scale: selectionScale }] }}>
+      <Pressable
+        onPress={() => (go ? nav.go(go) : onPress?.())}
+        accessibilityRole="button"
+        accessibilityState={{ selected: !!on }}
+        style={({ pressed }) => ({
+          flex: 1,
+          minWidth: 0,
+          minHeight: largeTargets ? 54 : 48,
+          borderRadius: 8,
+          paddingHorizontal: 6,
+          paddingVertical: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: on ? (dark ? palette.surface2 : palette.ink) : 'transparent',
+          borderWidth: on && dark ? 1 : 0,
+          borderColor: on && dark ? palette.lime : 'transparent',
+          opacity: pressed ? 0.88 : 1,
+        })}
       >
-        {children}
-      </Text>
-    </Pressable>
+        <Text
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+          style={{
+            fontSize: 13,
+            lineHeight: 16,
+            fontWeight: '800',
+            color: on ? (dark ? palette.lime : palette.onInk) : palette.muted,
+            textAlign: 'center',
+          }}
+        >
+          {children}
+        </Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -843,7 +864,7 @@ export function Select({
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={current}
-        style={{
+        style={({ pressed }) => ({
           width: '100%',
           minHeight: largeTargets ? 58 : 52,
           borderWidth: 1.5,
@@ -856,7 +877,9 @@ export function Select({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 10,
-        }}
+          opacity: pressed ? 0.9 : 1,
+          transform: pressed ? [{ scale: scale.card }] : [],
+        })}
       >
         <Text style={{ flexShrink: 1, fontSize: 14, color: palette.ink }}>{current}</Text>
         <Icon name="next" size={16} color={palette.muted} />
@@ -897,13 +920,14 @@ function SelectOptions({
             onSelect(option);
             close();
           }}
-          style={{
+          style={({ pressed }) => ({
             minHeight: 50,
             justifyContent: 'center',
             paddingVertical: 8,
             borderBottomWidth: 1,
             borderBottomColor: palette.line,
-          }}
+            opacity: pressed ? 0.6 : 1,
+          })}
         >
           <Text
             style={{
@@ -1175,38 +1199,59 @@ export function StateScreen({
   actions?: ReactNode;
 }) {
   const { palette } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const [iconScale] = useState(() => new Animated.Value(0.92));
+
+  useEffect(() => {
+    if (reduceMotion) {
+      iconScale.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(iconScale, {
+      toValue: 1,
+      duration: duration.medium,
+      easing: easing.enter,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [iconScale, reduceMotion]);
+
   return (
-    <View
-      style={{
-        alignItems: 'center',
-        paddingTop: 28,
-        paddingHorizontal: 8,
-        paddingBottom: 8,
-        gap: 12,
-      }}
-    >
+    <Appear>
       <View
         style={{
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-          backgroundColor: palette.surface2,
-          borderWidth: 1.5,
-          borderColor: palette.line,
           alignItems: 'center',
-          justifyContent: 'center',
+          paddingTop: 28,
+          paddingHorizontal: 8,
+          paddingBottom: 8,
+          gap: 12,
         }}
       >
-        <Icon name={icon} size={32} color={palette.ink} />
+        <Animated.View
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 36,
+            backgroundColor: palette.surface2,
+            borderWidth: 1.5,
+            borderColor: palette.line,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ scale: iconScale }],
+          }}
+        >
+          <Icon name={icon} size={32} color={palette.ink} />
+        </Animated.View>
+        <Txt variant="h1" align="center" style={{ fontSize: 28, lineHeight: 28, maxWidth: 300 }}>
+          {title}
+        </Txt>
+        <Txt variant="tiny" align="center" style={{ maxWidth: 300 }}>
+          {text}
+        </Txt>
+        {actions ? <View style={{ width: '100%', gap: 8, marginTop: 8 }}>{actions}</View> : null}
       </View>
-      <Txt variant="h1" align="center" style={{ fontSize: 28, lineHeight: 28, maxWidth: 300 }}>
-        {title}
-      </Txt>
-      <Txt variant="tiny" align="center" style={{ maxWidth: 300 }}>
-        {text}
-      </Txt>
-      {actions ? <View style={{ width: '100%', gap: 8, marginTop: 8 }}>{actions}</View> : null}
-    </View>
+    </Appear>
   );
 }
 
@@ -1221,29 +1266,31 @@ export function EmptyState({
 }) {
   const { palette } = useTheme();
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 26, paddingHorizontal: 10, gap: 8 }}>
-      <View
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: palette.surface2,
-          borderWidth: 1.5,
-          borderColor: palette.line,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Icon name="search" size={24} color={palette.muted} />
+    <Appear>
+      <View style={{ alignItems: 'center', paddingVertical: 26, paddingHorizontal: 10, gap: 8 }}>
+        <View
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: palette.surface2,
+            borderWidth: 1.5,
+            borderColor: palette.line,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name="search" size={24} color={palette.muted} />
+        </View>
+        <Txt variant="h3" align="center">
+          {title}
+        </Txt>
+        <Txt variant="sub" align="center" style={{ maxWidth: 280 }}>
+          {text}
+        </Txt>
+        {actions ? <View style={{ width: '100%', gap: 8, marginTop: 6 }}>{actions}</View> : null}
       </View>
-      <Txt variant="h3" align="center">
-        {title}
-      </Txt>
-      <Txt variant="sub" align="center" style={{ maxWidth: 280 }}>
-        {text}
-      </Txt>
-      {actions ? <View style={{ width: '100%', gap: 8, marginTop: 6 }}>{actions}</View> : null}
-    </View>
+    </Appear>
   );
 }
 
@@ -1270,36 +1317,59 @@ export function LoadingState({
   variant?: LoadingVariant;
 }) {
   const { palette, dark } = useTheme();
+  const reduceMotion = useReducedMotion();
   const [pulse] = useState(() => new Animated.Value(0));
+  const [fade] = useState(() => new Animated.Value(0));
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), 120);
+    const timer = setTimeout(() => setVisible(true), dwell.skeleton);
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    const animation = Animated.timing(fade, {
+      toValue: 1,
+      duration: motionDuration(duration.base, reduceMotion),
+      easing: easing.enter,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [fade, reduceMotion, visible]);
+
+  useEffect(() => {
+    if (!visible || reduceMotion) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 620,
-          easing: Easing.inOut(Easing.quad),
+          duration: loops.pulse,
+          easing: easing.loop,
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: 0,
-          duration: 620,
-          easing: Easing.inOut(Easing.quad),
+          duration: loops.pulse,
+          easing: easing.loop,
           useNativeDriver: true,
         }),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reduceMotion, visible]);
 
-  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] });
+  const opacity = reduceMotion
+    ? reduced.pulseOpacity
+    : pulse.interpolate({ inputRange: [0, 1], outputRange: [reduced.pulseOpacity, 1] });
 
   const block = (height: number, width: ViewStyle['width'] = '100%', radius = 10) => (
     <View style={{ height, width, borderRadius: radius, backgroundColor: palette.surface2 }} />
@@ -1763,9 +1833,9 @@ export function LoadingState({
     <Animated.View
       accessibilityRole="progressbar"
       accessibilityLabel={label}
-      style={{ gap: 14, paddingTop: 4, opacity }}
+      style={{ paddingTop: 4, opacity: fade }}
     >
-      {content}
+      <Animated.View style={{ gap: 14, opacity }}>{content}</Animated.View>
     </Animated.View>
   );
 }
@@ -2072,7 +2142,11 @@ export function Range({
         const next = Math.max(0, Math.min(1, event.nativeEvent.locationX / width));
         onChange(Math.round(min + next * (max - min)));
       }}
-      style={{ height: 40, justifyContent: 'center' }}
+      style={({ pressed }) => ({
+        height: 40,
+        justifyContent: 'center',
+        opacity: pressed ? 0.85 : 1,
+      })}
     >
       <View style={{ height: 4, borderRadius: 2, backgroundColor: palette.progressTrack }}>
         <View
