@@ -1,4 +1,3 @@
-import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -772,7 +771,7 @@ function SuspendedScreen() {
   );
 }
 
-function Shell({ fontsReady }: { fontsReady: boolean }) {
+function Shell() {
   const app = useApp();
   const signedIn = !!app.session;
   const [tabStacks, setTabStacks] = useState<TabStacks>(() => createStacks(signedIn));
@@ -821,7 +820,7 @@ function Shell({ fontsReady }: { fontsReady: boolean }) {
       splashHidden.current = true;
       SplashScreen.hideAsync().catch(() => undefined);
     };
-    if (app.ready && fontsReady) {
+    if (app.ready) {
       hideSplash();
     }
     // Guarda contra refresh/sessão pendurados: o splash nunca fica eterno.
@@ -833,7 +832,7 @@ function Shell({ fontsReady }: { fontsReady: boolean }) {
       hideSplash();
     }, 9_000);
     return () => clearTimeout(guard);
-  }, [app.ready, fontsReady]);
+  }, [app.ready]);
 
   useLayoutEffect(() => {
     if (!app.ready || signedInRef.current === signedIn) {
@@ -1032,7 +1031,7 @@ function Shell({ fontsReady }: { fontsReady: boolean }) {
               ],
             };
 
-  if (!app.ready || !fontsReady) {
+  if (!app.ready) {
     return (
       <ThemeContext.Provider value={theme}>
         <ExpoStatusBar style="light" />
@@ -1101,17 +1100,10 @@ function Shell({ fontsReady }: { fontsReady: boolean }) {
 }
 
 export default function App() {
-  const [fontsLoaded, fontError] = useFonts({
-    'Selawik-Regular': require('./assets/fonts/Selawik-Regular.ttf'),
-    'Selawik-SemiBold': require('./assets/fonts/Selawik-SemiBold.ttf'),
-    'Selawik-Bold': require('./assets/fonts/Selawik-Bold.ttf'),
-  });
-  const fontsReady = fontsLoaded || Boolean(fontError);
-
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <Shell fontsReady={fontsReady} />
+        <Shell />
       </AppProvider>
     </SafeAreaProvider>
   );

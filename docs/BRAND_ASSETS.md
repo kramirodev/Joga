@@ -48,10 +48,10 @@ movimento ativa, o fundo fica estático.
 | `mobile/assets/favicon.png` | "J." | `#0F1214` | 196 × 196 |
 | `web/public/favicon.png` | "J." (apple-touch-icon) | `#0F1214` | 196 × 196 |
 | `web/public/favicon.svg` | "J." vetorial | `#0F1214` arredondado | viewBox próprio |
-| `mobile/assets/fonts/Selawik-Regular.ttf` | interface, peso 400 | — | TTF |
-| `mobile/assets/fonts/Selawik-SemiBold.ttf` | interface, peso 600 | — | TTF |
-| `mobile/assets/fonts/Selawik-Bold.ttf` | interface, pesos 700–900 | — | TTF |
-| `web/public/fonts/Selawik-*.woff2` | interface web, 400/600/700 | — | WOFF2 |
+| `mobile/assets/fonts/Selawik-Regular.ttf` | histórico; não carregado | - | TTF |
+| `mobile/assets/fonts/Selawik-SemiBold.ttf` | histórico; não carregado | - | TTF |
+| `mobile/assets/fonts/Selawik-Bold.ttf` | histórico; não carregado | - | TTF |
+| `web/public/fonts/Selawik-*.woff2` | histórico; não carregado | - | WOFF2 |
 
 Regras do ícone:
 
@@ -72,31 +72,14 @@ Regras do ícone:
 
 ## 4. Tipografia
 
-A interface usa **Selawik** (SIL Open Font License 1.1), substituta de código
-aberto com métrica compatível com Segoe UI.
+A interface usa a fonte do sistema: no app, a fonte nativa de cada plataforma
+(com os pesos do tema); no painel, a stack `"Inter", ui-sans-serif, system-ui,
+-apple-system, "Segoe UI", Roboto, ...`.
 
-Mapa de pesos:
-
-| Peso do tema | Arquivo |
-|---|---|
-| 400 | `Selawik-Regular` |
-| 600 | `Selawik-SemiBold` |
-| 700, 800, 900 | `Selawik-Bold` |
-
-No mobile, os arquivos são carregados por `expo-font` em `App.tsx` e o
-`src/ui/text.tsx` escolhe a família pelo peso, mantendo `fontWeight: normal`
-para evitar negrito sintético no Android. O splash nativo permanece visível até
-as fontes e a sessão estarem prontas.
-
-No painel, os três arquivos são declarados em `@font-face` com
-`font-display: swap`, servidos de `/fonts/` (self-host, sem CDN). O Bold é
-declarado para a faixa 700–900, então títulos 800/900 usam o mesmo arquivo sem
-negrito sintético. A stack de `web/src/styles.css` começa por `"Selawik"` e não
-inclui `"Inter"`.
-
-O peso 900 do display fica levemente mais leve que o Segoe UI Black. Para
-compensar, os títulos mantêm caixa alta e tracking negativo; não foi adicionada
-outra fonte de display.
+> **Reversão em 2026-11-20:** a troca para Selawik foi revertida após avaliação
+> no aparelho. Os arquivos `mobile/assets/fonts/Selawik-*` e
+> `web/public/fonts/Selawik-*` permanecem no repositório apenas como histórico
+> e licença; não são carregados nem referenciados pelo CSS.
 
 ## 5. Licenças
 
