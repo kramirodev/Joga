@@ -1481,7 +1481,8 @@ DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
 - No demo, o PSP é sempre o simulador e `JOGA_MONEY_MODE=simulated`; nenhuma
   chamada de rede ao Mercado Pago é feita.
 - `POST /api/v1/bookings/{id}/payments/simulate` libera apenas participante
-  ativo do próprio booking; qualquer outro usuário recebe `403 forbidden`.
+  ativo do próprio booking; qualquer outro usuário recebe `404 booking_not_found`
+  (mesma resposta do `GET`, para não revelar a existência da reserva).
 - `POST /api/v1/me/pass/subscriptions/{id}/confirm` libera apenas o dono da
   assinatura; produção continua `403 confirmation_requires_psp`.
 - `POST /api/v1/payments/mercadopago/webhook` responde

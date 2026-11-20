@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, time, timedelta
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -241,8 +242,128 @@ def test_simulated_payment_is_allowed_in_demo_for_participant(
         f"/api/v1/bookings/{booking['id']}/payments/simulate",
         headers=bearer(make_token(db_session, outsider)),
     )
-    assert forbidden.status_code == 403
-    assert forbidden.json() == {"detail": {"code": "forbidden"}}
+    assert forbidden.status_code == 404
+    assert forbidden.json() == {"detail": {"code": "booking_not_found"}}
+
+
+def _confirmed_booking(api: TestClient, context: dict) -> dict:
+    booking = _accepted_booking(api, context)
+    latest: dict | None = None
+    for token in context["tokens"]:
+        paid = api.post(
+            f"/api/v1/bookings/{booking['id']}/payments/simulate",
+            headers=bearer(token),
+        )
+        assert paid.status_code == 200, paid.text
+        latest = paid.json()
+    assert latest is not None
+    assert latest["status"] == "CONFIRMED"
+    return latest
+
+
+def test_simulate_payment_confirmed_booking_keeps_participant_access(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _confirmed_booking(api, context)
+
+    replay = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(context["tokens"][2]),
+    )
+
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["status"] == "CONFIRMED"
+
+
+def test_simulate_payment_confirmed_booking_is_not_disclosed_to_outsider(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _confirmed_booking(api, context)
+    outsider_token = make_token(db_session, make_user(db_session))
+
+    response = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(outsider_token),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "booking_not_found"}}
+    # O mesmo GET também não revela a reserva, com a mesma resposta do POST.
+    read = api.get(f"/api/v1/bookings/{booking['id']}", headers=bearer(outsider_token))
+    assert read.status_code == 404
+    assert read.json() == response.json()
+
+
+def test_simulate_payment_requires_authentication(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _confirmed_booking(api, context)
+
+    response = api.post(f"/api/v1/bookings/{booking['id']}/payments/simulate")
+
+    assert response.status_code == 401
+
+
+def test_simulate_payment_missing_booking_is_indistinguishable_from_outsider(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _confirmed_booking(api, context)
+    outsider_token = make_token(db_session, make_user(db_session))
+
+    existing = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(outsider_token),
+    )
+    missing = api.post(
+        f"/api/v1/bookings/{uuid4()}/payments/simulate",
+        headers=bearer(outsider_token),
+    )
+
+    assert existing.status_code == missing.status_code == 404
+    assert existing.json() == missing.json() == {"detail": {"code": "booking_not_found"}}
+
+
+def test_simulate_payment_is_not_granted_to_non_participant_org_owner(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = _confirmed_booking(api, context)
+    manager = make_user(db_session)
+    db_session.add(
+        OrganizationMembership(
+            organization_id=context["organization"].id,
+            user_id=manager,
+            role=Role.OWNER.value,
+        )
+    )
+    db_session.flush()
+    manager_token = make_token(db_session, manager)
+
+    # A organização lê a reserva, mas o simulador é ação do jogador da vaga.
+    read = api.get(f"/api/v1/bookings/{booking['id']}", headers=bearer(manager_token))
+    assert read.status_code == 200
+
+    response = api.post(
+        f"/api/v1/bookings/{booking['id']}/payments/simulate",
+        headers=bearer(manager_token),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "booking_not_found"}}
 
 
 def test_simulated_payment_is_forbidden_in_production(

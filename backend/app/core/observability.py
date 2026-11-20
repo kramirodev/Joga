@@ -8,8 +8,9 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.client_version import client_version_error
 from app.core.config import Settings, get_settings
@@ -28,6 +29,52 @@ SECURITY_HEADERS = {
 
 logger = logging.getLogger("joga.http")
 
+PAYLOAD_TOO_LARGE_BODY = {"detail": {"code": "payload_too_large"}}
+PAYLOAD_TOO_LARGE_STATUS = 413
+
+
+class PayloadTooLarge(HTTPException):
+    """Corpo maior que o limite, detectado pela contagem real de bytes."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=PAYLOAD_TOO_LARGE_STATUS,
+            detail=PAYLOAD_TOO_LARGE_BODY["detail"],
+        )
+
+
+class RequestBodyLimitMiddleware:
+    """Rejeita corpos acima do limite contando os bytes do fluxo ASGI.
+
+    ``Content-Length`` não é confiável: um cliente pode omiti-lo e usar
+    ``Transfer-Encoding: chunked``. Contamos cada ``http.request`` entregue à
+    aplicação e interrompemos a leitura no primeiro byte excedente, antes de a
+    rota interpretar o payload. A exceção é ``HTTPException`` porque o FastAPI
+    relança esse tipo ao ler o corpo e o handler padrão preserva o 413.
+    """
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        received = 0
+
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise PayloadTooLarge
+            return message
+
+        await self.app(scope, limited_receive, send)
+
 
 def apply_standard_headers(response: Response, request_id: str) -> None:
     """Garante request ID e headers de segurança em qualquer resposta."""
@@ -45,6 +92,12 @@ def request_id_from(value: str | None) -> str:
 
 def install_observability(app: FastAPI, settings: Settings | None = None) -> None:
     resolved = settings or get_settings()
+    # Instalado antes do middleware de observabilidade para que a resposta 413
+    # também receba request ID, headers de segurança e log de acesso.
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_bytes=resolved.max_request_body_bytes,
+    )
 
     @app.middleware("http")
     async def observability(request: Request, call_next: Any) -> Response:
@@ -59,8 +112,8 @@ def install_observability(app: FastAPI, settings: Settings | None = None) -> Non
             )
             if too_large:
                 response: Response = JSONResponse(
-                    status_code=413,
-                    content={"detail": {"code": "payload_too_large"}},
+                    status_code=PAYLOAD_TOO_LARGE_STATUS,
+                    content=PAYLOAD_TOO_LARGE_BODY,
                 )
             else:
                 version_error = client_version_error(request, resolved)
