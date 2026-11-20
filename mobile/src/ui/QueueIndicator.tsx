@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
@@ -12,8 +12,11 @@ import {
   summarizeEntries,
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
+import { Appear } from './Appear';
 import { elapsed } from './datetime';
 import { Btn, BtnRow, Notice, Txt } from './kit';
+import { scale } from './motion';
+import { PulseDot } from './PulseDot';
 import { Text } from './text';
 
 /**
@@ -81,6 +84,7 @@ export function QueueIndicator() {
       setConfirming(false);
       setExpanded(false);
       nav.reset('home');
+      AccessibilityInfo.announceForAccessibility('Buscas canceladas.');
       nav.toast('Buscas canceladas.');
       return;
     }
@@ -89,170 +93,192 @@ export function QueueIndicator() {
   };
 
   return (
-    <View style={{ flexShrink: 0, backgroundColor: palette.bg, paddingBottom: contentBottomInset }}>
+    <Appear style={{ flexShrink: 0 }}>
       <View
-        style={{
-          marginHorizontal: 10,
-          marginBottom: 6,
-          borderWidth: 1.5,
-          borderColor: palette.lineStrong,
-          borderRadius: 14,
-          backgroundColor: palette.surface,
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          gap: 8,
-        }}
+        style={{ flexShrink: 0, backgroundColor: palette.bg, paddingBottom: contentBottomInset }}
       >
-        <Pressable
-          onPress={() => setExpanded((current) => !current)}
-          accessibilityRole="button"
-          accessibilityState={{ expanded }}
-          accessibilityLabel={`${title}. ${subtitle}. Toque para ${expanded ? 'recolher' : 'ver detalhes'}.`}
-          style={({ pressed }) => ({
-            minHeight: 48,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            opacity: pressed ? 0.9 : 1,
-          })}
+        <View
+          style={{
+            marginHorizontal: 10,
+            marginBottom: 6,
+            borderWidth: 1.5,
+            borderColor: palette.lineStrong,
+            borderRadius: 14,
+            backgroundColor: palette.surface,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            gap: 8,
+          }}
         >
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              numberOfLines={1}
-              accessibilityLiveRegion="polite"
-              style={{ fontSize: 14, fontWeight: '900', color: palette.ink }}
-            >
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
-                {subtitle}
-              </Text>
-            ) : (
-              <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
-                A partida encontrada é a única pendência.
-              </Text>
-            )}
-          </View>
-          {queueReconnecting ? (
-            <Text style={{ fontSize: 11, fontWeight: '800', color: palette.orange }}>
-              reconectando
-            </Text>
-          ) : null}
-          {since ? (
-            <Text style={{ fontSize: 13, fontWeight: '800', color: palette.ink }}>
-              {elapsed(since, now)}
-            </Text>
-          ) : null}
-          <Text style={{ fontSize: 14, color: palette.muted }}>{expanded ? '▾' : '▸'}</Text>
-        </Pressable>
-        {expanded ? (
-          <View style={{ gap: 8 }}>
-            {matchedEntry ? (
-              <View style={{ gap: 4 }}>
-                <Txt variant="tiny">
-                  O servidor fechou esta entrada; as demais seguem aguardando.
-                </Txt>
-                {matchedEntry.lobby ? (
-                  <Btn
-                    tone="primary"
-                    small
-                    onPress={() =>
-                      matchedEntry.lobby &&
-                      nav.go('lobby-found', {
-                        lobbyId: matchedEntry.lobby.id,
-                        mode: matchedEntry.mode,
-                      })
-                    }
-                  >
-                    Ver partida
-                  </Btn>
-                ) : null}
+          <Pressable
+            onPress={() => setExpanded((current) => !current)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded }}
+            accessibilityLabel={`${title}. ${subtitle}. Toque para ${expanded ? 'recolher' : 'ver detalhes'}.`}
+            style={({ pressed }) => ({
+              minHeight: 48,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              opacity: pressed ? 0.9 : 1,
+              transform: pressed ? [{ scale: scale.card }] : [],
+            })}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {queue.length > 0 ? <PulseDot color={palette.limeDeep} size={7} /> : null}
+                <Text
+                  numberOfLines={1}
+                  accessibilityLiveRegion="polite"
+                  style={{ flexShrink: 1, fontSize: 14, fontWeight: '900', color: palette.ink }}
+                >
+                  {title}
+                </Text>
               </View>
+              {subtitle ? (
+                <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
+                  {subtitle}
+                </Text>
+              ) : (
+                <Text numberOfLines={1} style={{ fontSize: 12, color: palette.muted }}>
+                  A partida encontrada é a única pendência.
+                </Text>
+              )}
+            </View>
+            {queueReconnecting ? (
+              <Text style={{ fontSize: 11, fontWeight: '800', color: palette.orange }}>
+                reconectando
+              </Text>
             ) : null}
-            {queue.length > 0 ? (
-              <ScrollView
-                style={{ maxHeight: 168 }}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+            {since ? (
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: '800',
+                  color: palette.ink,
+                  fontVariant: ['tabular-nums'],
+                }}
               >
-                <View style={{ gap: 10 }}>
-                  {queue.map((entry) => (
-                    <View
-                      key={entry.id}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                {elapsed(since, now)}
+              </Text>
+            ) : null}
+            <Text style={{ fontSize: 14, color: palette.muted }}>{expanded ? '▾' : '▸'}</Text>
+          </Pressable>
+          {expanded ? (
+            <View style={{ gap: 8 }}>
+              {matchedEntry ? (
+                <View style={{ gap: 4 }}>
+                  <Txt variant="tiny">
+                    O servidor fechou esta entrada; as demais seguem aguardando.
+                  </Txt>
+                  {matchedEntry.lobby ? (
+                    <Btn
+                      tone="primary"
+                      small
+                      onPress={() =>
+                        matchedEntry.lobby &&
+                        nav.go('lobby-found', {
+                          lobbyId: matchedEntry.lobby.id,
+                          mode: matchedEntry.mode,
+                        })
+                      }
                     >
-                      <View style={{ flex: 1, minWidth: 0 }}>
+                      Ver partida
+                    </Btn>
+                  ) : null}
+                </View>
+              ) : null}
+              {queue.length > 0 ? (
+                <ScrollView
+                  style={{ maxHeight: 168 }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={{ gap: 10 }}>
+                    {queue.map((entry) => (
+                      <View
+                        key={entry.id}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                      >
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            numberOfLines={1}
+                            style={{ fontSize: 13, fontWeight: '800', color: palette.ink }}
+                          >
+                            {formatLabelFromCatalog(catalog, entry.format_id)}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: palette.muted }}>
+                            {modeLabel(entryMode(entry))}
+                          </Text>
+                        </View>
                         <Text
-                          numberOfLines={1}
-                          style={{ fontSize: 13, fontWeight: '800', color: palette.ink }}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: '700',
+                            color: palette.ink,
+                            fontVariant: ['tabular-nums'],
+                          }}
                         >
-                          {formatLabelFromCatalog(catalog, entry.format_id)}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: palette.muted }}>
-                          {modeLabel(entryMode(entry))}
+                          {elapsed(entry.created_at, now)}
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: palette.ink }}>
-                        {elapsed(entry.created_at, now)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            ) : null}
-            {error ? (
-              <Notice tone="orange" icon="alert">
-                {error}
-              </Notice>
-            ) : null}
-            {queueNotice ? (
-              <View style={{ gap: 6 }}>
+                    ))}
+                  </View>
+                </ScrollView>
+              ) : null}
+              {error ? (
                 <Notice tone="orange" icon="alert">
-                  {queueNotice}
+                  {error}
                 </Notice>
-                <Btn small tone="ghost" onPress={clearQueueNotice}>
-                  Dispensar aviso
-                </Btn>
-              </View>
-            ) : null}
-            {confirming ? (
-              <View style={{ gap: 6 }}>
-                <Txt variant="tiny">
-                  Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'} aguardando? A
-                  partida encontrada, se houver, não é cancelada aqui. Se a rede falhar, as entradas
-                  continuam aqui.
-                </Txt>
-                <BtnRow>
-                  <Btn small tone="ghost" onPress={() => setConfirming(false)} disabled={busy}>
-                    Manter
+              ) : null}
+              {queueNotice ? (
+                <View style={{ gap: 6 }}>
+                  <Notice tone="orange" icon="alert">
+                    {queueNotice}
+                  </Notice>
+                  <Btn small tone="ghost" onPress={clearQueueNotice}>
+                    Dispensar aviso
                   </Btn>
-                  <Btn small tone="danger" onPress={cancel} disabled={busy}>
-                    {busy ? 'Cancelando…' : 'Cancelar tudo'}
+                </View>
+              ) : null}
+              {confirming ? (
+                <View style={{ gap: 6 }}>
+                  <Txt variant="tiny">
+                    Cancelar as {cancelTarget} {cancelTarget === 1 ? 'busca' : 'buscas'} aguardando?
+                    A partida encontrada, se houver, não é cancelada aqui. Se a rede falhar, as
+                    entradas continuam aqui.
+                  </Txt>
+                  <BtnRow>
+                    <Btn small tone="ghost" onPress={() => setConfirming(false)} disabled={busy}>
+                      Manter
+                    </Btn>
+                    <Btn small tone="danger" onPress={cancel} disabled={busy}>
+                      {busy ? 'Cancelando…' : 'Cancelar tudo'}
+                    </Btn>
+                  </BtnRow>
+                </View>
+              ) : (
+                <BtnRow>
+                  <Btn small tone="ghost" onPress={() => nav.go('queue-search')}>
+                    Ver
+                  </Btn>
+                  <Btn small tone="ghost" onPress={() => nav.go('queue', { from: 'queue-search' })}>
+                    Alterar
+                  </Btn>
+                  <Btn
+                    small
+                    tone="danger"
+                    onPress={() => setConfirming(true)}
+                    disabled={busy || queue.length === 0}
+                  >
+                    Cancelar
                   </Btn>
                 </BtnRow>
-              </View>
-            ) : (
-              <BtnRow>
-                <Btn small tone="ghost" onPress={() => nav.go('queue-search')}>
-                  Ver
-                </Btn>
-                <Btn small tone="ghost" onPress={() => nav.go('queue', { from: 'queue-search' })}>
-                  Alterar
-                </Btn>
-                <Btn
-                  small
-                  tone="danger"
-                  onPress={() => setConfirming(true)}
-                  disabled={busy || queue.length === 0}
-                >
-                  Cancelar
-                </Btn>
-              </BtnRow>
-            )}
-          </View>
-        ) : null}
+              )}
+            </View>
+          ) : null}
+        </View>
       </View>
-    </View>
+    </Appear>
   );
 }

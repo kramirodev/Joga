@@ -9,7 +9,6 @@ import {
 } from 'react';
 import {
   Animated,
-  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -22,6 +21,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../state/context';
+import { duration, easing, motionDuration, useReducedMotion } from './motion';
 import { Text } from './text';
 
 type CloseFn = (after?: () => void) => void;
@@ -36,8 +36,6 @@ export function useSheetClose(): CloseFn {
   return useContext(CloseContext);
 }
 
-const ENTER_MS = 220;
-const EXIT_MS = 160;
 /** Altura usada só antes do primeiro `onLayout`; depois vale a altura real. */
 const FALLBACK_SHEET_HEIGHT = 420;
 
@@ -75,6 +73,7 @@ export function BottomSheetFrame({
   accessibilityLabel?: string;
 }) {
   const { palette } = useTheme();
+  const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [progress] = useState(() => new Animated.Value(0));
@@ -96,11 +95,11 @@ export function BottomSheetFrame({
     closing.current = false;
     Animated.timing(progress, {
       toValue: 1,
-      duration: ENTER_MS,
-      easing: Easing.out(Easing.cubic),
+      duration: motionDuration(duration.medium, reduceMotion),
+      easing: easing.enter,
       useNativeDriver: true,
     }).start();
-  }, [progress, visible]);
+  }, [progress, reduceMotion, visible]);
 
   // Com o teclado aberto a barra de navegação do Android é substituída pelo IME:
   // reservar `insets.bottom` ali só criaria um vão morto acima do teclado.
@@ -125,8 +124,8 @@ export function BottomSheetFrame({
     closing.current = true;
     Animated.timing(progress, {
       toValue: 0,
-      duration: EXIT_MS,
-      easing: Easing.in(Easing.cubic),
+      duration: motionDuration(duration.base, reduceMotion),
+      easing: easing.exit,
       useNativeDriver: true,
     }).start(() => {
       closeRef.current();
@@ -176,12 +175,15 @@ export function BottomSheetFrame({
               borderTopRightRadius: 22,
               borderTopWidth: 1.5,
               borderColor: palette.lineStrong,
+              opacity: reduceMotion ? progress : 1,
               transform: [
                 {
-                  translateY: progress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [from, 0],
-                  }),
+                  translateY: reduceMotion
+                    ? 0
+                    : progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [from, 0],
+                      }),
                 },
               ],
             }}

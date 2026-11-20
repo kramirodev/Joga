@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { AccessibilityInfo, Animated, View } from 'react-native';
 
 import { describeApiError, ApiError } from '../api/client';
 import type { Sport } from '../api/types';
@@ -21,6 +21,7 @@ import {
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { divisionLabel, elapsed, timeOnly, WEEKDAY_NAMES } from '../ui/datetime';
+import { Appear } from '../ui/Appear';
 import {
   Badge,
   Btn,
@@ -35,6 +36,8 @@ import {
   Row,
   Txt,
 } from '../ui/kit';
+import { duration, easing, motionDuration, useReducedMotion } from '../ui/motion';
+import { PulseDot } from '../ui/PulseDot';
 import { Text } from '../ui/text';
 
 function formatName(catalog: readonly Sport[], formatId: string): string {
@@ -200,6 +203,31 @@ export function QueueScreen() {
   const selection = useMemo(() => buildSelection(selected, modes), [modes, selected]);
   const count = selectionProductCount(selection);
   const hasConfirmed = queue.length > 0 || matchedEntry !== null;
+  const reduceMotion = useReducedMotion();
+  const [listOpacity] = useState(() => new Animated.Value(1));
+  const confirmedSignature = useMemo(
+    () => `${queue.map((entry) => entry.id).join('|')}|${matchedEntry?.id ?? ''}`,
+    [matchedEntry?.id, queue],
+  );
+  const signatureRef = useRef(confirmedSignature);
+
+  // A lista confirmada só muda depois do 2xx do PUT ou de um GET. Durante a
+  // chamada ela permanece visível e esmaecida; ao confirmar, volta em 180 ms.
+  useEffect(() => {
+    const changed = signatureRef.current !== confirmedSignature;
+    signatureRef.current = confirmedSignature;
+    if (changed && !busy) {
+      listOpacity.setValue(0.6);
+    }
+    const animation = Animated.timing(listOpacity, {
+      toValue: busy ? 0.55 : 1,
+      duration: motionDuration(duration.base, reduceMotion),
+      easing: easing.standard,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [busy, confirmedSignature, listOpacity, reduceMotion]);
 
   const submit = useCallback(async () => {
     if (busyRef.current) {
@@ -227,6 +255,9 @@ export function QueueScreen() {
       );
       if (result.ok) {
         touched.current = false;
+        AccessibilityInfo.announceForAccessibility(
+          hasConfirmed ? 'Busca atualizada.' : 'Busca iniciada.',
+        );
         if (nav.params.from === 'queue-search') {
           nav.back();
         } else {
@@ -242,7 +273,7 @@ export function QueueScreen() {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [clearQueueNotice, court, nav, replaceQueue, selection, session]);
+  }, [clearQueueNotice, court, hasConfirmed, nav, replaceQueue, selection, session]);
 
   return (
     <Page title="Buscar partida">
@@ -387,46 +418,49 @@ export function QueueScreen() {
         </Txt>
       </Card>
       {hasConfirmed ? (
-        <Card>
-          <Row between>
-            <Txt variant="h3">Buscas ativas</Txt>
-            <Badge>{queue.length}</Badge>
-          </Row>
-          {matchedEntry ? (
-            <View style={{ marginTop: 8 }}>
-              <Txt variant="tiny">Partida encontrada</Txt>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: palette.ink }}>
-                {formatName(catalog, matchedEntry.format_id)} · {modeLabel(entryMode(matchedEntry))}
-              </Text>
-            </View>
-          ) : null}
-          {queue.length === 0 ? (
-            <Txt variant="tiny" style={{ marginTop: 8 }}>
-              Nenhuma entrada aguardando no servidor.
-            </Txt>
-          ) : (
-            <View style={{ marginTop: 8, gap: 8 }}>
-              {queue.map((entry) => (
-                <Row key={entry.id} between>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text
-                      numberOfLines={2}
-                      style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
-                    >
-                      {formatName(catalog, entry.format_id)}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: palette.muted }}>
-                      {modeLabel(entryMode(entry))} · desde {timeOnly(entry.created_at)}
-                    </Text>
-                  </View>
-                </Row>
-              ))}
-            </View>
-          )}
-          <Btn tone="ghost" small onPress={() => nav.go('queue-search')}>
-            Acompanhar busca
-          </Btn>
-        </Card>
+        <Animated.View style={{ opacity: listOpacity }}>
+          <Card>
+            <Row between>
+              <Txt variant="h3">Buscas ativas</Txt>
+              <Badge>{queue.length}</Badge>
+            </Row>
+            {matchedEntry ? (
+              <View style={{ marginTop: 8 }}>
+                <Txt variant="tiny">Partida encontrada</Txt>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: palette.ink }}>
+                  {formatName(catalog, matchedEntry.format_id)} ·{' '}
+                  {modeLabel(entryMode(matchedEntry))}
+                </Text>
+              </View>
+            ) : null}
+            {queue.length === 0 ? (
+              <Txt variant="tiny" style={{ marginTop: 8 }}>
+                Nenhuma entrada aguardando no servidor.
+              </Txt>
+            ) : (
+              <View style={{ marginTop: 8, gap: 8 }}>
+                {queue.map((entry) => (
+                  <Row key={entry.id} between>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        numberOfLines={2}
+                        style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                      >
+                        {formatName(catalog, entry.format_id)}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: palette.muted }}>
+                        {modeLabel(entryMode(entry))} · desde {timeOnly(entry.created_at)}
+                      </Text>
+                    </View>
+                  </Row>
+                ))}
+              </View>
+            )}
+            <Btn tone="ghost" small onPress={() => nav.go('queue-search')}>
+              Acompanhar busca
+            </Btn>
+          </Card>
+        </Animated.View>
       ) : null}
       {modes.includes('ranked') ? (
         <Notice tone="blue" icon="shield">
@@ -465,10 +499,20 @@ export function QueueScreen() {
         onPress={submit}
         disabled={busy || options.length === 0 || count === 0}
       >
-        {busy ? 'Atualizando busca…' : hasConfirmed ? 'Atualizar busca' : 'Entrar na fila'}
+        {busy
+          ? hasConfirmed
+            ? 'Atualizando busca…'
+            : 'Entrando…'
+          : hasConfirmed
+            ? 'Atualizar busca'
+            : 'Entrar na fila'}
       </Btn>
       {busy ? (
-        <Notice icon="clock">Mantendo a última lista confirmada até o servidor responder.</Notice>
+        <Notice icon="clock">
+          {hasConfirmed
+            ? 'Mantendo a última lista confirmada até o servidor responder.'
+            : 'Enviando sua seleção ao servidor. Nada aparece como ativo antes da confirmação.'}
+        </Notice>
       ) : null}
       <Btn small tone="ghost" onPress={() => nav.go('queue-empty')}>
         Não encontrei partida
@@ -543,6 +587,7 @@ export function QueueSearch() {
       return;
     }
     routed.current = lobby.id;
+    AccessibilityInfo.announceForAccessibility('Partida encontrada.');
     nav.replace('lobby-found', { lobbyId: lobby.id, mode: matchedEntry.mode });
   }, [matchedEntry, nav]);
 
@@ -555,6 +600,7 @@ export function QueueSearch() {
     const result = await cancelQueue();
     if (result.ok) {
       setBusy(false);
+      AccessibilityInfo.announceForAccessibility('Buscas canceladas.');
       nav.reset('home');
       nav.toast('Buscas canceladas.');
       return;
@@ -599,7 +645,14 @@ export function QueueSearch() {
           {entry.radius_km} km · desde {timeOnly(entry.created_at)}
         </Text>
       </View>
-      <Text style={{ fontSize: 15, fontWeight: '800', color: palette.ink }}>
+      <Text
+        style={{
+          fontSize: 15,
+          fontWeight: '800',
+          color: palette.ink,
+          fontVariant: ['tabular-nums'],
+        }}
+      >
         {elapsed(entry.created_at, now)}
       </Text>
     </Row>
@@ -682,32 +735,37 @@ export function QueueSearch() {
           )}
         </Card>
       ) : null}
-      <Card>
-        <Row between>
-          <Txt variant="h3">
-            {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
+      <Appear>
+        <Card>
+          <Row between>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />
+              <Txt variant="h3">
+                {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
+              </Txt>
+            </View>
+            {queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
+          </Row>
+          {queue.length === 0 ? (
+            <Txt variant="tiny" style={{ marginTop: 8 }}>
+              Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
+            </Txt>
+          ) : (
+            <View style={{ marginTop: 10, gap: 12 }}>
+              {grouped.map((group) => (
+                <View key={group.mode} style={{ gap: 8 }}>
+                  {modeCount > 1 ? <Txt variant="label">{modeLabel(group.mode)}</Txt> : null}
+                  {group.entries.map(renderEntry)}
+                </View>
+              ))}
+            </View>
+          )}
+          <Txt variant="tiny" style={{ marginTop: 10, fontVariant: ['tabular-nums'] }}>
+            {oldest ? `Mais antiga: ${elapsed(oldest, now)}` : 'Sem entradas aguardando.'}
+            {profile?.region?.city ? ` · ${profile.region.city}` : ''}
           </Txt>
-          {queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
-        </Row>
-        {queue.length === 0 ? (
-          <Txt variant="tiny" style={{ marginTop: 8 }}>
-            Nenhuma entrada aguardando. A partida encontrada acima é a única pendência.
-          </Txt>
-        ) : (
-          <View style={{ marginTop: 10, gap: 12 }}>
-            {grouped.map((group) => (
-              <View key={group.mode} style={{ gap: 8 }}>
-                {modeCount > 1 ? <Txt variant="label">{modeLabel(group.mode)}</Txt> : null}
-                {group.entries.map(renderEntry)}
-              </View>
-            ))}
-          </View>
-        )}
-        <Txt variant="tiny" style={{ marginTop: 10 }}>
-          {oldest ? `Mais antiga: ${elapsed(oldest, now)}` : 'Sem entradas aguardando.'}
-          {profile?.region?.city ? ` · ${profile.region.city}` : ''}
-        </Txt>
-      </Card>
+        </Card>
+      </Appear>
       <Notice icon="clock">
         Não prometemos um tempo de espera. Uma combinação pode encontrar partida antes das outras; o
         servidor decide e a tela apenas reflete.
