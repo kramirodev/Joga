@@ -1,8 +1,8 @@
 # JOGA — Documentação de conceito e produto
 
-**Versão:** 3.18<br>
+**Versão:** 3.19<br>
 **Status:** visão de produto atualizada pela ADR 0049 — crédito em reais, ticket como unidade de exibição, preço em duas linhas, NFS-e e custódia B→C — e pela identidade por ícones (ADR 0029, revisão 2)<br>
-**Data:** 19 de novembro de 2026<br>
+**Data:** 20 de novembro de 2026<br>
 **Nome principal:** JOGA<br>**Nome de exibição pretendido na loja de aplicativos:** JOGA y JOGA
 
 > Este documento consolida a visão de produto e as decisões conceituais atuais do JOGA. Ele substitui as versões anteriores e as versões conceituais incompatíveis. Não afirma que as funcionalidades descritas já estejam implementadas. A ordem normativa de desenvolvimento permanece em `PLANS.md`. Em matéria de produto, prevalece este documento; em matéria de ordem, escopo e critérios de saída de execução, prevalece `PLANS.md`.
@@ -31,6 +31,7 @@
 | 3.16 | 12 de novembro de 2026 | ADR 0045: estatísticas do passe com evolução da divisão/progresso, histórico por quadra, passaporte, horários e retrospectiva; inteligência de rede com quadras mais usadas, horários de maior movimento e densidade competitiva por quadra, em faixas, com amostra mínima e atualização diária. O MMR bruto permanece oculto (ADR 0025) |
 | 3.17 | 16 de novembro de 2026 | ADR 0049: saldo e ledger em reais; ticket como unidade de exibição 1:1, sem efeito jurídico/contábil/fiscal; saldo em reais não exibido como carteira; valor do espaço, taxa e tabela de conversão antes da confirmação; NFS-e materializa o valor; passe como franquia mensal não acumulável e fora do escrow; custódia B no protótipo e C na fase comercial; dinheiro real bloqueado até pareceres |
 | 3.18 | 19 de novembro de 2026 | ADR 0029 revisão 2: identidade visual por ícone de perfil + moldura + cor de destaque + ícone de entrada + emote + badge, em catálogo fechado e versionado, sem corpo ou camadas; a proibição de fotos de pessoas permanece |
+| 3.19 | 20 de novembro de 2026 | ADR 0055: quadra pública gratuita, sem preço, taxa, receita, consumo de ticket ou repasse, e sem lançamento financeiro por reserva; ADR 0056: enquete de escolha de quadra por categoria em lobby manual, com janela de 10 minutos, verificação de ingressos e decisão sobre quem escolhe a quadra |
 
 ## Como interpretar as decisões neste documento
 
@@ -294,22 +295,23 @@ Mensagens automáticas poderão informar entradas, saídas, votações, alteraç
 
 Não está previsto, no escopo inicial, envio livre de vídeos, áudios, arquivos ou imagens no chat.
 
-### 8.3 Votação de troca de quadra
+### 8.3 Enquete de escolha de quadra
 
-A votação de troca de quadra será uma funcionalidade dos lobbies abertos originados pelo matchmaking. Não existirá votação de troca de arena em lobbies fechados ou em lobbies criados manualmente.
+A enquete de escolha de quadra existe nos lobbies originados pelo matchmaking e também nos **lobbies manuais**, inclusive fechados ou por convite, com pelo menos dois participantes ativos. Quando a enquete é aberta, o dono do lobby deixa de decidir sozinho a categoria e o local.
 
-Nos lobbies elegíveis:
+A votação é sobre a **categoria de quadra** — as faixas de preço já existentes — e não sobre uma quadra específica. Cada categoria mostra seu custo por jogador e a quantidade de ingressos por vaga; a quadra pública aparece como **“Pública — grátis”**.
 
-- Não haverá um dono com poder unilateral de trocar o local.
-- Qualquer participante poderá sugerir uma alternativa compatível.
-- Cada participante poderá votar uma vez por proposta.
-- Haverá apenas uma votação ativa por lobby.
-- A proposta deverá respeitar o tipo de espaço permitido no lobby.
-- O sistema verificará disponibilidade, horário, duração e demais restrições antes de efetivar a mudança.
+O jogador só pode votar em categoria que **consegue pagar**, comparando o saldo de ingressos com o custo por vaga da categoria para o formato do lobby. A verificação é feita no servidor; o app nunca envia saldo nem uma afirmação de que o jogador pode pagar. Categorias acima do saldo aparecem desabilitadas, com a razão indicada. Na quadra pública não há exigência de ingressos.
 
-A aprovação exige quórum mínimo de 50% dos participantes elegíveis e mais de 50% dos votos válidos favoráveis. Empate, maioria contrária ou ausência de quórum rejeitam a proposta.
+A janela de votação é de **10 minutos**, contada e encerrada pelo servidor. Não pode ser estendida pelo dono do lobby nem pelo relógio do aparelho. Há apenas **uma enquete ativa por lobby**.
 
-A votação deve preservar a transparência entre os participantes: os votos poderão ser visualizados pelos demais jogadores, incentivando responsabilidade e reduzindo decisões aleatórias.
+A votação decide duas coisas: a **categoria** e **quem escolhe a quadra** — “o sistema decide”, que busca uma quadra na categoria vencedora, ou “os usuários decidem”, que escolhem a quadra concreta e pagam com ingressos quando a categoria for privada. Na categoria pública gratuita, a escolha pelos usuários não consome ingressos.
+
+Se o sistema não encontrar quadra na categoria e no horário, ele **sugere o horário livre mais próximo** na mesma categoria, para confirmação dos participantes. Não troca a categoria por conta própria, não reserva sem confirmação e não cobra valor diferente do valor da categoria vencedora.
+
+A aprovação exige quórum mínimo de 50% dos participantes elegíveis e mais de 50% dos votos válidos. Para a categoria, os elegíveis são os jogadores que conseguem pagar ao menos uma categoria; para “quem escolhe”, são todos os participantes ativos. Empate em “quem escolhe” resolve para o sistema. Sem maioria estrita na categoria, nada muda e o lobby mantém a quadra e o horário atuais.
+
+A votação preserva a transparência entre os participantes: os votos declarados podem ser vistos pelos demais jogadores. O saldo, a capacidade de pagamento e o motivo individual de inelegibilidade não são expostos a terceiros.
 
 A aprovação não substitui a confirmação da disponibilidade nem a conclusão de uma nova reserva. Uma reserva já paga não será cancelada automaticamente apenas porque uma votação foi aprovada. O sistema deverá apresentar os efeitos de cancelamento e reembolso antes de confirmar a mudança.
 
