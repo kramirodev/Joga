@@ -171,6 +171,82 @@ processo recebe HTTP. O middleware da API mantém `no-store`, `nosniff` e
 `no-referrer`, inclusive em respostas 500 não tratadas, que também carregam
 `X-Request-ID` e corpo genérico `internal_error`.
 
+## Riscos aceitos da auditoria de 2026-11-20
+
+Auditoria de infraestrutura, segredos e dependências. Os três itens abaixo
+foram identificados e **aceitos sem correção nesta fase**; nenhum bloqueia o
+demo privado nem exige ação imediata.
+
+### A. APK/AAB de demonstração assinado com certificado de debug
+
+**Situação:** o APK/AAB usado no demo é assinado com o keystore de debug do
+Android (`CN=Android Debug`, SHA-256 `FA:C6:…:3B:9C`), o mesmo declarado em
+`web/public/.well-known/assetlinks.json` para a prova de passkey.
+
+**Por que é aceito:** o artefato serve apenas à demonstração interna, instalado
+por sideload. A chave de debug é compartilhada por qualquer instalação Android,
+não tem custódia adequada (fica na máquina de build, sem cofre nem controle de
+acesso) e não é aceita por loja.
+
+**Limite explícito:** nunca publicar em Google Play/App Store nem distribuir
+como build de produção com essa chave. A loja exige AAB assinado por chave de
+upload própria, com custódia e rotação documentadas.
+
+**Gatilhos de revisão:** primeira publicação em loja; primeiro build
+distribuído fora do círculo de demonstração; inclusão de usuários reais; troca
+do `package` (`com.anonymous.joga`); renovação do `assetlinks.json`; suspeita
+de vazamento do keystore de debug. Nesses casos: criar chave de release com
+custódia (keystore fora do repositório, senha em cofre), assinar com ela e
+reemitir o `assetlinks.json` com a nova impressão digital.
+
+Registro operacional complementar: `docs/DEPLOY_DEMO.md`, seção 11.
+
+### B. Advisories transitivos no app mobile
+
+**Situação (verificado com `pnpm audit` em 2026-11-20):** `mobile/` tem 5
+advisories, todos em dependências transitivas de ferramentas de build:
+4 de `node-forge` (1 low, 3 moderate) via `expo → @expo/cli` e 1 moderate de
+`minimatch` via `expo → @expo/fingerprint` e via `eslint-config-expo`. Nenhum
+pacote vulnerável é empacotado no bundle do app; o uso é de CLI/ferramenta em
+tempo de build.
+
+**Verificação das demais frentes:** `backend/` sem vulnerabilidade conhecida
+(`pip-audit -r requirements.lock`, exit 0) e `web/` com 1 advisory moderate de
+`minimatch` via `eslint` — tooling de desenvolvimento, fora do bundle servido.
+O relatório original da auditoria declarava `web` limpo; a diferença é esse
+advisory de dev, registrado aqui para não ficar implícito.
+
+**Por que é aceito:** corrigir exige subir `expo`/`@expo/cli` fora da versão
+fixada do SDK (risco de quebrar o build nativo) ou forçar override de
+transitivas sem teste em aparelho. O impacto é local ao processo de build e não
+alcança o usuário final nem a API.
+
+**Gatilhos de revisão:** atualização do SDK Expo; correção upstream disponível
+dentro do SDK atual; advisory que passe a afetar código embarcado no app;
+publicação em loja; incidente de supply chain no ecossistema Expo/npm. Nesses
+casos: atualizar as dependências e revalidar `pnpm exec tsc --noEmit`, lint e
+build nativo.
+
+### C. URL real do demo no histórico do Git
+
+**Situação:** a URL pública do Render existiu no commit `e47c750` e foi
+removida em `5691752`. O histórico **não será reescrito** (repositório público;
+force push e reescrita são proibidos). Hoje o host é derivável do próprio
+repositório: `render.yaml` declara `name: joga-demo` e o Render publica
+`https://<nome>.onrender.com`.
+
+**Por que é aceito:** a URL não é segredo de autenticação. O SPA em `/` está
+atrás de basic auth com hash bcrypt existente apenas no Render; `/api/*` exige
+sessão, autorização por recurso e rate limit; o ambiente é demo privado com
+dinheiro simulado. Reescrever histórico não remove o dado de forks e clones já
+existentes.
+
+**Gatilhos de revisão:** migração para domínio próprio; demo com dados de
+usuários reais; aumento anormal de 401/tráfego no Caddy; incidente de acesso ao
+painel; decisão de tornar o repositório privado (aí a reescrita passa a ser
+avaliável). Nesses casos: rotacionar credenciais do demo, revisar o basic auth
+e reavaliar a exposição da URL.
+
 ## Riscos residuais e bloqueios
 
 - **Alto:** revisão LGPD/jurídica definitiva ainda não feita.

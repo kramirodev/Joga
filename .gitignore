@@ -2,14 +2,21 @@
 .pnpm-store/
 .tools/
 
+# Segredos locais: nenhum .env é versionado; exemplos continuam versionados
+.env
+.env.*
+!.env.example
+
+# Chaves e certificados de assinatura local (Android/iOS)
+*.keystore
+*.jks
+*.p12
+*.key
+
 # Artefatos de execução Python (prova de OTP)
 __pycache__/
 *.py[cod]
 backend/.venv/
-.env.deploy
-backend/.env
-backend/.env.*
-!backend/.env.example
 backend/var/
 .pytest_cache/
 .mypy_cache/

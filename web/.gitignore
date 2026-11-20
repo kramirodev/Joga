@@ -3,4 +3,9 @@ dist/
 .pnpm-store/
 *.local
 
+# local env files: nenhum .env é versionado; exemplos continuam versionados
+.env
+.env.*
+!.env.example
+
 *.tsbuildinfo
