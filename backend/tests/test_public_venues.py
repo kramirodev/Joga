@@ -110,16 +110,18 @@ def add_space(
     *,
     sport: dict,
     price_cents: int = 12_000,
+    name: str = "Quadra 1",
+    status: str = "active",
 ) -> dict:
     response = api.post(
         f"/api/v1/admin/venues/{venue_id}/spaces",
         headers=headers,
         json={
-            "name": "Quadra 1",
+            "name": name,
             "sport_id": sport["id"],
             "format_id": sport["formats"][0]["id"],
             "price_cents": price_cents,
-            "status": "active",
+            "status": status,
             "reason": "espaço público de teste",
         },
     )
@@ -369,6 +371,68 @@ def test_space_update_and_schedule_contract(client: TestClient, db_session: Sess
     business_hours = api.get(f"/api/v1/admin/venues/{venue['id']}/business-hours", headers=headers)
     assert business_hours.status_code == 200
     assert len(business_hours.json()) == 1
+
+
+def _listed_venue(api: TestClient, headers: dict[str, str], venue_id: str) -> dict:
+    response = api.get("/api/v1/admin/venues", headers=headers)
+    assert response.status_code == 200, response.text
+    return next(item for item in response.json()["venues"] if item["id"] == venue_id)
+
+
+def test_active_spaces_count_ignores_inactive_spaces(
+    client: TestClient, db_session: Session
+) -> None:
+    admin_id, headers = admin_setup(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+    sport = create_catalog(api, headers)
+    venue = create_venue(api, headers)
+    add_space(api, headers, venue["id"], sport=sport, name="Quadra Ativa")
+    add_space(api, headers, venue["id"], sport=sport, name="Quadra Inativa", status="inactive")
+
+    detail = api.get(f"/api/v1/admin/venues/{venue['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["spaces_count"] == 2
+    assert detail.json()["active_spaces_count"] == 1
+
+    listed = _listed_venue(api, headers, venue["id"])
+    assert listed["spaces_count"] == 2
+    assert listed["active_spaces_count"] == 1
+
+
+def test_active_spaces_count_is_zero_without_spaces(
+    client: TestClient, db_session: Session
+) -> None:
+    admin_id, headers = admin_setup(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+    venue = create_venue(api, headers)
+
+    detail = api.get(f"/api/v1/admin/venues/{venue['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["spaces_count"] == 0
+    assert detail.json()["active_spaces_count"] == 0
+
+    listed = _listed_venue(api, headers, venue["id"])
+    assert listed["spaces_count"] == 0
+    assert listed["active_spaces_count"] == 0
+
+
+def test_active_spaces_count_is_zero_when_all_spaces_are_inactive(
+    client: TestClient, db_session: Session
+) -> None:
+    admin_id, headers = admin_setup(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+    sport = create_catalog(api, headers)
+    venue = create_venue(api, headers)
+    add_space(api, headers, venue["id"], sport=sport, name="Quadra Inativa", status="inactive")
+
+    detail = api.get(f"/api/v1/admin/venues/{venue['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["spaces_count"] == 1
+    assert detail.json()["active_spaces_count"] == 0
+
+    listed = _listed_venue(api, headers, venue["id"])
+    assert listed["spaces_count"] == 1
+    assert listed["active_spaces_count"] == 0
 
 
 class FakePostalCodeService:
