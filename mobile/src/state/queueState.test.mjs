@@ -4,17 +4,22 @@ import test from 'node:test';
 import {
   applyNetworkFailure,
   applyReplaceResult,
+  buildLevelAssignments,
   buildSelection,
   cancelOutcome,
   formatLabelFromCatalog,
   isExpired,
   isNetworkFailure,
   isStaleRevision,
+  levelAssignmentsMatch,
+  levelKey,
   lobbyIdFromQueue,
   nextPollDelay,
   oldestCreatedAt,
+  optionalLevelsPayload,
   queueFailureMessage,
   reconcileEntries,
+  queueContinuity,
   selectionError,
   selectionFromEntries,
   selectionProduct,
@@ -133,6 +138,113 @@ test('PUT substitui a seleção: não soma entradas antigas', () => {
     replaced.entries.map((item) => item.id),
     ['new-1'],
   );
+});
+
+test('continuidade: mantém as combinações que continuam e separa as que serão canceladas', () => {
+  const entries = [
+    entry({ id: 'a', format_id: 'f1' }),
+    entry({ id: 'b', format_id: 'f1', mode: 'ranked' }),
+    entry({ id: 'c', format_id: 'f2' }),
+  ];
+  const continuity = queueContinuity(entries, buildSelection(['f1', 'f3'], ['casual']));
+  assert.deepEqual(
+    continuity.kept.map((item) => item.id),
+    ['a'],
+  );
+  assert.deepEqual(
+    continuity.removed.map((item) => item.id),
+    ['b', 'c'],
+  );
+  assert.deepEqual(continuity.added, [{ formatId: 'f3', mode: 'casual' }]);
+});
+
+test('continuidade: seleção vazia cancela todas e não inventa combinações', () => {
+  const entries = [entry({ id: 'a' }), entry({ id: 'b', mode: 'ranked' })];
+  const continuity = queueContinuity(entries, buildSelection([], []));
+  assert.equal(continuity.kept.length, 0);
+  assert.deepEqual(
+    continuity.removed.map((item) => item.id),
+    ['a', 'b'],
+  );
+  assert.deepEqual(continuity.added, []);
+});
+
+test('nível por modo: casual e ranqueada têm escolhas independentes', () => {
+  const chosen = {
+    [levelKey('f1', 'casual')]: 'beginner',
+    [levelKey('f1', 'ranked')]: 'advanced',
+  };
+  const assignments = buildLevelAssignments(
+    buildSelection(['f1'], ['casual', 'ranked']),
+    chosen,
+    () => 'intermediate',
+  );
+  assert.deepEqual(assignments, [
+    { format_id: 'f1', mode: 'casual', level: 'beginner' },
+    { format_id: 'f1', mode: 'ranked', level: 'advanced' },
+  ]);
+});
+
+test('nível por modo: remover e readicionar modo preserva o nível do outro', () => {
+  const chosen = {
+    [levelKey('f1', 'casual')]: 'advanced',
+    [levelKey('f1', 'ranked')]: 'beginner',
+  };
+  const onlyCasual = buildLevelAssignments(
+    buildSelection(['f1'], ['casual']),
+    chosen,
+    () => 'intermediate',
+  );
+  assert.deepEqual(onlyCasual, [{ format_id: 'f1', mode: 'casual', level: 'advanced' }]);
+  const both = buildLevelAssignments(
+    buildSelection(['f1'], ['casual', 'ranked']),
+    chosen,
+    () => 'intermediate',
+  );
+  assert.equal(both[1].level, 'beginner');
+});
+
+test('nível por entrada: valor inválido cai no default do perfil', () => {
+  const assignments = buildLevelAssignments(
+    buildSelection(['f1', 'f2'], ['casual']),
+    { [levelKey('f1', 'casual')]: 'pro' },
+    (formatId) => (formatId === 'f1' ? 'beginner' : undefined),
+  );
+  assert.deepEqual(assignments, [
+    { format_id: 'f1', mode: 'casual', level: 'beginner' },
+    { format_id: 'f2', mode: 'casual', level: 'intermediate' },
+  ]);
+  assert.equal(
+    levelAssignmentsMatch(assignments, [
+      { format_id: 'f2', mode: 'casual', level: 'intermediate' },
+      { format_id: 'f1', mode: 'casual', level: 'beginner' },
+    ]),
+    true,
+  );
+  assert.equal(
+    levelAssignmentsMatch(assignments, [
+      { format_id: 'f1', mode: 'casual', level: 'advanced' },
+      { format_id: 'f2', mode: 'casual', level: 'intermediate' },
+    ]),
+    false,
+  );
+});
+
+test('payload de níveis: igual ao default omite o campo; diferente envia tudo', () => {
+  const selected = buildSelection(['f1'], ['casual', 'ranked']);
+  const defaults = buildLevelAssignments(selected, {}, () => 'intermediate');
+  const unchanged = buildLevelAssignments(selected, {}, () => 'intermediate');
+  assert.equal(optionalLevelsPayload(unchanged, defaults), undefined);
+
+  const custom = buildLevelAssignments(
+    selected,
+    { [levelKey('f1', 'casual')]: 'beginner' },
+    () => 'intermediate',
+  );
+  assert.deepEqual(optionalLevelsPayload(custom, defaults), [
+    { format_id: 'f1', mode: 'casual', level: 'beginner' },
+    { format_id: 'f1', mode: 'ranked', level: 'intermediate' },
+  ]);
 });
 
 test('timeout no PUT + GET com seleção nova adota a nova', () => {
