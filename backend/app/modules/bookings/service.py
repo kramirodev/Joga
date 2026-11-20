@@ -609,13 +609,16 @@ class BookingService:
         if not (is_local(environment) or is_demo(environment)):
             raise BookingForbidden
         booking = self._lock_booking(booking_id)
+        # O simulador é ação do próprio jogador: a autorização vem antes de
+        # qualquer leitura de estado, para não revelar reserva e status a quem
+        # não é participante ativo (mesmo 404 do GET).
+        participant = self._active_participant(booking.id, actor_user_id)
+        if participant is None:
+            raise BookingNotFound
         if booking.status == "CONFIRMED":
             return self._bundle(booking)
         if booking.status not in {"PAYMENT_PENDING", "SUBSTITUTING"}:
             raise BookingTransitionError
-        participant = self._active_participant(booking.id, actor_user_id)
-        if participant is None:
-            raise BookingForbidden
         if participant.payment_status == "PAID":
             return self._bundle(booking)
 
