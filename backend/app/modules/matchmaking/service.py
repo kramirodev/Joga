@@ -6,7 +6,7 @@ import random
 import secrets
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -30,7 +30,13 @@ from app.modules.matchmaking.policy import (
     meeting_region,
     select_start,
 )
-from app.modules.profile.models import Availability, SportFormat, UserRegion, UserSportProfile
+from app.modules.profile.models import (
+    LEVELS,
+    Availability,
+    SportFormat,
+    UserRegion,
+    UserSportProfile,
+)
 from app.modules.ratings.models import RatingAccount
 from app.modules.ratings.trust import TrustService
 
@@ -60,6 +66,10 @@ class RegionRequired(QueueError):
 
 class AlreadyQueued(QueueError):
     """Já existe entrada ativa para o mesmo usuário, formato e modo."""
+
+
+class InvalidLevelOverride(QueueError):
+    """Nível por entrada inválido ou para combinação fora da seleção."""
 
 
 class RankedRestricted(QueueError):
@@ -234,19 +244,35 @@ class MatchmakingService:
         modes: Sequence[str],
         *,
         court_preference: str | None = None,
+        levels: Mapping[tuple[uuid.UUID, str], str] | None = None,
         now: datetime | None = None,
     ) -> list[QueueEntry]:
-        """Substitui atomicamente a seleção de fila do usuário.
+        """Aplica a seleção de fila do usuário por diferença, atomicamente.
 
-        Valida tudo antes de escrever; depois cancela as entradas ``waiting``
-        antigas e cria o produto cartesiano ``formatos × modos`` no mesmo
-        ``flush``. Lista vazia (ou modos vazios) apenas cancela a seleção.
+        Valida tudo antes de escrever. Depois compara o produto cartesiano
+        ``formatos × modos`` com as entradas ``waiting`` existentes:
+
+        - combinação que permanece: a **mesma linha** é preservada (mesmo
+          ``id``, ``created_at`` e ``matched_at``), atualizando apenas os
+          campos explícitos do payload;
+        - combinação nova: é criada;
+        - combinação que saiu: é cancelada.
+
+        ``levels`` mapeia ``(format_id, mode)`` para um nível explícito. Só é
+        aceito para combinações da seleção; sem override, a entrada usa o nível
+        do perfil esportivo (comportamento histórico). Preservar ``created_at``
+        é o que sustenta o cronômetro de espera no app. Lista vazia (ou modos
+        vazios) apenas cancela a seleção.
         """
         unique_formats = list(dict.fromkeys(format_ids))
         unique_modes = list(dict.fromkeys(modes))
         for mode in unique_modes:
             if mode not in ("casual", "ranked"):
                 raise InvalidMode("modo de partida inválido")
+        override_levels = dict(levels or {})
+        for override_level in override_levels.values():
+            if override_level not in LEVELS:
+                raise InvalidLevelOverride("nível de entrada inválido")
 
         current = ensure_utc(now or utcnow())
         profiles: dict[uuid.UUID, UserSportProfile] = {}
@@ -272,31 +298,88 @@ class MatchmakingService:
             ):
                 raise RankedRestricted("restrição temporária para partidas ranqueadas")
 
-        self._cancel_waiting(user_id, current)
+        target = [(format_id, mode) for format_id in unique_formats for mode in unique_modes]
+        wanted = set(target)
+        if any(key not in wanted for key in override_levels):
+            raise InvalidLevelOverride("override de nível fora da seleção")
+
         if not unique_formats or not unique_modes:
+            self._cancel_waiting(user_id, current)
             return []
 
         if region is None:
             # Inalcançável: a validação acima já exigiria a região. Mantido
             # explícito para o type checker, sem depender de ``assert``.
             raise RegionRequired("defina uma região antes de entrar na fila")
-        entries: list[QueueEntry] = []
-        for format_id in unique_formats:
-            sport_profile = profiles[format_id]
-            for mode in unique_modes:
-                entries.append(
-                    self._build_entry(
-                        user_id,
-                        format_id,
-                        mode,
-                        sport_profile,
-                        region,
-                        court_preference=court_preference,
-                        now=current,
-                    )
+
+        existing = list(
+            self._session.scalars(
+                select(QueueEntry)
+                .where(
+                    QueueEntry.user_id == user_id,
+                    QueueEntry.status == "waiting",
                 )
+                .order_by(QueueEntry.created_at, QueueEntry.id)
+            )
+        )
+        kept: dict[tuple[uuid.UUID, str], QueueEntry] = {}
+        removed: list[QueueEntry] = []
+        for entry in existing:
+            key = (entry.format_id, entry.mode)
+            if key in wanted and key not in kept:
+                kept[key] = entry
+            else:
+                # Fora da nova seleção (ou duplicata histórica): cancelar.
+                removed.append(entry)
+        self._cancel_entries(removed, current)
+
+        entries: list[QueueEntry] = []
+        for format_id, mode in target:
+            # Sem override explícito, o nível é o do perfil (default histórico),
+            # inclusive para entrada preservada pelo diff.
+            level = override_levels.get((format_id, mode), profiles[format_id].level)
+            preserved = kept.get((format_id, mode))
+            if preserved is not None:
+                self._refresh_entry(
+                    preserved,
+                    court_preference=court_preference,
+                    level=level,
+                )
+                entries.append(preserved)
+                continue
+            entries.append(
+                self._build_entry(
+                    user_id,
+                    format_id,
+                    mode,
+                    profiles[format_id],
+                    region,
+                    court_preference=court_preference,
+                    level=level,
+                    now=current,
+                )
+            )
         self._session.flush()
         return entries
+
+    def _refresh_entry(
+        self,
+        entry: QueueEntry,
+        *,
+        court_preference: str | None,
+        level: str,
+    ) -> None:
+        """Atualiza no lugar os campos derivados da requisição.
+
+        ``center_lat``, ``center_lng`` e ``radius_km`` não fazem parte do
+        contrato do ``PUT`` (§23.1): continuam vindo da região gravada no
+        servidor, nunca do corpo. ``level`` vem do override da combinação ou,
+        sem override, do perfil esportivo atual. A linha preservada mantém
+        ``created_at``, ``matched_at`` e ``expires_at`` originais.
+        """
+        if court_preference is not None:
+            entry.court_preference = court_preference
+        entry.level = level
 
     def _build_entry(
         self,
@@ -307,6 +390,7 @@ class MatchmakingService:
         region: UserRegion,
         *,
         court_preference: str | None,
+        level: str,
         now: datetime,
     ) -> QueueEntry:
         entry = QueueEntry(
@@ -314,7 +398,7 @@ class MatchmakingService:
             format_id=format_id,
             mode=mode,
             court_preference=court_preference or sport_profile.court_preference,
-            level=sport_profile.level,
+            level=level,
             status="waiting",
             center_lat=region.center_lat,
             center_lng=region.center_lng,
@@ -328,6 +412,31 @@ class MatchmakingService:
         """Cancela todas as entradas aguardando do usuário."""
         return self._cancel_waiting(user_id, ensure_utc(utcnow())) > 0
 
+    def _cancel_entries(self, entries: Sequence[QueueEntry], now: datetime) -> int:
+        """Cancela apenas linhas ainda ``waiting`` no momento da escrita.
+
+        O ``WHERE status = 'waiting'`` evita sobrescrever uma entrada que o
+        worker pareou concorrentemente: entrada ``matched`` nunca é cancelada
+        pela troca de seleção.
+        """
+        if not entries:
+            return 0
+        result = cast(
+            "CursorResult[Any]",
+            self._session.execute(
+                update(QueueEntry)
+                .where(
+                    QueueEntry.id.in_([entry.id for entry in entries]),
+                    QueueEntry.status == "waiting",
+                )
+                .values(status="cancelled", updated_at=now)
+                .execution_options(synchronize_session="fetch")
+            ),
+        )
+        # Cancela antes de inserir para não colidir com o índice único parcial.
+        self._session.flush()
+        return int(result.rowcount or 0)
+
     def _cancel_waiting(self, user_id: uuid.UUID, now: datetime) -> int:
         entries = list(
             self._session.scalars(
@@ -337,13 +446,7 @@ class MatchmakingService:
                 )
             )
         )
-        for entry in entries:
-            entry.status = "cancelled"
-            entry.updated_at = now
-        if entries:
-            # Cancela antes de inserir para não colidir com o índice único parcial.
-            self._session.flush()
-        return len(entries)
+        return self._cancel_entries(entries, now)
 
     # Worker -------------------------------------------------------------
 
