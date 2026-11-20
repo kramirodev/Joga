@@ -31,7 +31,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files: nenhum .env é versionado; exemplos continuam versionados
+.env
+.env.*
+!.env.example
 .env*.local
 
 # typescript

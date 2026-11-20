@@ -496,6 +496,20 @@ SHA-256 do keystore de debug (`FA:C6:…:3B:9C`). O Caddy serve esse caminho sem
 basic auth; a validação local retornou 200 sem credencial, com `/` ainda 401 e o
 fallback do SPA 200. O login por senha continua independente de passkey.
 
+### Assinatura de debug do APK/AAB: risco aceito (2026-11-20)
+
+O APK/AAB de demonstração é assinado com o certificado de debug do Android
+(`CN=Android Debug`, SHA-256 `FA:C6:…:3B:9C`), o mesmo do
+`web/public/.well-known/assetlinks.json`. A chave de debug não tem custódia
+adequada, é compartilhada por qualquer instalação Android e não é aceita por
+loja. **Serve apenas para demo por sideload; nunca para publicação.**
+
+A correção fica fora do escopo desta fase. Registro completo, limite e gatilhos
+de revisão em `docs/THREAT_MODEL.md` ("Riscos aceitos da auditoria de
+2026-11-20", item A). Antes de qualquer publicação em loja: gerar chave de
+release com custódia fora do repositório, assinar com ela e reemitir o
+`assetlinks.json`.
+
 ## 12. Limitações do free tier
 
 - Render: dorme após ~15 min; primeiro acesso leva 30–60 s; 512 MB de RAM;
@@ -524,8 +538,10 @@ fallback do SPA 200. O login por senha continua independente de passkey.
 7. **Contas do seed:** são contas de demonstração. Ao encerrar, remova o serviço
    e rotacione a senha do banco; não há admin de usuários no painel.
 
-Nunca commitar `.env`. O `.gitignore` cobre `backend/.env`, `backend/.env.*` e
-mantém `backend/.env.example` versionado.
+Nunca commitar `.env`. O `.gitignore` da raiz cobre `.env` e `.env.*` em
+qualquer diretório (inclusive `mobile/` e `web/`), com exceção de
+`.env.example`, que continua versionado (`backend/.env.example`,
+`mobile/.env.example`).
 
 ## 14. O que falta para produção (não é este documento)
 
