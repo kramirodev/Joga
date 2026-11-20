@@ -18,6 +18,7 @@ from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.matchmaking.models import Lobby, QueueEntry
 from app.modules.matchmaking.service import (
     AlreadyQueued,
+    DuplicateSelection,
     InvalidFormat,
     InvalidLevelOverride,
     InvalidMode,
@@ -49,12 +50,31 @@ class QueueLevelOverride(BaseModel):
     level: Level
 
 
+class QueueSelection(BaseModel):
+    """Par explícito ``format_id × mode`` da seleção da fila.
+
+    ``level`` é opcional: quando presente, vale para esse par e substitui o
+    nível do perfil; quando ausente, usa o nível atual do perfil esportivo.
+    """
+
+    format_id: UUID
+    mode: Mode
+    level: Level | None = None
+
+
 class QueueReplaceRequest(BaseModel):
-    """Seleção completa da fila: produto cartesiano ``formats × modes``."""
+    """Seleção completa da fila.
+
+    Duas formas, mutuamente exclusivas:
+
+    - legado: ``formats × modes`` (produto cartesiano), com ``levels`` opcional;
+    - explícito: ``selections``, lista de pares, sem produto cartesiano.
+    """
 
     formats: list[UUID] = Field(default_factory=list, max_length=20)
     modes: list[Mode] = Field(default_factory=lambda: list(DEFAULT_MODES), max_length=2)
     levels: list[QueueLevelOverride] = Field(default_factory=list, max_length=40)
+    selections: list[QueueSelection] | None = Field(default=None, max_length=40)
     court_preference: CourtPreference | None = None
 
     @field_validator("formats", "modes", mode="before")
@@ -213,21 +233,41 @@ def replace_queue(
 ) -> QueueStateResponse:
     """Aplica a seleção de fila de forma atômica, preservando o que continua.
 
-    Compara o produto cartesiano ``formats × modes`` com as entradas
-    ``waiting`` do usuário: combinação que permanece mantém a mesma linha
-    (``id`` e ``created_at`` estáveis, então o tempo de espera não reinicia),
-    combinação nova é criada e combinação removida é cancelada. Lista vazia
-    cancela todas.
+    Aceita duas formas mutuamente exclusivas: ``selections`` (lista explícita
+    de pares ``format_id × mode``) ou o legado ``formats × modes``. Compara a
+    seleção com as entradas ``waiting`` do usuário: par que permanece mantém a
+    mesma linha (``id`` e ``created_at`` estáveis, então o tempo de espera não
+    reinicia), par novo é criado e par removido é cancelado. Lista vazia cancela
+    todas.
     """
+    has_explicit_selection = payload.selections is not None
+    if has_explicit_selection and payload.model_fields_set & {"formats", "modes", "levels"}:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "ambiguous_queue_selection")
+
     try:
-        service.replace(
-            current.user_id,
-            payload.formats,
-            payload.modes,
-            court_preference=payload.court_preference,
-            levels={(item.format_id, item.mode): item.level for item in payload.levels},
-        )
+        if payload.selections is not None:
+            service.replace_targets(
+                current.user_id,
+                [(item.format_id, item.mode) for item in payload.selections],
+                court_preference=payload.court_preference,
+                levels={
+                    (item.format_id, item.mode): item.level
+                    for item in payload.selections
+                    if item.level is not None
+                },
+            )
+        else:
+            service.replace(
+                current.user_id,
+                payload.formats,
+                payload.modes,
+                court_preference=payload.court_preference,
+                levels={(item.format_id, item.mode): item.level for item in payload.levels},
+            )
         session.commit()
+    except DuplicateSelection:
+        session.rollback()
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "duplicate_queue_selection") from None
     except InvalidMode:
         session.rollback()
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_mode") from None

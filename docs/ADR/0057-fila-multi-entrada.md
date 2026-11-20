@@ -107,3 +107,28 @@ autoridade e não foi alterada por causa dele.
   vencer em execuções repetidas.
 - O recorde de tempo ocupado usa apenas lobbies; reservas continuam sendo
   validadas no seu próprio fluxo para o espaço físico.
+
+## Emenda 2026-11-20 — seleção explícita por par
+
+A decisão 1 (produto cartesiano `formats × modes`) permanece válida como
+contrato legado, mas era insuficiente: pedir futebol ranqueado e vôlei casual
+obrigava o app a criar também futebol casual e vôlei ranqueada.
+
+O `PUT /api/v1/matchmaking/queue` passa a aceitar `selections`, lista explícita
+de `{ format_id, mode, level? }`:
+
+- cada par vira exatamente uma entrada `waiting`, sem produto cartesiano;
+- `selections` é mutuamente exclusiva com `formats`, `modes` e `levels`
+  (`422 ambiguous_queue_selection`), para não haver duas fontes de seleção nem
+  de nível;
+- par `(format_id, mode)` repetido responde `422 duplicate_queue_selection`;
+- `level` do par, quando presente, substitui o nível do perfil apenas naquele
+  par; ausente, vale o perfil;
+- `selections: []` cancela todas as entradas `waiting`.
+
+A substituição continua atômica e por diferença, preservando `created_at` dos
+pares que permanecem, cancelando só os removidos e sem tocar em `matched`.
+Não há migração: o índice único parcial `(user_id, format_id, mode)` para
+`status = 'waiting'` já garante a unicidade. A implementação é
+`MatchmakingService.replace_targets`, com `replace` mantido como adaptador do
+contrato cartesiano.

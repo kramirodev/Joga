@@ -1526,6 +1526,27 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 
 {
+  "selections": [
+    { "format_id": "<uuid>", "mode": "ranked", "level": "advanced" },
+    { "format_id": "<uuid>", "mode": "casual", "level": "beginner" }
+  ],
+  "court_preference": "ANY"
+}
+```
+
+Há duas formas de seleção, **mutuamente exclusivas**:
+
+- `selections` (recomendada): lista explícita de pares
+  `{ "format_id", "mode", "level"? }`. Cada par vira exatamente uma entrada;
+  não há produto cartesiano. É o que permite pedir **futebol ranqueado** e
+  **vôlei casual** sem criar futebol casual nem vôlei ranqueada.
+- `formats` + `modes` (legado, compatível): o servidor deduplica e aplica o
+  produto cartesiano `formats × modes`.
+
+Exemplo legado:
+
+```json
+{
   "formats": ["<uuid>", "<uuid>"],
   "modes": ["casual", "ranked"],
   "levels": [
@@ -1536,20 +1557,31 @@ Content-Type: application/json
 }
 ```
 
-- `formats` e `modes` são listas; o servidor deduplica e aplica o produto
-  cartesiano `formats × modes` como entradas `waiting`.
-- `modes` omitido usa `["casual"]`. `[]` explícito (ou `formats: []`) não cria
-  nada.
+- Enviar `selections` junto com qualquer um de `formats`, `modes` ou `levels`
+  responde `422 ambiguous_queue_selection`. A validação ocorre antes de
+  qualquer escrita.
+- Em `selections`, o par `(format_id, mode)` é a chave: repeti-lo responde
+  `422 duplicate_queue_selection` (não vale "último vence"). A ordem dos pares
+  não importa.
+- `level` dentro do par é opcional e vale **apenas** para aquele par. Com
+  `selections`, `levels` externo não é aceito (ver acima), logo não existem duas
+  fontes de nível: o `level` do par, quando presente, substitui o nível do
+  perfil; quando ausente, usa o nível atual do perfil esportivo.
+- No formato legado, `modes` omitido usa `["casual"]`. `[]` explícito (ou
+  `formats: []`) não cria nada. `selections: []` também não cria nada e
+  cancela todas as entradas `waiting` do usuário.
 - `court_preference` (`PUBLIC_ONLY|PRIVATE_ONLY|ANY`) é opcional e sobrescreve a
   preferência do perfil nas entradas criadas e nas que permanecem na seleção.
-- `levels` é opcional: lista de `{ "format_id", "mode", "level" }` que define o
-  nível **por combinação**. Combinação sem override usa o nível atual do perfil
-  esportivo, inclusive em entrada preservada (sem resetar `created_at`).
-  `level` aceita `beginner`, `intermediate` ou `advanced`.
+- No formato legado, `levels` é opcional: lista de `{ "format_id", "mode",
+  "level" }` que define o nível **por combinação**. Combinação sem override usa
+  o nível atual do perfil esportivo, inclusive em entrada preservada (sem
+  resetar `created_at`). `level` aceita `beginner`, `intermediate` ou
+  `advanced`.
 - Override para combinação fora de `formats × modes` responde `422
   invalid_level_override`; `level` inválido ou `(format_id, mode)` repetido em
-  `levels` responde `422 validation_error`. A validação acontece antes de
-  qualquer escrita.
+  `levels` responde `422 validation_error`. `mode` inválido em `selections`
+  responde `422 validation_error`. A validação acontece antes de qualquer
+  escrita.
 - `center_lat`, `center_lng` e `radius_km` **não fazem parte do contrato**:
   coordenadas e raio vêm da região gravada no servidor. Campos extras no corpo
   são ignorados; o cliente não escolhe localização por requisição.
@@ -1557,24 +1589,25 @@ Content-Type: application/json
   continua usando o nível do perfil.
 - A operação é **atômica** e **incremental** (diff): valida todos os
   formatos, perfis, região e restrição ranqueada antes de escrever. Depois
-  compara o produto `formats × modes` com as entradas `waiting` existentes:
-  - combinação que permanece: mantém a **mesma entrada** (`id`, `created_at`,
+  compara a seleção (pares explícitos ou produto `formats × modes`) com as
+  entradas `waiting` existentes:
+  - par que permanece: mantém a **mesma entrada** (`id`, `created_at`,
     `expires_at` e `matched_at` inalterados); `court_preference` e `level` são
     atualizados no lugar, quando enviados;
-  - combinação nova: é criada, já com o `level` do override ou do perfil;
-  - combinação que saiu: vira `cancelled`.
+  - par novo: é criado, já com o `level` do par/override ou do perfil;
+  - par que saiu: vira `cancelled`.
   Tudo na mesma transação; falha não deixa estado parcial.
 - Entrada preservada que recebe override muda o `level` sem reiniciar
   `created_at`; o cronômetro continua de onde estava.
 - Preservar `created_at` é o que sustenta o cronômetro: o tempo de espera do
-  app (`agora - created_at`) continua de onde estava. Adicionar um formato à
-  seleção não reinicia a espera dos formatos que já estavam na fila.
+  app (`agora - created_at`) continua de onde estava. Adicionar um par à
+  seleção não reinicia a espera dos pares que já estavam na fila.
 - Entradas `matched` não são tocadas pelo `PUT`: só as `waiting` entram no
   diff e o cancelamento só atinge linhas ainda `waiting`.
 - Reenviar a mesma seleção é idempotente: nenhuma linha é recriada,
   cancelada ou duplicada.
-- Limites: até 20 formatos e 2 modos (produto máximo de 40 entradas por
-  requisição).
+- Limites: até 20 formatos e 2 modos no formato legado (produto máximo de 40
+  entradas por requisição); até 40 pares em `selections`.
 
 Resposta `200`:
 

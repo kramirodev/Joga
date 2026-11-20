@@ -72,6 +72,10 @@ class InvalidLevelOverride(QueueError):
     """Nível por entrada inválido ou para combinação fora da seleção."""
 
 
+class DuplicateSelection(QueueError):
+    """Par ``(format_id, mode)`` repetido na seleção explícita."""
+
+
 class RankedRestricted(QueueError):
     """Trust Factor restringe temporariamente a fila ranqueada."""
 
@@ -247,26 +251,56 @@ class MatchmakingService:
         levels: Mapping[tuple[uuid.UUID, str], str] | None = None,
         now: datetime | None = None,
     ) -> list[QueueEntry]:
-        """Aplica a seleção de fila do usuário por diferença, atomicamente.
+        """Aplica a seleção cartesiana ``formatos × modos`` (compatibilidade).
 
-        Valida tudo antes de escrever. Depois compara o produto cartesiano
-        ``formatos × modos`` com as entradas ``waiting`` existentes:
-
-        - combinação que permanece: a **mesma linha** é preservada (mesmo
-          ``id``, ``created_at`` e ``matched_at``), atualizando apenas os
-          campos explícitos do payload;
-        - combinação nova: é criada;
-        - combinação que saiu: é cancelada.
-
-        ``levels`` mapeia ``(format_id, mode)`` para um nível explícito. Só é
-        aceito para combinações da seleção; sem override, a entrada usa o nível
-        do perfil esportivo (comportamento histórico). Preservar ``created_at``
-        é o que sustenta o cronômetro de espera no app. Lista vazia (ou modos
-        vazios) apenas cancela a seleção.
+        Contrato histórico do ``PUT``: cada formato é combinado com cada modo.
+        Delega a :meth:`replace_targets`, que concentra validação e diff.
         """
         unique_formats = list(dict.fromkeys(format_ids))
         unique_modes = list(dict.fromkeys(modes))
         for mode in unique_modes:
+            if mode not in ("casual", "ranked"):
+                raise InvalidMode("modo de partida inválido")
+        target = [(format_id, mode) for format_id in unique_formats for mode in unique_modes]
+        return self.replace_targets(
+            user_id,
+            target,
+            court_preference=court_preference,
+            levels=levels,
+            now=now,
+        )
+
+    def replace_targets(
+        self,
+        user_id: uuid.UUID,
+        targets: Sequence[tuple[uuid.UUID, str]],
+        *,
+        court_preference: str | None = None,
+        levels: Mapping[tuple[uuid.UUID, str], str] | None = None,
+        now: datetime | None = None,
+    ) -> list[QueueEntry]:
+        """Aplica uma lista explícita de pares ``(format_id, mode)``, atomicamente.
+
+        Valida tudo antes de escrever. Depois compara os pares com as entradas
+        ``waiting`` existentes:
+
+        - par que permanece: a **mesma linha** é preservada (mesmo ``id``,
+          ``created_at`` e ``matched_at``), atualizando apenas os campos
+          explícitos do payload;
+        - par novo: é criado;
+        - par que saiu: é cancelado.
+
+        ``levels`` mapeia ``(format_id, mode)`` para um nível explícito. Só é
+        aceito para pares da seleção; sem override, a entrada usa o nível do
+        perfil esportivo (comportamento histórico). Preservar ``created_at`` é o
+        que sustenta o cronômetro de espera no app. Lista vazia apenas cancela a
+        seleção. Par repetido é rejeitado: duas entradas para a mesma
+        combinação seriam ambíguas.
+        """
+        target = list(dict.fromkeys(targets))
+        if len(target) != len(targets):
+            raise DuplicateSelection("par formato/modo repetido na seleção")
+        for _, mode in target:
             if mode not in ("casual", "ranked"):
                 raise InvalidMode("modo de partida inválido")
         override_levels = dict(levels or {})
@@ -276,8 +310,9 @@ class MatchmakingService:
 
         current = ensure_utc(now or utcnow())
         profiles: dict[uuid.UUID, UserSportProfile] = {}
+        unique_formats = list(dict.fromkeys(format_id for format_id, _ in target))
         region = self._session.get(UserRegion, user_id)
-        if unique_formats and unique_modes:
+        if target:
             if region is None:
                 raise RegionRequired("defina uma região antes de entrar na fila")
             for format_id in unique_formats:
@@ -293,17 +328,16 @@ class MatchmakingService:
                 if sport_profile is None:
                     raise SportProfileRequired("defina nível e preferência para o formato")
                 profiles[format_id] = sport_profile
-            if "ranked" in unique_modes and TrustService(self._session).is_ranked_restricted(
-                user_id, now=current
-            ):
+            if any(mode == "ranked" for _, mode in target) and TrustService(
+                self._session
+            ).is_ranked_restricted(user_id, now=current):
                 raise RankedRestricted("restrição temporária para partidas ranqueadas")
 
-        target = [(format_id, mode) for format_id in unique_formats for mode in unique_modes]
         wanted = set(target)
         if any(key not in wanted for key in override_levels):
             raise InvalidLevelOverride("override de nível fora da seleção")
 
-        if not unique_formats or not unique_modes:
+        if not target:
             self._cancel_waiting(user_id, current)
             return []
 

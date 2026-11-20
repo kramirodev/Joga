@@ -1408,3 +1408,306 @@ def test_put_returns_same_queue_state_shape_as_get(api: TestClient, db_session: 
     assert set(put_body) == {"entry", "entries", "matched"}
     assert [item["id"] for item in put_body["matched"]] == [entry_id]
     assert put_body == api.get("/api/v1/matchmaking/queue", headers=bearer(token)).json()
+
+
+def _seed_two_formats(session: Session) -> tuple[SportFormat, SportFormat]:
+    futebol = seed_format(session)
+    volei = seed_format(
+        session,
+        sport_slug="volei",
+        format_slug="volei-2x2",
+        name="Vôlei 2x2",
+        team_size=2,
+    )
+    return futebol, volei
+
+
+def _pairs(body: dict[str, object]) -> set[tuple[str, str]]:
+    entries = body["entries"]
+    assert isinstance(entries, list)
+    return {(str(item["format_id"]), str(item["mode"])) for item in entries}
+
+
+def test_put_selections_creates_only_requested_pairs(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked"},
+                {"format_id": str(volei.id), "mode": "casual"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert _pairs(body) == {
+        (str(futebol.id), "ranked"),
+        (str(volei.id), "casual"),
+    }
+    assert len(body["entries"]) == 2
+    assert _queued_statuses(db_session, user_id) == ["waiting", "waiting"]
+
+
+def test_put_selections_applies_level_per_pair(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id, level="intermediate")
+    give_sport_profile(db_session, user_id, volei.id, level="intermediate")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked", "level": "advanced"},
+                {"format_id": str(volei.id), "mode": "casual", "level": "beginner"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    levels = {
+        (item["format_id"], item["mode"]): item["level"] for item in response.json()["entries"]
+    }
+    assert levels == {
+        (str(futebol.id), "ranked"): "advanced",
+        (str(volei.id), "casual"): "beginner",
+    }
+
+
+def test_put_selections_without_level_uses_profile_level(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, level="advanced")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"selections": [{"format_id": str(sport_format.id), "mode": "casual"}]},
+    )
+
+    assert response.status_code == 200
+    assert [item["level"] for item in response.json()["entries"]] == ["advanced"]
+
+
+def test_put_selections_duplicate_pair_is_rejected(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "beginner"},
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "advanced"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "duplicate_queue_selection"}}
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"formats": []},
+        {"modes": ["casual"]},
+        {
+            "levels": [
+                {
+                    "format_id": "00000000-0000-0000-0000-000000000001",
+                    "mode": "casual",
+                    "level": "beginner",
+                }
+            ]
+        },
+    ],
+)
+def test_put_selections_with_legacy_fields_is_ambiguous(
+    api: TestClient, db_session: Session, extra: dict[str, object]
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [{"format_id": str(sport_format.id), "mode": "casual"}],
+            **extra,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "ambiguous_queue_selection"}}
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+def test_put_empty_selections_cancels_everything(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    created = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked"},
+                {"format_id": str(volei.id), "mode": "casual"},
+            ],
+        },
+    )
+    assert created.status_code == 200
+
+    cleared = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"selections": []},
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json() == {"entry": None, "entries": [], "matched": []}
+    assert _queued_statuses(db_session, user_id) == ["cancelled", "cancelled"]
+
+
+def test_put_selections_adding_pair_preserves_created_at(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    first = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"selections": [{"format_id": str(futebol.id), "mode": "ranked"}]},
+    )
+    assert first.status_code == 200
+    original = first.json()["entries"][0]
+    assert (original["format_id"], original["mode"]) == (str(futebol.id), "ranked")
+    _pin_created_at(db_session, original["id"], datetime(2026, 1, 5, 12, 0, tzinfo=UTC))
+    pinned = api.get("/api/v1/matchmaking/queue", headers=bearer(token)).json()["entries"][0]
+
+    expanded = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked"},
+                {"format_id": str(volei.id), "mode": "casual"},
+            ],
+        },
+    )
+    assert expanded.status_code == 200
+    after = {(item["format_id"], item["mode"]): item for item in expanded.json()["entries"]}
+    kept = after[(str(futebol.id), "ranked")]
+    added = after[(str(volei.id), "casual")]
+    assert kept["id"] == original["id"]
+    assert kept["created_at"] == pinned["created_at"]
+    assert str(kept["created_at"]).startswith("2026-01-05T12:00:00")
+    assert added["id"] != original["id"]
+    assert added["status"] == "waiting"
+
+
+def test_put_selections_removing_pair_cancels_only_it(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    created = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked"},
+                {"format_id": str(volei.id), "mode": "casual"},
+            ],
+        },
+    )
+    assert created.status_code == 200
+    original = {(item["format_id"], item["mode"]): item for item in created.json()["entries"]}
+    futebol_entry = original[(str(futebol.id), "ranked")]
+    volei_entry = original[(str(volei.id), "casual")]
+    _pin_created_at(db_session, futebol_entry["id"], datetime(2026, 1, 5, 12, 0, tzinfo=UTC))
+
+    reduced = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"selections": [{"format_id": str(volei.id), "mode": "casual"}]},
+    )
+    assert reduced.status_code == 200
+    body = reduced.json()
+    assert [item["id"] for item in body["entries"]] == [volei_entry["id"]]
+    assert body["entries"][0]["created_at"] == volei_entry["created_at"]
+
+    db_session.expire_all()
+    removed = db_session.get(QueueEntry, UUID(futebol_entry["id"]))
+    kept = db_session.get(QueueEntry, UUID(volei_entry["id"]))
+    assert removed is not None and removed.status == "cancelled"
+    assert kept is not None and kept.status == "waiting"
+
+
+def test_put_selections_invalid_mode_is_rejected(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"selections": [{"format_id": str(sport_format.id), "mode": "competitive"}]},
+    )
+
+    assert response.status_code == 422
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+def test_put_formats_and_modes_still_apply_cartesian_product(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": [str(futebol.id), str(volei.id)], "modes": ["casual", "ranked"]},
+    )
+
+    assert response.status_code == 200
+    assert _pairs(response.json()) == {
+        (str(futebol.id), "casual"),
+        (str(futebol.id), "ranked"),
+        (str(volei.id), "casual"),
+        (str(volei.id), "ranked"),
+    }
