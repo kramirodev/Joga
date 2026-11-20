@@ -232,6 +232,75 @@ def test_settlement_is_idempotent(client: TestClient, db_session: Session) -> No
     assert get_balance(db_session, context["users"][0]) == TICKETS_PER_SEAT - TICKETS_PER_SEAT
 
 
+def test_settle_with_tickets_missing_booking_is_indistinguishable_from_outsider(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    booking = open_booking(api, context)
+    outsider_token = make_token(db_session, make_user(db_session))
+
+    existing = api.post(
+        f"/api/v1/bookings/{booking['id']}/settle-with-tickets",
+        headers=bearer(outsider_token),
+    )
+    missing = api.post(
+        f"/api/v1/bookings/{uuid.uuid4()}/settle-with-tickets",
+        headers=bearer(outsider_token),
+    )
+    read = api.get(f"/api/v1/bookings/{booking['id']}", headers=bearer(outsider_token))
+
+    assert existing.status_code == missing.status_code == read.status_code == 404
+    assert (
+        existing.json()
+        == missing.json()
+        == read.json()
+        == {"detail": {"code": "booking_not_found"}}
+    )
+
+
+def test_settle_with_tickets_requires_authentication(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    booking = open_booking(api, context)
+
+    response = api.post(f"/api/v1/bookings/{booking['id']}/settle-with-tickets")
+
+    assert response.status_code == 401
+
+
+def test_settle_with_tickets_state_conflict_remains_for_participant(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    created = api.post(
+        "/api/v1/bookings",
+        headers=bearer(context["tokens"][0]),
+        json={
+            "lobby_id": str(context["lobby"].id),
+            "organization_venue_id": str(context["venue"].id),
+            "venue_space_id": str(context["space"].id),
+            "starts_at": START.isoformat(),
+            "ends_at": END.isoformat(),
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    response = api.post(
+        f"/api/v1/bookings/{created.json()['id']}/settle-with-tickets",
+        headers=bearer(context["tokens"][0]),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "invalid_transition"}}
+
+
 def test_insufficient_tickets_blocks_settlement(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     context = setup_context(db_session, tickets=TICKETS_PER_SEAT - 1)

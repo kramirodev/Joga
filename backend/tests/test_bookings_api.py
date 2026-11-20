@@ -533,11 +533,55 @@ def test_outsider_cannot_read_or_confirm_booking(
         headers=bearer(outsider_token),
         json={"decision": "CONFIRM"},
     )
-    assert confirm.status_code == 403
+    assert confirm.status_code == 404
+    assert confirm.json() == {"detail": {"code": "booking_not_found"}}
+    # UUID existente e inexistente são indistinguíveis para quem não participa.
+    missing = api.post(
+        f"/api/v1/bookings/{uuid4()}/participant-confirmation",
+        headers=bearer(outsider_token),
+        json={"decision": "CONFIRM"},
+    )
+    assert missing.status_code == confirm.status_code == read.status_code == 404
+    assert missing.json() == confirm.json() == read.json()
 
     listing = api.get("/api/v1/bookings", headers=bearer(outsider_token))
     assert listing.status_code == 200
     assert listing.json()["bookings"] == []
+
+
+def test_participant_confirmation_requires_authentication(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = create_booking(api, context, context["lobbies"][0])
+
+    response = api.post(
+        f"/api/v1/bookings/{booking['id']}/participant-confirmation",
+        json={"decision": "CONFIRM"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_participant_confirmation_state_conflict_remains_for_participant(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_booking(db_session)
+    booking = create_booking(api, context, context["lobbies"][0])
+    confirm_all(api, context, booking["id"])
+
+    late_decline = api.post(
+        f"/api/v1/bookings/{booking['id']}/participant-confirmation",
+        headers=bearer(context["tokens"][1]),
+        json={"decision": "DECLINE"},
+    )
+
+    assert late_decline.status_code == 409
+    assert late_decline.json() == {"detail": {"code": "invalid_transition"}}
 
 
 def test_booking_creation_is_idempotent_per_lobby(
