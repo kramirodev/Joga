@@ -40,9 +40,11 @@ Resposta:
       "latitude": -22.9,
       "longitude": -43.2,
       "timezone": "America/Sao_Paulo",
+      "is_public": false,
       "covered": true,
       "spaces_count": 2,
       "min_price_cents": 12000,
+      "min_tickets": 5,
       "distance_km": 3.4,
       "photo_url": "/api/v1/discovery/bookable-venues/uuid/photos/uuid/content"
     }
@@ -52,6 +54,19 @@ Resposta:
   "page_size": 20
 }
 ```
+
+`min_tickets` é a menor quantidade de ingressos por jogador entre **todas** as
+faixas (`tickets_by_band`) de **todos** os formatos ativos das quadras ativas do
+estabelecimento. O app usa esse campo para exibir “a partir de N ingressos” na
+vitrine sem inferir preço em reais nem converter valor para ticket.
+
+- `null` significa que nenhum formato ativo tem ingressos configurados para as
+  faixas publicadas. Não significa gratuidade e não deve ser exibido como `0`.
+- Quadra pública (`is_public = true` na organização `is_platform`, ADR 0055):
+  `min_tickets` é `0` e o app exibe “Grátis”. O `0` é a representação da
+  gratuidade, não uma faixa zerada.
+- `min_price_cents` continua sendo o menor preço publicado em centavos, por
+  compatibilidade. Ele não é convertido em tickets pelo backend.
 
 `distance_km` é `null` quando o jogador não tem região definida. A coordenada é arredondada; o endpoint não expõe payout, CNPJ, chave Pix ou auditoria.
 
@@ -1371,16 +1386,20 @@ Descoberta (aditivo):
       "is_free": true,
       "covered": false,
       "spaces_count": 1,
-      "min_price_cents": 0
+      "min_price_cents": 0,
+      "min_tickets": 0
     }
   ]
 }
 ```
 
-`GET /discovery/bookable-venues/{id}` também expõe `is_public`. O campo aditivo
-`is_free` e o valor `0` em `min_price_cents` para quadra pública estão **a
-implementar** (ADR 0055). Em quadra privada, `min_price_cents` continua sendo o
-menor preço publicado.
+`GET /discovery/bookable-venues/{id}` também expõe `is_public`. `min_tickets = 0`
+na vitrine identifica a quadra pública gratuita (ADR 0055) e é o valor que o app
+usa para exibir “Grátis”. O campo aditivo `is_free` e o valor `0` em
+`min_price_cents` para quadra pública continuam **a implementar**. Em quadra
+privada, `min_price_cents` continua sendo o menor preço publicado e
+`min_tickets` é o menor número de ingressos entre faixas e formatos, ou `null`
+quando não há tickets configurados.
 
 Administração:
 
