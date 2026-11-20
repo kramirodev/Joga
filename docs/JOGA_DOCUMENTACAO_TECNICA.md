@@ -947,7 +947,7 @@ A liberação ao estabelecimento ocorre 2 h após o início da reserva (`starts_
 
 ### 14.8 Fila de substitutos, presença e desfecho (alvo da ADR 0039)
 
-- Fila `S = (F - M) + 1`, limitada a 4; na prática, muitas vezes +1 para fechar o time par. Casual opcional; ranqueado exige ao menos 1 standby.
+- Fila `S = (F - M) + 1`, limitada a 4; na prática, muitas vezes +1 para fechar o time par.
 - T4 = 25% do tempo restante, piso 30 min, teto 12 h, terminando no cutoff de 6 h antes.
 - Fila confirma em T-2h; pré-check-in em T-1h; presença no local em T-30m; substituto fechado em T-15m.
 - Presença validada no servidor com geofence e fallback do estabelecimento; não existe confirmação por capitão. GPS não é prova isolada; armazenar resultado e mínimo de dados.

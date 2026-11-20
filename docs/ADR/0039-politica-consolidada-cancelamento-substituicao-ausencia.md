@@ -58,7 +58,7 @@ Segue a ADR 0037: reembolso integral, incluindo taxa JOGA, quando a reserva não
 - `F` = titulares do formato; `M` = mínimo para ainda haver jogo; `S = (F - M) + 1`, limitado a 4.
 - Exemplos: 5x5 casual (10 titulares, mínimo 8) → alvo de 3; 6x6 casual → alvo de 5, limitado a 4; 3x3 → 1.
 - Na prática, a fila pode ser menor. O caso comum é **+1 para fechar o time par**; o alvo acima é um teto operacional, não obrigação.
-- Casual: fila opcional. Ranqueado: pelo menos 1 substituto em standby; se possível, 2.
+- Casual e ranqueado: fila opcional.
 - Substituto não é convocado até haver vaga. Ele confirma disponibilidade em T-2h; se não confirmar, sai da fila.
 - **Chamada automática:** o sistema chama **no máximo um substituto por vez**, e **somente quando o número de ativos está ímpar**. Se o número está par, ninguém é chamado; se uma chamada pendente fica desnecessária porque o número virou par, ela é devolvida à fila.
 - O chamado fica `CALLED` com prazo de resposta (`JOGA_SUBSTITUTION_CALL_TIMEOUT_MINUTES`, padrão 5 min). Aceita ou recusa; se recusar/expirar, o próximo é chamado se o número continuar ímpar.
