@@ -191,6 +191,21 @@ def _zone(name: str) -> ZoneInfo:
         return ZoneInfo("America/Sao_Paulo")
 
 
+def overlaps(start: datetime, end: datetime, other_start: datetime, other_end: datetime) -> bool:
+    """Intervalos semiabertos [start, end) se cruzam?"""
+    start = _as_utc(start)
+    end = _as_utc(end)
+    other_start = _as_utc(other_start)
+    other_end = _as_utc(other_end)
+    return start < other_end and end > other_start
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def window_covers(window: AvailabilityWindow, start: datetime, end: datetime) -> bool:
     """Verifica se o intervalo [start, end] cabe inteiro na janela local."""
     zone = _zone(window.timezone)
@@ -228,8 +243,14 @@ def select_start(
     slot_minutes: int = 30,
     min_lead_minutes: int = 120,
     default_timezone: str = "America/Sao_Paulo",
+    blocked: Sequence[tuple[datetime, datetime]] = (),
 ) -> datetime | None:
-    """Primeiro horário em que todos os participantes estão disponíveis."""
+    """Primeiro horário em que todos os participantes estão disponíveis.
+
+    ``blocked`` são intervalos já comprometidos de qualquer participante
+    (lobbies agendados). Basta que o intervalo cruze um deles para o horário
+    ser descartado; a disponibilidade do perfil não é consumida.
+    """
     if not availability or any(not windows for windows in availability):
         return None
     zone = _zone(default_timezone)
@@ -253,6 +274,10 @@ def select_start(
                 continue
             start = start_local.astimezone(UTC)
             end = start + duration
+            if any(
+                overlaps(start, end, other_start, other_end) for other_start, other_end in blocked
+            ):
+                continue
             if all(_within_windows(windows, start, end) for windows in availability):
                 return start
     return None

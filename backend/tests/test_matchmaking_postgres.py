@@ -3,7 +3,7 @@
 import os
 import threading
 from collections.abc import Iterator
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import create_engine, func, select, text
@@ -104,6 +104,8 @@ def add_player(
     lng: float = -46.63,
     radius: int = 10,
     available: bool = True,
+    window_start: time = time(18, 0),
+    window_end: time = time(22, 0),
 ) -> User:
     user = User(status="active")
     session.add(user)
@@ -133,8 +135,8 @@ def add_player(
             Availability(
                 user_id=user.id,
                 weekday=2,
-                start_time=time(18, 0),
-                end_time=time(22, 0),
+                start_time=window_start,
+                end_time=window_end,
                 timezone="America/Sao_Paulo",
             )
         )
@@ -368,3 +370,314 @@ def test_ranked_lobby_uses_mmr_and_records_policy(
         assert abs(sum(team_1) - sum(team_2)) <= 100
         assert max(team_1) - min(team_1) <= 800
         assert max(team_2) - min(team_2) <= 800
+
+
+def add_format(
+    session: Session,
+    *,
+    sport: Sport,
+    slug: str,
+    team_size: int = 1,
+) -> SportFormat:
+    sport_format = SportFormat(
+        sport_id=sport.id,
+        slug=slug,
+        name=slug,
+        team_size=team_size,
+        total_participants=team_size * 2,
+        play_minutes=50,
+        break_minutes=10,
+        duration_minutes=60,
+        version=1,
+    )
+    session.add(sport_format)
+    session.flush()
+    return sport_format
+
+
+def test_tie_between_entries_of_same_user_draws_one(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Duas entradas elegíveis no mesmo ciclo: exatamente uma forma lobby.
+
+    Repete o cenário para provar que o sorteio não é determinístico e que a
+    entrada perdedora continua ``waiting``.
+    """
+    rounds = 20
+    winners: list[int] = []
+    with session_factory() as session:
+        sport = Sport(slug="multi", name="Multi")
+        session.add(sport)
+        session.flush()
+
+        for index in range(rounds):
+            first = add_format(session, sport=sport, slug=f"multi-{index}-a")
+            second = add_format(session, sport=sport, slug=f"multi-{index}-b")
+            anchor = add_player(session, first)
+            session.add(
+                UserSportProfile(
+                    user_id=anchor.id,
+                    format_id=second.id,
+                    level="intermediate",
+                    court_preference="ANY",
+                )
+            )
+            partner_a = add_player(session, first)
+            partner_b = add_player(session, second)
+
+            service(session).enqueue(anchor.id, first.id, now=NOW)
+            service(session).enqueue(anchor.id, second.id, now=NOW)
+            service(session).enqueue(partner_a.id, first.id, now=NOW)
+            service(session).enqueue(partner_b.id, second.id, now=NOW)
+            session.flush()
+
+            result = service(session).run_once(NOW)
+            session.commit()
+
+            assert result.lobbies_formed == 1
+            lobby = session.scalar(select(Lobby).where(Lobby.format_id.in_((first.id, second.id))))
+            assert lobby is not None
+            winners.append(1 if lobby.format_id == first.id else 2)
+            waiting = session.scalar(
+                select(func.count())
+                .select_from(QueueEntry)
+                .where(QueueEntry.user_id == anchor.id, QueueEntry.status == "waiting")
+            )
+            assert waiting == 1
+            matched = session.scalar(
+                select(func.count())
+                .select_from(QueueEntry)
+                .where(QueueEntry.user_id == anchor.id, QueueEntry.status == "matched")
+            )
+            assert matched == 1
+
+            # Limpa o restante deste cenário para o próximo ciclo não formar
+            # outro lobby com as entradas perdedoras.
+            for leftover in session.scalars(
+                select(QueueEntry).where(
+                    QueueEntry.format_id.in_((first.id, second.id)),
+                    QueueEntry.status == "waiting",
+                )
+            ):
+                leftover.status = "expired"
+            session.commit()
+
+    assert set(winners) == {1, 2}, f"sorteio sempre escolheu o mesmo grupo: {winners}"
+
+
+def add_single_format(session: Session, slug: str) -> SportFormat:
+    sport = Sport(slug=f"{slug}-sport", name=slug)
+    session.add(sport)
+    session.flush()
+    return add_format(session, sport=sport, slug=slug, team_size=1)
+
+
+def add_lobby(
+    session: Session,
+    sport_format: SportFormat,
+    user: User,
+    *,
+    start: datetime,
+    origin: str = "manual",
+    status: str = "scheduled",
+) -> Lobby:
+    lobby = Lobby(
+        format_id=sport_format.id,
+        format_version=1,
+        origin=origin,
+        mode="casual",
+        status=status,
+        court_preference="ANY",
+        scheduled_start_at=start,
+        scheduled_end_at=start + timedelta(minutes=60),
+        duration_minutes=60,
+        center_lat=-23.55,
+        center_lng=-46.63,
+        radius_km=10,
+        algorithm_version="test",
+    )
+    session.add(lobby)
+    session.flush()
+    session.add(
+        LobbyParticipant(
+            lobby_id=lobby.id,
+            user_id=user.id,
+            team=1,
+            level="intermediate",
+        )
+    )
+    session.flush()
+    return lobby
+
+
+# 2026-11-03 12:00 UTC = 09:00 em São Paulo; com 2 h de antecedência o primeiro
+# slot local é 11:00.
+SLOT_NOW = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+BUSY_START = datetime(2026, 11, 3, 14, 0, tzinfo=UTC)  # 11:00 local
+NEXT_FREE = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)  # 12:00 local
+
+
+@pytest.mark.parametrize("origin", ["matchmaking", "manual"])
+@pytest.mark.parametrize(
+    ("now", "expected_start"),
+    [
+        # 08:00 local + 2 h = 10:00 local (13:00 UTC), antes do lobby ocupado.
+        (
+            datetime(2026, 11, 3, 11, 0, tzinfo=UTC),
+            datetime(2026, 11, 3, 13, 0, tzinfo=UTC),
+        ),
+        # 09:00 local + 2 h = 11:00 local, ocupado; vai para 12:00 local.
+        (SLOT_NOW, NEXT_FREE),
+    ],
+)
+def test_existing_lobby_blocks_overlapping_slot(
+    session_factory: sessionmaker[Session],
+    origin: str,
+    now: datetime,
+    expected_start: datetime,
+) -> None:
+    """Lobby 11h–12h ocupa o tempo; a próxima partida do usuário não pode cruzar."""
+    with session_factory() as session:
+        sport_format = add_single_format(session, "block")
+        anchor = add_player(session, sport_format, window_start=time(10, 0), window_end=time(14, 0))
+        partner = add_player(
+            session, sport_format, window_start=time(10, 0), window_end=time(14, 0)
+        )
+        previous = add_lobby(session, sport_format, anchor, start=BUSY_START, origin=origin)
+        service(session).enqueue(anchor.id, sport_format.id, now=now)
+        service(session).enqueue(partner.id, sport_format.id, now=now)
+        session.commit()
+
+        result = service(session).run_once(now)
+        session.commit()
+
+        assert result.lobbies_formed == 1
+        created = session.scalar(select(Lobby).where(Lobby.id != previous.id))
+        assert created is not None
+        assert created.scheduled_start_at.replace(tzinfo=UTC) == expected_start
+
+
+def test_cancelled_lobby_does_not_block_slot(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        sport_format = add_single_format(session, "cancelled")
+        anchor = add_player(session, sport_format, window_start=time(10, 0), window_end=time(14, 0))
+        partner = add_player(
+            session, sport_format, window_start=time(10, 0), window_end=time(14, 0)
+        )
+        add_lobby(
+            session,
+            sport_format,
+            anchor,
+            start=BUSY_START,
+            origin="matchmaking",
+            status="cancelled",
+        )
+        service(session).enqueue(anchor.id, sport_format.id, now=SLOT_NOW)
+        service(session).enqueue(partner.id, sport_format.id, now=SLOT_NOW)
+        session.commit()
+
+        result = service(session).run_once(SLOT_NOW)
+        session.commit()
+
+        assert result.lobbies_formed == 1
+        created = session.scalar(select(Lobby).where(Lobby.status == "scheduled"))
+        assert created is not None
+        assert created.scheduled_start_at.replace(tzinfo=UTC) == BUSY_START
+
+
+def test_lobby_of_another_user_does_not_block_slot(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        sport_format = add_single_format(session, "stranger")
+        anchor = add_player(session, sport_format, window_start=time(10, 0), window_end=time(14, 0))
+        partner = add_player(
+            session, sport_format, window_start=time(10, 0), window_end=time(14, 0)
+        )
+        stranger = add_player(
+            session, sport_format, window_start=time(10, 0), window_end=time(14, 0)
+        )
+        foreign = add_lobby(session, sport_format, stranger, start=BUSY_START)
+        service(session).enqueue(anchor.id, sport_format.id, now=SLOT_NOW)
+        service(session).enqueue(partner.id, sport_format.id, now=SLOT_NOW)
+        session.commit()
+
+        result = service(session).run_once(SLOT_NOW)
+        session.commit()
+
+        assert result.lobbies_formed == 1
+        created = session.scalar(select(Lobby).where(Lobby.id != foreign.id))
+        assert created is not None
+        assert created.scheduled_start_at.replace(tzinfo=UTC) == BUSY_START
+
+
+def test_replace_failure_leaves_no_partial_state(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_factory() as session:
+        sport = Sport(slug="replace", name="Replace")
+        session.add(sport)
+        session.flush()
+        first = add_format(session, sport=sport, slug="replace-a")
+        add_format(session, sport=sport, slug="replace-b")
+        user = add_player(session, first)
+        old = service(session).enqueue(user.id, first.id, now=NOW)
+        session.commit()
+        old_id = old.id
+
+        calls = {"count": 0}
+        original = MatchmakingService._build_entry
+
+        def flaky(
+            self: MatchmakingService,
+            *args: object,
+            **kwargs: object,
+        ) -> QueueEntry:
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("falha simulada no meio da substituição")
+            return original(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(MatchmakingService, "_build_entry", flaky)
+
+        with pytest.raises(RuntimeError):
+            service(session).replace(user.id, [first.id], ["casual", "ranked"], now=NOW)
+        session.rollback()
+
+        rows = list(session.scalars(select(QueueEntry).where(QueueEntry.user_id == user.id)))
+        assert [(row.id, row.status) for row in rows] == [(old_id, "waiting")]
+        assert session.scalar(select(func.count()).select_from(Lobby)) == 0
+
+
+def test_replace_never_leaves_two_active_entries_for_same_format_and_mode(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        sport_format = seed_format(session)
+        user = add_player(session, sport_format)
+        service(session).enqueue(user.id, sport_format.id, now=NOW)
+        session.commit()
+
+        service(session).replace(
+            user.id,
+            [sport_format.id, sport_format.id],
+            ["casual", "casual"],
+            now=NOW,
+        )
+        session.commit()
+
+        statuses = list(
+            session.scalars(select(QueueEntry.status).where(QueueEntry.user_id == user.id))
+        )
+        assert sorted(statuses) == ["cancelled", "waiting"]
+
+        # Nova substituição pelo mesmo par cancela e recria sem violar o índice.
+        service(session).replace(user.id, [sport_format.id], ["casual"], now=NOW)
+        session.commit()
+        statuses = list(
+            session.scalars(select(QueueEntry.status).where(QueueEntry.user_id == user.id))
+        )
+        assert sorted(statuses) == ["cancelled", "cancelled", "waiting"]

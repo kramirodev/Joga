@@ -1,7 +1,7 @@
 # Contrato de reservas para o aplicativo — Fase 13C
 
 **Versão:** v2026-11-20
-**Status:** contrato backend implementado em 2026-11-14; identidade visual, catálogo administrável de esportes, administração de usuários e bloqueio de compra de tickets adicionados em 2026-11-20. App mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
+**Status:** contrato backend implementado em 2026-11-14; identidade visual, catálogo administrável de esportes, administração de usuários, bloqueio de compra de tickets e fila multi-entrada (ADR 0057) adicionados em 2026-11-20. App mobile consumindo vitrine, criação de reserva, central de notificações e crédito; painel parcialmente implementado. A ADR 0049 altera a camada de preço/conta; a 14E já persiste o preço em duas linhas.
 **Compatibilidade:** os campos novos são aditivos. Campos existentes não foram renomeados nem removidos.
 
 ## 0. Preço, tickets e NFS-e (ADR 0049)
@@ -1490,3 +1490,115 @@ DELETE /api/v1/admin/venues/{id}/business-hours/{business_hour_id}?reason=
 - A compra de tickets continua desligada por flag (`503
   ticket_purchase_disabled`) e não há dinheiro real, repasse, custódia ou
   NFS-e no demo.
+
+## 23. Fila de matchmaking com múltiplas entradas (ADR 0057)
+
+A rota real é `/api/v1/matchmaking/queue` (prefixo do módulo). O app atual já
+usa esse caminho; não existe alias `/api/v1/queue`.
+
+### 23.1 Substituir a seleção
+
+```http
+PUT /api/v1/matchmaking/queue
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "formats": ["<uuid>", "<uuid>"],
+  "modes": ["casual", "ranked"],
+  "court_preference": "ANY"
+}
+```
+
+- `formats` e `modes` são listas; o servidor deduplica e cria o produto
+  cartesiano `formats × modes` como entradas `waiting`.
+- `modes` omitido usa `["casual"]`. `[]` explícito (ou `formats: []`) não cria
+  nada.
+- `court_preference` (`PUBLIC_ONLY|PRIVATE_ONLY|ANY`) é opcional e sobrescreve a
+  preferência do perfil em todas as entradas criadas.
+- `level`, `center_lat`, `center_lng` e `radius_km` **não fazem parte do
+  contrato**: nível, coordenadas e raio vêm do perfil esportivo e da região
+  gravada no servidor. Campos extras no corpo são ignorados; o cliente não
+  escolhe nível para fins competitivos nem localização por requisição.
+- A operação é **atômica**: valida todos os formatos, perfis, região e restrição
+  ranqueada antes de escrever; depois cancela todas as `waiting` do usuário e
+  insere as novas na mesma transação. Falha não deixa estado parcial.
+- Limites: até 20 formatos e 2 modos (produto máximo de 40 entradas por
+  requisição).
+
+Resposta `200`:
+
+```json
+{
+  "entry": {
+    "id": "uuid",
+    "format_id": "uuid",
+    "mode": "casual",
+    "court_preference": "ANY",
+    "level": "intermediate",
+    "status": "waiting",
+    "radius_km": 10,
+    "created_at": "2026-11-20T12:00:00Z",
+    "expires_at": "2026-11-21T12:00:00Z",
+    "lobby": null
+  },
+  "entries": [
+    { "...": "mesma forma de entry, uma por entrada waiting" }
+  ]
+}
+```
+
+### 23.2 Consultar e sair
+
+```http
+GET    /api/v1/matchmaking/queue
+DELETE /api/v1/matchmaking/queue
+```
+
+- `GET` devolve `entries[]` com **todas** as entradas `waiting`, da mais recente
+  para a mais antiga. O campo legado `entry` continua sendo a última entrada
+  `waiting` **ou** `matched` (com `lobby` preenchido quando pareada).
+- `DELETE` cancela **todas** as `waiting` do usuário e responde `204`. Sem
+  nenhuma entrada ativa, responde `404 not_queued`.
+
+### 23.3 `POST` legado
+
+`POST /api/v1/matchmaking/queue` com
+`{ "format_id", "mode"?, "court_preference"? }` continua funcionando exatamente
+como antes (cria uma entrada; `409 already_queued` se já existir a mesma
+combinação `waiting`). Ele é o caminho de compatibilidade do app antigo e não
+substitui a seleção inteira.
+
+### 23.4 Regras do matcher
+
+- O pool usa **todas** as entradas `waiting`, nunca apenas a mais recente.
+- Se duas entradas do mesmo usuário fecham lobby no mesmo ciclo, uma é sorteada
+  uniformemente e as demais permanecem `waiting` (não são canceladas).
+- O horário já comprometido do usuário vem do **lobby**, não da reserva:
+  `origin IN ('matchmaking','manual')`, participante ativo,
+  `status != 'cancelled'` e `scheduled_end_at > now`. Lobby cancelado libera o
+  horário; lobby de outro usuário não afeta.
+- A janela do perfil não é consumida: um lobby 11–12 com janela 10–14 deixa
+  10–11 e 12–14 disponíveis para as outras entradas, inclusive entre casual e
+  ranqueada.
+
+### 23.5 Erros estáveis
+
+| HTTP | `detail.code` | Quando |
+|---:|---|---|
+| `400` | `invalid_mode` | Modo fora de `casual`/`ranked` |
+| `400` | `invalid_format` | Formato inexistente ou inativo |
+| `403` | `ranked_restricted` | Trust Factor restringe a fila ranqueada |
+| `409` | `sport_profile_required` | Falta perfil esportivo para algum formato |
+| `409` | `region_required` | Falta região para criar entradas |
+| `409` | `queue_conflict` | Conflito de concorrência no `PUT`; repetir |
+| `409` | `already_queued` | `POST` duplicado para a mesma combinação |
+| `404` | `not_queued` | `DELETE` sem entradas `waiting` |
+
+### 23.6 Compatibilidade
+
+- O app antigo continua lendo `entry` e chamando `POST`/`DELETE`.
+- O app novo deve usar `PUT` para trocar a seleção e ler `entries`.
+- `DELETE` mudou de "cancela uma" para "cancela todas": app antigo com uma única
+  entrada não percebe diferença.
+- Nenhum campo existente foi removido; `entries` e o `PUT` são aditivos.

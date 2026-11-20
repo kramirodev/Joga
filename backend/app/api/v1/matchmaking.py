@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,12 +30,29 @@ router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
 CourtPreference = Literal["PUBLIC_ONLY", "PRIVATE_ONLY", "ANY"]
 Mode = Literal["casual", "ranked"]
+DEFAULT_MODES: list[Mode] = ["casual"]
 
 
 class EnqueueRequest(BaseModel):
     format_id: UUID
     court_preference: CourtPreference | None = None
     mode: Mode = "casual"
+
+
+class QueueReplaceRequest(BaseModel):
+    """Seleção completa da fila: produto cartesiano ``formats × modes``."""
+
+    formats: list[UUID] = Field(default_factory=list, max_length=20)
+    modes: list[Mode] = Field(default_factory=lambda: list(DEFAULT_MODES), max_length=2)
+    court_preference: CourtPreference | None = None
+
+    @field_validator("formats", "modes", mode="before")
+    @classmethod
+    def _dedupe(cls, value: object) -> object:
+        """Deduplica antes dos limites, para repetição não virar 422."""
+        if isinstance(value, list):
+            return list(dict.fromkeys(value))
+        return value
 
 
 class LobbySummary(BaseModel):
@@ -61,7 +78,10 @@ class QueueEntryResponse(BaseModel):
 
 
 class QueueStateResponse(BaseModel):
+    # ``entry`` é o campo legado (última entrada waiting/matched) e continua
+    # sendo devolvido para o app atual. ``entries`` lista todas as ``waiting``.
     entry: QueueEntryResponse | None
+    entries: list[QueueEntryResponse] = Field(default_factory=list)
 
 
 def get_matchmaking_service(
@@ -146,15 +166,72 @@ def enqueue(
     return _entry_response(session, entry)
 
 
+def _state_response(
+    session: Session,
+    service: MatchmakingService,
+    user_id: UUID,
+) -> QueueStateResponse:
+    entries = service.waiting_entries(user_id)
+    latest = service.latest_entry(user_id)
+    return QueueStateResponse(
+        entry=_entry_response(session, latest) if latest else None,
+        entries=[_entry_response(session, entry) for entry in entries],
+    )
+
+
+@router.put("/queue", response_model=QueueStateResponse)
+def replace_queue(
+    payload: QueueReplaceRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    service: Annotated[MatchmakingService, Depends(get_matchmaking_service)],
+) -> QueueStateResponse:
+    """Substitui a seleção de fila de forma atômica.
+
+    Cancela todas as entradas ``waiting`` do usuário e cria o produto
+    cartesiano de formatos e modos na mesma transação. Lista vazia apenas
+    cancela.
+    """
+    try:
+        service.replace(
+            current.user_id,
+            payload.formats,
+            payload.modes,
+            court_preference=payload.court_preference,
+        )
+        session.commit()
+    except InvalidMode:
+        session.rollback()
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_mode") from None
+    except InvalidFormat:
+        session.rollback()
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_format") from None
+    except SportProfileRequired:
+        session.rollback()
+        raise _error(status.HTTP_409_CONFLICT, "sport_profile_required") from None
+    except RegionRequired:
+        session.rollback()
+        raise _error(status.HTTP_409_CONFLICT, "region_required") from None
+    except RankedRestricted:
+        session.rollback()
+        raise _error(status.HTTP_403_FORBIDDEN, "ranked_restricted") from None
+    except IntegrityError:
+        session.rollback()
+        raise _error(status.HTTP_409_CONFLICT, "queue_conflict") from None
+    except Exception:
+        session.rollback()
+        raise
+    return _state_response(session, service, current.user_id)
+
+
 @router.get("/queue", response_model=QueueStateResponse)
 def queue_state(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     service: Annotated[MatchmakingService, Depends(get_matchmaking_service)],
 ) -> QueueStateResponse:
-    """Estado atual da fila: aguardando, pareado ou vazio."""
-    entry = service.latest_entry(current.user_id)
-    return QueueStateResponse(entry=_entry_response(session, entry) if entry else None)
+    """Estado atual da fila: todas as entradas aguardando, pareado ou vazio."""
+    return _state_response(session, service, current.user_id)
 
 
 @router.delete("/queue", status_code=status.HTTP_204_NO_CONTENT)

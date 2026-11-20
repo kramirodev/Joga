@@ -6,12 +6,14 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import DEFAULT_TOKEN_HASH_SECRET
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.models import User
 from app.modules.identity.sessions import SessionService
+from app.modules.matchmaking.models import QueueEntry
 from app.modules.profile.models import (
     Availability,
     Sport,
@@ -45,16 +47,23 @@ def make_user_with_tokens(session: Session) -> tuple[UUID, str]:
     return user.id, tokens.access_token
 
 
-def seed_format(session: Session) -> SportFormat:
-    sport = Sport(slug="futebol", name="Futebol")
+def seed_format(
+    session: Session,
+    *,
+    sport_slug: str = "futebol",
+    format_slug: str = "futebol-5x5",
+    name: str = "Futebol 5x5",
+    team_size: int = 5,
+) -> SportFormat:
+    sport = Sport(slug=sport_slug, name=sport_slug.title())
     session.add(sport)
     session.flush()
     sport_format = SportFormat(
         sport_id=sport.id,
-        slug="futebol-5x5",
-        name="Futebol 5x5",
-        team_size=5,
-        total_participants=10,
+        slug=format_slug,
+        name=name,
+        team_size=team_size,
+        total_participants=team_size * 2,
         play_minutes=50,
         break_minutes=10,
         duration_minutes=60,
@@ -212,7 +221,7 @@ def test_enqueue_and_leave(api: TestClient, db_session: Session) -> None:
     assert left.status_code == 204
 
     empty = api.get("/api/v1/matchmaking/queue", headers=bearer(token))
-    assert empty.json() == {"entry": None}
+    assert empty.json() == {"entry": None, "entries": []}
 
     again = api.delete("/api/v1/matchmaking/queue", headers=bearer(token))
     assert again.status_code == 404
@@ -264,3 +273,190 @@ def test_enqueue_accepts_without_availability(api: TestClient, db_session: Sessi
     )
 
     assert created.status_code == 201
+
+
+def _queued_statuses(session: Session, user_id: UUID) -> list[str]:
+    session.expire_all()
+    return list(
+        session.scalars(
+            select(QueueEntry.status)
+            .where(QueueEntry.user_id == user_id)
+            .order_by(QueueEntry.status)
+        )
+    )
+
+
+def test_put_replaces_selection_atomically(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol = seed_format(db_session)
+    volei = seed_format(
+        db_session,
+        sport_slug="volei",
+        format_slug="volei-2x2",
+        name="Vôlei 2x2",
+        team_size=2,
+    )
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    first = api.post(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"format_id": str(futebol.id)},
+    )
+    assert first.status_code == 201
+
+    replaced = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            # Repetições são deduplicadas antes de montar o produto cartesiano.
+            "formats": [str(futebol.id), str(volei.id), str(futebol.id)],
+            "modes": ["casual", "ranked", "casual"],
+        },
+    )
+
+    assert replaced.status_code == 200
+    body = replaced.json()
+    assert {(item["format_id"], item["mode"]) for item in body["entries"]} == {
+        (str(futebol.id), "casual"),
+        (str(futebol.id), "ranked"),
+        (str(volei.id), "casual"),
+        (str(volei.id), "ranked"),
+    }
+    assert len(body["entries"]) == 4
+    # A entrada legada foi cancelada e o campo de compatibilidade aponta para
+    # uma das novas entradas ativas.
+    assert first.json()["id"] not in {item["id"] for item in body["entries"]}
+    assert body["entry"] is not None
+    assert body["entry"]["status"] == "waiting"
+    assert _queued_statuses(db_session, user_id) == [
+        "cancelled",
+        "waiting",
+        "waiting",
+        "waiting",
+        "waiting",
+    ]
+
+    # Repetir a mesma seleção substitui de novo, sem conflito e sem duplicar.
+    again = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": [str(futebol.id)], "modes": ["casual"]},
+    )
+    assert again.status_code == 200
+    assert len(again.json()["entries"]) == 1
+    statuses = _queued_statuses(db_session, user_id)
+    assert statuses.count("waiting") == 1
+    assert statuses.count("cancelled") == 5
+
+
+def test_put_empty_selection_cancels_everything(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id)
+
+    api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": [str(sport_format.id)], "modes": ["casual", "ranked"]},
+    )
+
+    cleared = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": []},
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json() == {"entry": None, "entries": []}
+    assert _queued_statuses(db_session, user_id) == ["cancelled", "cancelled"]
+
+
+def test_put_validation_failure_keeps_previous_selection(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol = seed_format(db_session)
+    volei = seed_format(
+        db_session,
+        sport_slug="volei",
+        format_slug="volei-2x2",
+        name="Vôlei 2x2",
+        team_size=2,
+    )
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)  # sem perfil de vôlei
+
+    previous = api.post(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"format_id": str(futebol.id)},
+    )
+    assert previous.status_code == 201
+
+    failed = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": [str(futebol.id), str(volei.id)], "modes": ["casual"]},
+    )
+
+    assert failed.status_code == 409
+    assert failed.json() == {"detail": {"code": "sport_profile_required"}}
+    assert _queued_statuses(db_session, user_id) == ["waiting"]
+    state = api.get("/api/v1/matchmaking/queue", headers=bearer(token)).json()
+    assert [item["id"] for item in state["entries"]] == [previous.json()["id"]]
+
+
+def test_put_requires_region_when_creating_entries(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_sport_profile(db_session, user_id, sport_format.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"formats": [str(sport_format.id)]},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "region_required"}}
+
+
+def test_queue_routes_are_scoped_to_the_owner(api: TestClient, db_session: Session) -> None:
+    owner_id, owner_token = make_user_with_tokens(db_session)
+    other_id, other_token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    for user_id in (owner_id, other_id):
+        give_region(db_session, user_id)
+        give_sport_profile(db_session, user_id, sport_format.id)
+
+    other_entry = api.post(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(other_token),
+        json={"format_id": str(sport_format.id)},
+    )
+    assert other_entry.status_code == 201
+
+    owner_state = api.get("/api/v1/matchmaking/queue", headers=bearer(owner_token))
+    assert owner_state.status_code == 200
+    assert owner_state.json() == {"entry": None, "entries": []}
+
+    replaced = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(owner_token),
+        json={"formats": [str(sport_format.id)]},
+    )
+    assert replaced.status_code == 200
+    assert {item["format_id"] for item in replaced.json()["entries"]} == {str(sport_format.id)}
+
+    assert api.delete("/api/v1/matchmaking/queue", headers=bearer(owner_token)).status_code == 204
+    other_state = api.get("/api/v1/matchmaking/queue", headers=bearer(other_token)).json()
+    assert [item["id"] for item in other_state["entries"]] == [other_entry.json()["id"]]
+    assert api.delete("/api/v1/matchmaking/queue", headers=bearer(owner_token)).status_code == 404
+    assert (
+        api.get("/api/v1/matchmaking/queue", headers=bearer(other_token)).json()["entry"]["id"]
+        == (other_entry.json()["id"])
+    )
