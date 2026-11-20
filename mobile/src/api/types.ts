@@ -183,6 +183,15 @@ export type QueueMode = 'casual' | 'ranked';
 
 export type QueueCourtPreference = 'PUBLIC_ONLY' | 'PRIVATE_ONLY' | 'ANY';
 
+export type QueueLevel = 'beginner' | 'intermediate' | 'advanced';
+
+/** Nível explícito de uma entrada: a entrada é o par `(format_id, mode)`. */
+export type QueueLevelAssignment = {
+  format_id: string;
+  mode: QueueMode;
+  level: QueueLevel;
+};
+
 export type QueueLobby = {
   id: string;
   mode: string;
@@ -217,6 +226,11 @@ export type QueueStateResponse = {
 export type QueueSelectionPayload = {
   formats: string[];
   modes: QueueMode[];
+  /**
+   * Opcional no contrato: enviado apenas quando algum nível escolhido difere
+   * do default do servidor. Leva uma atribuição explícita por `(format, mode)`.
+   */
+  levels?: QueueLevelAssignment[];
   court_preference?: QueueCourtPreference | null;
 };
 

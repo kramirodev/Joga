@@ -594,6 +594,7 @@ export function Chip({
   go,
   onPress,
   toast,
+  accessibilityLabel,
 }: PropsWithChildren<{
   on?: boolean;
   tone?: 'lime';
@@ -602,6 +603,7 @@ export function Chip({
   go?: string;
   toast?: string;
   onPress?: () => void;
+  accessibilityLabel?: string;
 }>) {
   const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
@@ -636,6 +638,7 @@ export function Chip({
       <Pressable
         onPress={press}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         accessibilityState={{ selected: !!on }}
         style={({ pressed }) => ({
           minHeight: largeTargets ? 54 : 48,
