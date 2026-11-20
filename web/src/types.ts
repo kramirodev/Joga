@@ -626,6 +626,8 @@ export interface AdminPublicVenue {
   is_public: boolean;
   status: "active" | "inactive" | string;
   spaces_count: number;
+  /** Somente espaços com `status = "active"`; usado para decidir a descoberta. */
+  active_spaces_count: number;
   created_at?: string;
   updated_at?: string;
 }
