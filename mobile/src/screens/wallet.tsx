@@ -1074,24 +1074,30 @@ function CheckoutPackage({ avulso }: { avulso?: boolean }) {
 
 function InsufficientTickets() {
   const nav = useNav();
-  const { wallet } = useApp();
+  const { wallet, loadWallet } = useApp();
   const parseCount = (value: unknown): number | null => {
     const parsed =
       typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : null;
   };
-  const available = wallet?.balance ?? parseCount(nav.params.available) ?? 0;
+  useEffect(() => {
+    // Reaproveita o carregamento global da carteira: sem saldo confirmado a
+    // tela não pode afirmar que o jogador tem zero ingressos.
+    loadWallet().catch(() => undefined);
+  }, [loadWallet]);
+  const available = wallet?.balance ?? null;
   const needed =
     parseCount(nav.params.needed) ??
     parseCount(nav.params.required) ??
     parseCount(nav.params.tickets) ??
-    available + 1;
+    (available ?? parseCount(nav.params.available) ?? 0) + 1;
+  const availableLabel = available != null ? String(available) : '—';
   return (
     <Page title="Ingressos insuficientes">
       <StateScreen
         icon="wallet"
         title="Ingressos insuficientes"
-        text={`Você precisa de ${needed} ingressos e tem ${available}. A compra de ingressos está desativada nesta versão do JOGA.`}
+        text={`Você precisa de ${needed} ingressos e tem ${availableLabel}. A compra de ingressos está desativada nesta versão do JOGA.`}
         actions={
           <Btn tone="primary" back>
             Voltar
