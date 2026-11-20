@@ -3,9 +3,11 @@
 - **Numeração:** esta ADR ocupa o número **0052**. A ADR “Modo demo sem PSP e
   sem dinheiro real” ocupa o **0053**, conforme a numeração acordada entre as
   duas entregas. A numeração foi conferida em `docs/ADR/`.
-- **Status:** Aprovado como direção em 2026-11-20. Implementação pendente na 14B
-  (backend/PSP) e na 15B (painel). **Bloqueado para dinheiro real** até a 14B, a
-  19A e os pareceres da ADR 0049.
+- **Status:** **Superada pela ADR 0055 em 2026-11-20** quanto à decisão A
+  (receita própria da quadra pública). Mantida integralmente para histórico; a
+  implementação descrita aqui **não deve ser iniciada**. Permanecem válidos o
+  “sem repasse”, `payout_ready = False` para `is_platform` e a proibição de
+  `venue_release` para `joga-publico`.
 - **Data:** 2026-11-20
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0049 (modelo tributário e ledger), ADR 0042 (ingresso e
@@ -19,6 +21,17 @@
   de repasse (ADR 0040, ADR 0042 §1.2 e ADR 0049 §2.2/§2.7/§7) **somente para a
   quadra pública operada pelo JOGA**. Não altera o modelo de intermediação das
   quadras de terceiros.
+
+> **Nota de supersessão (2026-11-20):** a decisão A desta ADR — quadra pública
+> como serviço próprio com receita da plataforma — foi **superada pela ADR
+> 0055**. A quadra pública é gratuita: sem valor de espaço, sem taxa, sem
+> receita, sem `public_venue_deferred_revenue`/`public_venue_revenue`, sem
+> `venue_payable` e sem repasse. As seções abaixo sobre contas, reconhecimento,
+> migração de saldo e painel financeiro ficam sem efeito. O que continua valendo
+> desta ADR é a recusa de repasse à organização da plataforma, o
+> `payout_ready = False` para `is_platform` e a proibição de `venue_release` e
+> `create_payout` para `joga-publico`. Consulte
+> `docs/ADR/0055-quadra-publica-gratuita.md`.
 
 ---
 
@@ -255,6 +268,11 @@ reservável com preço em faixa, e não há quadra gratuita. Se a 19A concluir q
 cobrança pelo uso de um bem público não é permitida sem concessão, a saída é
 tornar a quadra pública gratuita/somente demonstração, sem receita e sem
 repasse. Isso exigiria ADR própria e mudaria o produto. **[H]**
+
+> **Atualização (2026-11-20):** este caminho foi escolhido pela **ADR 0055** por
+> decisão de produto, não por parecer jurídico. A quadra pública é gratuita; a
+> alternativa A está superada. O texto acima permanece como registro do estado
+> da decisão na data original.
 
 ### 4.4 C3 — reconhecer o valor cheio como `fee_revenue`
 

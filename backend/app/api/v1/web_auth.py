@@ -31,6 +31,7 @@ from app.api.v1.email_auth import (
     get_email_delivery_service,
 )
 from app.core.config import Settings, get_settings
+from app.core.text import OptionalDisplayName
 from app.infrastructure.database.dependency import get_session
 from app.modules.email.addresses import InvalidEmail, normalize_email
 from app.modules.email.alerts import queue_security_alert
@@ -90,7 +91,7 @@ class WebReceiptRequest(BaseModel):
 class WebEmailRegisterRequest(WebReceiptRequest):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
-    display_name: str | None = Field(default=None, max_length=60)
+    display_name: OptionalDisplayName = Field(default=None, max_length=60)
 
 
 class WebEmailLoginRequest(BaseModel):

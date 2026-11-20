@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_session
 from app.api.v1.visual_views import PublicVisualResponse, public_visual
 from app.core.config import get_settings
+from app.core.text import FreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import BOOKING_STATUSES, BookingRefundExclusion
 from app.modules.bookings.service import (
@@ -60,7 +61,7 @@ class SubstitutionCreate(BaseModel):
 
 
 class CancelRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=200)
+    reason: FreeText = Field(min_length=1, max_length=200)
 
 
 class ParticipantView(BaseModel):

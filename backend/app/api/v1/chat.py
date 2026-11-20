@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.text import MultilineText
 from app.infrastructure.database.dependency import get_session
 from app.modules.chat.models import LobbyMessage
 from app.modules.chat.service import (
@@ -44,7 +45,7 @@ class MessagesResponse(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    body: str
+    body: MultilineText
 
 
 def _error(code: str, status_code: int) -> HTTPException:

@@ -132,6 +132,7 @@ def test_cpf_key_is_required_outside_local_and_rejects_placeholder() -> None:
             environment="production",
             cpf_key=None,
             cpf_key_id=None,
+            web_cookie_secure=True,
         )
 
     zero_key = base64.b64encode(b"\x00" * 32).decode("ascii")

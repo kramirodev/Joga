@@ -16,6 +16,7 @@ def demo_settings(**overrides: object) -> Settings:
         "psp_provider": "simulator",
         "money_mode": "simulated",
         "ticket_purchase_enabled": False,
+        "web_cookie_secure": True,
         **cpf_key_kwargs(),
     }
     values.update(overrides)
@@ -31,6 +32,7 @@ def production_settings(**overrides: object) -> Settings:
         "mercado_pago_access_token": SecretStr("mp-access-token"),
         "mercado_pago_webhook_secret": SecretStr("mp-webhook-secret"),
         "mercado_pago_notification_url": "https://api.joga.example/payments/mercadopago/webhook",
+        "web_cookie_secure": True,
         **cpf_key_kwargs(),
     }
     values.update(overrides)

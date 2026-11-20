@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
@@ -78,6 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(api_router, prefix="/api/v1")
     app.state.settings = resolved
+    # Precisa ser registrado antes da observabilidade para que a rejeição por
+    # Host também receba request ID, headers padrão e log. ``www_redirect`` fica
+    # desligado: um Host não permitido nunca vira redirect.
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=resolved.trusted_host_list,
+        www_redirect=False,
+    )
     install_observability(app, resolved)
     return app
 

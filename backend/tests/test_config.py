@@ -20,6 +20,7 @@ def production_psp_kwargs(**overrides: object) -> dict[str, object]:
         "mercado_pago_access_token": SecretStr("mp-access-token"),
         "mercado_pago_webhook_secret": SecretStr("mp-webhook-secret"),
         "mercado_pago_notification_url": "https://api.joga.example/payments/mercadopago/webhook",
+        "web_cookie_secure": True,
         **cpf_key_kwargs(),
     }
     values.update(overrides)
@@ -48,13 +49,14 @@ def test_identity_settings_have_local_defaults() -> None:
 
 def test_production_rejects_default_phone_hash_secret() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production")
+        Settings(_env_file=None, environment="production", web_cookie_secure=True)
 
     with pytest.raises(ValidationError):
         Settings(
             _env_file=None,
             environment="production",
             phone_hash_secret="real-secret-outside-the-repository",
+            web_cookie_secure=True,
         )
 
     settings = Settings(
@@ -177,6 +179,34 @@ def test_demo_rejects_fixed_development_otp() -> None:
 def test_demo_requires_cpf_key() -> None:
     with pytest.raises(ValidationError):
         demo_settings(cpf_key=None, cpf_key_id=None)
+
+
+def test_demo_rejects_insecure_web_cookie() -> None:
+    with pytest.raises(ValidationError, match="JOGA_WEB_COOKIE_SECURE"):
+        demo_settings(web_cookie_secure=False)
+
+
+def test_demo_accepts_secure_web_cookie() -> None:
+    settings = demo_settings(web_cookie_secure=True)
+
+    assert settings.web_cookie_secure is True
+
+
+def test_production_rejects_insecure_web_cookie() -> None:
+    with pytest.raises(ValidationError, match="JOGA_WEB_COOKIE_SECURE"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            phone_hash_secret="real-secret-outside-the-repository",
+            token_hash_secret="real-token-secret-outside-the-repository",
+            **production_psp_kwargs(web_cookie_secure=False),
+        )
+
+
+def test_local_allows_insecure_web_cookie() -> None:
+    settings = Settings(_env_file=None, environment="local", web_cookie_secure=False)
+
+    assert settings.web_cookie_secure is False
 
 
 def test_database_check_runs_trivial_query() -> None:

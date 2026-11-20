@@ -198,7 +198,7 @@ class VenueDiscoveryService:
         )
         if clean_city:
             statement = statement.where(
-                func.lower(OrganizationVenue.city).contains(clean_city.lower())
+                func.lower(OrganizationVenue.city).contains(clean_city.lower(), autoescape=True)
             )
 
         region = self.session.get(UserRegion, user_id)

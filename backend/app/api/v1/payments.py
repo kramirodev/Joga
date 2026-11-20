@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
 from app.core.environments import is_demo, is_local
+from app.core.text import FreeText, OptionalMultilineText
 from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import Booking
 from app.modules.bookings.service import BookingNotFound, BookingService
@@ -67,7 +68,7 @@ class OpenChargesResponse(BaseModel):
 
 
 class RefundRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=200)
+    reason: FreeText = Field(min_length=1, max_length=200)
 
 
 class RefundResponse(BaseModel):
@@ -170,8 +171,8 @@ class StatementListResponse(BaseModel):
 
 class DisputeCreateRequest(BaseModel):
     booking_id: UUID
-    reason: str = Field(min_length=1, max_length=500)
-    evidence: str | None = Field(default=None, max_length=2000)
+    reason: FreeText = Field(min_length=1, max_length=500)
+    evidence: OptionalMultilineText = Field(default=None, max_length=2000)
 
 
 class DisputeView(BaseModel):
@@ -201,7 +202,7 @@ class DisputeListResponse(BaseModel):
 
 class DisputeDecisionRequest(BaseModel):
     decision: str = Field(pattern="^(ACCEPTED|REJECTED)$")
-    reason: str = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=1, max_length=500)
 
 
 class BookingPricingView(BaseModel):
