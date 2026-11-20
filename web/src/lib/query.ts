@@ -1,10 +1,19 @@
 import { QueryClient } from "@tanstack/react-query";
 
+import { ApiError } from "./api";
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 15_000,
-      retry: 1,
+      // 401 é tratado uma única vez pelo cliente HTTP (refresh + evento de
+      // sessão expirada); repetir a consulta geraria um segundo ciclo inútil.
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          return false;
+        }
+        return failureCount < 1;
+      },
       refetchOnWindowFocus: false,
     },
   },
@@ -63,4 +72,18 @@ export const queryKeys = {
     ["moderation", "notifications", unreadOnly ? "unread" : "all"] as const,
   moderationNotificationsUnread: ["moderation", "notifications", "unread-count"] as const,
   audit: (organizationId: string) => ["organizations", organizationId, "audit"] as const,
+  adminUsers: (query: string, status: string, page: number) =>
+    ["admin", "users", query, status, page] as const,
+  adminUser: (userId: string) => ["admin", "users", userId] as const,
+  adminUserAudit: (userId: string) => ["admin", "users", userId, "audit"] as const,
+  adminSports: ["admin", "sports"] as const,
+  adminPricingSuggestion: (teamSize: number, mode: string) =>
+    ["admin", "pricing", "suggest", teamSize, mode] as const,
+  adminVisualCatalog: ["admin", "visual-catalog"] as const,
+  adminVenues: (active: string, page: number) => ["admin", "venues", active, page] as const,
+  adminVenue: (venueId: string) => ["admin", "venues", venueId] as const,
+  adminVenueAvailability: (venueId: string) =>
+    ["admin", "venues", venueId, "availability"] as const,
+  adminVenueBusinessHours: (venueId: string) =>
+    ["admin", "venues", venueId, "business-hours"] as const,
 };

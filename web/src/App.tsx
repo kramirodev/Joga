@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
+import { AdminRoute } from "./components/AdminRoute";
 import { AppShell } from "./components/AppShell";
 import { LoadingBlock } from "./components/Feedback";
 import { ToastProvider } from "./components/ui/Toast";
@@ -19,6 +20,17 @@ const OrganizationPage = lazy(() =>
 );
 const VenuePage = lazy(() =>
   import("./pages/VenuePage").then((module) => ({ default: module.VenuePage })),
+);
+const AdminUsersPage = lazy(() =>
+  import("./pages/admin/AdminUsersPage").then((module) => ({ default: module.AdminUsersPage })),
+);
+const AdminSportsPage = lazy(() =>
+  import("./pages/admin/AdminSportsPage").then((module) => ({ default: module.AdminSportsPage })),
+);
+const AdminPublicVenuesPage = lazy(() =>
+  import("./pages/admin/AdminPublicVenuesPage").then((module) => ({
+    default: module.AdminPublicVenuesPage,
+  })),
 );
 
 function ProtectedRoute() {
@@ -80,6 +92,12 @@ export default function App() {
                     path="/organizations/:organizationId/venues/:venueId"
                     element={<VenuePage />}
                   />
+                  <Route element={<AdminRoute />}>
+                    <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+                    <Route path="/admin/users" element={<AdminUsersPage />} />
+                    <Route path="/admin/sports" element={<AdminSportsPage />} />
+                    <Route path="/admin/venues" element={<AdminPublicVenuesPage />} />
+                  </Route>
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

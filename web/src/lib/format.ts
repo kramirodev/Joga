@@ -191,6 +191,13 @@ const PAYOUT_STATUS: Record<string, string> = {
   blocked: "Bloqueado",
 };
 
+const USER_STATUS: Record<string, string> = {
+  pending: "Pendente",
+  active: "Ativo",
+  suspended: "Suspenso",
+  deleted: "Excluído",
+};
+
 const SPACE_STATUS: Record<string, string> = {
   active: "Ativa",
   inactive: "Inativa",
@@ -221,6 +228,28 @@ const AUDIT_ACTION: Record<string, string> = {
   "venue_photo.uploaded": "Foto enviada",
   "venue_photo.reviewed": "Foto revisada",
   "venue_photo.removed": "Foto removida",
+  "admin.user.created": "Usuário criado pela administração",
+  "admin.user.create": "Usuário criado pela administração",
+  "admin.user.email_changed": "E-mail de usuário alterado",
+  "admin.user.email_change": "E-mail de usuário alterado",
+  "admin.user.email_change_notice": "Aviso de troca de e-mail",
+  "admin.user.password_reset": "Senha de usuário redefinida",
+  "admin.user.suspended": "Usuário suspenso",
+  "admin.user.suspend": "Usuário suspenso",
+  "admin.user.reactivated": "Usuário reativado",
+  "admin.user.reactivate": "Usuário reativado",
+  "admin.user.sessions_revoked": "Sessões de usuário revogadas",
+  "admin.user.sessions_revoke": "Sessões de usuário revogadas",
+  "admin.sport.created": "Esporte criado",
+  "admin.sport.create": "Esporte criado",
+  "admin.sport.updated": "Esporte atualizado",
+  "admin.sport.update": "Esporte atualizado",
+  "admin.sport.activated": "Esporte publicado",
+  "admin.sport.activate": "Esporte publicado",
+  "admin.sport.deactivated": "Esporte desativado",
+  "admin.sport.deactivate": "Esporte desativado",
+  "admin.pricing.band_tickets_updated": "Tabela de tickets atualizada",
+  "admin.pricing.band_tickets_override": "Tabela de tickets ajustada",
 };
 
 const AUDIT_RESOURCE: Record<string, string> = {
@@ -233,6 +262,9 @@ const AUDIT_RESOURCE: Record<string, string> = {
   venue_closure: "Fechamento",
   venue_photo: "Foto",
   membership: "Vínculo",
+  user: "Usuário",
+  sport: "Esporte",
+  pricing_band: "Faixa de preço",
 };
 
 export function bookingStatusLabel(status: string): string {
@@ -281,6 +313,10 @@ export function organizationStatusLabel(status: string): string {
 
 export function payoutStatusLabel(status: string): string {
   return PAYOUT_STATUS[status] ?? status;
+}
+
+export function userStatusLabel(status: string): string {
+  return USER_STATUS[status] ?? status;
 }
 
 export function spaceStatusLabel(status: string): string {
@@ -370,7 +406,66 @@ export function formatError(error: unknown): string {
     case "password_equals_email":
       return "A senha não pode ser igual ao e-mail.";
     case "email_already_registered":
-      return "Esse e-mail já está vinculado a uma conta. Use a opção Entrar.";
+    case "email_already_exists":
+    case "email_conflict":
+    case "duplicate_email":
+      return "Esse e-mail já está vinculado a outra conta. Use outro endereço.";
+    case "platform_admin_required":
+    case "admin_required":
+      return "Sua conta não tem permissão de administração da plataforma.";
+    case "ticket_purchase_disabled":
+      return "A compra de tickets está temporariamente indisponível. Tente novamente mais tarde.";
+    case "pricing_invariant_violation":
+    case "band_ticket_invariant_violation":
+    case "ticket_floor_violation":
+      return "A quantidade de tickets não cobre o valor da quadra e a taxa. Aumente k antes de salvar.";
+    case "pricing_mode_required":
+      return "Escolha explicitamente entre modo padrão e contingência para este formato.";
+    case "invalid_pricing_mode":
+      return "O modo de preço informado é inválido para este formato.";
+    case "band_not_found":
+      return "Faixa de preço não encontrada.";
+    case "sport_slug_exists":
+    case "sport_slug_conflict":
+      return "Já existe uma modalidade com esse slug.";
+    case "sport_not_found":
+      return "Modalidade não encontrada.";
+    case "sport_not_publishable":
+      return "A modalidade precisa de formato ativo e preço configurado nas faixas para ser publicada.";
+    case "pricing_not_configured":
+      return "O preço ainda não está configurado nas seis faixas. Configure o preço antes de salvar ou publicar.";
+    case "format_in_use":
+      return "Esse formato já está em uso por reservas. Crie um novo formato para mudar o tamanho da equipe.";
+    case "venue_not_publishable":
+      return "A quadra pública precisa de pelo menos um espaço ativo com preço configurado para ser publicada.";
+    case "geocoding_required":
+      return "Informe o CEP ou as coordenadas da quadra antes de publicar.";
+    case "geocoding_unavailable":
+      return "O serviço de CEP está indisponível agora. Tente novamente ou informe as coordenadas manualmente.";
+    case "invalid_space":
+      return "Modalidade, formato ou preço do espaço inválido. Revise o espaço e tente novamente.";
+    case "platform_organization_missing":
+      return "A organização de quadras públicas não está configurada. Fale com o suporte.";
+    case "invalid_sport_icon":
+      return "Ícone inválido. Use uma chave ativa do catálogo visual, como icon-sport-futebol-5x5.";
+    case "invalid_sport":
+      return "Os dados da modalidade são inválidos. Revise os formatos e tente novamente.";
+    case "invalid_slug":
+      return "O slug deve usar apenas minúsculas, números e hífens.";
+    case "band_tickets_not_configured":
+      return "A faixa ainda não tem tickets configurados para esse formato.";
+    case "cannot_suspend_self":
+      return "Você não pode suspender a própria conta.";
+    case "invalid_status_transition":
+      return "Essa mudança de status não é permitida no estado atual da conta.";
+    case "email_unchanged":
+      return "O novo e-mail é igual ao atual. Informe outro endereço.";
+    case "reason_required":
+      return "Informe o motivo da ação administrativa.";
+    case "invalid_user":
+      return "Os dados do usuário são inválidos. Revise os campos e tente novamente.";
+    case "email_unavailable":
+      return "O envio de e-mail está indisponível agora. Tente novamente mais tarde.";
     case "signup_closed":
       return "O cadastro está fechado no momento. Entre com uma conta existente.";
     case "email_registration_disabled":

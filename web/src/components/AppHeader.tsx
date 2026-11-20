@@ -2,17 +2,19 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth-context";
-import { MODERATION_NOTIFICATIONS_ENABLED } from "../lib/features";
+import { MODERATION_NOTIFICATIONS_ENABLED, PLATFORM_ADMIN_CAPABILITY } from "../lib/features";
 import { NotificationCenter } from "./NotificationCenter";
 import { PasswordDialog } from "./PasswordDialog";
-import { LogoutIcon, ShieldIcon } from "./ui/Icons";
+import { LogoutIcon, MapPinIcon, ShieldIcon, SparkIcon, UsersIcon } from "./ui/Icons";
 
 export function AppHeader() {
   const { signOut, capabilities } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const moderationArea = location.pathname.startsWith("/moderation");
+  const adminArea = location.pathname.startsWith("/admin");
   const canModerate = capabilities.includes("moderation.read");
+  const canAdmin = capabilities.includes(PLATFORM_ADMIN_CAPABILITY);
   const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function handleSignOut() {
@@ -20,15 +22,20 @@ export function AppHeader() {
     navigate("/login", { replace: true });
   }
 
+  const areaLabel = adminArea ? "y ADMINISTRAÇÃO" : moderationArea ? "y MODERAÇÃO" : "y GESTÃO";
+
   return (
     <header className="app-header">
       <div className="app-header__inner">
-        <NavLink to={moderationArea ? "/moderation" : "/"} className="brand">
+        <NavLink
+          to={adminArea && canAdmin ? "/admin/users" : moderationArea ? "/moderation" : "/"}
+          className="brand"
+        >
           <span className="brand__mark" aria-hidden="true">
             J
           </span>
           <span className="brand__text">
-            JOGA <span>{moderationArea ? "y MODERAÇÃO" : "y GESTÃO"}</span>
+            JOGA <span>{areaLabel}</span>
           </span>
           <span className="sr-only"> — início</span>
         </NavLink>
@@ -48,6 +55,37 @@ export function AppHeader() {
               <ShieldIcon size={16} />
               Moderação
             </NavLink>
+          ) : null}
+          {canAdmin ? (
+            <>
+              <NavLink
+                to="/admin/users"
+                className={({ isActive }) =>
+                  isActive ? "app-nav__link is-active" : "app-nav__link"
+                }
+              >
+                <UsersIcon size={16} />
+                Usuários
+              </NavLink>
+              <NavLink
+                to="/admin/sports"
+                className={({ isActive }) =>
+                  isActive ? "app-nav__link is-active" : "app-nav__link"
+                }
+              >
+                <SparkIcon size={16} />
+                Esportes
+              </NavLink>
+              <NavLink
+                to="/admin/venues"
+                className={({ isActive }) =>
+                  isActive ? "app-nav__link is-active" : "app-nav__link"
+                }
+              >
+                <MapPinIcon size={16} />
+                Quadras públicas
+              </NavLink>
+            </>
           ) : null}
         </nav>
 

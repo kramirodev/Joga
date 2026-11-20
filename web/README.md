@@ -17,6 +17,34 @@ organizações/estabelecimentos. Consome a mesma API do aplicativo mobile.
 - Moderação: fila paginada por `limit/offset` com filtro `IN_REVIEW`, decisão, recursos, operadores e **central de notificações internas**.
 - Sem PSP de produção, escrow, KYC contratual, NFS-e operacional, classificador de IA e publicidade.
 
+## Administração da plataforma
+
+As rotas `/admin/users`, `/admin/sports` e `/admin/venues` só existem com a
+capability `platform.admin` na sessão. A navegação é escondida, o portão
+redireciona sem a capability e nenhuma chamada a `/admin/*` é feita antes da
+verificação.
+
+- **Usuários:** busca paginada por `q`, filtro por status, detalhe em drawer com
+  CPF mascarado, auditoria `{events}` e ações de criar, alterar e-mail,
+  redefinir senha, suspender, reativar e revogar sessões. Toda ação de escrita
+  exige motivo. A criação usa `verify_email` explícito, desmarcado por padrão.
+  O reset responde 204 e apenas envia o código para o e-mail da conta; o painel
+  não exibe nem armazena senha temporária.
+- **Esportes:** catálogo com seletor de ícone do catálogo visual, formatos
+  estruturados, prévia, publicação/desativação com motivo e bloco de preço com
+  as seis faixas, `k` sugerido, invariante e preço por jogador. Formatos já
+  criados são somente leitura; `in_use` é exibido quando a API devolve. O modo
+  de preço (`standard`/`contingency`) é explícito fora de 3x3, 5x5 e 6x6.
+- **Quadras públicas:** lista paginada, formulário em etapas com CEP e
+  coordenadas, espaços, disponibilidade semanal, expediente, prévia com selo
+  “Pública” e ativação/desativação com motivo.
+- **Compra de tickets:** desligada no escopo atual. O painel não renderiza ação
+  de compra e trata `503 ticket_purchase_disabled`.
+- **Contrato único:** o painel consome `verify_email`, `{events}`, `icon_key`,
+  `period_count`, `players_per_team` e `band_code` + `mode`; não mantém aliases
+  do contrato antigo.
+- A fila e as dependências de backend estão em `ADMIN_TASK_QUEUE.md`.
+
 ## Desenvolvimento local
 
 Requisitos:
