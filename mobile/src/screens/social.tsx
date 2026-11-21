@@ -20,6 +20,7 @@ import type {
   MyRating,
   Notification,
   SportFormat,
+  VisualItem,
 } from '../api/types';
 import { useApp } from '../state/app';
 import {
@@ -44,9 +45,11 @@ import {
 } from '../state/clanSocial';
 import { lobbyIdFromQueue } from '../state/queueState';
 import { BottomSheetFrame, useSheetClose } from '../ui/BottomSheetFrame';
+import { ChatEmoteBody, ChatEmotePicker } from '../ui/ChatEmotePicker';
 import { useNav, useTheme } from '../state/context';
 import { IdentityBadge } from '../ui/IdentityBadge';
-import { identityFromSeed } from '../ui/identity';
+import { catalogVersionOf, identityFromSeed, isLocalVisualCatalog } from '../ui/identity';
+import { chatEmoteOptions, emoteSpokenText, emoteToken, parseEmoteBody } from '../ui/emote';
 import { Icon } from '../ui/icons';
 import {
   Badge,
@@ -2316,7 +2319,8 @@ function ClanReportFooter({
 function ClanChat() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { clan, clanMessages, session, loadClanMessages, loadClan } = useApp();
+  const { clan, clanMessages, session, loadClanMessages, loadClan, visualCatalog, loadVisual } =
+    useApp();
   const clanId = clan?.id ?? null;
   const [draft, setDraft] = useState('');
   const [localRows, setLocalRows] = useState<ChatRow[]>([]);
@@ -2324,6 +2328,9 @@ function ClanChat() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+  const [emoteOpen, setEmoteOpen] = useState(false);
+  const [emoteBusyKeys, setEmoteBusyKeys] = useState<string[]>([]);
+  const [emoteRetrying, setEmoteRetrying] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reportOpen, setReportOpen] = useState(false);
@@ -2337,6 +2344,7 @@ function ClanChat() {
   const localSeq = useRef(0);
   const draftRef = useRef('');
   const delivering = useRef<Set<string>>(new Set());
+  const emoteInFlight = useRef<Set<string>>(new Set());
   const refreshingLock = useRef(false);
   const mounted = useRef(true);
   const reportLock = useRef(false);
@@ -2380,6 +2388,8 @@ function ClanChat() {
   }, [session, clanId, loadKey, loadClan, loadClanMessages]);
 
   const rows = useMemo(() => mergeChatRows(clanMessages, localRows), [clanMessages, localRows]);
+  const emotes = useMemo(() => chatEmoteOptions(visualCatalog), [visualCatalog]);
+  const emoteUnavailable = isLocalVisualCatalog(visualCatalog);
   const selectedMessages = useMemo(
     () =>
       selectedIds.filter((id) =>
@@ -2471,6 +2481,47 @@ function ClanChat() {
     void deliver(localKey, body);
   };
 
+  const sendEmote = (item: VisualItem) => {
+    if (!session || !clanId || emoteInFlight.current.has(item.key)) {
+      return;
+    }
+    const localKey = `local-${(localSeq.current += 1)}`;
+    const row: ChatRow = {
+      key: localKey,
+      serverId: null,
+      senderId: session.userId,
+      displayName: 'Você',
+      body: emoteToken(item.key),
+      createdAt: new Date().toISOString(),
+      status: 'sending',
+    };
+    emoteInFlight.current.add(item.key);
+    setEmoteBusyKeys((current) => [...current, item.key]);
+    setLocalRows((current) => [...current, row]);
+    atBottom.current = true;
+    AccessibilityInfo.announceForAccessibility(`Enviando emote ${item.name}.`);
+    void deliver(localKey, emoteToken(item.key)).finally(() => {
+      emoteInFlight.current.delete(item.key);
+      if (mounted.current) {
+        setEmoteBusyKeys((current) => current.filter((key) => key !== item.key));
+      }
+    });
+  };
+
+  const retryEmotes = async () => {
+    if (emoteRetrying) {
+      return;
+    }
+    setEmoteRetrying(true);
+    try {
+      await loadVisual();
+    } finally {
+      if (mounted.current) {
+        setEmoteRetrying(false);
+      }
+    }
+  };
+
   const refresh = async () => {
     if (!session || refreshingLock.current) {
       return;
@@ -2520,6 +2571,7 @@ function ClanChat() {
     }
     // O toque de soltura depois do long press não pode desmarcar na hora.
     longPressGuard.current = Date.now();
+    setEmoteOpen(false);
     setSelecting(true);
     setSelectedIds([serverId]);
     setReportNotice(null);
@@ -2566,6 +2618,25 @@ function ClanChat() {
       subscription?.remove();
     };
   }, [selecting, reportOpen, cancelSelection, nav.id]);
+
+  useEffect(() => {
+    if (!emoteOpen || nav.id !== 'clan-chat') {
+      return;
+    }
+    // Mesmo padrão da seleção: registra no próximo tick para ser o último
+    // listener e fechar só o painel, sem tirar a tela da pilha.
+    let subscription: { remove: () => void } | null = null;
+    const timer = setTimeout(() => {
+      subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        setEmoteOpen(false);
+        return true;
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      subscription?.remove();
+    };
+  }, [emoteOpen, nav.id]);
 
   const openReport = () => {
     if (selectedMessages.length === 0 || reporting) {
@@ -2651,6 +2722,7 @@ function ClanChat() {
     const isSelected = !!item.serverId && selectedIds.includes(item.serverId);
     const author = mine ? 'Você' : item.displayName?.trim() || 'Membro';
     const sentAt = formatTime(item.createdAt);
+    const spokenBody = emoteSpokenText(parseEmoteBody(item.body, visualCatalog));
     const bubbleStyle = {
       alignSelf: mine ? ('flex-end' as const) : ('flex-start' as const),
       maxWidth: '88%' as const,
@@ -2688,7 +2760,7 @@ function ClanChat() {
             {sentAt ? ` · ${sentAt}` : ''}
           </Txt>
         </View>
-        <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>{item.body}</Text>
+        <ChatEmoteBody body={item.body} catalog={visualCatalog} />
         {item.status === 'sending' ? (
           <Text
             accessibilityLiveRegion="polite"
@@ -2724,7 +2796,7 @@ function ClanChat() {
         onPress={selecting ? () => toggleSelection(item) : undefined}
         delayLongPress={350}
         accessibilityRole="button"
-        accessibilityLabel={`${author}: ${item.body}`}
+        accessibilityLabel={`${author}: ${spokenBody}`}
         accessibilityHint={
           selecting ? 'Toque para marcar ou desmarcar.' : 'Pressione e segure para denunciar.'
         }
@@ -2850,7 +2922,7 @@ function ClanChat() {
       <FlatList
         ref={listRef}
         data={rows}
-        extraData={`${selecting}:${selectedIds.join(',')}`}
+        extraData={`${selecting}:${selectedIds.join(',')}:${catalogVersionOf(visualCatalog)}`}
         keyExtractor={(item) => item.key}
         renderItem={renderRow}
         style={{ flex: 1 }}
@@ -2884,7 +2956,28 @@ function ClanChat() {
           </Notice>
         }
       />
+      {emoteOpen ? (
+        <ChatEmotePicker
+          items={emotes}
+          catalog={visualCatalog}
+          onPick={sendEmote}
+          busyKeys={emoteBusyKeys}
+          unavailable={emoteUnavailable}
+          retrying={emoteRetrying}
+          onRetry={() => void retryEmotes()}
+          onOpenTrack={() => nav.go('season-track')}
+          onClose={() => setEmoteOpen(false)}
+        />
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {selecting ? null : (
+          <IconBtn
+            icon="chat"
+            label="Emotes"
+            expanded={emoteOpen}
+            onPress={() => setEmoteOpen((open) => !open)}
+          />
+        )}
         <Input
           value={draft}
           onChangeText={(value) => {
