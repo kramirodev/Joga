@@ -59,6 +59,7 @@ import type {
   Venue,
   VisualCatalog,
   VisualIdentity,
+  VisualIdentityResponse,
 } from '../api/types';
 import {
   clearSession,
@@ -68,7 +69,12 @@ import {
   saveSession,
   type Session,
 } from '../session';
-import { DEFAULT_IDENTITY, LOCAL_VISUAL_CATALOG, normalizeIdentity } from '../ui/identity';
+import {
+  DEFAULT_IDENTITY,
+  LOCAL_VISUAL_CATALOG,
+  normalizeIdentity,
+  visualUpdatePayload,
+} from '../ui/identity';
 import {
   applyNetworkFailure,
   cancelOutcome,
@@ -263,6 +269,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     useState<AccessibilityPreferences>(defaultAccessibility);
   const [visual, setVisual] = useState<VisualIdentity>(DEFAULT_IDENTITY);
   const [visualCatalog, setVisualCatalog] = useState<VisualCatalog>(LOCAL_VISUAL_CATALOG);
+  /** Chaves confirmadas por `GET /me/visual`; autoridade para o próximo PUT. */
+  const [confirmedVisual, setConfirmedVisual] = useState<VisualIdentityResponse | null>(null);
   const queueSnapshotRef = useRef<QueueSnapshot>(emptySnapshot());
   const queueRevisionRef = useRef(0);
 
@@ -506,6 +514,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     setEmailReady(false);
     setVisual(DEFAULT_IDENTITY);
     setVisualCatalog(LOCAL_VISUAL_CATALOG);
+    setConfirmedVisual(null);
     setAuthState(initialAuth);
     setOnboardingState(initialOnboarding);
   }, [setQueue]);
@@ -802,6 +811,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     }
     try {
       const remoteIdentity = await api.visual.me(token);
+      setConfirmedVisual(remoteIdentity);
       setVisual(normalizeIdentity(remoteIdentity, catalog));
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -824,15 +834,20 @@ export function AppProvider({ children }: PropsWithChildren) {
       if (!token) {
         return { identity: next, synced: false };
       }
+      // O PUT valida os seis slots. `entry`/`emote` não têm editor: preserva a
+      // chave confirmada pelo servidor em vez de mandar o default local.
+      const payload = visualUpdatePayload(next, visualCatalog, confirmedVisual);
+      if (!payload) {
+        return {
+          identity: next,
+          synced: false,
+          error:
+            'Catálogo de identidade do servidor indisponível. Tente novamente quando houver conexão.',
+        };
+      }
       try {
-        const saved = await api.visual.update(token, {
-          icon_key: next.icon_key,
-          frame_key: next.frame_key,
-          accent_key: next.accent_key,
-          entry_key: next.entry_key,
-          emote_key: next.emote_key,
-          badge_key: next.badge_key,
-        });
+        const saved = await api.visual.update(token, payload);
+        setConfirmedVisual(saved);
         const normalized = normalizeIdentity(saved, visualCatalog);
         setVisual(normalized);
         return { identity: normalized, synced: true };
@@ -861,7 +876,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         };
       }
     },
-    [token, visual, visualCatalog],
+    [token, visual, visualCatalog, confirmedVisual],
   );
 
   const loadRating = useCallback(

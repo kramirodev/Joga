@@ -566,6 +566,7 @@ export function IconBtn({
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!action.disabled }}
       style={({ pressed }) => ({
         width: largeTargets ? 54 : 48,
         height: largeTargets ? 54 : 48,
@@ -576,8 +577,8 @@ export function IconBtn({
         backgroundColor: bg,
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: pressed ? 0.85 : 1,
-        transform: pressed ? [{ scale: scale.iconButton }] : [],
+        opacity: action.disabled ? 0.38 : pressed ? 0.85 : 1,
+        transform: pressed && !action.disabled ? [{ scale: scale.iconButton }] : [],
       })}
     >
       <Icon name={icon} size={20} color={color} />
@@ -595,6 +596,7 @@ export function Chip({
   onPress,
   toast,
   accessibilityLabel,
+  disabled,
 }: PropsWithChildren<{
   on?: boolean;
   tone?: 'lime';
@@ -604,6 +606,8 @@ export function Chip({
   toast?: string;
   onPress?: () => void;
   accessibilityLabel?: string;
+  /** Filtro/bloqueio honesto: continua visível, mas não finge funcionar. */
+  disabled?: boolean;
 }>) {
   const { palette, dark, largeTargets } = useTheme();
   const nav = useNav();
@@ -637,9 +641,10 @@ export function Chip({
     <Animated.View style={{ transform: [{ scale: selectionScale }] }}>
       <Pressable
         onPress={press}
+        disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={{ selected: !!on }}
+        accessibilityState={{ selected: !!on, disabled: !!disabled }}
         style={({ pressed }) => ({
           minHeight: largeTargets ? 54 : 48,
           borderRadius: 999,
@@ -651,8 +656,8 @@ export function Chip({
           flexDirection: 'row',
           alignItems: 'center',
           gap: 6,
-          opacity: pressed ? 0.9 : 1,
-          transform: pressed ? [{ scale: scale.chip }] : [],
+          opacity: disabled ? 0.55 : pressed ? 0.9 : 1,
+          transform: pressed && !disabled ? [{ scale: scale.chip }] : [],
         })}
       >
         {icon ? <Icon name={icon} size={14} color={color} /> : null}
