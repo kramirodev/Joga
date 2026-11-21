@@ -14,6 +14,7 @@ from app.infrastructure.database.dependency import get_session
 from app.modules.identity.models import User
 from app.modules.identity.sessions import SessionService
 from app.modules.matchmaking.models import Lobby, QueueEntry
+from app.modules.matchmaking.service import MatchmakingService
 from app.modules.profile.models import (
     Availability,
     Sport,
@@ -107,6 +108,19 @@ def give_sport_profile(
         )
     )
     session.flush()
+
+
+def get_sport_profile(
+    session: Session,
+    user_id: UUID,
+    format_id: UUID,
+) -> UserSportProfile | None:
+    return session.scalar(
+        select(UserSportProfile).where(
+            UserSportProfile.user_id == user_id,
+            UserSportProfile.format_id == format_id,
+        )
+    )
 
 
 def give_availability(session: Session, user_id: UUID) -> None:
@@ -305,6 +319,10 @@ def test_enqueue_overrides_court_preference(api: TestClient, db_session: Session
 
     assert created.status_code == 201
     assert created.json()["court_preference"] == "PRIVATE_ONLY"
+    db_session.expire_all()
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None
+    assert profile.court_preference == "PRIVATE_ONLY"
 
 
 def test_enqueue_accepts_without_availability(api: TestClient, db_session: Session) -> None:
@@ -722,7 +740,9 @@ def test_put_applies_level_per_entry(api: TestClient, db_session: Session) -> No
 
     assert response.status_code == 200
     levels = {item["mode"]: item["level"] for item in response.json()["entries"]}
-    assert levels == {"casual": "beginner", "ranked": "intermediate"}
+    # O nível casual explícito também vira a preferência do perfil (ADR 0064);
+    # a entrada ranqueada do mesmo formato registra o perfil já atualizado.
+    assert levels == {"casual": "beginner", "ranked": "beginner"}
 
 
 def test_put_level_override_outside_selection_is_atomic(
@@ -887,7 +907,7 @@ def test_put_empty_selection_with_level_override_is_rejected(
     ]
 
 
-def test_put_preserved_entry_without_override_uses_current_profile_level(
+def test_put_preserved_entry_without_override_uses_updated_profile_level(
     api: TestClient, db_session: Session
 ) -> None:
     user_id, token = make_user_with_tokens(db_session)
@@ -908,7 +928,8 @@ def test_put_preserved_entry_without_override_uses_current_profile_level(
     original = created.json()["entries"][0]
     assert original["level"] == "beginner"
 
-    # Sem ``levels`` vale o nível do perfil, como no comportamento histórico.
+    # A escolha anterior virou a preferência do perfil (ADR 0064). Sem
+    # ``levels``, a entrada preservada e o perfil usam esse nível atualizado.
     reset = api.put(
         "/api/v1/matchmaking/queue",
         headers=bearer(token),
@@ -919,7 +940,15 @@ def test_put_preserved_entry_without_override_uses_current_profile_level(
     entry = reset.json()["entries"][0]
     assert entry["id"] == original["id"]
     assert entry["created_at"] == original["created_at"]
-    assert entry["level"] == "advanced"
+    assert entry["level"] == "beginner"
+    db_session.expire_all()
+    profile = db_session.scalar(
+        select(UserSportProfile).where(
+            UserSportProfile.user_id == user_id,
+            UserSportProfile.format_id == sport_format.id,
+        )
+    )
+    assert profile is not None and profile.level == "beginner"
 
 
 def test_put_empty_selection_cancels_everything(api: TestClient, db_session: Session) -> None:
@@ -1806,3 +1835,228 @@ def test_put_formats_and_modes_still_apply_cartesian_product(
         (str(volei.id), "casual"),
         (str(volei.id), "ranked"),
     }
+
+
+def test_put_casual_level_without_profile_creates_sport_profile(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "beginner"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["level"] for item in response.json()["entries"]] == ["beginner"]
+
+    db_session.expire_all()
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None
+    assert profile.level == "beginner"
+    assert profile.court_preference == "ANY"
+
+    visible = api.get("/api/v1/me/profile", headers=bearer(token))
+    assert visible.status_code == 200
+    sports = {item["format_id"]: item for item in visible.json()["sports"]}
+    assert sports[str(sport_format.id)]["level"] == "beginner"
+    assert sports[str(sport_format.id)]["court_preference"] == "ANY"
+
+
+def test_put_creates_profile_only_for_selected_formats(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "casual", "level": "advanced"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    assert get_sport_profile(db_session, user_id, futebol.id) is not None
+    assert get_sport_profile(db_session, user_id, volei.id) is None
+
+
+def test_put_court_preference_updates_selected_profiles_only(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    basquete = seed_format(
+        db_session,
+        sport_slug="basquete",
+        format_slug="basquete-3x3",
+        name="Basquete 3x3",
+        team_size=3,
+    )
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id, level="advanced", court="ANY")
+    give_sport_profile(db_session, user_id, volei.id, level="beginner", court="ANY")
+    give_sport_profile(db_session, user_id, basquete.id, level="intermediate", court="ANY")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "casual"},
+                {"format_id": str(volei.id), "mode": "ranked"},
+            ],
+            "court_preference": "PRIVATE_ONLY",
+        },
+    )
+
+    assert response.status_code == 200
+    assert {item["court_preference"] for item in response.json()["entries"]} == {"PRIVATE_ONLY"}
+    db_session.expire_all()
+    futebol_profile = get_sport_profile(db_session, user_id, futebol.id)
+    volei_profile = get_sport_profile(db_session, user_id, volei.id)
+    basquete_profile = get_sport_profile(db_session, user_id, basquete.id)
+    assert futebol_profile is not None
+    assert volei_profile is not None
+    assert basquete_profile is not None
+    assert futebol_profile.court_preference == "PRIVATE_ONLY"
+    assert volei_profile.court_preference == "PRIVATE_ONLY"
+    assert futebol_profile.level == "advanced"
+    assert volei_profile.level == "beginner"
+    # Formato fora da seleção não é tocado.
+    assert basquete_profile.court_preference == "ANY"
+
+
+def test_put_ranked_creates_default_profile_only_when_missing(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, volei.id, level="advanced")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "ranked"},
+                {"format_id": str(volei.id), "mode": "ranked"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    levels = {item["format_id"]: item["level"] for item in response.json()["entries"]}
+    assert levels == {
+        str(futebol.id): "intermediate",
+        str(volei.id): "advanced",
+    }
+    db_session.expire_all()
+    futebol_profile = get_sport_profile(db_session, user_id, futebol.id)
+    volei_profile = get_sport_profile(db_session, user_id, volei.id)
+    assert futebol_profile is not None
+    assert futebol_profile.level == "intermediate"
+    assert futebol_profile.court_preference == "ANY"
+    assert volei_profile is not None
+    assert volei_profile.level == "advanced"
+
+
+def test_enqueue_ranked_without_profile_creates_default_profile(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+
+    response = api.post(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={"format_id": str(sport_format.id), "mode": "ranked"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["level"] == "intermediate"
+    db_session.expire_all()
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None
+    assert profile.level == "intermediate"
+    assert profile.court_preference == "ANY"
+
+
+def test_put_replacing_casual_level_updates_sport_profile(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, level="intermediate")
+
+    first = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "beginner"},
+            ],
+        },
+    )
+    assert first.status_code == 200
+    db_session.expire_all()
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None and profile.level == "beginner"
+
+    second = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "advanced"},
+            ],
+        },
+    )
+    assert second.status_code == 200
+    assert [item["level"] for item in second.json()["entries"]] == ["advanced"]
+    db_session.expire_all()
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None and profile.level == "advanced"
+
+
+def test_put_failure_after_profile_upsert_rolls_back_sport_profile(
+    api: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("falha simulada após o upsert do perfil")
+
+    monkeypatch.setattr(MatchmakingService, "_build_entry", explode)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(sport_format.id), "mode": "casual", "level": "beginner"},
+            ],
+        },
+    )
+    assert response.status_code == 500
+
+    db_session.expire_all()
+    assert get_sport_profile(db_session, user_id, sport_format.id) is None
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
