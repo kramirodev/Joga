@@ -602,6 +602,7 @@ export function IconBtn({
   plain,
   ink,
   onPress,
+  expanded,
   ...action
 }: ActionProps & {
   icon: IconName;
@@ -609,6 +610,8 @@ export function IconBtn({
   plain?: boolean;
   ink?: boolean;
   onPress?: () => void;
+  /** Estado de painel expansível (ex.: seletor de emotes). Aditivo. */
+  expanded?: boolean;
 }) {
   const { palette, dark, largeTargets } = useTheme();
   const run = useAction();
@@ -629,7 +632,7 @@ export function IconBtn({
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!action.disabled }}
+      accessibilityState={{ disabled: !!action.disabled, expanded: !!expanded }}
       style={({ pressed }) => ({
         width: largeTargets ? 54 : 48,
         height: largeTargets ? 54 : 48,

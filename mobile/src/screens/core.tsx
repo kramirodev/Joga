@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, FlatList, View, useWindowDimensions } from 'react-native';
+import {
+  AccessibilityInfo,
+  AppState,
+  BackHandler,
+  FlatList,
+  ScrollView,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError, describeApiError } from '../api/client';
@@ -10,7 +18,14 @@ import { useNav, useTheme } from '../state/context';
 import { consumePendingQueueIntent } from '../state/queueIntent';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { IdentityBadge } from '../ui/IdentityBadge';
-import { catalogVersionOf, identityFromSeed, visualItems } from '../ui/identity';
+import { ChatEmoteBody, ChatEmotePicker } from '../ui/ChatEmotePicker';
+import { chatEmoteOptions, emoteToken } from '../ui/emote';
+import {
+  catalogVersionOf,
+  identityFromSeed,
+  isLocalVisualCatalog,
+  visualItems,
+} from '../ui/identity';
 import { AddWindowSheet } from '../ui/AddWindowSheet';
 import {
   Badge,
@@ -655,13 +670,17 @@ function LobbyT1() {
 function LobbyChat() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { session, matches } = useApp();
+  const { session, matches, visualCatalog, loadVisual } = useApp();
   const lobbyId =
     typeof nav.params.lobbyId === 'string' ? nav.params.lobbyId : matches[0]?.lobby_id;
   const [messages, setMessages] = useState<
     { id: string; senderId: string; sender: string; body: string; time: string; mine: boolean }[]
   >([]);
   const [input, setInput] = useState('');
+  const [emoteOpen, setEmoteOpen] = useState(false);
+  const [emoteBusyKey, setEmoteBusyKey] = useState<string | null>(null);
+  const [emoteRetrying, setEmoteRetrying] = useState(false);
+  const emoteLock = useRef<string | null>(null);
   const loadMessages = useCallback(async () => {
     if (!lobbyId || !session) {
       return;
@@ -704,17 +723,18 @@ function LobbyChat() {
   // Fallback de 15 s caso o WebSocket esteja indisponível na rede; pausa em background.
   useActiveInterval(() => void loadMessages(), 15_000, !!lobbyId && !!session);
   const visible = messages;
-  const send = async () => {
-    const body = input.trim();
+  const emotes = useMemo(() => chatEmoteOptions(visualCatalog), [visualCatalog]);
+  const emoteUnavailable = isLocalVisualCatalog(visualCatalog);
+  const sendBody = async (body: string) => {
     if (!body) {
-      return;
+      return false;
     }
     if (lobbyId && session) {
       try {
         await api.chat.send(session.accessToken, lobbyId, body);
       } catch (error) {
         toastError(nav, error);
-        return;
+        return false;
       }
     }
     setMessages((current) => [
@@ -728,10 +748,62 @@ function LobbyChat() {
         mine: true,
       },
     ]);
-    setInput('');
+    return true;
   };
+  const send = async () => {
+    const body = input.trim();
+    if (!body) {
+      return;
+    }
+    if (await sendBody(body)) {
+      setInput('');
+    }
+  };
+  const sendEmote = async (item: VisualItem) => {
+    if (emoteLock.current) {
+      return;
+    }
+    emoteLock.current = item.key;
+    setEmoteBusyKey(item.key);
+    try {
+      const sent = await sendBody(emoteToken(item.key));
+      AccessibilityInfo.announceForAccessibility(
+        sent ? `Emote ${item.name} enviado.` : 'Não foi possível enviar o emote.',
+      );
+    } finally {
+      emoteLock.current = null;
+      setEmoteBusyKey(null);
+    }
+  };
+  const retryEmotes = async () => {
+    if (emoteRetrying) {
+      return;
+    }
+    setEmoteRetrying(true);
+    try {
+      await loadVisual();
+    } finally {
+      setEmoteRetrying(false);
+    }
+  };
+  useEffect(() => {
+    if (!emoteOpen || nav.id !== 'lobby-chat') {
+      return;
+    }
+    let subscription: { remove: () => void } | null = null;
+    const timer = setTimeout(() => {
+      subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        setEmoteOpen(false);
+        return true;
+      });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      subscription?.remove();
+    };
+  }, [emoteOpen, nav.id]);
   return (
-    <Page title="Chat da partida">
+    <Page title="Chat da partida" scroll={false}>
       <Card tone="flat" padding={9}>
         <CardHeader
           variant="tiny"
@@ -739,7 +811,13 @@ function LobbyChat() {
           badge={<Badge tone="green">só participantes</Badge>}
         />
       </Card>
-      <View style={{ gap: 10 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ gap: 10, paddingBottom: 4 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         {visible.length === 0 ? (
           <Card tone="flat" padding={12}>
             <Txt variant="tiny">Nenhuma mensagem ainda. Comece a conversa.</Txt>
@@ -775,7 +853,7 @@ function LobbyChat() {
                   {message.time ? ` · ${message.time}` : ''}
                 </Txt>
               </View>
-              <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>{message.body}</Text>
+              <ChatEmoteBody body={message.body} catalog={visualCatalog} />
             </View>
           ),
         )}
@@ -789,7 +867,20 @@ function LobbyChat() {
             </View>
           </Row>
         </Card>
-      </View>
+      </ScrollView>
+      {emoteOpen ? (
+        <ChatEmotePicker
+          items={emotes}
+          catalog={visualCatalog}
+          onPick={(item) => void sendEmote(item)}
+          busyKeys={emoteBusyKey ? [emoteBusyKey] : []}
+          unavailable={emoteUnavailable}
+          retrying={emoteRetrying}
+          onRetry={() => void retryEmotes()}
+          onOpenTrack={() => nav.go('season-track')}
+          onClose={() => setEmoteOpen(false)}
+        />
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <IconBtn icon="plus" label="Referência" modal="share" />
         <Input
@@ -801,7 +892,13 @@ function LobbyChat() {
           onSubmitEditing={send}
           returnKeyType="send"
         />
-        <IconBtn icon="send" label="Enviar" ink onPress={send} />
+        <IconBtn
+          icon="chat"
+          label="Emotes"
+          expanded={emoteOpen}
+          onPress={() => setEmoteOpen((open) => !open)}
+        />
+        <IconBtn icon="send" label="Enviar" ink onPress={() => void send()} />
       </View>
       <Row between>
         <Txt variant="tiny" style={{ flexShrink: 1 }}>

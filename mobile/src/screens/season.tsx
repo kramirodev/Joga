@@ -13,6 +13,7 @@ import {
   CardList,
   Chip,
   ChipRow,
+  EmptyState,
   Kv,
   ListRow,
   LoadingState,
@@ -21,6 +22,7 @@ import {
   Progress,
   Row,
   StateScreen,
+  TextBtn,
   Txt,
 } from '../ui/kit';
 import { number } from '../ui/datetime';
@@ -574,16 +576,11 @@ function RewardClaimed() {
       <StateScreen
         icon="check"
         title="Recompensa resgatada"
-        text="A recompensa foi para o seu inventário. Você pode equipar agora ou deixar para depois."
+        text="A recompensa foi para o seu inventário."
         actions={
-          <>
-            <Btn tone="primary" go="inventory">
-              Equipar agora
-            </Btn>
-            <Btn tone="ghost" go="inventory">
-              Ver inventário
-            </Btn>
-          </>
+          <Btn tone="primary" go="inventory">
+            Ver inventário
+          </Btn>
         }
       />
     </Page>
@@ -807,39 +804,183 @@ function Badges() {
   );
 }
 
+type InventoryFilter = 'all' | 'free' | 'pass';
+
+const INVENTORY_FILTERS: { id: InventoryFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'free', label: 'Grátis' },
+  { id: 'pass', label: 'Passe' },
+];
+
 function Inventory() {
   const { palette } = useTheme();
+  const { track, loadSeason } = useApp();
+  const [filter, setFilter] = useState<InventoryFilter>('all');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    loadSeason()
+      .then(() => {
+        if (active) {
+          setStatus('ready');
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setStatus('error');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadSeason]);
+
+  const retry = () => {
+    setStatus('loading');
+    loadSeason()
+      .then(() => setStatus('ready'))
+      .catch(() => setStatus('error'));
+  };
+
+  const refresh = async () => {
+    if (refreshing) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      await loadSeason();
+      setStatus('ready');
+    } catch {
+      // Erro não vira vazio nem mantém a lista anterior como se fosse atual.
+      setStatus('error');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Fonte única: itens que o jogador resgatou na trilha. `claimed` +
+  // `item_code`/`item_name` vêm do payload de `GET /me/progress/track`.
+  const items = useMemo(() => {
+    const levels = track?.levels ?? [];
+    return levels
+      .filter((item) => item.claimed && item.item_code && item.item_name)
+      .map((item) => ({
+        code: item.item_code as string,
+        name: item.item_name as string,
+        level: item.level,
+        track: item.track === 'pass' ? ('pass' as const) : ('free' as const),
+      }))
+      .sort((left, right) => left.level - right.level || left.code.localeCompare(right.code));
+  }, [track]);
+
+  const filtered = useMemo(
+    () => (filter === 'all' ? items : items.filter((item) => item.track === filter)),
+    [filter, items],
+  );
+
+  if (status === 'loading') {
+    return (
+      <Page title="Inventário" sub="Itens que você resgatou nesta temporada.">
+        <LoadingState label="Buscando seus itens." />
+      </Page>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <Page title="Inventário" sub="Itens que você resgatou nesta temporada.">
+        <StateScreen
+          icon="wifi-off"
+          title="Não foi possível carregar seus itens."
+          text="Verifique a conexão e tente novamente."
+          actions={
+            <Btn tone="primary" onPress={retry}>
+              Tentar de novo
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
   return (
-    <Page title="Inventário">
+    <Page title="Inventário" sub="Itens que você resgatou nesta temporada.">
+      <Row between wrap gap={8}>
+        <Txt variant="h3">Seus itens</Txt>
+        <Row gap={8}>
+          <Txt variant="tiny">
+            {filtered.length} {filtered.length === 1 ? 'item' : 'itens'}
+          </Txt>
+          <TextBtn muted onPress={() => void refresh()} disabled={refreshing}>
+            {refreshing ? 'Atualizando…' : 'Atualizar'}
+          </TextBtn>
+        </Row>
+      </Row>
       <ChipRow>
-        <Chip on>Todos</Chip>
-        <Chip>Grátis</Chip>
-        <Chip>XP</Chip>
-        <Chip>Passe</Chip>
-      </ChipRow>
-      <CardList>
-        {[
-          ['Moldura Ouro', 'XP · nível 24', 'EQUIPADA', 'default'],
-          ['Animação de lobby', 'Passe · empréstimo', 'EQUIPADA', 'blue'],
-          ['Emote “boa jogada”', 'XP · nível 12', 'DISPONÍVEL', 'default'],
-          ['Tema alto contraste', 'Grátis', 'EQUIPADA', 'green'],
-          ['Efeito de perfil', 'Passe · revogado', 'HISTÓRICO', 'red'],
-        ].map(([name, sub, status, tone], index, all) => (
-          <ListRow key={name} last={index === all.length - 1}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>{name}</Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>{sub}</Text>
-            </View>
-            <Badge tone={tone as 'default' | 'blue' | 'green' | 'red'}>{status}</Badge>
-          </ListRow>
+        {INVENTORY_FILTERS.map((option) => (
+          <Chip
+            key={option.id}
+            on={filter === option.id}
+            onPress={() => setFilter(option.id)}
+            accessibilityLabel={`Filtrar por ${option.label}`}
+          >
+            {option.label}
+          </Chip>
         ))}
-      </CardList>
-      <Notice tone="blue" icon="info">
-        Item de passe revogado não apaga o histórico: ele pode voltar se você reassinar.
-      </Notice>
-      <Btn tone="primary" disabled>
-        Edição de loadout em implantação
-      </Btn>
+      </ChipRow>
+      {items.length === 0 ? (
+        <EmptyState
+          title="Você ainda não resgatou itens nesta temporada."
+          text="Resgate na trilha para eles aparecerem aqui."
+          actions={
+            <Btn tone="primary" go="season-track">
+              Ver trilha
+            </Btn>
+          }
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="Nenhum item neste filtro."
+          text="Seus outros itens continuam guardados aqui."
+          actions={
+            <>
+              <Btn tone="primary" onPress={() => setFilter('all')}>
+                Ver todos
+              </Btn>
+              <Btn tone="ghost" go="season-track">
+                Ver trilha
+              </Btn>
+            </>
+          }
+        />
+      ) : (
+        <CardList>
+          {filtered.map((item, index) => (
+            <ListRow key={item.code} last={index === filtered.length - 1}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  maxFontSizeMultiplier={1.3}
+                  style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                >
+                  {item.name}
+                </Text>
+                <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 12, color: palette.muted }}>
+                  Nível {item.level} · {item.track === 'pass' ? 'Passe' : 'Grátis'}
+                </Text>
+              </View>
+              <Badge tone="lime">Resgatado</Badge>
+            </ListRow>
+          ))}
+        </CardList>
+      )}
+      <Txt variant="tiny">
+        Itens de temporada ficam guardados aqui. Ícone, moldura e selo são escolhidos em Identidade,
+        no seu perfil.
+      </Txt>
     </Page>
   );
 }
