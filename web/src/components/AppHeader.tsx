@@ -86,7 +86,7 @@ export function AppHeader() {
                 }
               >
                 <MapPinIcon size={16} />
-                Quadras públicas
+                Quadras
               </NavLink>
             </>
           ) : null}
