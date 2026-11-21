@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -193,6 +193,10 @@ class VenueDiscoveryService:
             .where(
                 OrganizationVenue.status == "active",
                 Organization.status == "active",
+                or_(
+                    Organization.is_platform.is_(True),
+                    Organization.verification_status == "verified",
+                ),
                 active_space,
             )
             .order_by(OrganizationVenue.name, OrganizationVenue.id)
@@ -329,6 +333,10 @@ class VenueDiscoveryService:
                 VenuePhoto.status == "APPROVED",
                 OrganizationVenue.status == "active",
                 Organization.status == "active",
+                or_(
+                    Organization.is_platform.is_(True),
+                    Organization.verification_status == "verified",
+                ),
             )
         )
         if photo is None:
@@ -346,6 +354,10 @@ class VenueDiscoveryService:
                 OrganizationVenue.id == venue_id,
                 OrganizationVenue.status == "active",
                 Organization.status == "active",
+                or_(
+                    Organization.is_platform.is_(True),
+                    Organization.verification_status == "verified",
+                ),
             )
         )
         if venue is None:

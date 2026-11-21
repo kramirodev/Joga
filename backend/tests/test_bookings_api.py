@@ -20,6 +20,7 @@ from app.modules.organizations.models import (
 )
 from app.modules.organizations.permissions import Role
 from app.modules.venues.models import VenueAvailability, VenueSpace
+from tests.cnpj_helpers import next_test_cnpj
 from tests.helpers_results import make_format, make_token, make_user
 from tests.settings_helpers import demo_settings, production_settings
 
@@ -49,6 +50,9 @@ def setup_booking(
     _, format_ = make_format(db_session, team_size=2)
     organization = Organization(
         name="Arena Reservas",
+        cnpj=next_test_cnpj(),
+        cnpj_status="ATIVA",
+        verification_status="verified",
         legal_document="12345678000199",
         pix_key_type="cnpj",
         pix_key="12345678000199",

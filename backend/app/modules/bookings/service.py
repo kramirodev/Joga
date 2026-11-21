@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1359,6 +1359,10 @@ class BookingService:
             .join(VenueSport, VenueSport.venue_space_id == VenueSpace.id)
             .where(
                 Organization.status == "active",
+                or_(
+                    Organization.is_platform.is_(True),
+                    Organization.verification_status == "verified",
+                ),
                 OrganizationVenue.status == "active",
                 VenueSpace.status == "active",
                 VenueSport.sport_id == format_.sport_id,
