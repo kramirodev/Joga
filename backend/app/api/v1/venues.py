@@ -19,8 +19,10 @@ from app.modules.organizations.service import (
     Forbidden,
     OrganizationError,
     OrganizationNotFound,
+    OrganizationNotVerified,
     VenueNotFound,
 )
+from app.modules.organizations.verification import CnpjVerificationError
 from app.modules.profile.models import Sport
 from app.modules.venues.models import (
     VenueAvailability,
@@ -216,8 +218,11 @@ def _error(code: str, status_code: int) -> HTTPException:
 
 
 def _handle(exc: Exception) -> HTTPException:
+    if isinstance(exc, CnpjVerificationError):
+        return _error(exc.code, exc.http_status)
     mapping = {
         OrganizationNotFound: ("organization_not_found", status.HTTP_404_NOT_FOUND),
+        OrganizationNotVerified: ("organization_not_verified", status.HTTP_409_CONFLICT),
         VenueNotFound: ("venue_not_found", status.HTTP_404_NOT_FOUND),
         SpaceNotFound: ("space_not_found", status.HTTP_404_NOT_FOUND),
         AvailabilityNotFound: ("availability_not_found", status.HTTP_404_NOT_FOUND),

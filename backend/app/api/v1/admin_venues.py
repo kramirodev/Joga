@@ -46,10 +46,15 @@ from app.modules.organizations.service import (
     OrganizationService,
     VenueNotFound,
 )
+from app.modules.venues.admin_moderation import (
+    AdminVenueInvalid,
+    AdminVenueModerationService,
+    AdminVenueNotFound,
+    AdminVenueRecord,
+)
 from app.modules.venues.models import VenueAvailability, VenueBusinessHour, VenueSpace
 from app.modules.venues.service import (
     AvailabilityNotFound,
-    SpaceRecord,
     VenueConflict,
     VenueInvalid,
     VenueService,
@@ -78,11 +83,13 @@ def _handle(exc: Exception) -> HTTPException:
         return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "geocoding_unavailable")
     if isinstance(exc, InvalidPlatformSpace):
         return _error(status.HTTP_400_BAD_REQUEST, "invalid_space")
-    if isinstance(exc, (OrganizationNotFound, VenueNotFound, AvailabilityNotFound)):
+    if isinstance(
+        exc, (OrganizationNotFound, VenueNotFound, AdminVenueNotFound, AvailabilityNotFound)
+    ):
         return _error(status.HTTP_404_NOT_FOUND, "venue_not_found")
     if isinstance(exc, Forbidden):
         return _error(status.HTTP_403_FORBIDDEN, "forbidden")
-    if isinstance(exc, (VenueInvalid, InvalidInput)):
+    if isinstance(exc, (VenueInvalid, InvalidInput, AdminVenueInvalid)):
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_input")
     if isinstance(exc, VenueConflict):
         return _error(status.HTTP_409_CONFLICT, getattr(exc, "code", "conflict"))
@@ -122,9 +129,18 @@ def get_platform_venue_service(
     )
 
 
+def get_venue_moderation_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> AdminVenueModerationService:
+    return AdminVenueModerationService(session)
+
+
 class AdminVenueView(BaseModel):
     id: UUID
     organization_id: UUID
+    organization_name: str
+    organization_is_platform: bool
+    organization_status: str
     name: str
     city: str | None
     state: str | None
@@ -147,10 +163,10 @@ class AdminVenueDetailView(AdminVenueView):
 
 
 class AdminVenueListResponse(BaseModel):
-    venues: list[AdminVenueView]
     total: int
     page: int
     page_size: int
+    venues: list[AdminVenueView]
 
 
 class AdminVenueCreateRequest(BaseModel):
@@ -264,16 +280,31 @@ class AdminBusinessHourView(BaseModel):
     closes_at: time
 
 
-def _venue_view(session: Session, venue: OrganizationVenue) -> AdminVenueView:
-    total_spaces, active_spaces = session.execute(
-        select(
-            func.count(VenueSpace.id),
-            func.count(VenueSpace.id).filter(VenueSpace.status == "active"),
-        ).where(VenueSpace.organization_venue_id == venue.id)
-    ).one()
+def _venue_view(
+    session: Session,
+    venue: OrganizationVenue,
+    *,
+    organization: Organization | None = None,
+    spaces_count: int | None = None,
+    active_spaces_count: int | None = None,
+) -> AdminVenueView:
+    if organization is None:
+        organization = session.get(Organization, venue.organization_id)
+    if spaces_count is None or active_spaces_count is None:
+        total_spaces, active_spaces = session.execute(
+            select(
+                func.count(VenueSpace.id),
+                func.count(VenueSpace.id).filter(VenueSpace.status == "active"),
+            ).where(VenueSpace.organization_venue_id == venue.id)
+        ).one()
+        spaces_count = int(total_spaces)
+        active_spaces_count = int(active_spaces)
     return AdminVenueView(
         id=venue.id,
         organization_id=venue.organization_id,
+        organization_name=organization.name if organization is not None else "",
+        organization_is_platform=bool(organization is not None and organization.is_platform),
+        organization_status=organization.status if organization is not None else "unknown",
         name=venue.name,
         city=venue.city,
         state=venue.state,
@@ -285,10 +316,35 @@ def _venue_view(session: Session, venue: OrganizationVenue) -> AdminVenueView:
         geocoding_precision=venue.geocoding_precision,
         is_public=venue.is_public,
         status=venue.status,
-        spaces_count=int(total_spaces),
-        active_spaces_count=int(active_spaces),
+        spaces_count=spaces_count,
+        active_spaces_count=active_spaces_count,
         created_at=venue.created_at,
         updated_at=venue.updated_at,
+    )
+
+
+def _record_view(record: AdminVenueRecord) -> AdminVenueView:
+    return AdminVenueView(
+        id=record.venue.id,
+        organization_id=record.venue.organization_id,
+        organization_name=record.organization.name,
+        organization_is_platform=record.organization.is_platform,
+        organization_status=record.organization.status,
+        name=record.venue.name,
+        city=record.venue.city,
+        state=record.venue.state,
+        address_line=record.venue.address_line,
+        postal_code=record.venue.postal_code,
+        latitude=record.venue.latitude,
+        longitude=record.venue.longitude,
+        geocoding_source=record.venue.geocoding_source,
+        geocoding_precision=record.venue.geocoding_precision,
+        is_public=record.venue.is_public,
+        status=record.venue.status,
+        spaces_count=record.spaces_count,
+        active_spaces_count=record.active_spaces_count,
+        created_at=record.venue.created_at,
+        updated_at=record.venue.updated_at,
     )
 
 
@@ -306,11 +362,6 @@ def _space_view(space: VenueSpace, sport_id: UUID | None = None) -> AdminSpaceVi
         created_at=space.created_at,
         updated_at=space.updated_at,
     )
-
-
-def _space_record_view(record: SpaceRecord) -> AdminSpaceView:
-    sport_id = record.sports[0].id if record.sports else None
-    return _space_view(record.space, sport_id)
 
 
 def _audit_details(
@@ -365,25 +416,32 @@ def _geocode_if_needed(
 @router.get("", response_model=AdminVenueListResponse)
 def list_admin_venues(
     admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
-    session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    organization_service: Annotated[OrganizationService, Depends(get_platform_org_service)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    venue_status: Annotated[Literal["active", "inactive"] | None, Query(alias="status")] = None,
+    is_public: bool | None = None,
+    organization_id: UUID | None = None,
     active: bool | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> AdminVenueListResponse:
-    organization = _platform_org(session, settings)
-    rows = list(organization_service.list_venues(admin.user_id, organization.id))
-    if active is not None:
-        target = "active" if active else "inactive"
-        rows = [item for item in rows if item.status == target]
-    total = len(rows)
-    start = (page - 1) * page_size
+    """Lista todas as quadras, de qualquer organização, para a plataforma."""
+
+    del admin
+    records, total = moderation.list_venues(
+        q=q,
+        status=venue_status,
+        is_public=is_public,
+        organization_id=organization_id,
+        active=active,
+        page=page,
+        page_size=page_size,
+    )
     return AdminVenueListResponse(
-        venues=[_venue_view(session, item) for item in rows[start : start + page_size]],
         total=total,
         page=page,
         page_size=page_size,
+        venues=[_record_view(record) for record in records],
     )
 
 
@@ -391,17 +449,17 @@ def list_admin_venues(
 def read_admin_venue(
     venue_id: UUID,
     admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
-    session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    organization_service: Annotated[OrganizationService, Depends(get_platform_org_service)],
-    venue_service: Annotated[VenueService, Depends(get_platform_venue_service)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
 ) -> AdminVenueDetailView:
-    organization = _platform_org(session, settings)
-    venue = organization_service.get_venue(admin.user_id, organization.id, venue_id)
-    records = venue_service.list_spaces(admin.user_id, organization.id, venue_id)
+    del admin
+    try:
+        record = moderation.get_venue(venue_id)
+        spaces = moderation.list_spaces(venue_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _handle(exc) from None
     return AdminVenueDetailView(
-        **_venue_view(session, venue).model_dump(),
-        spaces=[_space_record_view(record) for record in records],
+        **_record_view(record).model_dump(),
+        spaces=[_space_view(space, sport_id) for space, sport_id in spaces],
     )
 
 
@@ -409,13 +467,15 @@ def read_admin_venue(
 def list_admin_venue_spaces(
     venue_id: UUID,
     admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
-    session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    venue_service: Annotated[VenueService, Depends(get_platform_venue_service)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
 ) -> list[AdminSpaceView]:
-    organization = _platform_org(session, settings)
-    records = venue_service.list_spaces(admin.user_id, organization.id, venue_id)
-    return [_space_record_view(record) for record in records]
+    del admin
+    try:
+        moderation.get_venue(venue_id)
+        spaces = moderation.list_spaces(venue_id)
+    except Exception as exc:  # noqa: BLE001
+        raise _handle(exc) from None
+    return [_space_view(space, sport_id) for space, sport_id in spaces]
 
 
 @router.post("", response_model=AdminVenueView, status_code=status.HTTP_201_CREATED)
@@ -484,17 +544,18 @@ def update_admin_venue(
     admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
-    organization_service: Annotated[OrganizationService, Depends(get_platform_org_service)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
     postal_service: Annotated[PostalCodeService, Depends(get_postal_code_service)],
 ) -> AdminVenueView:
+    """Edita campos cadastrais seguros de qualquer quadra, sem tocar em preços."""
+
     try:
-        organization = _platform_org(session, settings)
-        venue = organization_service.get_venue(admin.user_id, organization.id, venue_id)
+        current = moderation.get_venue(venue_id).venue
         geocoded = _geocode_if_needed(
             postal_service=postal_service,
             postal_code=payload.postal_code,
-            latitude=payload.latitude if payload.latitude is not None else venue.latitude,
-            longitude=payload.longitude if payload.longitude is not None else venue.longitude,
+            latitude=payload.latitude if payload.latitude is not None else current.latitude,
+            longitude=payload.longitude if payload.longitude is not None else current.longitude,
             city=payload.city,
             state=payload.state,
             address_line=payload.address_line,
@@ -515,27 +576,70 @@ def update_admin_venue(
             changes["geocoding_precision"] = geocoded.geocoding_precision or "manual"
         if payload.is_public is not None:
             changes["is_public"] = payload.is_public
-        venue = organization_service.update_venue(
+        record = moderation.update(
             admin.user_id,
-            organization.id,
             venue_id,
             changes=changes,
-        )
-        record_audit(
-            session,
-            actor_user_id=admin.user_id,
-            organization_id=organization.id,
-            action="admin.venue.update",
-            resource_type="organization_venue",
-            resource_id=venue.id,
             reason=clean_reason(payload.reason),
-            details=_audit_details(request, settings),
+            context=_audit_details(request, settings),
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return _venue_view(session, venue)
+    return _record_view(record)
+
+
+@router.post("/{venue_id}/suspend", response_model=AdminVenueView)
+def suspend_admin_venue(
+    venue_id: UUID,
+    payload: AdminReasonRequest,
+    request: Request,
+    admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
+) -> AdminVenueView:
+    """Suspende qualquer quadra; reservas e histórico permanecem intactos."""
+
+    try:
+        record = moderation.suspend(
+            admin.user_id,
+            venue_id,
+            reason=clean_reason(payload.reason),
+            context=_audit_details(request, settings),
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _record_view(record)
+
+
+@router.post("/{venue_id}/reactivate", response_model=AdminVenueView)
+def reactivate_admin_venue(
+    venue_id: UUID,
+    payload: AdminReasonRequest,
+    request: Request,
+    admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    moderation: Annotated[AdminVenueModerationService, Depends(get_venue_moderation_service)],
+) -> AdminVenueView:
+    """Reativa qualquer quadra moderada, com motivo e auditoria."""
+
+    try:
+        record = moderation.reactivate(
+            admin.user_id,
+            venue_id,
+            reason=clean_reason(payload.reason),
+            context=_audit_details(request, settings),
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _record_view(record)
 
 
 @router.post("/{venue_id}/activate", response_model=AdminVenueView)
@@ -612,7 +716,7 @@ def deactivate_admin_venue(
 
 
 class AdminReasonRequest(BaseModel):
-    reason: FreeText = Field(min_length=1, max_length=500)
+    reason: FreeText = Field(min_length=3, max_length=500)
 
 
 @router.post(

@@ -24,7 +24,7 @@ from app.main import create_app
 TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "catalog_migration_test"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "4c5d6e7f8a9b"
+HEAD_REVISION = "6f1a2b3c4d5e"
 PRE_REPAIR_REVISION = "b1c2d3e4f5a6"
 LEGACY_REVISION = "a0b1c2d3e4f5"
 

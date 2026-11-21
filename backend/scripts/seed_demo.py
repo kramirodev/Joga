@@ -181,7 +181,22 @@ def _ensure_organization(session: Session, owner_id: uuid.UUID) -> Organization:
     document = normalize_cnpj(DEMO_CNPJ)
     if organization.legal_document != document:
         organization.legal_document = document
-        session.flush()
+    # O seed do demo não consulta a Receita. Ele cria um snapshot explícito de
+    # demonstração para que o painel e a quadra de exemplo continuem operando.
+    if organization.verification_status != "verified":
+        organization.cnpj = document
+        organization.cnpj_status = "ATIVA"
+        organization.verification_status = "verified"
+        organization.cnpj_snapshot = {
+            "source": "demo_seed",
+            "razao_social": "ARENA DEMO",
+            "situacao_cadastral": "ATIVA",
+            "municipio": "SAO PAULO",
+            "uf": "SP",
+            "cep": "01001000",
+            "qsa": [],
+        }
+    session.flush()
     return organization
 
 
