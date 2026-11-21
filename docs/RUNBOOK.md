@@ -141,8 +141,8 @@ Lida do ambiente com prefixo `JOGA_` (e de `backend/.env`, não versionado). Ver
 | `JOGA_OTP_RECEIPT_TTL_SECONDS` | `600` |
 | `JOGA_TOKEN_HASH_SECRET` | placeholder local; obrigatório fora de `local`/`test`/`development`/`ci` |
 | `JOGA_ACCESS_TOKEN_TTL_SECONDS` | `600` |
-| `JOGA_REFRESH_ABSOLUTE_TTL_DAYS` | `30` |
-| `JOGA_REFRESH_IDLE_TTL_DAYS` | `7` |
+| `JOGA_REFRESH_ABSOLUTE_TTL_DAYS` | `180` |
+| `JOGA_REFRESH_IDLE_TTL_DAYS` | `30` |
 | `JOGA_WEBAUTHN_RP_ID` | `joga-passkeys.vercel.app` |
 | `JOGA_WEBAUTHN_RP_NAME` | `JOGA` |
 | `JOGA_WEBAUTHN_ORIGIN_ANDROID` | `android:apk-key-hash:...` do certificado de debug |

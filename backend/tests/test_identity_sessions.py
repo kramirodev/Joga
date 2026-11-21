@@ -52,8 +52,8 @@ def build_service(session: Session, *, grace_seconds: int = 30) -> SessionServic
         session,
         SECRET,
         access_ttl_seconds=600,
-        refresh_absolute_ttl_days=30,
-        refresh_idle_ttl_days=7,
+        refresh_absolute_ttl_days=180,
+        refresh_idle_ttl_days=30,
         refresh_reuse_grace_seconds=grace_seconds,
     )
 
@@ -71,8 +71,8 @@ def test_issue_persists_only_hashes(session: Session) -> None:
     assert issued.access_token not in row.access_token_hash
     assert issued.refresh_token not in row.refresh_token_hash
     assert ensure_utc(row.access_expires_at) == BASE_TIME + timedelta(minutes=10)
-    assert ensure_utc(row.expires_at) == BASE_TIME + timedelta(days=30)
-    assert ensure_utc(row.idle_expires_at) == BASE_TIME + timedelta(days=7)
+    assert ensure_utc(row.expires_at) == BASE_TIME + timedelta(days=180)
+    assert ensure_utc(row.idle_expires_at) == BASE_TIME + timedelta(days=30)
 
 
 def test_authenticate_rejects_tampered_expired_and_revoked(session: Session) -> None:
@@ -243,12 +243,21 @@ def test_normal_rotation_sequence_stays_active(session: Session) -> None:
 def test_refresh_absolute_expiry(session: Session) -> None:
     user = make_user(session)
     service = build_service(session)
-    issued = service.issue(user.id, now=BASE_TIME)
+    current = service.issue(user.id, now=BASE_TIME)
+    # Rotaciona a cada 20 dias para manter o idle vivo até perto da vida
+    # absoluta; no dia 170 o idle iria até o dia 200, então só a expiração
+    # absoluta herdada (dia 180) pode recusar a rotação seguinte.
+    for day in [*range(20, 161, 20), 170]:
+        current = service.rotate(current.refresh_token, now=BASE_TIME + timedelta(days=day))
+    renewed_row = session.get(SessionRecord, current.session_id)
+    assert renewed_row is not None
+    assert ensure_utc(renewed_row.idle_expires_at) == BASE_TIME + timedelta(days=200)
+    assert ensure_utc(renewed_row.expires_at) == BASE_TIME + timedelta(days=180)
 
     with pytest.raises(InvalidRefreshToken):
-        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(days=31))
+        service.rotate(current.refresh_token, now=BASE_TIME + timedelta(days=181))
 
-    row = session.get(SessionRecord, issued.session_id)
+    row = session.get(SessionRecord, current.session_id)
     assert row is not None
     assert row.revoked_reason == "expired"
 
@@ -259,7 +268,31 @@ def test_refresh_idle_expiry(session: Session) -> None:
     issued = service.issue(user.id, now=BASE_TIME)
 
     with pytest.raises(InvalidRefreshToken):
-        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(days=8))
+        service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(days=31))
+
+    row = session.get(SessionRecord, issued.session_id)
+    assert row is not None
+    assert row.revoked_reason == "expired"
+
+
+def test_rotation_renews_idle_and_inherits_absolute_expiry(session: Session) -> None:
+    """Rotacionar reinicia o idle, mas a família mantém a expiração absoluta."""
+    user = make_user(session)
+    service = build_service(session)
+    issued = service.issue(user.id, now=BASE_TIME)
+    issued_row = session.get(SessionRecord, issued.session_id)
+    assert issued_row is not None
+    assert ensure_utc(issued_row.idle_expires_at) == BASE_TIME + timedelta(days=30)
+
+    rotated = service.rotate(issued.refresh_token, now=BASE_TIME + timedelta(days=20))
+    rotated_row = session.get(SessionRecord, rotated.session_id)
+    assert rotated_row is not None
+    # Idle recomeça no instante da rotação (20 + 30), não no da emissão.
+    assert ensure_utc(rotated_row.idle_expires_at) == BASE_TIME + timedelta(days=50)
+    assert ensure_utc(rotated_row.idle_expires_at) > ensure_utc(issued_row.idle_expires_at)
+    # O prazo absoluto é herdado, não recalculado a partir da rotação.
+    assert ensure_utc(rotated_row.expires_at) == ensure_utc(issued_row.expires_at)
+    assert ensure_utc(rotated_row.expires_at) == BASE_TIME + timedelta(days=180)
 
 
 def test_revoke_by_refresh_revokes_without_rotating(session: Session) -> None:
