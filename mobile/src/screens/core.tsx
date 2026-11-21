@@ -1366,6 +1366,12 @@ function ProfileMe() {
       <CardList>
         {[
           {
+            icon: 'search' as const,
+            title: 'Quadras',
+            sub: 'Descobrir e reservar',
+            go: 'venues',
+          },
+          {
             icon: 'wallet' as const,
             title: 'Ingressos',
             sub: 'Ingressos, passe e extrato',
