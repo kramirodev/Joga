@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -820,6 +821,12 @@ export function AppProvider({ children }: PropsWithChildren) {
       const remoteIdentity = await api.visual.me(token);
       setVisual(normalizeIdentity(remoteIdentity, catalog));
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        // O `call` já passou pelo refresh single-flight e, se ele falhou,
+        // acionou `sessionExpiredHandler`. Não trate 401 como “identidade
+        // indisponível”: isso mascarava o logout e repetia o aviso.
+        return;
+      }
       if (__DEV__) {
         console.warn('me/visual indisponível, usando identidade padrão', error);
       }
@@ -984,7 +991,9 @@ export function AppProvider({ children }: PropsWithChildren) {
     sessionRef.current = session;
   }, [session]);
 
-  useEffect(() => {
+  // Layout effect: o handler de refresh precisa existir antes de qualquer
+  // efeito passivo que dispare chamadas autenticadas (ex.: `/me/visual`).
+  useLayoutEffect(() => {
     if (!token) {
       setRefreshHandler(null);
       return;
@@ -1027,7 +1036,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     return () => setRefreshHandler(null);
   }, [token]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setSessionExpiredHandler((accessToken) => expireSession(accessToken));
     return () => setSessionExpiredHandler(null);
   }, [expireSession]);

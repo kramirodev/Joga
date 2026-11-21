@@ -15,13 +15,18 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { fontScaleFactor } from './src/accessibility';
 import { authConfig } from './src/auth/config';
 import { AppProvider, useApp } from './src/state/app';
+import {
+  createStackEntry,
+  sameParams,
+  shouldPush,
+  type StackEntry,
+} from './src/state/navigationStack';
 import { Text } from './src/ui/text';
 import {
   NavContext,
   ThemeContext,
   useTheme,
   type NavValue,
-  type Params,
   type TabKey,
 } from './src/state/context';
 import { entranceScreens } from './src/screens/entrance';
@@ -105,7 +110,10 @@ const TAB_ROOT: Record<TabKey, string> = {
   perfil: 'profile-me',
 };
 
-type StackEntry = { id: string; params: Params };
+const FALLBACK_ENTRIES: Record<'home' | 'welcome', StackEntry> = {
+  home: { uid: 'fallback-home', id: 'home', params: {} },
+  welcome: { uid: 'fallback-welcome', id: 'welcome', params: {} },
+};
 
 function TabButton({
   active,
@@ -373,24 +381,19 @@ type ScreenMotion = 'push' | 'pop' | 'tab';
 
 function createStacks(signedIn: boolean): TabStacks {
   return {
-    jogar: [{ id: signedIn ? 'home' : 'welcome', params: {} }],
-    partidas: [{ id: 'matches', params: {} }],
-    temporada: [{ id: 'season', params: {} }],
-    social: [{ id: 'friends', params: {} }],
-    perfil: [{ id: 'profile-me', params: {} }],
+    jogar: [createStackEntry(signedIn ? 'home' : 'welcome')],
+    partidas: [createStackEntry('matches')],
+    temporada: [createStackEntry('season')],
+    social: [createStackEntry('friends')],
+    perfil: [createStackEntry('profile-me')],
   };
-}
-
-function entryKey(entry: StackEntry): string {
-  const keys = Object.keys(entry.params ?? {}).sort();
-  if (keys.length === 0) {
-    return entry.id;
-  }
-  return `${entry.id}?${keys.map((key) => `${key}=${String(entry.params[key])}`).join('&')}`;
 }
 
 /** Rotas de compra de ingressos mantidas no código, mas sem caminho alcançável. */
 const PURCHASE_ROUTES = new Set(['store', 'checkout-package', 'buy-3']);
+
+/** Telas que não devem aparecer duas vezes na mesma pilha com os mesmos params. */
+const SINGLETON_ROUTES = new Set(['queue-search', 'queue', 'venues', 'lobby-detail']);
 
 function PurchaseUnavailable() {
   return (
@@ -757,7 +760,7 @@ function Shell() {
 
   const stack = tabStacks[tab];
   const current = useMemo(
-    () => stack[stack.length - 1] ?? { id: signedIn ? 'home' : 'welcome', params: {} },
+    () => stack[stack.length - 1] ?? FALLBACK_ENTRIES[signedIn ? 'home' : 'welcome'],
     [stack, signedIn],
   );
   const screen = REGISTRY[current.id] ?? REGISTRY.welcome;
@@ -865,16 +868,71 @@ function Shell() {
       params: current.params,
       canGoBack,
       go: (id, params) => {
+        const nextParams = params ?? {};
+        // Tocar de novo na mesma tela/params não empilha outra camada.
+        if (!shouldPush(current, id, nextParams)) {
+          return;
+        }
+        // Se a tela já existe mais abaixo (ex.: voltar para `queue-search` a
+        // partir de `queue`), volta até ela em vez de empilhar uma duplicata.
+        const existingIndex = SINGLETON_ROUTES.has(id)
+          ? stack.findIndex((entry) => entry.id === id && sameParams(entry.params, nextParams))
+          : -1;
+        if (existingIndex >= 0) {
+          const activeTab = tab;
+          beginTransition('exit', 'pop', () => {
+            if (tabRef.current !== activeTab) {
+              return;
+            }
+            setTabStacks((previous) => {
+              const active = previous[activeTab];
+              const index = active.findIndex(
+                (entry) => entry.id === id && sameParams(entry.params, nextParams),
+              );
+              if (index < 0) {
+                return previous;
+              }
+              return { ...previous, [activeTab]: active.slice(0, index + 1) };
+            });
+          });
+          return;
+        }
         setTabStacks((previous) => ({
           ...previous,
-          [tab]: [...previous[tab], { id, params: params ?? {} }],
+          [tab]: [...previous[tab], createStackEntry(id, nextParams)],
         }));
         beginTransition('enter', 'push');
       },
       replace: (id, params) => {
+        const nextParams = params ?? {};
+        if (!shouldPush(current, id, nextParams)) {
+          return;
+        }
+        const existingIndex = SINGLETON_ROUTES.has(id)
+          ? stack.findIndex((entry) => entry.id === id && sameParams(entry.params, nextParams))
+          : -1;
+        if (existingIndex >= 0) {
+          const activeTab = tab;
+          beginTransition('exit', 'pop', () => {
+            if (tabRef.current !== activeTab) {
+              return;
+            }
+            setTabStacks((previous) => {
+              const active = previous[activeTab];
+              const index = active.findIndex(
+                (entry) => entry.id === id && sameParams(entry.params, nextParams),
+              );
+              if (index < 0) {
+                return previous;
+              }
+              return { ...previous, [activeTab]: active.slice(0, index + 1) };
+            });
+          });
+          return;
+        }
         setTabStacks((previous) => ({
           ...previous,
-          [tab]: [...previous[tab].slice(0, -1), { id, params: params ?? {} }],
+          [tab]: [...previous[tab].slice(0, -1), createStackEntry(id, nextParams)],
         }));
         beginTransition('enter', 'push');
       },
@@ -883,7 +941,7 @@ function Shell() {
         setTab(nextTab);
         setTabStacks((previous) => ({
           ...previous,
-          [nextTab]: [{ id, params: params ?? {} }],
+          [nextTab]: [createStackEntry(id, params)],
         }));
         beginTransition('enter', 'tab');
       },
@@ -909,7 +967,7 @@ function Shell() {
         if (next === tab) {
           setTabStacks((previous) => ({
             ...previous,
-            [tab]: [{ id: TAB_ROOT[tab], params: {} }],
+            [tab]: [createStackEntry(TAB_ROOT[tab])],
           }));
           beginTransition('enter', 'tab');
           return;
@@ -923,7 +981,7 @@ function Shell() {
         setToast({ message, id: toastSeq.current });
       },
     }),
-    [current.id, current.params, tab, canGoBack, screen.tab, stack.length, beginTransition],
+    [current, tab, canGoBack, screen.tab, stack, beginTransition],
   );
 
   useEffect(() => {
@@ -1052,7 +1110,7 @@ function Shell() {
                   const isTop = index === stack.length - 1;
                   return (
                     <Animated.View
-                      key={entryKey(entry)}
+                      key={entry.uid}
                       pointerEvents={isTop && phase !== 'exit' ? 'auto' : 'none'}
                       style={[
                         StyleSheet.absoluteFill,
