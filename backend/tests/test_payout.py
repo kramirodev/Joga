@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.infrastructure.database.dependency import get_session
-from tests.helpers_results import make_token, make_user
+from tests.cnpj_helpers import (
+    PARTNER_CPF,
+    FakeCnpjLookup,
+    api_with_lookup,
+    make_cnpj_user,
+)
+from tests.helpers_results import make_token
 
 VALID_CNPJ = "11222333000181"
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
-    def override_session() -> Iterator[Session]:
-        yield db_session
-
-    client.app.dependency_overrides[get_session] = override_session
-    return client
+    return api_with_lookup(client, db_session, FakeCnpjLookup())
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -26,7 +25,11 @@ def bearer(token: str) -> dict[str, str]:
 
 
 def create_org(api: TestClient, token: str) -> str:
-    response = api.post("/api/v1/organizations", headers=bearer(token), json={"name": "Arena Pix"})
+    response = api.post(
+        "/api/v1/organizations",
+        headers=bearer(token),
+        json={"name": "Arena Pix", "cnpj": VALID_CNPJ, "cpf": PARTNER_CPF},
+    )
     assert response.status_code == 201, response.text
     return response.json()["id"]
 
@@ -46,7 +49,7 @@ def set_payout(api: TestClient, token: str, org_id: str, **overrides: str) -> di
 
 def test_valid_payout_marks_organization_ready(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     org_id = create_org(api, token)
 
@@ -62,7 +65,7 @@ def test_valid_payout_marks_organization_ready(client: TestClient, db_session: S
 
 def test_formatted_cnpj_is_accepted(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     org_id = create_org(api, token)
 
@@ -72,7 +75,7 @@ def test_formatted_cnpj_is_accepted(client: TestClient, db_session: Session) -> 
 
 def test_invalid_cnpj_is_rejected(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     org_id = create_org(api, token)
 
@@ -83,7 +86,7 @@ def test_invalid_cnpj_is_rejected(client: TestClient, db_session: Session) -> No
 
 def test_invalid_email_key_is_rejected(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     org_id = create_org(api, token)
 
@@ -93,11 +96,11 @@ def test_invalid_email_key_is_rejected(client: TestClient, db_session: Session) 
 
 def test_operator_cannot_set_payout(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    owner_id = make_user(db_session)
+    owner_id = make_cnpj_user(db_session)
     owner_token = make_token(db_session, owner_id)
     org_id = create_org(api, owner_token)
 
-    operator_id = make_user(db_session)
+    operator_id = make_cnpj_user(db_session)
     operator_token = make_token(db_session, operator_id)
     added = api.post(
         f"/api/v1/organizations/{org_id}/members",
@@ -113,7 +116,7 @@ def test_operator_cannot_set_payout(client: TestClient, db_session: Session) -> 
 
 def test_organization_starts_without_payout(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     org_id = create_org(api, token)
 

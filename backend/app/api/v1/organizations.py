@@ -11,14 +11,20 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.core.config import Settings, get_settings
 from app.core.text import FreeText, OptionalFreeText
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.audit import record_audit
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.organizations.cnpj import CnpjLookup, mask_cnpj
+from app.modules.organizations.dependency import get_cnpj_lookup
 from app.modules.organizations.models import OrganizationVenue
 from app.modules.organizations.permissions import Role
 from app.modules.organizations.service import (
     AlreadyMember,
     CannotManageRole,
+    CnpjAlreadyRegistered,
+    CnpjChangeNotAllowed,
     Forbidden,
     InvalidInput,
     LastOwner,
@@ -27,6 +33,8 @@ from app.modules.organizations.service import (
     OrganizationAccess,
     OrganizationError,
     OrganizationNotFound,
+    OrganizationNotVerifiable,
+    OrganizationNotVerified,
     OrganizationService,
     UserNotActive,
     UserNotFound,
@@ -34,16 +42,29 @@ from app.modules.organizations.service import (
     mask_pix_key,
     payout_ready,
 )
+from app.modules.organizations.verification import (
+    CnpjVerificationError,
+    verify_new_organization,
+)
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
 class OrganizationCreate(BaseModel):
     name: FreeText = Field(min_length=2, max_length=120)
+    cnpj: str = Field(min_length=14, max_length=20)
+    # O CPF é pessoal e só existe em claro no corpo da requisição. Ele nunca é
+    # devolvido, auditado ou registrado em log.
+    cpf: str = Field(min_length=11, max_length=14)
 
 
 class OrganizationUpdate(BaseModel):
     name: FreeText = Field(min_length=2, max_length=120)
+
+
+class OrganizationVerificationRequest(BaseModel):
+    cnpj: str = Field(min_length=14, max_length=20)
+    cpf: str = Field(min_length=11, max_length=14)
 
 
 class OrganizationView(BaseModel):
@@ -51,6 +72,11 @@ class OrganizationView(BaseModel):
     name: str
     status: str
     role: str
+    cnpj: str | None
+    cnpj_status: str | None
+    verification_status: str
+    cnpj_verified_at: datetime | None
+    cnpj_next_check_at: datetime | None
     payout_ready: bool
     payout_status: str
     pix_key_type: str | None
@@ -178,6 +204,8 @@ def _error(code: str, status_code: int) -> HTTPException:
 
 
 def _handle(exc: Exception) -> HTTPException:
+    if isinstance(exc, CnpjVerificationError):
+        return _error(exc.code, exc.http_status)
     mapping = {
         OrganizationNotFound: ("organization_not_found", status.HTTP_404_NOT_FOUND),
         VenueNotFound: ("venue_not_found", status.HTTP_404_NOT_FOUND),
@@ -185,6 +213,10 @@ def _handle(exc: Exception) -> HTTPException:
         UserNotFound: ("user_not_found", status.HTTP_404_NOT_FOUND),
         UserNotActive: ("user_not_active", status.HTTP_409_CONFLICT),
         AlreadyMember: ("member_already_exists", status.HTTP_409_CONFLICT),
+        CnpjAlreadyRegistered: ("cnpj_already_registered", status.HTTP_409_CONFLICT),
+        CnpjChangeNotAllowed: ("cnpj_change_not_allowed", status.HTTP_409_CONFLICT),
+        OrganizationNotVerified: ("organization_not_verified", status.HTTP_409_CONFLICT),
+        OrganizationNotVerifiable: ("organization_not_verifiable", status.HTTP_409_CONFLICT),
         Forbidden: ("forbidden", status.HTTP_403_FORBIDDEN),
         CannotManageRole: ("role_not_allowed", status.HTTP_403_FORBIDDEN),
         LastOwner: ("last_owner_required", status.HTTP_409_CONFLICT),
@@ -204,6 +236,11 @@ def _organization_view(access: OrganizationAccess) -> OrganizationView:
         name=organization.name,
         status=organization.status,
         role=access.role.value,
+        cnpj=organization.cnpj,
+        cnpj_status=organization.cnpj_status,
+        verification_status=organization.verification_status,
+        cnpj_verified_at=organization.cnpj_verified_at,
+        cnpj_next_check_at=organization.cnpj_next_check_at,
         payout_ready=payout_ready(organization),
         payout_status=organization.payout_status,
         pix_key_type=organization.pix_key_type,
@@ -253,17 +290,116 @@ def create_organization(
     payload: OrganizationCreate,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    lookup: Annotated[CnpjLookup, Depends(get_cnpj_lookup)],
 ) -> OrganizationView:
     service = OrganizationService(session)
     try:
-        organization = service.create(current.user_id, payload.name)
+        verification = verify_new_organization(
+            session,
+            actor_user_id=current.user_id,
+            cnpj=payload.cnpj,
+            cpf=payload.cpf,
+            settings=settings,
+            lookup=lookup,
+        )
+        organization = service.create_verified(
+            current.user_id,
+            payload.name,
+            verification,
+            recheck_days=settings.organization_cnpj_recheck_days,
+        )
         session.commit()
+    except CnpjVerificationError as exc:
+        session.rollback()
+        _audit_rejected_verification(session, current.user_id, payload.cnpj, exc)
+        raise _handle(exc) from None
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
     return _organization_view(
         service.get(current.user_id, organization.id),
     )
+
+
+@router.post("/{organization_id}/verification", response_model=OrganizationView)
+def verify_organization(
+    organization_id: UUID,
+    payload: OrganizationVerificationRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    lookup: Annotated[CnpjLookup, Depends(get_cnpj_lookup)],
+) -> OrganizationView:
+    """Regulariza organização existente (legado ``pending`` ou retry)."""
+
+    service = OrganizationService(session)
+    try:
+        verification = verify_new_organization(
+            session,
+            actor_user_id=current.user_id,
+            cnpj=payload.cnpj,
+            cpf=payload.cpf,
+            settings=settings,
+            lookup=lookup,
+        )
+        organization = service.apply_verification(
+            current.user_id,
+            organization_id,
+            verification,
+            recheck_days=settings.organization_cnpj_recheck_days,
+        )
+        session.commit()
+    except CnpjVerificationError as exc:
+        session.rollback()
+        _audit_rejected_verification(
+            session,
+            current.user_id,
+            payload.cnpj,
+            exc,
+            organization_id=organization_id,
+        )
+        raise _handle(exc) from None
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _organization_view(
+        service.get(current.user_id, organization.id),
+    )
+
+
+def _audit_rejected_verification(
+    session: Session,
+    actor_user_id: UUID,
+    cnpj: str,
+    exc: CnpjVerificationError,
+    *,
+    organization_id: UUID | None = None,
+) -> None:
+    """Persiste a recusa em transação própria; a operação principal falhou.
+
+    A trilha não recebe CPF nem CNPJ completo. Se a gravação falhar, o erro
+    original continua sendo devolvido ao painel.
+    """
+
+    details = {"result": "rejected", **exc.details}
+    try:
+        details.setdefault("cnpj_masked", mask_cnpj(cnpj))
+    except Exception:  # noqa: BLE001
+        details.setdefault("cnpj_masked", None)
+    try:
+        record_audit(
+            session,
+            actor_user_id=actor_user_id,
+            organization_id=organization_id,
+            action="organization.cnpj_rejected",
+            resource_type="organization" if organization_id else "organization_registration",
+            resource_id=organization_id,
+            details=details,
+        )
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
 
 
 @router.get("", response_model=OrganizationListResponse)

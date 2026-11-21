@@ -42,6 +42,12 @@ from app.infrastructure.database.dependency import get_session
 from app.modules.profile.models import SportFormat, UserProfile
 from app.modules.venues.models import VenueSport
 from app.modules.venues.storage import LocalPhotoStorage, get_photo_storage
+from tests.cnpj_helpers import (
+    PARTNER_CPF,
+    FakeCnpjLookup,
+    api_with_lookup,
+    make_cnpj_user,
+)
 from tests.helpers_results import build_match, make_token, make_user
 from tests.test_ticket_settlement import bearer, setup_context
 
@@ -52,11 +58,7 @@ ZERO_WIDTH = "\u200b"
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
-    def override_session() -> Iterator[Session]:
-        yield db_session
-
-    client.app.dependency_overrides[get_session] = override_session
-    return client
+    return api_with_lookup(client, db_session, FakeCnpjLookup())
 
 
 def image_bytes() -> bytes:
@@ -245,7 +247,7 @@ def test_organization_and_venue_reject_nul(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     headers = bearer(token)
 
@@ -260,7 +262,11 @@ def test_organization_and_venue_reject_nul(
     created = api.post(
         "/api/v1/organizations",
         headers=headers,
-        json={"name": "Arena Ação 🏟️"},
+        json={
+            "name": "Arena Ação 🏟️",
+            "cnpj": "11222333000181",
+            "cpf": PARTNER_CPF,
+        },
     )
     assert created.status_code == 201, created.text
     organization_id = created.json()["id"]
@@ -306,14 +312,18 @@ def test_space_and_photo_caption_reject_nul(
     storage = LocalPhotoStorage(tmp_path)
     api = api_client(client, db_session)
     client.app.dependency_overrides[get_photo_storage] = lambda: storage
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     headers = bearer(token)
 
     organization = api.post(
         "/api/v1/organizations",
         headers=headers,
-        json={"name": "Arena Mídia"},
+        json={
+            "name": "Arena Mídia",
+            "cnpj": "11222333000181",
+            "cpf": PARTNER_CPF,
+        },
     )
     assert organization.status_code == 201, organization.text
     venue = api.post(

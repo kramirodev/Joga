@@ -153,6 +153,17 @@ class Settings(BaseSettings):
         min_length=1,
     )
     cep_timeout_seconds: int = Field(default=5, ge=1, le=15)
+    # Verificação de CNPJ de organizações (ADR 0062). A consulta é síncrona no
+    # cadastro e falha fechada; cache curto evita repetição em retries do app.
+    cnpj_api_base_url: str = Field(
+        default="https://brasilapi.com.br/api/cnpj/v1",
+        min_length=1,
+    )
+    cnpj_timeout_seconds: int = Field(default=5, ge=1, le=15)
+    cnpj_lookup_attempts: int = Field(default=2, ge=1, le=3)
+    cnpj_cache_ttl_seconds: int = Field(default=300, ge=0, le=3600)
+    organization_cnpj_recheck_days: int = Field(default=7, ge=1, le=30)
+    organization_cnpj_retry_hours: int = Field(default=6, ge=1, le=48)
     geo_timeout_seconds: int = Field(default=3, ge=1, le=15)
     geo_cache_ttl_days: int = Field(default=30, ge=1, le=365)
     geo_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
