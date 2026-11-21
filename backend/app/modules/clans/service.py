@@ -10,6 +10,7 @@ Decisões aprovadas:
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta
 
@@ -26,6 +27,7 @@ from app.modules.clans.models import (
     ClanTrophyEvent,
     ClanTrophySnapshot,
 )
+from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import ensure_utc, utcnow
 
 MAX_MEMBERS = 30
@@ -33,6 +35,20 @@ JOIN_COOLDOWN = timedelta(days=7)
 TROPHY_MIN_TENURE = timedelta(days=7)
 TROPHY_MEMBERS_COUNTED = 10
 TROPHY_POINTS = {"WIN": 50, "DRAW": 30, "LOSS": 20}
+CLAN_TAG_CORE_PATTERN = re.compile(r"[A-Z0-9]{2,7}")
+
+
+def normalize_clan_tag(tag: str) -> str:
+    """Canonicaliza a tag como ``#MIOLO`` (miolo A-Z/0-9, 2 a 7 caracteres).
+
+    Aceita ``6666``, ``#6666`` e espaços nas bordas. O cliente pode exibir só o
+    miolo, mas a API e o banco guardam sempre a forma canônica com ``#``.
+    """
+
+    core = tag.strip().lstrip("#").strip().upper()
+    if CLAN_TAG_CORE_PATTERN.fullmatch(core) is None:
+        raise ClanConflict("tag_invalid")
+    return f"#{core}"
 
 
 class ClanError(Exception):
@@ -103,22 +119,53 @@ def membership_of(session: Session, clan_id: uuid.UUID, user_id: uuid.UUID) -> C
     return membership
 
 
-def require_member(session: Session, clan_id: uuid.UUID, user_id: uuid.UUID) -> ClanMember:
-    membership = membership_of(session, clan_id, user_id)
+def require_member(
+    session: Session,
+    clan_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ClanMember:
+    if for_update:
+        membership = session.scalars(
+            select(ClanMember)
+            .where(
+                ClanMember.clan_id == clan_id,
+                ClanMember.user_id == user_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if membership is not None and membership.status != "active":
+            membership = None
+    else:
+        membership = membership_of(session, clan_id, user_id)
     if membership is None:
         raise ClanForbidden("not_a_member")
     return membership
 
 
-def require_admin(session: Session, clan_id: uuid.UUID, user_id: uuid.UUID) -> ClanMember:
-    membership = require_member(session, clan_id, user_id)
+def require_admin(
+    session: Session,
+    clan_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ClanMember:
+    membership = require_member(session, clan_id, user_id, for_update=for_update)
     if membership.role not in ("owner", "admin"):
         raise ClanForbidden("admin_required")
     return membership
 
 
-def require_owner(session: Session, clan_id: uuid.UUID, user_id: uuid.UUID) -> ClanMember:
-    membership = require_member(session, clan_id, user_id)
+def require_owner(
+    session: Session,
+    clan_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ClanMember:
+    membership = require_member(session, clan_id, user_id, for_update=for_update)
     if membership.role != "owner":
         raise ClanForbidden("owner_required")
     return membership
@@ -155,11 +202,9 @@ def create_clan(
     if active_membership(session, user_id) is not None:
         raise ClanConflict("already_in_clan")
     clean_name = name.strip()
-    clean_tag = tag.strip().upper()
     if not 3 <= len(clean_name) <= 40:
         raise ClanConflict("name_invalid")
-    if not 2 <= len(clean_tag) <= 8:
-        raise ClanConflict("tag_invalid")
+    clean_tag = normalize_clan_tag(tag)
     if session.scalars(select(Clan.id).where(Clan.name == clean_name)).first() is not None:
         raise ClanConflict("name_taken")
     if session.scalars(select(Clan.id).where(Clan.tag == clean_tag)).first() is not None:
@@ -200,10 +245,11 @@ def request_join(
 ) -> ClanJoinRequest | None:
     moment = now or utcnow()
     clan = get_clan(session, clan_id)
-    if clan.join_policy == "closed":
-        raise ClanConflict("clan_closed")
+    # Quem já é membro ativo recebe o código específico, mesmo em clã fechado.
     if membership_of(session, clan.id, user_id) is not None:
         raise ClanConflict("already_member")
+    if clan.join_policy == "closed":
+        raise ClanConflict("clan_closed")
     if active_membership(session, user_id) is not None:
         raise ClanConflict("already_in_clan")
     _check_cooldown(session, user_id, moment)
@@ -378,14 +424,36 @@ def transfer_ownership(
     clan_id: uuid.UUID,
     target_id: uuid.UUID,
 ) -> ClanMember:
-    actor = require_owner(session, clan_id, actor_id)
+    """Transfere a posse em uma transação, rebaixando o antigo dono a membro.
+
+    O ``FOR UPDATE`` no autor serializa transferências concorrentes do mesmo
+    clã; o alvo também é travado antes de trocar os papéis.
+    """
+
+    actor = require_owner(session, clan_id, actor_id, for_update=True)
     if actor_id == target_id:
         raise ClanConflict("already_owner")
-    target = session.get(ClanMember, (clan_id, target_id))
+    target = session.scalars(
+        select(ClanMember)
+        .where(
+            ClanMember.clan_id == clan_id,
+            ClanMember.user_id == target_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
     if target is None or target.status != "active":
         raise ClanNotFound
-    actor.role = "admin"
+    actor.role = "member"
     target.role = "owner"
+    record_audit(
+        session,
+        actor_user_id=actor_id,
+        action="clan.ownership_transferred",
+        resource_type="clan",
+        resource_id=clan_id,
+        details={"from_user_id": str(actor_id), "to_user_id": str(target_id)},
+    )
     session.flush()
     return target
 
