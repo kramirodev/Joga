@@ -215,6 +215,24 @@ describe("AdminUsersPage", () => {
     );
   });
 
+  it("não duplica a busca ao clicar duas vezes em Buscar", async () => {
+    const fetchMock = stubApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("Ana Silva")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Buscar"), "ana");
+    await user.dblClick(screen.getByRole("button", { name: "Buscar" }));
+
+    await waitFor(() =>
+      expect(
+        calls(fetchMock).filter(
+          (call) => call.path === "/api/v1/admin/users" && call.search.get("query") === "ana",
+        ),
+      ).toHaveLength(1),
+    );
+  });
+
   it("pagina a lista com o parâmetro page", async () => {
     const fetchMock = stubApi({ total: 45, pageSize: 20 });
     const user = userEvent.setup();

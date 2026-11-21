@@ -384,6 +384,23 @@ describe("AdminSportsPage", () => {
     });
   }, 15_000);
 
+  it("não duplica a criação quando o formulário é enviado duas vezes", async () => {
+    const fetchMock = stubApi();
+    renderPage();
+    const user = await openCreateForm();
+
+    await fillSportData(user);
+    await fillFirstFormat(user);
+    await user.dblClick(screen.getByRole("button", { name: "Criar esporte" }));
+
+    expect(await screen.findByText("Esporte criado")).toBeInTheDocument();
+    expect(
+      calls(fetchMock).filter(
+        (call) => call.method === "POST" && call.path === "/api/v1/admin/sports",
+      ),
+    ).toHaveLength(1);
+  }, 15_000);
+
   it("bloqueia a criação quando o preço do formato não está configurado", async () => {
     const fetchMock = stubApi({
       suggestError: { status: 422, code: "pricing_not_configured" },
@@ -471,6 +488,24 @@ describe("AdminSportsPage", () => {
     expect(await screen.findByText("Esporte desativado")).toBeInTheDocument();
     const call = await waitForCall(fetchMock, "POST", "/api/v1/admin/sports/futebol/deactivate");
     expect(call.body).toEqual({ reason: "Temporada encerrada" });
+  });
+
+  it("não duplica o POST ao confirmar desativação duas vezes", async () => {
+    const fetchMock = stubApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Futebol");
+    await user.click(screen.getByRole("button", { name: "Desativar" }));
+    await user.type(screen.getByLabelText("Motivo"), "Temporada encerrada");
+    await user.dblClick(screen.getByRole("button", { name: "Desativar esporte" }));
+
+    expect(await screen.findByText("Esporte desativado")).toBeInTheDocument();
+    expect(
+      calls(fetchMock).filter(
+        (call) => call.method === "POST" && call.path.endsWith("/deactivate"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("publica um esporte desativado com motivo", async () => {

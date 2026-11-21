@@ -37,7 +37,10 @@ class Clan(Base):
         CheckConstraint("join_policy IN ('approval', 'open', 'closed')", name="join_policy_valid"),
         CheckConstraint("status IN ('active', 'archived')", name="status_valid"),
         CheckConstraint("length(name) BETWEEN 3 AND 40", name="name_length_valid"),
-        CheckConstraint("length(tag) BETWEEN 2 AND 8", name="tag_length_valid"),
+        CheckConstraint(
+            "length(tag) BETWEEN 3 AND 8 AND substr(tag, 1, 1) = '#'",
+            name="tag_length_valid",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

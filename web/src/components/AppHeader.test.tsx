@@ -58,6 +58,18 @@ describe("AppHeader — moderação por capability", () => {
     expect(screen.getByRole("button", { name: "Notificações" })).toBeInTheDocument();
   });
 
+  it("mostra moderação para platform.admin mesmo sem moderation.read", () => {
+    renderHeader(["platform.admin"]);
+    expect(screen.getByRole("link", { name: "Moderação" })).toBeInTheDocument();
+    // O sino continua dependendo de moderation.read; o link é só descoberta.
+    expect(screen.queryByRole("button", { name: /Notificações/ })).not.toBeInTheDocument();
+  });
+
+  it("não duplica o link de moderação quando as duas capabilities existem", () => {
+    renderHeader(["platform.admin", "moderation.read"]);
+    expect(screen.getAllByRole("link", { name: "Moderação" })).toHaveLength(1);
+  });
+
   it("esconde a administração sem platform.admin", () => {
     renderHeader(["moderation.read"]);
     expect(screen.queryByRole("link", { name: "Usuários" })).not.toBeInTheDocument();
