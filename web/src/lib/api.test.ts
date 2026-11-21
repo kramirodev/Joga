@@ -50,7 +50,11 @@ describe("cliente HTTP do painel", () => {
     vi.stubGlobal("fetch", fetchMock);
     setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
 
-    await api.createOrganization("Arena Tijuca");
+    await api.createOrganization({
+      name: "Arena Tijuca",
+      cnpj: "11222333000181",
+      cpf: "11144477735",
+    });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Headers;

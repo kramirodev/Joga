@@ -11,7 +11,7 @@ import { api } from "../../lib/api";
 import { formatError, requestIdOf } from "../../lib/format";
 import { queryKeys } from "../../lib/query";
 import { photoFileError } from "../../lib/validation";
-import type { Organization, Venue, VenuePhoto, VenueSpace } from "../../types";
+import type { VenuePhoto } from "../../types";
 
 function PhotoThumb({ photo }: { photo: VenuePhoto }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -76,9 +76,9 @@ export function PhotosPanel({
   error,
   onRetry,
 }: {
-  organization: Organization;
-  venue: Venue;
-  spaces: VenueSpace[];
+  organization: { id: string };
+  venue: { id: string };
+  spaces: Array<{ id: string; name: string }>;
   photos: VenuePhoto[];
   canReview: boolean;
   loading: boolean;

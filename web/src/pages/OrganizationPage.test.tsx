@@ -109,12 +109,21 @@ const receivable: Receivable = {
   reason: null,
 };
 
-function organizationFor(role: Role): Organization {
+function organizationFor(
+  role: Role,
+  verification: Organization["verification_status"] = "verified",
+): Organization {
+  const verified = verification === "verified";
   return {
     id: "org-1",
     name: "Arena Tijuca",
     status: "active",
     role,
+    cnpj: verified ? "11222333000181" : null,
+    cnpj_status: verified ? "ATIVA" : null,
+    verification_status: verification,
+    cnpj_verified_at: verified ? "2026-11-01T12:00:00Z" : null,
+    cnpj_next_check_at: verified ? "2026-11-08T12:00:00Z" : null,
     payout_ready: true,
     payout_status: "active",
     pix_key_type: "cnpj",
@@ -131,12 +140,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function stubApi(role: Role, bookings: Booking[] = []) {
+function stubApi(
+  role: Role,
+  bookings: Booking[] = [],
+  verification: Organization["verification_status"] = "verified",
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const path = new URL(url, "http://joga.local").pathname;
+    if (path === "/api/v1/organizations/org-1/verification" && init?.method === "POST") {
+      return jsonResponse(organizationFor(role, "verified"));
+    }
     if (path === "/api/v1/organizations/org-1") {
-      return jsonResponse(organizationFor(role));
+      return jsonResponse(organizationFor(role, verification));
     }
     if (url.includes("/bookings/booking-1/accept")) {
       return jsonResponse({ ...booking, status: "PAYMENT_PENDING" });
@@ -388,5 +404,59 @@ describe("OrganizationPage — permissões na interface", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("mostra o CNPJ verificado e os dados da conferência", async () => {
+    stubApi("OWNER");
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { name: "Cadastro empresarial" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("11.222.333/0001-81")).toBeInTheDocument();
+    expect(screen.getByText("CNPJ verificado")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verificar CNPJ" })).not.toBeInTheDocument();
+  });
+
+  it("organização pendente bloqueia quadras e permite regularizar o CNPJ", async () => {
+    const fetchMock = stubApi("OWNER", [], "pending");
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("Verificação pendente")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Esta organização ainda não teve o CNPJ verificado/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /Estabelecimentos/ }));
+    expect(
+      await screen.findByText(/O CNPJ desta organização precisa estar verificado/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Verificar CNPJ" }));
+    const dialog = screen.getByRole("dialog", { name: "Verificar CNPJ" });
+    expect(within(dialog).getByLabelText("CPF do responsável")).toHaveValue("");
+    await user.type(within(dialog).getByLabelText("CNPJ"), "11222333000181");
+    await user.type(within(dialog).getByLabelText("CPF do responsável"), "11144477735");
+    await user.click(within(dialog).getByRole("button", { name: "Verificar CNPJ" }));
+
+    expect(
+      await screen.findByText(
+        "A organização está regularizada e já pode cadastrar e publicar quadras.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/organizations/org-1/verification") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({
+        cnpj: "11222333000181",
+        cpf: "11144477735",
+      });
+    });
   });
 });

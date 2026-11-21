@@ -55,6 +55,7 @@ export function VenuesPanel({
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const verified = organization.verification_status === "verified";
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<unknown>(null);
@@ -335,6 +336,14 @@ export function VenuesPanel({
           title="Estabelecimentos"
           description="Perfil comercial vinculado a esta organização. Quadras, agenda, preços e cobertura são geridos na página de cada estabelecimento."
         />
+        {!verified ? (
+          <InfoNotice>
+            O CNPJ desta organização precisa estar verificado antes de cadastrar quadras ou publicar
+            um estabelecimento. Use “Verificar CNPJ” no topo desta página. Estabelecimentos já
+            existentes podem ser desativados, mas não reativados enquanto o cadastro estiver
+            pendente.
+          </InfoNotice>
+        ) : null}
         {displayError ? (
           <ErrorNotice
             message={formatError(displayError)}
@@ -353,6 +362,7 @@ export function VenuesPanel({
                 type="button"
                 className="button button--primary"
                 onClick={() => document.getElementById("venue-name")?.focus()}
+                disabled={!verified}
               >
                 <PlusIcon size={16} />
                 Cadastrar primeiro estabelecimento
@@ -416,7 +426,14 @@ export function VenuesPanel({
                       if (venue.status === "active") setStatusTarget(venue);
                       else toggleVenueMutation.mutate(venue);
                     }}
-                    disabled={toggleVenueMutation.isPending}
+                    disabled={
+                      toggleVenueMutation.isPending || (!verified && venue.status !== "active")
+                    }
+                    title={
+                      !verified && venue.status !== "active"
+                        ? "Verifique o CNPJ da organização antes de reativar o estabelecimento."
+                        : undefined
+                    }
                   >
                     {venue.status === "active" ? "Desativar" : "Ativar"}
                   </button>
@@ -433,168 +450,170 @@ export function VenuesPanel({
           description="Informe o CEP para preencher endereço e coordenadas automaticamente. A precisão do CEP é de logradouro, então confira o ponto antes de salvar."
         />
         <form className="form" onSubmit={createVenue} noValidate>
-          <TextField
-            id="venue-name"
-            label="Nome"
-            value={form.name}
-            onChange={(event) => update("name", event.target.value)}
-            error={errors.name}
-            hint="De 2 a 120 caracteres. Ex.: Arena Tijuca."
-            maxLength={120}
-            placeholder="Ex.: Arena Tijuca"
-            autoComplete="organization"
-            required
-          />
-          <div className="form-row">
+          <fieldset className="fieldset" disabled={!verified}>
             <TextField
-              id="venue-cep"
-              label="CEP"
-              value={formatCep(form.cep)}
-              onChange={(event) => update("cep", normalizeCep(event.target.value))}
-              error={errors.cep}
-              hint="Opcional. Preenche endereço e coordenadas."
-              maxLength={9}
-              inputMode="numeric"
-              autoComplete="postal-code"
-              placeholder="20541-004"
-            />
-            <TextField
-              id="venue-number"
-              label="Número"
-              value={form.number}
-              onChange={(event) => update("number", event.target.value)}
-              error={errors.number}
-              hint="Opcional. Ajuda a precisar o ponto."
-              maxLength={20}
-              placeholder="1200"
-              inputClassName="input--short"
-            />
-          </div>
-          <div className="form-actions">
-            <button
-              type="button"
-              className="button button--small button--ghost"
-              onClick={lookupCep}
-              disabled={lookupCepMutation.isPending}
-              aria-busy={lookupCepMutation.isPending || undefined}
-            >
-              <SearchIcon size={16} />
-              {lookupCepMutation.isPending ? "Buscando..." : "Buscar CEP"}
-            </button>
-            <span className="field__hint">
-              Preenche cidade, UF, endereço e coordenadas a partir do CEP.
-            </span>
-          </div>
-
-          {lookupCepMutation.isSuccess && lookup ? (
-            <InfoNotice>
-              <p>
-                <strong>{lookupAddress || "Endereço localizado pelo CEP."}</strong>
-              </p>
-              <p>
-                Precisão: {precisionLabel(lookup.precision)}.
-                {lookup.precision === "unresolved"
-                  ? " O CEP foi localizado sem coordenada; informe latitude e longitude abaixo."
-                  : " Confira o endereço e ajuste as coordenadas se necessário."}
-              </p>
-            </InfoNotice>
-          ) : null}
-
-          {lookupCepMutation.error ? (
-            <ErrorNotice
-              message={formatError(lookupCepMutation.error)}
-              requestId={requestIdOf(lookupCepMutation.error)}
-              onRetry={() => lookupCepMutation.mutate()}
-            />
-          ) : null}
-
-          <div className="form-row">
-            <TextField
-              id="venue-city"
-              label="Cidade"
-              value={form.city}
-              onChange={(event) => update("city", event.target.value)}
-              error={errors.city}
-              hint="Opcional."
+              id="venue-name"
+              label="Nome"
+              value={form.name}
+              onChange={(event) => update("name", event.target.value)}
+              error={errors.name}
+              hint="De 2 a 120 caracteres. Ex.: Arena Tijuca."
               maxLength={120}
-              placeholder="Rio de Janeiro"
-              autoComplete="address-level2"
-            />
-            <TextField
-              id="venue-state"
-              label="UF"
-              value={form.state}
-              onChange={(event) =>
-                update("state", event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
-              }
-              error={errors.state}
-              hint="Opcional. Duas letras."
-              maxLength={2}
-              placeholder="RJ"
-              autoComplete="address-level1"
-              inputClassName="input--short"
-            />
-          </div>
-          <TextField
-            id="venue-address"
-            label="Endereço"
-            value={form.address}
-            onChange={(event) => update("address", event.target.value)}
-            error={errors.address}
-            hint="Rua, número e complemento. Opcional, mas recomendado."
-            maxLength={200}
-            placeholder="Rua das Laranjeiras, 123"
-            autoComplete="street-address"
-          />
-          <div className="form-row">
-            <TextField
-              id="venue-latitude"
-              label="Latitude"
-              value={form.latitude}
-              onChange={(event) => update("latitude", event.target.value)}
-              error={errors.latitude}
-              hint="Preenchida pelo CEP. Ajuste se necessário."
-              inputMode="decimal"
-              placeholder="-22.934"
+              placeholder="Ex.: Arena Tijuca"
+              autoComplete="organization"
               required
             />
+            <div className="form-row">
+              <TextField
+                id="venue-cep"
+                label="CEP"
+                value={formatCep(form.cep)}
+                onChange={(event) => update("cep", normalizeCep(event.target.value))}
+                error={errors.cep}
+                hint="Opcional. Preenche endereço e coordenadas."
+                maxLength={9}
+                inputMode="numeric"
+                autoComplete="postal-code"
+                placeholder="20541-004"
+              />
+              <TextField
+                id="venue-number"
+                label="Número"
+                value={form.number}
+                onChange={(event) => update("number", event.target.value)}
+                error={errors.number}
+                hint="Opcional. Ajuda a precisar o ponto."
+                maxLength={20}
+                placeholder="1200"
+                inputClassName="input--short"
+              />
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button button--small button--ghost"
+                onClick={lookupCep}
+                disabled={lookupCepMutation.isPending}
+                aria-busy={lookupCepMutation.isPending || undefined}
+              >
+                <SearchIcon size={16} />
+                {lookupCepMutation.isPending ? "Buscando..." : "Buscar CEP"}
+              </button>
+              <span className="field__hint">
+                Preenche cidade, UF, endereço e coordenadas a partir do CEP.
+              </span>
+            </div>
+
+            {lookupCepMutation.isSuccess && lookup ? (
+              <InfoNotice>
+                <p>
+                  <strong>{lookupAddress || "Endereço localizado pelo CEP."}</strong>
+                </p>
+                <p>
+                  Precisão: {precisionLabel(lookup.precision)}.
+                  {lookup.precision === "unresolved"
+                    ? " O CEP foi localizado sem coordenada; informe latitude e longitude abaixo."
+                    : " Confira o endereço e ajuste as coordenadas se necessário."}
+                </p>
+              </InfoNotice>
+            ) : null}
+
+            {lookupCepMutation.error ? (
+              <ErrorNotice
+                message={formatError(lookupCepMutation.error)}
+                requestId={requestIdOf(lookupCepMutation.error)}
+                onRetry={() => lookupCepMutation.mutate()}
+              />
+            ) : null}
+
+            <div className="form-row">
+              <TextField
+                id="venue-city"
+                label="Cidade"
+                value={form.city}
+                onChange={(event) => update("city", event.target.value)}
+                error={errors.city}
+                hint="Opcional."
+                maxLength={120}
+                placeholder="Rio de Janeiro"
+                autoComplete="address-level2"
+              />
+              <TextField
+                id="venue-state"
+                label="UF"
+                value={form.state}
+                onChange={(event) =>
+                  update("state", event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
+                }
+                error={errors.state}
+                hint="Opcional. Duas letras."
+                maxLength={2}
+                placeholder="RJ"
+                autoComplete="address-level1"
+                inputClassName="input--short"
+              />
+            </div>
             <TextField
-              id="venue-longitude"
-              label="Longitude"
-              value={form.longitude}
-              onChange={(event) => update("longitude", event.target.value)}
-              error={errors.longitude}
-              hint="Preenchida pelo CEP. Ajuste se necessário."
-              inputMode="decimal"
-              placeholder="-43.201"
-              required
+              id="venue-address"
+              label="Endereço"
+              value={form.address}
+              onChange={(event) => update("address", event.target.value)}
+              error={errors.address}
+              hint="Rua, número e complemento. Opcional, mas recomendado."
+              maxLength={200}
+              placeholder="Rua das Laranjeiras, 123"
+              autoComplete="street-address"
             />
-          </div>
-          <p className="field__hint">
-            Se precisar ajustar, copie as coordenadas do ponto exato em um mapa. Elas são usadas na
-            descoberta de quadras do aplicativo.
-          </p>
-          <SelectField
-            id="venue-timezone"
-            label="Fuso horário"
-            value={form.timezone}
-            onChange={(event) => update("timezone", event.target.value)}
-            hint="Usado para prazos, agenda e horários exibidos aos jogadores."
-          >
-            {TIMEZONES.map((timezone) => (
-              <option key={timezone.value} value={timezone.value}>
-                {timezone.label}
-              </option>
-            ))}
-          </SelectField>
-          <button
-            type="submit"
-            className="button button--primary"
-            disabled={createVenueMutation.isPending}
-            aria-busy={createVenueMutation.isPending || undefined}
-          >
-            {createVenueMutation.isPending ? "Cadastrando..." : "Cadastrar estabelecimento"}
-          </button>
+            <div className="form-row">
+              <TextField
+                id="venue-latitude"
+                label="Latitude"
+                value={form.latitude}
+                onChange={(event) => update("latitude", event.target.value)}
+                error={errors.latitude}
+                hint="Preenchida pelo CEP. Ajuste se necessário."
+                inputMode="decimal"
+                placeholder="-22.934"
+                required
+              />
+              <TextField
+                id="venue-longitude"
+                label="Longitude"
+                value={form.longitude}
+                onChange={(event) => update("longitude", event.target.value)}
+                error={errors.longitude}
+                hint="Preenchida pelo CEP. Ajuste se necessário."
+                inputMode="decimal"
+                placeholder="-43.201"
+                required
+              />
+            </div>
+            <p className="field__hint">
+              Se precisar ajustar, copie as coordenadas do ponto exato em um mapa. Elas são usadas
+              na descoberta de quadras do aplicativo.
+            </p>
+            <SelectField
+              id="venue-timezone"
+              label="Fuso horário"
+              value={form.timezone}
+              onChange={(event) => update("timezone", event.target.value)}
+              hint="Usado para prazos, agenda e horários exibidos aos jogadores."
+            >
+              {TIMEZONES.map((timezone) => (
+                <option key={timezone.value} value={timezone.value}>
+                  {timezone.label}
+                </option>
+              ))}
+            </SelectField>
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={createVenueMutation.isPending || !verified}
+              aria-busy={createVenueMutation.isPending || undefined}
+            >
+              {createVenueMutation.isPending ? "Cadastrando..." : "Cadastrar estabelecimento"}
+            </button>
+          </fieldset>
         </form>
       </div>
 

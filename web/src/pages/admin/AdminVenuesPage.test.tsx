@@ -118,6 +118,10 @@ function stubApi(options: StubOptions = {}): FetchMock {
       });
     }
 
+    if (path === "/api/v1/admin/venues" && method === "POST") {
+      return jsonResponse({ ...platformVenue, id: "venue-new", name: "Arena Nova" }, 201);
+    }
+
     if (path === "/api/v1/admin/venues/venue-1/suspend" && method === "POST") {
       if (options.actionError) {
         return jsonResponse(
@@ -411,5 +415,49 @@ describe("AdminVenuesPage", () => {
     expect(
       await screen.findByText("Quadra não encontrada. Atualize a lista e tente novamente."),
     ).toBeInTheDocument();
+  });
+
+  it("abre o gerenciamento de espaços e agenda a partir da lista", async () => {
+    stubApi();
+    renderPage();
+
+    await screen.findByText("Arena Pública");
+    expect(
+      screen.getByRole("link", {
+        name: "Gerenciar espaços e agenda de Arena Pública",
+      }),
+    ).toHaveAttribute("href", "/admin/venues/venue-1");
+  });
+
+  it("cria uma quadra da plataforma pela ação Nova quadra", async () => {
+    const fetchMock = stubApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Arena Pública");
+    await user.click(screen.getByRole("button", { name: "Nova quadra" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Nova quadra" });
+    await user.type(within(dialog).getByLabelText("Nome da quadra"), "Arena Nova");
+    await user.type(within(dialog).getByLabelText("Cidade"), "Rio de Janeiro");
+    await user.type(within(dialog).getByLabelText("UF"), "RJ");
+    await user.type(within(dialog).getByLabelText("Endereço"), "Rua Nova, 100");
+    await user.type(within(dialog).getByLabelText("Latitude"), "-22.9");
+    await user.type(within(dialog).getByLabelText("Longitude"), "-43.2");
+    await user.type(within(dialog).getByLabelText("Motivo"), "Cadastro inicial da quadra");
+    await user.click(within(dialog).getByRole("button", { name: "Criar quadra" }));
+
+    const call = await waitForCall(fetchMock, "POST", "/api/v1/admin/venues");
+    expect(call.body).toMatchObject({
+      name: "Arena Nova",
+      city: "Rio de Janeiro",
+      state: "RJ",
+      address_line: "Rua Nova, 100",
+      latitude: -22.9,
+      longitude: -43.2,
+      is_public: true,
+      reason: "Cadastro inicial da quadra",
+    });
+    expect(await screen.findByText("Quadra criada")).toBeInTheDocument();
   });
 });

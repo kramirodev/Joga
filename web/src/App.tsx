@@ -32,6 +32,11 @@ const AdminVenuesPage = lazy(() =>
     default: module.AdminVenuesPage,
   })),
 );
+const AdminVenueDetailPage = lazy(() =>
+  import("./pages/admin/AdminVenueDetailPage").then((module) => ({
+    default: module.AdminVenueDetailPage,
+  })),
+);
 
 function ProtectedRoute() {
   const { user, loading, sessionExpired } = useAuth();
@@ -97,6 +102,7 @@ export default function App() {
                     <Route path="/admin/users" element={<AdminUsersPage />} />
                     <Route path="/admin/sports" element={<AdminSportsPage />} />
                     <Route path="/admin/venues" element={<AdminVenuesPage />} />
+                    <Route path="/admin/venues/:venueId" element={<AdminVenueDetailPage />} />
                   </Route>
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
