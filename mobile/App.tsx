@@ -45,7 +45,6 @@ import {
   Btn,
   BtnRow,
   Card,
-  ChipRow,
   Field,
   Kv,
   Notice,
@@ -344,12 +343,6 @@ function Sheet({
       confirm: 'Bloquear',
       danger: true,
     },
-    filter: {
-      title: 'Filtrar quadras',
-      text: 'Filtros são preferências, nunca anúncios.',
-      cancel: 'Voltar',
-      confirm: 'Aplicar filtros',
-    },
     share: {
       title: 'Compartilhar',
       text: 'Envie a referência de partida, quadra ou lobby para quem você quiser.',
@@ -368,16 +361,6 @@ function Sheet({
       accessibilityLabel={item.title}
       footer={<SheetActions item={item} onConfirm={onConfirm} />}
     >
-      {id === 'filter' ? (
-        <View style={{ marginBottom: 12 }}>
-          <ChipRow>
-            <Badge>Futebol 5x5</Badge>
-            <Badge>Vôlei 6x6</Badge>
-            <Badge>Coberta</Badge>
-            <Badge>Até 10 km</Badge>
-          </ChipRow>
-        </View>
-      ) : null}
       {id === 'share' ? (
         <Card tone="flat">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1074,7 +1057,6 @@ function Shell() {
     const messages: Record<string, string> = {
       cancel: 'Participação cancelada.',
       block: 'Bloqueio ainda não disponível no app.',
-      filter: 'Filtros ainda não disponíveis no app.',
       share: 'Compartilhamento ainda não disponível no app.',
       confirm: 'Ação ainda não disponível no app.',
     };

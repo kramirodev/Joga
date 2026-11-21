@@ -89,6 +89,13 @@ export type Venue = {
 
 export type VenuePage = { items: Venue[]; total: number; page: number; page_size: number };
 
+export type BookableVenueCardSport = {
+  sport_id: string;
+  sport_name: string;
+  format_id: string;
+  name: string;
+};
+
 export type BookableVenue = {
   id: string;
   organization_id: string;
@@ -101,6 +108,8 @@ export type BookableVenue = {
   timezone: string;
   covered: boolean;
   is_public?: boolean;
+  /** Formatos publicados na quadra; o servidor devolve a união usada no filtro. */
+  sports?: BookableVenueCardSport[];
   spaces_count: number;
   min_price_cents: number;
   /** Menor quantidade de ingressos entre as faixas ativas; `0` = pública e `null` = não configurado. */

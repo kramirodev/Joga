@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Linking, View } from 'react-native';
 import * as Location from 'expo-location';
 
@@ -65,6 +65,17 @@ import {
   participantPrice,
 } from '../ui/PriceBreakdown';
 import { formatFamily, referenceBreakdown, TICKET_REFERENCE_CENTS } from '../ui/tickets';
+import { VenueFilterSheet } from '../ui/VenueFilterSheet';
+import {
+  DEFAULT_VENUE_FILTERS,
+  filterChips,
+  filtersEqual,
+  formatOptionLabel,
+  isDefaultFilters,
+  searchVenues,
+  venueFilterParams,
+  type VenueFilters,
+} from '../ui/venueFilters';
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
@@ -146,99 +157,238 @@ function humanizeBand(code: string): string {
   return code.replaceAll('_', ' ');
 }
 
+const VENUE_PAGE_SIZE = 20;
+const VENUE_SEARCH_PAGE_SIZE = 50;
+/** Limite do conjunto baixado para a busca textual; não há busca no contrato. */
+const VENUE_SEARCH_CAP = 250;
+
 function Venues() {
   const nav = useNav();
-  const { session, profile } = useApp();
-  const [venues, setVenues] = useState<BookableVenue[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const { session, profile, catalog, loadCatalog } = useApp();
+  const [data, setData] = useState<{
+    key: string;
+    venues: BookableVenue[];
+    total: number;
+    page: number;
+    capped: boolean;
+  } | null>(null);
+  const [error, setError] = useState<{ key: string; regionRequired: boolean } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState('');
-  const [onlyCovered, setOnlyCovered] = useState(false);
-  const [maxKm, setMaxKm] = useState<number | null>(10);
+  const [appliedQuery, setAppliedQuery] = useState('');
+  const [filters, setFilters] = useState<VenueFilters>(DEFAULT_VENUE_FILTERS);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
+  const [catalogFailed, setCatalogFailed] = useState(false);
+  const [catalogSettled, setCatalogSettled] = useState(false);
+  const [catalogTick, setCatalogTick] = useState(0);
+  const requestSeq = useRef(0);
+  const loadMoreLock = useRef(false);
   const city = profile?.region?.city ?? null;
+  const regionDefined = profile?.region != null;
+  const effectiveFilters = useMemo<VenueFilters>(
+    () => (regionDefined ? filters : { ...filters, maxKm: null }),
+    [filters, regionDefined],
+  );
+  const requestKey = [
+    appliedQuery,
+    effectiveFilters.coverage,
+    effectiveFilters.maxKm ?? '',
+    effectiveFilters.formatId ?? '',
+    city ?? '',
+    retryTick,
+  ].join('|');
 
   useEffect(() => {
+    const timer = setTimeout(() => setAppliedQuery(query.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    if (catalog.length > 0) {
+      return;
+    }
     let active = true;
-    api.discovery
-      .bookableVenues(session?.accessToken ?? '', { page: 1, pageSize: 20, city })
-      .then((result) => {
+    loadCatalog()
+      .then(() => {
         if (active) {
-          setVenues(result.venues);
-          setTotal(result.total);
-          setPage(result.page);
+          setCatalogFailed(false);
+          setCatalogSettled(true);
         }
       })
       .catch(() => {
         if (active) {
-          setFailed(true);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
+          setCatalogFailed(true);
+          setCatalogSettled(true);
         }
       });
     return () => {
       active = false;
     };
-  }, [session?.accessToken, city]);
+  }, [catalog.length, loadCatalog, catalogTick]);
 
-  const retry = () => {
-    setLoading(true);
-    setFailed(false);
-    api.discovery
-      .bookableVenues(session?.accessToken ?? '', { page: 1, pageSize: 20, city })
-      .then((result) => {
-        setVenues(result.venues);
-        setTotal(result.total);
-        setPage(result.page);
-      })
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+  useEffect(() => {
+    let active = true;
+    const seq = ++requestSeq.current;
+    const token = session?.accessToken ?? '';
+    const params = venueFilterParams(effectiveFilters);
+    const run = async () => {
+      try {
+        if (appliedQuery) {
+          // Busca textual não tem parâmetro no contrato: baixa o conjunto
+          // completo (até o limite declarado) com os filtros do servidor.
+          const collected: BookableVenue[] = [];
+          let pageNumber = 1;
+          let serverTotal = 0;
+          while (collected.length < VENUE_SEARCH_CAP) {
+            const result = await api.discovery.bookableVenues(token, {
+              page: pageNumber,
+              pageSize: VENUE_SEARCH_PAGE_SIZE,
+              city,
+              ...params,
+            });
+            serverTotal = result.total;
+            collected.push(...result.venues);
+            if (
+              result.venues.length === 0 ||
+              collected.length >= serverTotal ||
+              pageNumber * VENUE_SEARCH_PAGE_SIZE >= VENUE_SEARCH_CAP
+            ) {
+              break;
+            }
+            pageNumber += 1;
+          }
+          if (!active || seq !== requestSeq.current) {
+            return;
+          }
+          const venues = collected.slice(0, VENUE_SEARCH_CAP);
+          setData({
+            key: requestKey,
+            venues,
+            total: serverTotal,
+            page: pageNumber,
+            capped: serverTotal > venues.length,
+          });
+        } else {
+          const result = await api.discovery.bookableVenues(token, {
+            page: 1,
+            pageSize: VENUE_PAGE_SIZE,
+            city,
+            ...params,
+          });
+          if (!active || seq !== requestSeq.current) {
+            return;
+          }
+          setData({
+            key: requestKey,
+            venues: result.venues,
+            total: result.total,
+            page: result.page,
+            capped: false,
+          });
+        }
+        if (active && seq === requestSeq.current) {
+          setError(null);
+        }
+      } catch (cause) {
+        if (!active || seq !== requestSeq.current) {
+          return;
+        }
+        setError({
+          key: requestKey,
+          regionRequired: cause instanceof ApiError && cause.code === 'region_required',
+        });
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [appliedQuery, city, effectiveFilters, requestKey, session?.accessToken]);
+
+  const ready = data?.key === requestKey;
+  const failed = error?.key === requestKey;
+  const venues = useMemo(() => (data?.key === requestKey ? data.venues : []), [data, requestKey]);
+  const total = ready ? data.total : 0;
+  const page = ready ? data.page : 1;
+  const capped = ready && data.capped;
+  const loading = !ready && !failed;
+  const visible = useMemo(() => searchVenues(venues, appliedQuery), [venues, appliedQuery]);
+  const chips = useMemo(
+    () =>
+      filterChips(effectiveFilters, (formatId) => {
+        const fromCatalog = formatOptionLabel(catalog, formatId);
+        if (fromCatalog !== 'Esporte') {
+          return fromCatalog;
+        }
+        const fromCard = venues
+          .flatMap((venue) => venue.sports ?? [])
+          .find((sport) => sport.format_id === formatId);
+        return fromCard?.name ?? 'Esporte';
+      }),
+    [effectiveFilters, catalog, venues],
+  );
+  const hasRecorte = appliedQuery !== '' || !isDefaultFilters(effectiveFilters);
+  const examined = appliedQuery ? venues.length : total;
+  const cappedOrderLabel = regionDefined ? 'mais próximas' : 'primeiras';
+
+  const retry = () => setRetryTick((current) => current + 1);
+
+  const retryCatalog = () => {
+    setCatalogFailed(false);
+    setCatalogSettled(false);
+    setCatalogTick((current) => current + 1);
+  };
+
+  const removeFilter = (key: 'format' | 'coverage' | 'distance') => {
+    setFilters((current) => ({
+      ...current,
+      ...(key === 'format' ? { formatId: null } : {}),
+      ...(key === 'coverage' ? { coverage: 'any' as const } : {}),
+      ...(key === 'distance' ? { maxKm: null } : {}),
+    }));
+  };
+
+  const clearAll = () => {
+    setFilters(DEFAULT_VENUE_FILTERS);
+    setQuery('');
+    setAppliedQuery('');
   };
 
   const loadMore = async () => {
-    if (!session) {
+    if (!session || loadMoreLock.current || appliedQuery || !ready) {
       return;
     }
+    loadMoreLock.current = true;
     setLoadingMore(true);
+    const seq = requestSeq.current;
     try {
       const result = await api.discovery.bookableVenues(session.accessToken, {
         page: page + 1,
-        pageSize: 20,
+        pageSize: VENUE_PAGE_SIZE,
         city,
+        ...venueFilterParams(effectiveFilters),
       });
-      setVenues((current) => [...current, ...result.venues]);
-      setTotal(result.total);
-      setPage(result.page);
+      if (seq !== requestSeq.current) {
+        return;
+      }
+      setData((current) =>
+        current && current.key === requestKey
+          ? {
+              ...current,
+              venues: [...current.venues, ...result.venues],
+              total: result.total,
+              page: result.page,
+            }
+          : current,
+      );
     } catch {
       nav.toast('Não foi possível carregar mais quadras.');
     } finally {
+      loadMoreLock.current = false;
       setLoadingMore(false);
     }
   };
-
-  const filtered = venues.filter((venue) => {
-    const term = query.trim().toLowerCase();
-    if (
-      term &&
-      ![venue.name, venue.city, venue.address_line ?? ''].some((value) =>
-        value.toLowerCase().includes(term),
-      )
-    ) {
-      return false;
-    }
-    if (onlyCovered && !venue.covered) {
-      return false;
-    }
-    if (maxKm != null && venue.distance_km != null && venue.distance_km > maxKm) {
-      return false;
-    }
-    return true;
-  });
 
   return (
     <Page title="Quadras">
@@ -250,32 +400,70 @@ function Venues() {
           maxLength={60}
           style={{ flex: 1 }}
         />
-        <TextBtn modal="filter">Filtrar</TextBtn>
+        <TextBtn onPress={() => setSheetOpen(true)}>Filtrar</TextBtn>
       </Row>
-      <ChipRow>
-        <Chip on>Futebol 5x5</Chip>
-        <Chip on={onlyCovered} onPress={() => setOnlyCovered(!onlyCovered)}>
-          Coberta
-        </Chip>
-        <Chip on={maxKm === 10} onPress={() => setMaxKm(maxKm === 10 ? null : 10)}>
-          Até 10 km
-        </Chip>
-      </ChipRow>
+      {chips.length || hasRecorte ? (
+        <ChipRow>
+          {chips.map((chip) => (
+            <Chip
+              key={chip.key}
+              on
+              onPress={() => removeFilter(chip.key)}
+              accessibilityLabel={`Remover filtro ${chip.label}`}
+            >
+              {chip.label}
+            </Chip>
+          ))}
+          {hasRecorte ? (
+            <Chip onPress={clearAll} accessibilityLabel="Limpar filtros e busca">
+              Limpar tudo
+            </Chip>
+          ) : null}
+        </ChipRow>
+      ) : null}
+      {hasRecorte && !loading && !failed ? (
+        <Txt variant="tiny">
+          {visible.length} de {examined} quadras
+        </Txt>
+      ) : null}
+      {capped ? (
+        <Notice tone="blue" icon="info">
+          Mostrando as {venues.length} quadras {cappedOrderLabel}. Refine a busca ou os filtros para
+          ver outras.
+        </Notice>
+      ) : null}
       {loading ? (
-        <LoadingState label="Buscando quadras perto de você." variant="venue" />
+        <LoadingState label="Buscando quadras na sua região." variant="venue" />
       ) : failed ? (
-        <StateScreen
-          icon="wifi-off"
-          title="Não foi possível carregar as quadras"
-          text="Verifique a conexão e tente novamente. Sua região continua salva."
-          actions={
-            <Btn tone="primary" onPress={retry}>
-              Tentar novamente
-            </Btn>
-          }
-        />
-      ) : filtered.length ? (
-        filtered.map((venue) => (
+        error?.regionRequired ? (
+          <EmptyState
+            title="Defina sua região"
+            text="A distância é medida a partir da sua região salva."
+            actions={
+              <>
+                <Btn tone="primary" go="region">
+                  Definir região
+                </Btn>
+                <Btn tone="ghost" onPress={() => removeFilter('distance')}>
+                  Remover distância
+                </Btn>
+              </>
+            }
+          />
+        ) : (
+          <StateScreen
+            icon="wifi-off"
+            title="Não foi possível carregar as quadras"
+            text="Verifique a conexão e tente novamente. Seus filtros continuam salvos."
+            actions={
+              <Btn tone="primary" onPress={retry}>
+                Tentar novamente
+              </Btn>
+            }
+          />
+        )
+      ) : visible.length ? (
+        visible.map((venue) => (
           <Card
             key={venue.id}
             padding={0}
@@ -324,6 +512,11 @@ function Venues() {
               <Txt variant="tiny" numberOfLines={2} style={{ marginTop: 3 }}>
                 {venueLocation(venue) || venue.city}
               </Txt>
+              {venue.sports?.length ? (
+                <Txt variant="tiny" numberOfLines={1} style={{ marginTop: 2 }}>
+                  {Array.from(new Set(venue.sports.map((sport) => sport.name))).join(' · ')}
+                </Txt>
+              ) : null}
               <Row between style={{ marginTop: 10 }}>
                 <Txt variant="tiny">
                   {venue.spaces_count} {venue.spaces_count === 1 ? 'espaço' : 'espaços'}
@@ -358,20 +551,21 @@ function Venues() {
             </View>
           </Card>
         ))
-      ) : venues.length ? (
+      ) : hasRecorte ? (
         <EmptyState
-          title="Nenhuma quadra com esses filtros"
-          text="Ajuste a busca, a cobertura ou a distância para ver mais quadras."
+          title={
+            capped
+              ? `Nenhuma quadra com esses filtros entre as ${venues.length} ${cappedOrderLabel}`
+              : 'Nenhuma quadra com esses filtros'
+          }
+          text={
+            capped
+              ? 'Refine a busca ou os filtros para ver outras quadras.'
+              : 'Ajuste a busca, o esporte, a cobertura ou a distância para ver mais quadras.'
+          }
           actions={
-            <Btn
-              tone="ghost"
-              onPress={() => {
-                setQuery('');
-                setOnlyCovered(false);
-                setMaxKm(null);
-              }}
-            >
-              Limpar filtros
+            <Btn tone="primary" onPress={clearAll}>
+              Limpar tudo
             </Btn>
           }
         />
@@ -390,7 +584,7 @@ function Venues() {
           }
         />
       )}
-      {venues.length < total ? (
+      {!appliedQuery && !loading && !failed && venues.length < total ? (
         <Btn tone="ghost" onPress={loadMore} disabled={loadingMore}>
           {loadingMore ? 'Carregando…' : 'Carregar mais'}
         </Btn>
@@ -399,6 +593,22 @@ function Venues() {
         Ver rede de quadras
       </Btn>
       <Notice icon="image">Fotos revisadas, sem pessoas.</Notice>
+      <VenueFilterSheet
+        visible={sheetOpen}
+        filters={effectiveFilters}
+        catalog={catalog}
+        catalogLoading={catalog.length === 0 && !catalogFailed && !catalogSettled}
+        catalogFailed={catalogFailed && catalog.length === 0}
+        regionDefined={regionDefined}
+        onApply={(next) => {
+          setSheetOpen(false);
+          setAppliedQuery(query.trim());
+          setFilters((current) => (filtersEqual(current, next) ? current : next));
+        }}
+        onClose={() => setSheetOpen(false)}
+        onRetryCatalog={retryCatalog}
+        onOpenRegion={() => nav.go('region')}
+      />
     </Page>
   );
 }
