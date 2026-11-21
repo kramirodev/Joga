@@ -950,7 +950,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     (async () => {
       try {
         // `loadSession` já faz o refresh single-flight quando o access token
-        // está perto de expirar e limpa a sessão em 401. Não repetimos aqui.
+        // está perto de expirar. Só revogação explícita do refresh apaga a
+        // sessão; rede/5xx/429 e `refresh_retry_required` a mantêm.
         const stored = await loadSession();
         if (stored && active) {
           sessionRef.current = stored;
@@ -1156,7 +1157,8 @@ export function AppProvider({ children }: PropsWithChildren) {
           } else if (reason === 'expired') {
             expireSession(current.accessToken);
           }
-          // `unavailable`: mantém a sessão; a próxima chamada tenta de novo.
+          // `unavailable` e `retry` mantêm a sessão; a próxima chamada tenta
+          // de novo e a tela mostra erro de conexão.
         });
     });
     return () => subscription.remove();

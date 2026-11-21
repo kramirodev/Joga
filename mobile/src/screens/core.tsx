@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, View, useWindowDimensions } from 'react-native';
+import { AppState, FlatList, View, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError, describeApiError } from '../api/client';
@@ -49,6 +49,7 @@ import {
   countdown,
   dateOnly,
   divisionLabel,
+  formatSeasonCountdown,
   levelLabel,
   longDate,
   number,
@@ -1239,6 +1240,46 @@ function ProfileMe() {
   const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
   const now = new Date();
   const seasonLabel = `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+  const seasonEndsAt = progress?.season?.ends_at ?? null;
+  const [seasonNow, setSeasonNow] = useState(() => Date.now());
+
+  // Tick de 60 s: não faz poll de rede. Para em segundo plano e faz tick
+  // imediato no mount e ao voltar ao foreground.
+  useEffect(() => {
+    if (!seasonEndsAt) {
+      return;
+    }
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const start = () => {
+      stop();
+      setSeasonNow(Date.now());
+      timer = setInterval(() => setSeasonNow(Date.now()), 60_000);
+    };
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        start();
+      } else {
+        stop();
+      }
+    });
+    if (AppState.currentState === 'active') {
+      start();
+    }
+    return () => {
+      stop();
+      subscription.remove();
+    };
+  }, [seasonEndsAt]);
+
+  const seasonCountdown = formatSeasonCountdown(seasonEndsAt, new Date(seasonNow));
+  const seasonLine = seasonCountdown?.short ?? `${seasonLabel} · reseta na virada`;
+  const seasonA11y = seasonCountdown?.long ?? `${seasonLabel}, reseta na virada`;
   return (
     <Page title="Perfil">
       <Card padding={18}>
@@ -1277,10 +1318,23 @@ function ProfileMe() {
             borderTopColor: palette.line,
           }}
         >
-          <View>
+          <View style={{ flexShrink: 0, minWidth: 160 }}>
             <Txt variant="label">Divisão</Txt>
             <Txt variant="h3">{division}</Txt>
-            <Txt variant="tiny">{seasonLabel} · reseta na virada</Txt>
+            <Text
+              accessibilityLabel={seasonA11y}
+              numberOfLines={seasonCountdown ? 1 : 2}
+              maxFontSizeMultiplier={1.3}
+              style={{
+                fontSize: 14,
+                lineHeight: 19.6,
+                color: palette.muted,
+                fontVariant: ['tabular-nums'],
+                includeFontPadding: false,
+              }}
+            >
+              {seasonLine}
+            </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Txt variant="label">Nível</Txt>
@@ -1752,22 +1806,34 @@ function IdentityEditor() {
           padding={12}
           onPress={locked ? undefined : () => select(item)}
           accessibilityLabel={`${item.name}${locked ? ' bloqueado' : ''}`}
-          style={{ flex: 1 }}
+          style={{ flex: 1, minWidth: 0 }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <IdentityBadge
-              size={40}
-              identity={{ ...draft, [IDENTITY_FIELD[kind]]: item.key }}
-              catalog={visualCatalog}
-              palette={palette}
-            />
-            <View style={{ flex: 1 }}>
-              <Txt variant="h3" numberOfLines={2}>
+          <View style={{ gap: 8, minWidth: 0 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                minWidth: 0,
+              }}
+            >
+              <IdentityBadge
+                size={40}
+                identity={{ ...draft, [IDENTITY_FIELD[kind]]: item.key }}
+                catalog={visualCatalog}
+                palette={palette}
+              />
+              {active ? <Badge tone="lime">ON</Badge> : null}
+            </View>
+            <View style={{ minWidth: 0 }}>
+              <Txt variant="h3" numberOfLines={2} style={{ flexShrink: 1 }}>
                 {item.name}
               </Txt>
-              <Txt variant="tiny">{locked ? 'Bloqueado' : 'Liberado'}</Txt>
+              <Txt variant="tiny" numberOfLines={1} style={{ flexShrink: 1 }}>
+                {locked ? 'Bloqueado' : 'Liberado'}
+              </Txt>
             </View>
-            {active ? <Badge tone="lime">ON</Badge> : null}
           </View>
         </Card>
       );

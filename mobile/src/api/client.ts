@@ -56,6 +56,7 @@ import type {
 } from './types';
 
 import { APP_BUILD, APP_VERSION, CLIENT_NAME, CLIENT_PLATFORM } from './version';
+import { isExplicitSessionRevocation } from './refreshPolicy';
 
 // Configure pela variável de ambiente EXPO_PUBLIC_API_URL.
 // Sem a variável, usa o backend local via `adb reverse tcp:8000 tcp:8000`.
@@ -106,11 +107,13 @@ export function describeApiError(error: unknown): string {
 const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
- * Resultado explícito do refresh. `unavailable` cobre rede/timeout/5xx: não
- * desloga nem acusa suspensão; a tela mostra o erro de conexão.
+ * Resultado explícito do refresh. `unavailable` cobre rede/timeout/5xx/429 e
+ * 4xx sem revogação explícita; `retry` é a corrida transitória da ADR 0058.
+ * Nenhum dos dois desloga nem acusa suspensão.
  */
 export type RefreshResult =
-  { ok: true; token: string } | { ok: false; reason: 'suspended' | 'expired' | 'unavailable' };
+  | { ok: true; token: string }
+  | { ok: false; reason: 'suspended' | 'retry' | 'expired' | 'unavailable' };
 
 let refreshHandler: (() => Promise<RefreshResult>) | null = null;
 let refreshPromise: Promise<RefreshResult> | null = null;
@@ -129,7 +132,7 @@ export function setSuspensionHandler(handler: (() => void) | null) {
   suspensionHandler = handler;
 }
 
-/** Sessão inválida (qualquer 401 pós-refresh que não seja suspensão). */
+/** Sessão inválida (401/403 explícito de token revogado; nunca transitório). */
 export function setSessionExpiredHandler(handler: ((token?: string | null) => void) | null) {
   sessionExpiredHandler = handler;
 }
@@ -195,11 +198,12 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
         return await call<T>(path, { ...init, token: refreshed.token }, false);
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
-          // Só o corpo explícito do servidor pode acusar suspensão. Qualquer
-          // outro 401 pós-refresh é sessão inválida: limpa e volta ao login.
+          // Só o corpo explícito do servidor pode acusar suspensão ou provar
+          // que a sessão morreu. Rede/token recém-rotacionado e códigos
+          // transitórios mantêm a sessão local.
           if (error.code === 'account_suspended') {
             suspensionHandler?.();
-          } else if (!init.keepSession) {
+          } else if (!init.keepSession && isExplicitSessionRevocation(error.code)) {
             sessionExpiredHandler?.(refreshed.token);
           }
           unauthorizedHandled = true;
@@ -218,9 +222,10 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
       }
       unauthorizedHandled = true;
     }
-    // `unavailable` (rede/timeout/5xx): mantém a sessão e deixa o erro original
-    // chegar à tela; não desloga nem acusa suspensão.
-    if (refreshed.reason === 'unavailable') {
+    // `retry` persistente (ADR 0058) e `unavailable` (rede/timeout/5xx/429)
+    // mantêm a sessão; o erro original chega à tela e a próxima chamada pode
+    // recuperar. Nunca desloga nem acusa suspensão.
+    if (refreshed.reason === 'retry' || refreshed.reason === 'unavailable') {
       unauthorizedHandled = true;
     }
   }
@@ -256,12 +261,13 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
       retryAfterSeconds(response.headers.get('Retry-After')),
       body,
     );
-    // Sem refresh disponível, um 401 com token ainda é sessão inválida — mas
-    // nunca suspensão, a menos que o corpo diga `account_suspended`.
+    // Sem refresh disponível, um 401 com token só encerra a sessão quando o
+    // servidor diz explicitamente que o token não vale mais. Nunca suspensão,
+    // a menos que o corpo diga `account_suspended`.
     if (error.status === 401 && init.token && allowRefresh && !unauthorizedHandled) {
       if (error.code === 'account_suspended') {
         suspensionHandler?.();
-      } else if (!init.keepSession) {
+      } else if (!init.keepSession && isExplicitSessionRevocation(error.code)) {
         sessionExpiredHandler?.(init.token);
       }
     }

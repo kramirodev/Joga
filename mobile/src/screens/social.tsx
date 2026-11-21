@@ -2320,8 +2320,10 @@ function ClanChat() {
   return (
     <Page title={clan.name} scroll={false}>
       <Card tone="flat" padding={9}>
-        <Row between>
-          <Txt variant="tiny">{clan.members} membros · chat permanente</Txt>
+        <Row between wrap gap={6}>
+          <Txt variant="tiny" style={{ flexShrink: 1, minWidth: 0 }}>
+            {clan.members} membros · chat permanente
+          </Txt>
           <Badge tone="green">SÓ MEMBROS</Badge>
         </Row>
         {selecting ? null : (

@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { api, ApiError } from './api/client';
+import { sessionRecoveryDecision, shouldRetryRefresh } from './api/refreshPolicy';
 import { createSingleFlight } from './api/singleFlight';
 import type { Tokens } from './api/types';
 
@@ -38,7 +39,8 @@ export async function saveSession(tokens: Tokens): Promise<Session> {
   return session;
 }
 
-export async function loadSession(): Promise<Session | null> {
+/** Lê o par gravado, sem disparar refresh nem apagar nada. */
+async function readStoredSession(): Promise<Session | null> {
   const [accessToken, refreshToken, rawUser, expiresAt] = await Promise.all([
     SecureStore.getItemAsync(ACCESS_KEY),
     SecureStore.getItemAsync(REFRESH_KEY),
@@ -55,28 +57,36 @@ export async function loadSession(): Promise<Session | null> {
     await clearSession();
     return null;
   }
-  const session: Session = {
+  return {
     accessToken,
     refreshToken,
     userId: user.id,
     userStatus: user.status,
     accessExpiresAt: expiresAt ?? '',
   };
-  if (expiresAt) {
-    const expiry = new Date(expiresAt).getTime();
+}
+
+export async function loadSession(): Promise<Session | null> {
+  const session = await readStoredSession();
+  if (!session) {
+    return null;
+  }
+  if (session.accessExpiresAt) {
+    const expiry = new Date(session.accessExpiresAt).getTime();
     if (Number.isFinite(expiry) && expiry < Date.now() + 30_000) {
       try {
         return await refreshSession(session);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 0) {
-          return session;
+        const apiError = error instanceof ApiError ? error : null;
+        // Rede/timeout/5xx/429, `refresh_retry_required` e suspensão mantêm a
+        // sessão local: a próxima chamada pode recuperar. Só a revogação
+        // explícita do refresh apaga os tokens.
+        const decision = sessionRecoveryDecision(apiError?.status ?? 0, apiError?.code);
+        if (decision === 'clear') {
+          await clearSession();
+          return null;
         }
-        if (error instanceof ApiError && error.code === 'account_suspended') {
-          // A conta segue suspensa; preserva a sessão para a tela de suspensão.
-          return session;
-        }
-        await clearSession();
-        return null;
+        return session;
       }
     }
   }
@@ -89,8 +99,29 @@ const refreshGate = createSingleFlight<string, Session>();
  * Último par rotacionado, por refresh token de origem. Protege contra um
  * chamador atrasado que ainda esteja com o token antigo depois do término do
  * single-flight: o backend revoga a família inteira ao detectar reuso.
+ *
+ * Guarda as duas origens possíveis de uma rotação com retry: o token que o
+ * chamador tinha e o par mais novo lido do armazenamento seguro.
  */
-let lastRotation: { used: string; session: Session } | null = null;
+let lastRotation: { used: string[]; session: Session } | null = null;
+
+function rotatedFor(refreshToken: string): Session | null {
+  return lastRotation?.used.includes(refreshToken) ? lastRotation.session : null;
+}
+
+function rememberRotation(used: string[], session: Session): Session {
+  lastRotation = { used, session };
+  return session;
+}
+
+async function rotate(refreshToken: string): Promise<Session> {
+  const refreshed = await api.auth.refresh(refreshToken);
+  return saveSession(refreshed);
+}
+
+function isRetryRequired(error: unknown): boolean {
+  return error instanceof ApiError && shouldRetryRefresh(error.status, error.code);
+}
 
 /**
  * Única porta de entrada do refresh de sessão.
@@ -100,21 +131,38 @@ let lastRotation: { used: string; session: Session } | null = null;
  * - grava o par rotacionado antes de liberar os chamadores, para que um
  *   restart nunca reuse o token antigo (o backend revoga a família inteira ao
  *   detectar reuso);
+ * - em `refresh_retry_required` (corrida transitória da ADR 0058), relê o
+ *   armazenamento seguro e repete **uma vez** com o par mais novo; se
+ *   persistir, o erro sobe e quem chama mantém a sessão;
  * - devolve a rotação já feita para um chamador atrasado com o token antigo;
  * - não limpa sessão aqui: quem chama classifica 401/rede/suspensão.
  */
 export function refreshSession(session: Session): Promise<Session> {
-  if (lastRotation && lastRotation.used === session.refreshToken) {
-    return Promise.resolve(lastRotation.session);
+  const cached = rotatedFor(session.refreshToken);
+  if (cached) {
+    return Promise.resolve(cached);
   }
   return refreshGate.run(session.refreshToken, async () => {
-    if (lastRotation && lastRotation.used === session.refreshToken) {
-      return lastRotation.session;
+    const alreadyRotated = rotatedFor(session.refreshToken);
+    if (alreadyRotated) {
+      return alreadyRotated;
     }
-    const refreshed = await api.auth.refresh(session.refreshToken);
-    const saved = await saveSession(refreshed);
-    lastRotation = { used: session.refreshToken, session: saved };
-    return saved;
+    const used = [session.refreshToken];
+    let token = session.refreshToken;
+    try {
+      return rememberRotation(used, await rotate(token));
+    } catch (error) {
+      if (!isRetryRequired(error)) {
+        throw error;
+      }
+    }
+    // A chamada vencedora da corrida pode ter gravado um par mais novo.
+    const stored = await readStoredSession();
+    if (stored && stored.refreshToken !== token) {
+      token = stored.refreshToken;
+      used.push(token);
+    }
+    return rememberRotation(used, await rotate(token));
   });
 }
 
