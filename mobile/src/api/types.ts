@@ -197,6 +197,11 @@ export type QueueSelectionItem = {
   format_id: string;
   mode: QueueMode;
   level?: QueueLevel;
+  /**
+   * Preferência de quadra **do par** (ADR 0067). O app envia em todos os itens;
+   * o global abaixo é apenas compatibilidade de leitura.
+   */
+  court_preference?: QueueCourtPreference;
 };
 
 export type QueueLobby = {
@@ -236,7 +241,10 @@ export type QueueStateResponse = {
 export type QueueSelectionPayload = {
   /** Lista exata de entradas; substitui o antigo `formats × modes`. */
   selections: QueueSelectionItem[];
-  /** Global para todas as seleções. */
+  /**
+   * @deprecated Legado para clientes antigos. O app envia a quadra em cada item
+   * de `selections[]` e não preenche este campo.
+   */
   court_preference?: QueueCourtPreference | null;
 };
 
