@@ -1712,13 +1712,24 @@ function IdentityEditor() {
   const [draft, setDraft] = useState<VisualIdentity>(visual);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingLock = useRef(false);
+  const mounted = useRef(true);
   const items = useMemo(() => visualItems(visualCatalog, kind), [visualCatalog, kind]);
   const catalogVersion = catalogVersionOf(visualCatalog);
 
   useEffect(() => {
+    // O rascunho só edita ícone/moldura/destaque/selo. `entry`/`emote` seguem o
+    // valor confirmado pelo servidor e são preservados no `saveVisual`.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(visual);
   }, [visual]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const select = useCallback(
     (item: VisualItem) => {
@@ -1765,18 +1776,28 @@ function IdentityEditor() {
   );
 
   const save = async () => {
+    if (savingLock.current) {
+      return;
+    }
+    savingLock.current = true;
     setBusy(true);
     setError(null);
     try {
       const result = await saveVisual(draft);
       setOnboarding({ visual: result.identity });
+      if (!mounted.current) {
+        return;
+      }
       if (result.synced) {
         nav.back();
       } else {
         setError(result.error ?? 'Identidade salva neste aparelho. Sincronização pendente.');
       }
     } finally {
-      setBusy(false);
+      savingLock.current = false;
+      if (mounted.current) {
+        setBusy(false);
+      }
     }
   };
 
