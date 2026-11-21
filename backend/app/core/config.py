@@ -117,8 +117,11 @@ class Settings(BaseSettings):
     # desenvolvimento e testes; ambientes reais precisam definir JOGA_TOKEN_HASH_SECRET.
     token_hash_secret: SecretStr = SecretStr(DEFAULT_TOKEN_HASH_SECRET)
     access_token_ttl_seconds: int = Field(default=600, ge=60, le=3600)
-    refresh_absolute_ttl_days: int = Field(default=30, ge=1, le=365)
-    refresh_idle_ttl_days: int = Field(default=7, ge=1, le=90)
+    # App mobile de uso esporádico (ADR 0059): 30 dias de inatividade e 180
+    # dias de vida absoluta da família de refresh. O access continua curto e
+    # o refresh rotativo/revogável cobre a sessão de longo prazo.
+    refresh_absolute_ttl_days: int = Field(default=180, ge=1, le=365)
+    refresh_idle_ttl_days: int = Field(default=30, ge=1, le=90)
     # Corrida legítima: duas chamadas concorrentes com o mesmo refresh. Dentro
     # desta janela, o token imediatamente anterior não revoga a família e a
     # resposta é 401 refresh_retry_required. 0 desliga a tolerância.

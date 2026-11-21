@@ -82,8 +82,8 @@ class SessionService:
         secret: str,
         *,
         access_ttl_seconds: int = 600,
-        refresh_absolute_ttl_days: int = 30,
-        refresh_idle_ttl_days: int = 7,
+        refresh_absolute_ttl_days: int = 180,
+        refresh_idle_ttl_days: int = 30,
         refresh_reuse_grace_seconds: int = 30,
     ) -> None:
         if not secret:

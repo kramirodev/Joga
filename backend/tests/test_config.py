@@ -47,6 +47,21 @@ def test_identity_settings_have_local_defaults() -> None:
     assert settings.phone_hash_secret.get_secret_value() == DEFAULT_PHONE_HASH_SECRET
 
 
+def test_session_ttl_defaults_keep_the_app_logged_in(monkeypatch) -> None:
+    """ADR 0059: inatividade de 30 dias e vida absoluta de 180 dias."""
+    for name in (
+        "JOGA_ACCESS_TOKEN_TTL_SECONDS",
+        "JOGA_REFRESH_ABSOLUTE_TTL_DAYS",
+        "JOGA_REFRESH_IDLE_TTL_DAYS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=None)
+
+    assert settings.access_token_ttl_seconds == 600
+    assert settings.refresh_idle_ttl_days == 30
+    assert settings.refresh_absolute_ttl_days == 180
+
+
 def test_production_rejects_default_phone_hash_secret() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, environment="production", web_cookie_secure=True)
