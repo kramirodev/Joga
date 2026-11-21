@@ -323,10 +323,15 @@ class ModerationService:
         )
 
     def operator_role(self, user_id: uuid.UUID) -> str | None:
+        settings = get_settings()
+        # O administrador da plataforma modera por definição (ADR 0066); não
+        # depende de estar em JOGA_MODERATION_ADMIN_USER_IDS nem na tabela.
+        if str(user_id) in settings.platform_admin_ids:
+            return "ADMIN"
         row = self.session.get(ModerationOperator, user_id)
         if row is not None and row.active:
             return row.role
-        if str(user_id) in get_settings().moderation_admin_ids:
+        if str(user_id) in settings.moderation_admin_ids:
             return "ADMIN"
         return None
 
@@ -398,6 +403,11 @@ class ModerationService:
             ).all()
         )
         for raw in get_settings().moderation_admin_ids:
+            try:
+                operator_ids.add(uuid.UUID(raw))
+            except ValueError:
+                continue
+        for raw in get_settings().platform_admin_ids:
             try:
                 operator_ids.add(uuid.UUID(raw))
             except ValueError:

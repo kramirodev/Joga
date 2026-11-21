@@ -18,6 +18,7 @@ from tests.cnpj_helpers import (
     FakeCnpjLookup,
     api_with_lookup,
     make_cnpj_user,
+    next_partner_cpf,
     next_test_cnpj,
 )
 from tests.helpers_results import make_token
@@ -34,11 +35,17 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def create_organization(api: TestClient, token: str, name: str) -> dict:
+def create_organization(
+    api: TestClient,
+    token: str,
+    name: str,
+    *,
+    cpf: str = PARTNER_CPF,
+) -> dict:
     response = api.post(
         "/api/v1/organizations",
         headers=bearer(token),
-        json={"name": name, "cnpj": next_test_cnpj(), "cpf": PARTNER_CPF},
+        json={"name": name, "cnpj": next_test_cnpj(), "cpf": cpf},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -245,9 +252,10 @@ def test_cross_organization_access_is_denied(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, first_token, first_org, first_venue = setup_tenant(api, db_session, name="Arena A")
-    second_user = make_cnpj_user(db_session)
+    second_cpf = next_partner_cpf()
+    second_user = make_cnpj_user(db_session, cpf=second_cpf)
     second_token = make_token(db_session, second_user)
-    second_org = create_organization(api, second_token, "Arena B")
+    second_org = create_organization(api, second_token, "Arena B", cpf=second_cpf)
     second_venue = create_venue(api, second_token, second_org["id"], "Arena B Centro")
 
     first_base = base_path(first_org, first_venue)
@@ -285,7 +293,7 @@ def test_operator_can_manage_spaces_but_cannot_review_photos(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, owner_token, organization, venue = setup_tenant(api, db_session)
-    operator = make_cnpj_user(db_session)
+    operator = make_cnpj_user(db_session, cpf=next_partner_cpf())
     operator_token = make_token(db_session, operator)
     add_member(api, owner_token, organization["id"], operator, "OPERATOR")
     base = base_path(organization, venue)
@@ -522,9 +530,10 @@ def test_photo_requires_member_of_the_same_venue(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, first_token, first_org, first_venue = setup_tenant(api, db_session, name="Arena A")
-    second_user = make_cnpj_user(db_session)
+    second_cpf = next_partner_cpf()
+    second_user = make_cnpj_user(db_session, cpf=second_cpf)
     second_token = make_token(db_session, second_user)
-    second_org = create_organization(api, second_token, "Arena B")
+    second_org = create_organization(api, second_token, "Arena B", cpf=second_cpf)
     second_venue = create_venue(api, second_token, second_org["id"], "Arena B Centro")
 
     base = base_path(first_org, first_venue)

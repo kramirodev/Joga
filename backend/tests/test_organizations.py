@@ -13,6 +13,7 @@ from tests.cnpj_helpers import (
     FakeCnpjLookup,
     api_with_lookup,
     make_cnpj_user,
+    next_partner_cpf,
     next_test_cnpj,
 )
 from tests.helpers_results import make_token
@@ -26,11 +27,17 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def create_organization(api: TestClient, token: str, name: str = "Arena Teste") -> dict:
+def create_organization(
+    api: TestClient,
+    token: str,
+    name: str = "Arena Teste",
+    *,
+    cpf: str = PARTNER_CPF,
+) -> dict:
     response = api.post(
         "/api/v1/organizations",
         headers=bearer(token),
-        json={"name": name, "cnpj": next_test_cnpj(), "cpf": PARTNER_CPF},
+        json={"name": name, "cnpj": next_test_cnpj(), "cpf": cpf},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -180,14 +187,15 @@ def test_owner_and_shared_identity_across_organizations(
 ) -> None:
     api = api_client(client, db_session)
     first = make_cnpj_user(db_session)
-    second = make_cnpj_user(db_session)
+    second_cpf = next_partner_cpf()
+    second = make_cnpj_user(db_session, cpf=second_cpf)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
 
     first_org = create_organization(api, first_token, "Arena do Primeiro")
     assert first_org["role"] == "OWNER"
 
-    second_org = create_organization(api, second_token, "Arena do Segundo")
+    second_org = create_organization(api, second_token, "Arena do Segundo", cpf=second_cpf)
     add_member(api, first_token, first_org["id"], second, "OPERATOR")
 
     listed = api.get("/api/v1/organizations", headers=bearer(second_token))
@@ -215,11 +223,12 @@ def test_cross_organization_access_is_denied_with_404(
 ) -> None:
     api = api_client(client, db_session)
     first = make_cnpj_user(db_session)
-    second = make_cnpj_user(db_session)
+    second_cpf = next_partner_cpf()
+    second = make_cnpj_user(db_session, cpf=second_cpf)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
     first_org = create_organization(api, first_token, "Arena A")
-    second_org = create_organization(api, second_token, "Arena B")
+    second_org = create_organization(api, second_token, "Arena B", cpf=second_cpf)
     first_venue = create_venue(api, first_token, first_org["id"], "Quadra A")
     second_venue = create_venue(api, second_token, second_org["id"], "Quadra B")
 
@@ -281,8 +290,8 @@ def test_operator_can_read_and_manage_venues_but_not_members(
 ) -> None:
     api = api_client(client, db_session)
     owner = make_cnpj_user(db_session)
-    operator = make_cnpj_user(db_session)
-    other = make_cnpj_user(db_session)
+    operator = make_cnpj_user(db_session, cpf=next_partner_cpf())
+    other = make_cnpj_user(db_session, cpf=next_partner_cpf())
     owner_token = make_token(db_session, owner)
     operator_token = make_token(db_session, operator)
     org = create_organization(api, owner_token)
@@ -354,10 +363,10 @@ def test_admin_cannot_manage_owners_or_other_admins(
 ) -> None:
     api = api_client(client, db_session)
     owner = make_cnpj_user(db_session)
-    admin = make_cnpj_user(db_session)
-    operator = make_cnpj_user(db_session)
-    second_admin = make_cnpj_user(db_session)
-    second_owner = make_cnpj_user(db_session)
+    admin = make_cnpj_user(db_session, cpf=next_partner_cpf())
+    operator = make_cnpj_user(db_session, cpf=next_partner_cpf())
+    second_admin = make_cnpj_user(db_session, cpf=next_partner_cpf())
+    second_owner = make_cnpj_user(db_session, cpf=next_partner_cpf())
     owner_token = make_token(db_session, owner)
     admin_token = make_token(db_session, admin)
     org = create_organization(api, owner_token)
@@ -434,7 +443,7 @@ def test_last_owner_cannot_be_removed_or_demoted(
 ) -> None:
     api = api_client(client, db_session)
     owner = make_cnpj_user(db_session)
-    successor = make_cnpj_user(db_session)
+    successor = make_cnpj_user(db_session, cpf=next_partner_cpf())
     owner_token = make_token(db_session, owner)
     org = create_organization(api, owner_token)
 
@@ -477,7 +486,7 @@ def test_duplicate_and_missing_members_are_rejected(
 ) -> None:
     api = api_client(client, db_session)
     owner = make_cnpj_user(db_session)
-    member = make_cnpj_user(db_session)
+    member = make_cnpj_user(db_session, cpf=next_partner_cpf())
     owner_token = make_token(db_session, owner)
     org = create_organization(api, owner_token)
     add_member(api, owner_token, org["id"], member, "OPERATOR")
@@ -516,11 +525,12 @@ def test_audit_is_scoped_and_records_administrative_actions(
 ) -> None:
     api = api_client(client, db_session)
     first = make_cnpj_user(db_session)
-    second = make_cnpj_user(db_session)
+    second_cpf = next_partner_cpf()
+    second = make_cnpj_user(db_session, cpf=second_cpf)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
     first_org = create_organization(api, first_token, "Arena Auditada")
-    second_org = create_organization(api, second_token, "Outra Arena")
+    second_org = create_organization(api, second_token, "Outra Arena", cpf=second_cpf)
     add_member(api, first_token, first_org["id"], second, "OPERATOR")
     api.patch(
         f"/api/v1/organizations/{first_org['id']}",

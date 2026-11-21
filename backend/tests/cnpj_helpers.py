@@ -14,13 +14,30 @@ from app.core.config import get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.organizations.cnpj import CnpjRecord, QsaPartner
 from app.modules.organizations.dependency import get_cnpj_lookup
-from app.modules.profile.cpf import encrypt_cpf
+from app.modules.profile.cpf import encrypt_cpf, hash_cpf
 from app.modules.profile.models import UserProfile
 from tests.helpers_results import make_user
 
 PARTNER_NAME = "ANA SOUZA"
 PARTNER_CPF = "11144477735"
 PARTNER_CPF_MASKED = "***444777**"
+# Todos compartilham os dígitos 444777 do QSA e têm verificadores válidos; a
+# unicidade por conta (ADR 0065) exige CPFs distintos para usuários distintos.
+_PARTNER_CPF_ALTERNATIVES = (
+    "00044477783",
+    "00144477700",
+    "00244477736",
+    "00344477762",
+    "00444477799",
+    "00544477715",
+    "00644477741",
+    "00744477778",
+    "00844477702",
+    "00944477720",
+    "01044477709",
+    "01144477727",
+)
+_CPF_COUNTER = itertools.count()
 
 # CNPJs com dígitos verificadores válidos, reservados para testes.
 VALID_CNPJS = (
@@ -40,6 +57,12 @@ _CNPJ_COUNTER = itertools.count()
 
 def next_test_cnpj() -> str:
     return VALID_CNPJS[next(_CNPJ_COUNTER) % len(VALID_CNPJS)]
+
+
+def next_partner_cpf() -> str:
+    """CPF válido distinto de ``PARTNER_CPF`` e compatível com a máscara do QSA."""
+    index = next(_CPF_COUNTER) % len(_PARTNER_CPF_ALTERNATIVES)
+    return _PARTNER_CPF_ALTERNATIVES[index]
 
 
 def cnpj_record(**overrides: object) -> CnpjRecord:
@@ -105,6 +128,7 @@ def attach_partner_profile(
     profile.cpf_ciphertext = ciphertext
     profile.cpf_key_id = key_id
     profile.cpf_last2 = last2
+    profile.cpf_hash = hash_cpf(cpf, get_settings())
     session.flush()
 
 
@@ -142,5 +166,6 @@ __all__ = [
     "attach_partner_profile",
     "cnpj_record",
     "make_cnpj_user",
+    "next_partner_cpf",
     "next_test_cnpj",
 ]

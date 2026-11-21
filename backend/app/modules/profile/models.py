@@ -112,14 +112,23 @@ class SportFormat(Base):
 
 
 class UserProfile(Base):
-    """Dados básicos do perfil do jogador e CPF cifrado (ADR 0049 §9.3)."""
+    """Dados básicos do perfil do jogador e CPF protegido (ADR 0049 §9.3, 0065)."""
 
     __tablename__ = "user_profiles"
     __table_args__ = (
         CheckConstraint(
-            "(cpf_ciphertext IS NULL AND cpf_key_id IS NULL AND cpf_last2 IS NULL) "
-            "OR (cpf_ciphertext IS NOT NULL AND cpf_key_id IS NOT NULL AND cpf_last2 IS NOT NULL)",
+            "(cpf_ciphertext IS NULL AND cpf_key_id IS NULL AND cpf_last2 IS NULL "
+            "AND cpf_hash IS NULL) "
+            "OR (cpf_ciphertext IS NOT NULL AND cpf_key_id IS NOT NULL "
+            "AND cpf_last2 IS NOT NULL AND cpf_hash IS NOT NULL)",
             name="cpf_present_consistent",
+        ),
+        Index(
+            "uq_user_profiles_cpf_hash",
+            "cpf_hash",
+            unique=True,
+            postgresql_where=text("cpf_hash IS NOT NULL"),
+            sqlite_where=text("cpf_hash IS NOT NULL"),
         ),
     )
 
@@ -132,6 +141,8 @@ class UserProfile(Base):
     cpf_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     cpf_key_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     cpf_last2: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # HMAC-SHA256 do CPF normalizado; nunca devolvido ou logado (ADR 0065).
+    cpf_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cpf_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()

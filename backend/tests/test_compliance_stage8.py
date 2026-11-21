@@ -28,6 +28,7 @@ from app.modules.profile.cpf import (
     InvalidCpf,
     decrypt_cpf,
     encrypt_cpf,
+    hash_cpf,
     mask_cpf,
     normalize_cpf,
 )
@@ -281,6 +282,7 @@ def test_booking_confirmation_creates_fiscal_intent(
             cpf_ciphertext=ciphertext,
             cpf_key_id=key_id,
             cpf_last2=last2,
+            cpf_hash=hash_cpf(TEST_CPF, settings),
         )
     )
     db_session.flush()

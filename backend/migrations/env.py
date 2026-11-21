@@ -46,6 +46,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 settings = get_settings()
+# Migrações que precisam de segredo (ex.: backfill de CPF) leem daqui em vez
+# de importar a aplicação ou duplicar a leitura de ambiente.
+config.attributes.setdefault("settings", settings)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

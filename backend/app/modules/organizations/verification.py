@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -43,6 +44,7 @@ from app.modules.profile.cpf import (
     InvalidCpf,
     decrypt_cpf,
     encrypt_cpf,
+    hash_cpf,
     normalize_cpf,
 )
 from app.modules.profile.cpf import (
@@ -100,6 +102,13 @@ class CpfInvalid(CnpjVerificationError):
 class CpfVerificationUnavailable(CnpjVerificationError):
     code = "cpf_unavailable"
     http_status = 503
+
+
+class CpfAlreadyRegistered(CnpjVerificationError):
+    """O CPF pertence a outra conta (ADR 0065); a organização não é criada."""
+
+    code = "cpf_already_registered"
+    http_status = 409
 
 
 @dataclass(frozen=True)
@@ -505,6 +514,15 @@ def _persist_cpf_if_absent(
 ) -> None:
     if profile is not None and profile.cpf_ciphertext is not None:
         return
+    cpf_hash = hash_cpf(cpf, settings)
+    other = session.scalar(
+        select(UserProfile.user_id).where(
+            UserProfile.cpf_hash == cpf_hash,
+            UserProfile.user_id != actor_user_id,
+        )
+    )
+    if other is not None:
+        raise CpfAlreadyRegistered("cpf_already_registered")
     try:
         ciphertext, key_id, last2 = encrypt_cpf(cpf, actor_user_id, settings)
     except CpfKeyUnavailable as error:
@@ -515,6 +533,7 @@ def _persist_cpf_if_absent(
     profile.cpf_ciphertext = ciphertext
     profile.cpf_key_id = key_id
     profile.cpf_last2 = last2
+    profile.cpf_hash = cpf_hash
     profile.cpf_updated_at = utcnow()
     record_audit(
         session,
@@ -524,7 +543,11 @@ def _persist_cpf_if_absent(
         resource_id=actor_user_id,
         details={"cpf_present": True},
     )
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as error:
+        # Corrida com outra conta: o índice único de ``cpf_hash`` vence.
+        raise CpfAlreadyRegistered("cpf_already_registered") from error
 
 
 __all__ = [
@@ -537,6 +560,7 @@ __all__ = [
     "CnpjVerification",
     "CnpjVerificationError",
     "CpfInvalid",
+    "CpfAlreadyRegistered",
     "CpfVerificationUnavailable",
     "OrganizationVerificationService",
     "RecheckReport",

@@ -10,6 +10,7 @@ from tests.cnpj_helpers import (
     FakeCnpjLookup,
     api_with_lookup,
     make_cnpj_user,
+    next_partner_cpf,
 )
 from tests.helpers_results import make_token
 
@@ -100,7 +101,7 @@ def test_operator_cannot_set_payout(client: TestClient, db_session: Session) -> 
     owner_token = make_token(db_session, owner_id)
     org_id = create_org(api, owner_token)
 
-    operator_id = make_cnpj_user(db_session)
+    operator_id = make_cnpj_user(db_session, cpf=next_partner_cpf())
     operator_token = make_token(db_session, operator_id)
     added = api.post(
         f"/api/v1/organizations/{org_id}/members",
