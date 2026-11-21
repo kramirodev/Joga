@@ -1,5 +1,14 @@
 import type { PropsWithChildren, ReactNode, Ref } from 'react';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import {
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   KeyboardAvoidingView,
@@ -509,6 +518,7 @@ export function TextBtn({
       onPress={() => run(action, onPress)}
       accessibilityRole="button"
       accessibilityState={{ disabled: !!action.disabled }}
+      hitSlop={{ top: 4, bottom: 4, left: 8, right: 8 }}
       style={({ pressed }) => ({
         minHeight: largeTargets ? 56 : 48,
         justifyContent: 'center',
@@ -621,8 +631,8 @@ export function Chip({
     color = palette.ink;
   } else if (on) {
     bg = dark ? palette.surface2 : palette.ink;
-    border = dark ? palette.lineStrong : palette.ink;
-    color = dark ? palette.lime : palette.onInk;
+    border = dark ? palette.lime : palette.ink;
+    color = dark ? palette.ink : palette.onInk;
   }
   const press = () => {
     if (onPress) {
@@ -676,23 +686,99 @@ export function ChipRow({ children, style }: PropsWithChildren<{ style?: StylePr
   );
 }
 
+/** Medidas do trilho; o indicador usa as mesmas bordas/padding/gap do container. */
+const SEG_BORDER = 1.5;
+const SEG_PADDING = 4;
+const SEG_GAP = 4;
+
+function segSelectedIndex(children: ReactNode): number {
+  const items = Children.toArray(children).filter(isValidElement);
+  return Math.max(
+    0,
+    items.findIndex((child) => !!(child.props as { on?: boolean }).on),
+  );
+}
+
+/**
+ * Seleção única com pílula deslizante. O item selecionado não pinta o próprio
+ * fundo: uma única pílula medida por `onLayout` percorre o trilho com
+ * `duration.base` (120–240 ms), sempre com `useNativeDriver`.
+ *
+ * Os `SegBtn` são `flex: 1`, então todos os espaços têm a mesma largura; o
+ * indicador acompanha a largura medida do container. Com redução de movimento
+ * a pílula salta direto para o destino (troca instantânea permitida).
+ */
 export function Seg({ children, style }: PropsWithChildren<{ style?: StyleProp<ViewStyle> }>) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const selectedIndex = segSelectedIndex(children);
+  const count = Children.toArray(children).filter(isValidElement).length;
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [slot] = useState(() => new Animated.Value(selectedIndex));
+
+  useLayoutEffect(() => {
+    if (reduceMotion) {
+      slot.stopAnimation();
+      slot.setValue(selectedIndex);
+      return;
+    }
+    const animation = Animated.timing(slot, {
+      toValue: selectedIndex,
+      duration: duration.base,
+      easing: easing.standard,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [reduceMotion, selectedIndex, slot]);
+
+  const innerWidth = Math.max(0, containerWidth - SEG_BORDER * 2 - SEG_PADDING * 2);
+  const itemWidth = count > 0 ? Math.max(0, (innerWidth - SEG_GAP * (count - 1)) / count) : 0;
+  const step = itemWidth + SEG_GAP;
+  const travel = slot.interpolate({
+    inputRange: [0, Math.max(1, count - 1)],
+    outputRange: [0, step * Math.max(0, count - 1)],
+  });
+
   return (
     <View
+      onLayout={(event) => {
+        const next = event.nativeEvent.layout.width;
+        if (Math.abs(next - containerWidth) > 0.5) {
+          setContainerWidth(next);
+        }
+      }}
       style={[
         {
           flexDirection: 'row',
           backgroundColor: palette.surface2,
-          borderWidth: 1.5,
+          borderWidth: SEG_BORDER,
           borderColor: palette.line,
           borderRadius: 12,
-          padding: 4,
-          gap: 4,
+          padding: SEG_PADDING,
+          gap: SEG_GAP,
+          position: 'relative',
         },
         style,
       ]}
     >
+      {itemWidth > 0.5 ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: SEG_BORDER + SEG_PADDING,
+            bottom: SEG_BORDER + SEG_PADDING,
+            left: SEG_BORDER + SEG_PADDING,
+            width: itemWidth,
+            borderRadius: 8,
+            backgroundColor: dark ? palette.line : palette.ink,
+            borderWidth: dark ? 1 : 0,
+            borderColor: dark ? palette.lime : 'transparent',
+            transform: [{ translateX: travel }],
+          }}
+        />
+      ) : null}
       {children}
     </View>
   );
@@ -718,25 +804,24 @@ export function SegBtn({
           minWidth: 0,
           minHeight: largeTargets ? 54 : 48,
           borderRadius: 8,
-          paddingHorizontal: 6,
+          paddingHorizontal: 4,
           paddingVertical: 6,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: on ? (dark ? palette.surface2 : palette.ink) : 'transparent',
-          borderWidth: on && dark ? 1 : 0,
-          borderColor: on && dark ? palette.lime : 'transparent',
+          backgroundColor: 'transparent',
           opacity: pressed ? 0.88 : 1,
         })}
       >
         <Text
-          numberOfLines={2}
+          numberOfLines={1}
           adjustsFontSizeToFit
-          minimumFontScale={0.7}
+          minimumFontScale={0.78}
+          maxFontSizeMultiplier={1.2}
           style={{
             fontSize: 13,
-            lineHeight: 16,
+            lineHeight: 17,
             fontWeight: '800',
-            color: on ? (dark ? palette.lime : palette.onInk) : palette.muted,
+            color: on ? (dark ? palette.ink : palette.onInk) : palette.muted,
             textAlign: 'center',
           }}
         >
@@ -745,6 +830,47 @@ export function SegBtn({
       </Pressable>
     </Animated.View>
   );
+}
+
+/**
+ * Conteúdo que troca junto com um `Seg` sem remontar a tela nem o scroll:
+ * o container é o mesmo, os filhos novos entram com fade de `duration.base`.
+ * Com redução de movimento a troca é instantânea. Nada de rota, `key` por
+ * segmento ou nova árvore.
+ */
+export function SegContent({
+  value,
+  children,
+  style,
+}: PropsWithChildren<{ value: string; style?: StyleProp<ViewStyle> }>) {
+  const reduceMotion = useReducedMotion();
+  const [opacity] = useState(() => new Animated.Value(1));
+  const previous = useRef(value);
+
+  useLayoutEffect(() => {
+    const changed = previous.current !== value;
+    previous.current = value;
+    if (reduceMotion) {
+      opacity.stopAnimation();
+      opacity.setValue(1);
+      return;
+    }
+    if (!changed) {
+      return;
+    }
+    opacity.stopAnimation();
+    opacity.setValue(0.55);
+    const animation = Animated.timing(opacity, {
+      toValue: 1,
+      duration: duration.base,
+      easing: easing.enter,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [opacity, reduceMotion, value]);
+
+  return <Animated.View style={[{ gap: space.gap, opacity }, style]}>{children}</Animated.View>;
 }
 
 export function Field({ label, children }: PropsWithChildren<{ label: string }>) {

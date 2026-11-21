@@ -38,6 +38,7 @@ import {
   Row,
   Seg,
   SegBtn,
+  SegContent,
   StateScreen,
   SystemNotice,
   TeamCard,
@@ -1897,19 +1898,21 @@ function IdentityEditor() {
           {error}
         </Notice>
       ) : null}
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.key}
-        renderItem={renderItem}
-        numColumns={2}
-        style={{ flex: 1 }}
-        columnWrapperStyle={{ gap: 10 }}
-        contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={12}
-        windowSize={7}
-        removeClippedSubviews
-      />
+      <SegContent value={kind} style={{ flex: 1 }}>
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.key}
+          renderItem={renderItem}
+          numColumns={2}
+          style={{ flex: 1 }}
+          columnWrapperStyle={{ gap: 10 }}
+          contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={12}
+          windowSize={7}
+          removeClippedSubviews
+        />
+      </SegContent>
       <Btn tone="primary" onPress={save} disabled={busy}>
         {busy ? 'Salvando…' : 'Salvar identidade'}
       </Btn>

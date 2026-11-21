@@ -140,16 +140,14 @@ export function useSelectionScale(selected: boolean): Animated.Value {
   const wasSelected = useRef(selected);
 
   useLayoutEffect(() => {
-    if (wasSelected.current === selected) {
-      return;
-    }
+    const changed = wasSelected.current !== selected;
     wasSelected.current = selected;
-    if (!selected) {
+    if (!selected || reduceMotion) {
+      value.stopAnimation();
       value.setValue(1);
       return;
     }
-    if (reduceMotion) {
-      value.setValue(1);
+    if (!changed) {
       return;
     }
     value.setValue(scale.selected);
