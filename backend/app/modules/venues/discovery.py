@@ -22,7 +22,7 @@ from app.modules.bookings.models import (
 from app.modules.bookings.service import SPACE_BLOCKING_STATUSES
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.organizations.models import Organization, OrganizationVenue
-from app.modules.pricing.models import PricingBand
+from app.modules.pricing.models import PricingBand, PricingBandTicket
 from app.modules.pricing.service import PricingBandError, tickets_for
 from app.modules.profile.models import Sport, SportFormat, UserRegion
 from app.modules.venues.models import (
@@ -49,7 +49,7 @@ class DiscoveryNotFound(DiscoveryError):
 
 
 class DiscoveryInvalid(DiscoveryError):
-    """Parâmetros inválidos de paginação ou cidade."""
+    """Parâmetros inválidos de paginação, cidade ou filtros da vitrine."""
 
 
 @dataclass(frozen=True)
@@ -115,6 +115,20 @@ class SpaceOption:
 
 
 @dataclass(frozen=True)
+class VenueFormatOption:
+    """Formato que o estabelecimento aceita, para o filtro honesto do app.
+
+    ``format_id`` é o mesmo valor aceito em ``GET /discovery/bookable-venues``;
+    ``sport_id`` permite filtrar pela modalidade sem inferir pelo nome.
+    """
+
+    sport_id: uuid.UUID
+    sport_name: str
+    format_id: uuid.UUID
+    name: str
+
+
+@dataclass(frozen=True)
 class VenueCard:
     id: uuid.UUID
     organization_id: uuid.UUID
@@ -127,6 +141,7 @@ class VenueCard:
     timezone: str
     is_public: bool
     covered: bool
+    sports: tuple[VenueFormatOption, ...]
     spaces_count: int
     min_price_cents: int
     min_tickets: int | None
@@ -140,6 +155,17 @@ class VenueCardPage:
     total: int
     page: int
     page_size: int
+
+
+@dataclass
+class _CardDetails:
+    """Dados carregados em lote apenas para a página já cortada."""
+
+    spaces_by_venue: dict[uuid.UUID, list[VenueSpace]]
+    availability_by_space: dict[uuid.UUID, list[VenueAvailability]]
+    formats_by_space: dict[uuid.UUID, list[tuple[SportFormat, Sport]]]
+    tickets: dict[tuple[uuid.UUID, int], int]
+    first_photo: dict[uuid.UUID, uuid.UUID]
 
 
 @dataclass(frozen=True)
@@ -172,21 +198,90 @@ class VenueDiscoveryService:
         page: int = 1,
         page_size: int = 20,
         city: str | None = None,
+        format_id: uuid.UUID | None = None,
+        sport_id: uuid.UUID | None = None,
+        covered: bool | None = None,
+        max_distance_km: int | None = None,
     ) -> VenueCardPage:
+        """Vitrine filtrada **no servidor**, antes da paginação.
+
+        ``format_id``, ``sport_id``, ``covered`` e ``max_distance_km`` entram na
+        consulta de candidatos (ou no cálculo de distância sobre os candidatos),
+        nunca sobre a página já cortada. Assim ``total`` e as páginas seguintes
+        refletem o filtro inteiro.
+
+        ``max_distance_km`` exige região gravada do usuário: sem ela, responder
+        ``422 region_required`` é mais honesto do que devolver uma lista sem
+        saber a origem. Estabelecimentos sem coordenada não entram quando o
+        filtro de distância está ativo.
+        """
         if page < 1:
             raise DiscoveryInvalid("page_invalid")
         if not 1 <= page_size <= MAX_PAGE_SIZE:
             raise DiscoveryInvalid("page_size_invalid")
+        if max_distance_km is not None and not 1 <= max_distance_km <= 100:
+            raise DiscoveryInvalid("max_distance_invalid")
         clean_city = city.strip() if city else None
 
-        active_space = (
-            select(VenueSpace.id)
-            .where(
-                VenueSpace.organization_venue_id == OrganizationVenue.id,
-                VenueSpace.status == "active",
-            )
+        sport_format = self._filter_format(format_id, sport_id)
+        region = self.session.get(UserRegion, user_id)
+        if max_distance_km is not None and region is None:
+            raise DiscoveryInvalid("region_required")
+
+        availability_exists = (
+            select(VenueAvailability.id)
+            .where(VenueAvailability.venue_space_id == VenueSpace.id)
             .exists()
         )
+        space_conditions = [
+            VenueSpace.organization_venue_id == OrganizationVenue.id,
+            VenueSpace.status == "active",
+            availability_exists,
+        ]
+        if covered is not None:
+            covered_space = (
+                select(VenueSpace.id)
+                .where(
+                    VenueSpace.organization_venue_id == OrganizationVenue.id,
+                    VenueSpace.status == "active",
+                    VenueSpace.is_covered.is_(True),
+                )
+                .exists()
+            )
+            space_conditions.append(covered_space if covered else ~covered_space)
+        if sport_format is not None:
+            linked_sport = (
+                select(VenueSport.id)
+                .where(
+                    VenueSport.venue_space_id == VenueSpace.id,
+                    VenueSport.sport_id == sport_format.sport_id,
+                )
+                .exists()
+            )
+            # O formato explícito de publicação e as modalidades vinculadas
+            # formam o conjunto aceito pela quadra. O card usa a mesma união,
+            # para nenhum resultado do filtro ficar sem chip correspondente.
+            space_conditions.append(or_(VenueSpace.format_id == sport_format.id, linked_sport))
+        elif sport_id is not None:
+            linked_sport = (
+                select(VenueSport.id)
+                .where(
+                    VenueSport.venue_space_id == VenueSpace.id,
+                    VenueSport.sport_id == sport_id,
+                )
+                .exists()
+            )
+            explicit_sport = (
+                select(SportFormat.id)
+                .where(
+                    SportFormat.id == VenueSpace.format_id,
+                    SportFormat.sport_id == sport_id,
+                )
+                .exists()
+            )
+            space_conditions.append(or_(linked_sport, explicit_sport))
+        active_space = select(VenueSpace.id).where(*space_conditions).exists()
+
         statement = (
             select(OrganizationVenue, Organization.is_platform)
             .join(Organization, Organization.id == OrganizationVenue.organization_id)
@@ -206,61 +301,275 @@ class VenueDiscoveryService:
                 func.lower(OrganizationVenue.city).contains(clean_city.lower(), autoescape=True)
             )
 
-        region = self.session.get(UserRegion, user_id)
-        cards: list[VenueCard] = []
+        candidates: list[tuple[OrganizationVenue, bool, float | None]] = []
         for venue, is_platform in self.session.execute(statement).all():
-            spaces = self._active_spaces(venue.id)
-            if not spaces:
+            raw_distance = self._raw_distance(region, venue)
+            if max_distance_km is not None and (
+                raw_distance is None or raw_distance > max_distance_km
+            ):
                 continue
-            availability_by_space = {space.id: self._availability(space.id) for space in spaces}
-            prices = [row.price_cents for rows in availability_by_space.values() for row in rows]
-            if not prices:
-                continue
-            # Quadra pública é gratuita (ADR 0055 §2.2: organização da
-            # plataforma + `is_public`), então o app exibe "Grátis" a partir de
-            # zero ingressos, mesmo que exista tabela de faixas configurada.
-            min_tickets = (
-                0
-                if venue.is_public and is_platform
-                else self._min_tickets(spaces, availability_by_space)
-            )
-            photo = self._first_photo(venue.id)
-            cards.append(
-                VenueCard(
-                    id=venue.id,
-                    organization_id=venue.organization_id,
-                    name=venue.name,
-                    city=venue.city,
-                    state=venue.state,
-                    address_line=venue.address_line,
-                    latitude=self._round_coordinate(venue.latitude),
-                    longitude=self._round_coordinate(venue.longitude),
-                    timezone=venue.timezone,
-                    is_public=venue.is_public,
-                    covered=any(space.is_covered for space in spaces),
-                    spaces_count=len(spaces),
-                    min_price_cents=min(prices),
-                    min_tickets=min_tickets,
-                    distance_km=self._distance(region, venue),
-                    photo_id=photo.id if photo is not None else None,
-                )
-            )
-
-        cards.sort(
+            candidates.append((venue, is_platform, raw_distance))
+        candidates.sort(
             key=lambda item: (
-                item.distance_km is None,
-                item.distance_km if item.distance_km is not None else 0.0,
-                item.name,
-                str(item.id),
+                item[2] is None,
+                item[2] if item[2] is not None else 0.0,
+                item[0].name,
+                str(item[0].id),
             )
         )
+
+        total = len(candidates)
         start = (page - 1) * page_size
+        page_rows = candidates[start : start + page_size]
+        if not page_rows:
+            return VenueCardPage(venues=(), total=total, page=page, page_size=page_size)
+
+        details = self._card_details([venue.id for venue, _, _ in page_rows])
+        cards: list[VenueCard] = []
+        for venue, is_platform, raw_distance in page_rows:
+            card = self._build_card(venue, is_platform, raw_distance, details)
+            if card is not None:
+                cards.append(card)
         return VenueCardPage(
-            venues=tuple(cards[start : start + page_size]),
-            total=len(cards),
+            venues=tuple(cards),
+            total=total,
             page=page,
             page_size=page_size,
         )
+
+    def _filter_format(
+        self,
+        format_id: uuid.UUID | None,
+        sport_id: uuid.UUID | None,
+    ) -> SportFormat | None:
+        """Valida os filtros de catálogo e devolve o formato, quando houver."""
+        sport_format: SportFormat | None = None
+        if format_id is not None:
+            sport_format = self.session.get(SportFormat, format_id)
+            if sport_format is None or not sport_format.active:
+                raise DiscoveryInvalid("invalid_format")
+            sport = self.session.get(Sport, sport_format.sport_id)
+            if sport is None or not sport.active:
+                raise DiscoveryInvalid("invalid_format")
+            if sport_id is not None and sport_format.sport_id != sport_id:
+                raise DiscoveryInvalid("format_sport_mismatch")
+        if sport_id is not None:
+            sport = self.session.get(Sport, sport_id)
+            if sport is None or not sport.active:
+                raise DiscoveryInvalid("invalid_sport")
+        return sport_format
+
+    def _card_details(self, venue_ids: list[uuid.UUID]) -> _CardDetails:
+        """Carrega quadras, agenda, formatos, faixas e foto em lote.
+
+        A quantidade de consultas depende do número de *páginas*, não do número
+        de quadras ou formatos: evita o N+1 que a vitrine tinha ao consultar
+        cada espaço individualmente.
+        """
+        spaces = list(
+            self.session.scalars(
+                select(VenueSpace)
+                .where(
+                    VenueSpace.organization_venue_id.in_(venue_ids),
+                    VenueSpace.status == "active",
+                )
+                .order_by(VenueSpace.name, VenueSpace.id)
+            ).all()
+        )
+        spaces_by_venue: dict[uuid.UUID, list[VenueSpace]] = {}
+        for space in spaces:
+            spaces_by_venue.setdefault(space.organization_venue_id, []).append(space)
+        space_ids = [space.id for space in spaces]
+
+        availability_by_space: dict[uuid.UUID, list[VenueAvailability]] = {}
+        if space_ids:
+            for row in self.session.scalars(
+                select(VenueAvailability)
+                .where(VenueAvailability.venue_space_id.in_(space_ids))
+                .order_by(
+                    VenueAvailability.weekday,
+                    VenueAvailability.start_time,
+                    VenueAvailability.id,
+                )
+            ):
+                availability_by_space.setdefault(row.venue_space_id, []).append(row)
+
+        links_by_space: dict[uuid.UUID, list[uuid.UUID]] = {}
+        sport_ids: set[uuid.UUID] = set()
+        if space_ids:
+            for space_id, sport_id in self.session.execute(
+                select(VenueSport.venue_space_id, VenueSport.sport_id).where(
+                    VenueSport.venue_space_id.in_(space_ids)
+                )
+            ):
+                links_by_space.setdefault(space_id, []).append(sport_id)
+                sport_ids.add(sport_id)
+
+        explicit_format_ids = {space.format_id for space in spaces if space.format_id is not None}
+        explicit_formats = (
+            list(
+                self.session.scalars(
+                    select(SportFormat).where(SportFormat.id.in_(explicit_format_ids))
+                ).all()
+            )
+            if explicit_format_ids
+            else []
+        )
+        sport_ids.update(sport_format.sport_id for sport_format in explicit_formats)
+
+        sports = (
+            {
+                sport.id: sport
+                for sport in self.session.scalars(
+                    select(Sport).where(Sport.id.in_(sport_ids), Sport.active.is_(True))
+                ).all()
+            }
+            if sport_ids
+            else {}
+        )
+        active_formats = (
+            list(
+                self.session.scalars(
+                    select(SportFormat).where(
+                        SportFormat.sport_id.in_(sports),
+                        SportFormat.active.is_(True),
+                    )
+                ).all()
+            )
+            if sports
+            else []
+        )
+        active_format_by_id = {sport_format.id: sport_format for sport_format in active_formats}
+        formats_by_sport: dict[uuid.UUID, list[SportFormat]] = {}
+        for sport_format in active_formats:
+            formats_by_sport.setdefault(sport_format.sport_id, []).append(sport_format)
+
+        formats_by_space: dict[uuid.UUID, list[tuple[SportFormat, Sport]]] = {}
+        for space in spaces:
+            chosen: list[SportFormat] = []
+            if space.format_id is not None:
+                explicit = active_format_by_id.get(space.format_id)
+                if explicit is not None and explicit.sport_id in sports:
+                    chosen.append(explicit)
+            for linked_id in links_by_space.get(space.id, []):
+                chosen.extend(formats_by_sport.get(linked_id, []))
+            deduped: dict[uuid.UUID, SportFormat] = {}
+            for sport_format in chosen:
+                deduped.setdefault(sport_format.id, sport_format)
+            formats_by_space[space.id] = [
+                (sport_format, sports[sport_format.sport_id]) for sport_format in deduped.values()
+            ]
+
+        band_ids = {
+            row.band_id
+            for rows in availability_by_space.values()
+            for row in rows
+            if row.band_id is not None
+        }
+        tickets: dict[tuple[uuid.UUID, int], int] = {}
+        if band_ids:
+            for band_id, team_size, count in self.session.execute(
+                select(
+                    PricingBandTicket.band_id,
+                    PricingBandTicket.team_size,
+                    PricingBandTicket.tickets,
+                ).where(PricingBandTicket.band_id.in_(band_ids))
+            ):
+                tickets[(band_id, team_size)] = count
+
+        first_photo: dict[uuid.UUID, uuid.UUID] = {}
+        for photo in self.session.scalars(
+            select(VenuePhoto)
+            .where(
+                VenuePhoto.organization_venue_id.in_(venue_ids),
+                VenuePhoto.status == "APPROVED",
+            )
+            .order_by(VenuePhoto.created_at, VenuePhoto.id)
+        ):
+            first_photo.setdefault(photo.organization_venue_id, photo.id)
+
+        return _CardDetails(
+            spaces_by_venue=spaces_by_venue,
+            availability_by_space=availability_by_space,
+            formats_by_space=formats_by_space,
+            tickets=tickets,
+            first_photo=first_photo,
+        )
+
+    def _build_card(
+        self,
+        venue: OrganizationVenue,
+        is_platform: bool,
+        raw_distance: float | None,
+        details: _CardDetails,
+    ) -> VenueCard | None:
+        spaces = details.spaces_by_venue.get(venue.id, [])
+        if not spaces:
+            return None
+        prices = [
+            row.price_cents
+            for space in spaces
+            for row in details.availability_by_space.get(space.id, [])
+        ]
+        if not prices:
+            return None
+        # Quadra pública é gratuita (ADR 0055 §2.2: organização da plataforma
+        # + `is_public`), então o app exibe "Grátis" a partir de zero ingressos,
+        # mesmo que exista tabela de faixas configurada.
+        min_tickets = (
+            0 if venue.is_public and is_platform else self._min_tickets_from(spaces, details)
+        )
+        formats: dict[uuid.UUID, VenueFormatOption] = {}
+        for space in spaces:
+            for sport_format, sport in details.formats_by_space.get(space.id, []):
+                formats.setdefault(
+                    sport_format.id,
+                    VenueFormatOption(
+                        sport_id=sport.id,
+                        sport_name=sport.name,
+                        format_id=sport_format.id,
+                        name=sport_format.name,
+                    ),
+                )
+        return VenueCard(
+            id=venue.id,
+            organization_id=venue.organization_id,
+            name=venue.name,
+            city=venue.city,
+            state=venue.state,
+            address_line=venue.address_line,
+            latitude=self._round_coordinate(venue.latitude),
+            longitude=self._round_coordinate(venue.longitude),
+            timezone=venue.timezone,
+            is_public=venue.is_public,
+            covered=any(space.is_covered for space in spaces),
+            sports=tuple(
+                sorted(
+                    formats.values(),
+                    key=lambda item: (item.sport_name, item.name, str(item.format_id)),
+                )
+            ),
+            spaces_count=len(spaces),
+            min_price_cents=min(prices),
+            min_tickets=min_tickets,
+            distance_km=round(raw_distance, 2) if raw_distance is not None else None,
+            photo_id=details.first_photo.get(venue.id),
+        )
+
+    @staticmethod
+    def _min_tickets_from(spaces: list[VenueSpace], details: _CardDetails) -> int | None:
+        """Menor quantidade de ingressos usando as faixas já carregadas em lote."""
+        tickets: list[int] = []
+        for space in spaces:
+            formats = details.formats_by_space.get(space.id, [])
+            for row in details.availability_by_space.get(space.id, []):
+                if row.band_id is None:
+                    continue
+                for sport_format, _ in formats:
+                    count = details.tickets.get((row.band_id, sport_format.team_size))
+                    if count is not None:
+                        tickets.append(count)
+        return min(tickets) if tickets else None
 
     def get_venue(self, venue_id: uuid.UUID) -> VenueDetail:
         venue = self._active_venue(venue_id)
@@ -439,31 +748,6 @@ class VenueDiscoveryService:
             )
         return options
 
-    def _min_tickets(
-        self,
-        spaces: list[VenueSpace],
-        availability_by_space: dict[uuid.UUID, list[VenueAvailability]],
-    ) -> int | None:
-        """Menor quantidade de ingressos entre faixas e formatos ativos.
-
-        Considera todas as faixas configuradas em todas as janelas de agenda da
-        quadra e todos os formatos ativos de cada modalidade. Retorna ``None``
-        quando nenhum formato tem ingressos configurados — nunca ``0``, que
-        ficaria ambíguo com a gratuidade da quadra pública.
-        """
-
-        tickets: list[int] = []
-        for space in spaces:
-            bands = {
-                row.band_id: self.session.get(PricingBand, row.band_id)
-                for row in availability_by_space.get(space.id, [])
-                if row.band_id is not None
-            }
-            for sport in self._sports(space.id):
-                for format_ in self._formats(sport.id, bands):
-                    tickets.extend(format_.tickets_by_band.values())
-        return min(tickets) if tickets else None
-
     def _availability_option(
         self,
         row: VenueAvailability,
@@ -485,17 +769,6 @@ class VenueDiscoveryService:
                 if band is not None
                 else None
             ),
-        )
-
-    def _first_photo(self, venue_id: uuid.UUID) -> VenuePhoto | None:
-        return self.session.scalar(
-            select(VenuePhoto)
-            .where(
-                VenuePhoto.organization_venue_id == venue_id,
-                VenuePhoto.status == "APPROVED",
-            )
-            .order_by(VenuePhoto.created_at, VenuePhoto.id)
-            .limit(1)
         )
 
     def _photos(self, venue_id: uuid.UUID) -> list[PhotoOption]:
@@ -619,17 +892,16 @@ class VenueDiscoveryService:
             )
         )
 
-    def _distance(self, region: UserRegion | None, venue: OrganizationVenue) -> float | None:
+    @staticmethod
+    def _raw_distance(region: UserRegion | None, venue: OrganizationVenue) -> float | None:
+        """Distância sem arredondar, para o corte de ``max_distance_km``."""
         if region is None or venue.latitude is None or venue.longitude is None:
             return None
-        return round(
-            _haversine_km(
-                region.center_lat,
-                region.center_lng,
-                venue.latitude,
-                venue.longitude,
-            ),
-            2,
+        return _haversine_km(
+            region.center_lat,
+            region.center_lng,
+            venue.latitude,
+            venue.longitude,
         )
 
     @staticmethod
@@ -672,5 +944,6 @@ __all__ = [
     "VenueCard",
     "VenueCardPage",
     "VenueDetail",
+    "VenueFormatOption",
     "VenueDiscoveryService",
 ]

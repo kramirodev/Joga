@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import time, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.modules.bookings.models import Booking
 from app.modules.organizations.models import OrganizationVenue
 from app.modules.pricing.service import resolve_band
-from app.modules.profile.models import SportFormat
+from app.modules.profile.models import Sport, SportFormat, UserRegion
 from app.modules.venues.models import VenueAvailability, VenueSpace, VenueSport
 from tests.helpers_results import make_format
 from tests.test_ticket_settlement import START, bearer, setup_context
@@ -41,6 +41,68 @@ def list_card(api: TestClient, context: dict) -> dict:
     cards = listing.json()["venues"]
     assert len(cards) == 1
     return cards[0]
+
+
+def add_bookable_venue(
+    db_session: Session,
+    context: dict,
+    *,
+    name: str,
+    sport_id: UUID,
+    format_id: UUID | None = None,
+    city: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    covered: bool = False,
+) -> OrganizationVenue:
+    """Cria um estabelecimento completo para os testes de filtro da vitrine."""
+    venue = OrganizationVenue(
+        organization_id=context["organization"].id,
+        name=name,
+        city=city,
+        timezone="UTC",
+        latitude=latitude,
+        longitude=longitude,
+    )
+    db_session.add(venue)
+    db_session.flush()
+    space = VenueSpace(
+        organization_venue_id=venue.id,
+        name=f"{name} Quadra",
+        is_covered=covered,
+        format_id=format_id,
+    )
+    db_session.add(space)
+    db_session.flush()
+    db_session.add(VenueSport(venue_space_id=space.id, sport_id=sport_id))
+    db_session.add(
+        VenueAvailability(
+            venue_space_id=space.id,
+            weekday=START.isoweekday(),
+            start_time=time(17, 0),
+            end_time=time(23, 0),
+            price_cents=12_000,
+            slot_minutes=60,
+            band_id=resolve_band(db_session, 12_000).id,
+        )
+    )
+    db_session.flush()
+    return venue
+
+
+def listing_names(
+    api: TestClient,
+    token: str,
+    **params: object,
+) -> tuple[list[str], dict]:
+    response = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params=params,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    return [item["name"] for item in body["venues"]], body
 
 
 def test_list_and_detail_expose_bookable_space_without_financial_data(
@@ -232,6 +294,289 @@ def test_public_venue_reports_zero_tickets(client: TestClient, db_session: Sessi
     assert card["min_tickets"] == 0
     # Compatibilidade: o preço continua como está nesta entrega.
     assert card["min_price_cents"] == 12_000
+
+
+def test_card_exposes_formats_and_filters_by_format_and_sport(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    futebol = link_space_to_lobby_format(db_session, context)
+    volei_sport, volei_format = make_format(db_session, sport_slug="volei")
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Volei",
+        sport_id=volei_sport.id,
+    )
+    db_session.commit()
+
+    all_names, body = listing_names(api, context["tokens"][0])
+    assert all_names == ["Arena Centro", "Arena Volei"]
+    card = next(item for item in body["venues"] if item["name"] == "Arena Centro")
+    sport = db_session.get(Sport, futebol.sport_id)
+    assert sport is not None
+    assert card["sports"] == [
+        {
+            "sport_id": str(futebol.sport_id),
+            "sport_name": sport.name,
+            "format_id": str(futebol.id),
+            "name": futebol.name,
+        }
+    ]
+
+    by_format, body = listing_names(
+        api,
+        context["tokens"][0],
+        format_id=str(futebol.id),
+    )
+    assert by_format == ["Arena Centro"]
+    assert body["total"] == 1
+
+    by_other_format, body = listing_names(
+        api,
+        context["tokens"][0],
+        format_id=str(volei_format.id),
+    )
+    assert by_other_format == ["Arena Volei"]
+    assert body["total"] == 1
+
+    by_sport, body = listing_names(
+        api,
+        context["tokens"][0],
+        sport_id=str(futebol.sport_id),
+    )
+    assert by_sport == ["Arena Centro"]
+    assert body["total"] == 1
+
+
+def test_format_filter_accepts_explicit_space_format_without_venue_sport(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    sport_format = db_session.get(SportFormat, context["lobby"].format_id)
+    assert sport_format is not None
+    context["space"].format_id = sport_format.id
+    db_session.commit()
+
+    names, body = listing_names(
+        api,
+        context["tokens"][0],
+        format_id=str(sport_format.id),
+    )
+    sport = db_session.get(Sport, sport_format.sport_id)
+    assert sport is not None
+    assert names == ["Arena Centro"]
+    assert body["total"] == 1
+    assert body["venues"][0]["sports"] == [
+        {
+            "sport_id": str(sport_format.sport_id),
+            "sport_name": sport.name,
+            "format_id": str(sport_format.id),
+            "name": sport_format.name,
+        }
+    ]
+
+
+def test_format_filter_is_applied_before_pagination(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    futebol = link_space_to_lobby_format(db_session, context)
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Norte",
+        sport_id=futebol.sport_id,
+    )
+    volei_sport, _ = make_format(db_session, sport_slug="volei")
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Aa Volei",
+        sport_id=volei_sport.id,
+    )
+    db_session.commit()
+
+    token = context["tokens"][0]
+    first, first_body = listing_names(
+        api,
+        token,
+        format_id=str(futebol.id),
+        page=1,
+        page_size=1,
+    )
+    second, second_body = listing_names(
+        api,
+        token,
+        format_id=str(futebol.id),
+        page=2,
+        page_size=1,
+    )
+    assert first_body["total"] == 2
+    assert second_body["total"] == 2
+    assert first == ["Arena Centro"]
+    assert second == ["Arena Norte"]
+    assert "Arena Aa Volei" not in first + second
+
+
+def test_covered_filter_uses_server_side_space_coverage(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    futebol = link_space_to_lobby_format(db_session, context)
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Coberta",
+        sport_id=futebol.sport_id,
+        covered=True,
+    )
+    db_session.commit()
+
+    names, body = listing_names(api, context["tokens"][0], covered="true")
+    assert names == ["Arena Coberta"]
+    assert body["total"] == 1
+    assert body["venues"][0]["covered"] is True
+
+    uncovered, _ = listing_names(api, context["tokens"][0], covered="false")
+    assert uncovered == ["Arena Centro"]
+
+
+def test_max_distance_filters_before_pagination_and_requires_region(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    futebol = link_space_to_lobby_format(db_session, context)
+    context["venue"].latitude = -22.9
+    context["venue"].longitude = -43.2
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Coberta Perto",
+        sport_id=futebol.sport_id,
+        latitude=-22.9,
+        longitude=-43.2,
+        covered=True,
+    )
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Longe",
+        sport_id=futebol.sport_id,
+        latitude=-22.0,
+        longitude=-43.2,
+    )
+    add_bookable_venue(
+        db_session,
+        context,
+        name="Arena Sem Mapa",
+        sport_id=futebol.sport_id,
+        latitude=None,
+        longitude=None,
+    )
+    db_session.commit()
+
+    token = context["tokens"][0]
+    missing_region = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"max_distance_km": 5},
+    )
+    assert missing_region.status_code == 422
+    assert missing_region.json() == {"detail": {"code": "region_required"}}
+
+    db_session.add(
+        UserRegion(
+            user_id=context["users"][0],
+            source="gps",
+            radius_km=10,
+            center_lat=-22.9,
+            center_lng=-43.2,
+        )
+    )
+    db_session.commit()
+
+    near, body = listing_names(api, token, max_distance_km=5)
+    assert near == ["Arena Centro", "Arena Coberta Perto"]
+    assert body["total"] == 2
+
+    combined, body = listing_names(
+        api,
+        token,
+        format_id=str(futebol.id),
+        covered="true",
+        max_distance_km=5,
+    )
+    assert combined == ["Arena Coberta Perto"]
+    assert body["total"] == 1
+
+
+def test_list_rejects_invalid_discovery_filters(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    context = setup_context(db_session)
+    futebol = link_space_to_lobby_format(db_session, context)
+    volei_sport, _ = make_format(db_session, sport_slug="volei")
+    db_session.commit()
+    token = context["tokens"][0]
+
+    for value in (0, 101):
+        too_far = api.get(
+            "/api/v1/discovery/bookable-venues",
+            headers=bearer(token),
+            params={"max_distance_km": value},
+        )
+        assert too_far.status_code == 422
+
+    invalid_bool = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"covered": "talvez"},
+    )
+    assert invalid_bool.status_code == 422
+
+    invalid_uuid = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"format_id": "nao-e-uuid"},
+    )
+    assert invalid_uuid.status_code == 422
+
+    unknown_format = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"format_id": str(uuid4())},
+    )
+    assert unknown_format.status_code == 422
+    assert unknown_format.json() == {"detail": {"code": "invalid_format"}}
+
+    unknown_sport = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"sport_id": str(uuid4())},
+    )
+    assert unknown_sport.status_code == 422
+    assert unknown_sport.json() == {"detail": {"code": "invalid_sport"}}
+
+    mismatch = api.get(
+        "/api/v1/discovery/bookable-venues",
+        headers=bearer(token),
+        params={"format_id": str(futebol.id), "sport_id": str(volei_sport.id)},
+    )
+    assert mismatch.status_code == 422
+    assert mismatch.json() == {"detail": {"code": "format_sport_mismatch"}}
 
 
 def test_list_keeps_city_filter_and_pagination(client: TestClient, db_session: Session) -> None:

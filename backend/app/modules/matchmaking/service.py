@@ -31,6 +31,7 @@ from app.modules.matchmaking.policy import (
     select_start,
 )
 from app.modules.profile.models import (
+    COURT_PREFERENCES,
     LEVELS,
     Availability,
     SportFormat,
@@ -78,6 +79,10 @@ class InvalidLevelOverride(QueueError):
 
 class DuplicateSelection(QueueError):
     """Par ``(format_id, mode)`` repetido na seleção explícita."""
+
+
+class InvalidCourtPreference(QueueError):
+    """Preferência de quadra fora de ``PUBLIC_ONLY``/``PRIVATE_ONLY``/``ANY``."""
 
 
 class LevelNotApplicableForRanked(QueueError):
@@ -149,6 +154,8 @@ class MatchmakingService:
     ) -> QueueEntry:
         if mode not in ("casual", "ranked"):
             raise InvalidMode("modo de partida inválido")
+        if court_preference is not None and court_preference not in COURT_PREFERENCES:
+            raise InvalidCourtPreference("preferência de quadra inválida")
 
         sport_format = self._session.get(SportFormat, format_id)
         if sport_format is None or not sport_format.active:
@@ -184,7 +191,9 @@ class MatchmakingService:
             [format_id],
             levels={},
             ranked_formats={format_id} if mode == "ranked" else frozenset(),
-            court_preference=court_preference,
+            court_preferences=(
+                {format_id: court_preference} if court_preference is not None else {}
+            ),
         )[format_id]
 
         entry = QueueEntry(
@@ -293,6 +302,7 @@ class MatchmakingService:
         targets: Sequence[tuple[uuid.UUID, str]],
         *,
         court_preference: str | None = None,
+        court_preferences: Mapping[tuple[uuid.UUID, str], str] | None = None,
         levels: Mapping[tuple[uuid.UUID, str], str] | None = None,
         now: datetime | None = None,
     ) -> list[QueueEntry]:
@@ -316,6 +326,12 @@ class MatchmakingService:
         Preservar ``created_at`` é o que sustenta o cronômetro de espera no
         app. Lista vazia apenas cancela a seleção. Par repetido é rejeitado:
         duas entradas para a mesma combinação seriam ambíguas.
+
+        ``court_preferences`` mapeia ``(format_id, mode)`` para a preferência
+        de quadra daquele par (ADR 0067); o item vence o ``court_preference``
+        global. A preferência efetiva também alimenta o perfil do formato. Se o
+        mesmo formato aparece em mais de um par com valores diferentes, o perfil
+        grava o último par na ordem da seleção; cada entrada guarda o seu.
         """
         target = list(dict.fromkeys(targets))
         if len(target) != len(targets):
@@ -328,6 +344,14 @@ class MatchmakingService:
             if override_level not in LEVELS:
                 raise InvalidLevelOverride("nível de entrada inválido")
         wanted = set(target)
+        item_preferences = dict(court_preferences or {})
+        if court_preference is not None and court_preference not in COURT_PREFERENCES:
+            raise InvalidCourtPreference("preferência de quadra inválida")
+        for key, preference in item_preferences.items():
+            if preference not in COURT_PREFERENCES:
+                raise InvalidCourtPreference("preferência de quadra inválida")
+            if key not in wanted:
+                raise InvalidCourtPreference("preferência de quadra fora da seleção")
         # ``level`` só governa o pareamento casual (balance_teams por nível).
         # Ranqueada usa MMR e divisão por rating; override de nível nela seria
         # ignorado silenciosamente, então é rejeitado antes de qualquer escrita.
@@ -361,6 +385,17 @@ class MatchmakingService:
             # explícito para o type checker, sem depender de ``assert``.
             raise RegionRequired("defina uma região antes de entrar na fila")
 
+        # Preferência efetiva de cada par: item de ``selections[]`` vence o
+        # global legado (ADR 0067). Um formato pode ter pares em modos
+        # diferentes; cada entrada usa a sua, e o perfil grava a última na ordem.
+        effective_preferences: dict[tuple[uuid.UUID, str], str | None] = {
+            key: item_preferences.get(key, court_preference) for key in target
+        }
+        profile_preferences: dict[uuid.UUID, str] = {}
+        for key, pair_preference in effective_preferences.items():
+            if pair_preference is not None:
+                profile_preferences[key[0]] = pair_preference
+
         # A escolha da fila vira a última preferência do perfil (ADR 0064),
         # somente para os formatos que entram na fila. Feito depois de todas as
         # validações de erro e dentro da mesma transação da fila: falha no
@@ -374,7 +409,7 @@ class MatchmakingService:
                 if mode == "casual"
             },
             ranked_formats={format_id for format_id, mode in target if mode == "ranked"},
-            court_preference=court_preference,
+            court_preferences=profile_preferences,
         )
 
         existing = list(
@@ -404,11 +439,12 @@ class MatchmakingService:
             # escolha casual desta requisição (ADR 0064), inclusive para a
             # entrada preservada pelo diff.
             level = override_levels.get((format_id, mode), profiles[format_id].level)
+            pair_preference = effective_preferences[(format_id, mode)]
             preserved = kept.get((format_id, mode))
             if preserved is not None:
                 self._refresh_entry(
                     preserved,
-                    court_preference=court_preference,
+                    court_preference=pair_preference,
                     level=level,
                 )
                 entries.append(preserved)
@@ -420,7 +456,7 @@ class MatchmakingService:
                     mode,
                     profiles[format_id],
                     region,
-                    court_preference=court_preference,
+                    court_preference=pair_preference,
                     level=level,
                     now=current,
                 )
@@ -435,7 +471,7 @@ class MatchmakingService:
         *,
         levels: Mapping[uuid.UUID, str],
         ranked_formats: Collection[uuid.UUID],
-        court_preference: str | None,
+        court_preferences: Mapping[uuid.UUID, str],
     ) -> dict[uuid.UUID, UserSportProfile]:
         """Cria/atualiza o perfil esportivo a partir da escolha da fila (ADR 0064).
 
@@ -445,9 +481,10 @@ class MatchmakingService:
           preferência vence);
         - ranqueada sem perfil: cria com ``intermediate`` e mantém o nível
           existente quando já houver perfil (ranqueada pareia por MMR);
-        - ``court_preference`` global do payload atualiza todos os formatos
-          selecionados; sem ele, a preferência existente é preservada e a
-          criação usa ``ANY``;
+        - ``court_preferences`` traz a preferência efetiva de cada formato
+          (item de ``selections[]`` ou global legado) e atualiza somente esses
+          formatos; formato sem preferência preserva a existente, e a criação
+          usa ``ANY``;
         - formato selecionado apenas em casual, sem nível explícito e sem
           perfil continua respondendo ``SportProfileRequired``.
 
@@ -475,20 +512,21 @@ class MatchmakingService:
         profiles: dict[uuid.UUID, UserSportProfile] = {}
         for format_id in format_ids:
             profile = existing.get(format_id)
+            preference = court_preferences.get(format_id)
             if profile is None:
                 profile = UserSportProfile(
                     user_id=user_id,
                     format_id=format_id,
                     level=levels.get(format_id, DEFAULT_RANKED_LEVEL),
-                    court_preference=court_preference or DEFAULT_COURT_PREFERENCE,
+                    court_preference=preference or DEFAULT_COURT_PREFERENCE,
                 )
                 self._session.add(profile)
             else:
                 level = levels.get(format_id)
                 if level is not None:
                     profile.level = level
-                if court_preference is not None:
-                    profile.court_preference = court_preference
+                if preference is not None:
+                    profile.court_preference = preference
             profiles[format_id] = profile
         return profiles
 
