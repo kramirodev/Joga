@@ -21,6 +21,16 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function sessionPayload(accessToken = "access-2", csrfToken = "csrf-2") {
+  return {
+    access_token: accessToken,
+    access_expires_at: "2026-11-07T13:00:00Z",
+    csrf_token: csrfToken,
+    user: { id: "user-1", status: "active" },
+    capabilities: [],
+  };
+}
+
 describe("cliente HTTP do painel", () => {
   beforeEach(() => {
     clearAuthTokens();
@@ -431,6 +441,150 @@ describe("cliente HTTP do painel", () => {
     expect(listener).toHaveBeenCalledTimes(1);
 
     window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
+  it("repete o refresh uma vez quando recebe refresh_retry_required", async () => {
+    let refreshCalls = 0;
+    let orgCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/web/refresh")) {
+        refreshCalls += 1;
+        if (refreshCalls === 1) {
+          return jsonResponse({ detail: { code: "refresh_retry_required" } }, 401);
+        }
+        return jsonResponse(sessionPayload());
+      }
+      orgCalls += 1;
+      if (orgCalls === 1) {
+        return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+      }
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-2");
+      return jsonResponse({ organizations: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    const listener = vi.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+
+    const result = await api.listOrganizations();
+
+    expect(result.organizations).toEqual([]);
+    expect(refreshCalls).toBe(2);
+    expect(listener).not.toHaveBeenCalled();
+
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
+  it("não limpa os tokens quando o refresh segue transitório", async () => {
+    let refreshCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/web/refresh")) {
+        refreshCalls += 1;
+        return jsonResponse({ detail: { code: "refresh_retry_required" } }, 401);
+      }
+      return jsonResponse({ organizations: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    await expect(refreshSession()).rejects.toMatchObject({
+      status: 401,
+      code: "refresh_retry_required",
+    });
+    expect(refreshCalls).toBe(2);
+
+    await api.listOrganizations();
+
+    const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer access-1");
+  });
+
+  it("limpa os tokens quando a nova tentativa devolve refresh inválido", async () => {
+    let refreshCalls = 0;
+    let orgCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/web/refresh")) {
+        refreshCalls += 1;
+        const code = refreshCalls === 1 ? "refresh_retry_required" : "invalid_refresh_token";
+        return jsonResponse({ detail: { code } }, 401);
+      }
+      orgCalls += 1;
+      if (orgCalls === 1) {
+        return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+      }
+      return jsonResponse({ organizations: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    await expect(api.getOrganization("org-1")).rejects.toMatchObject({ status: 401 });
+    expect(refreshCalls).toBe(2);
+
+    await api.listOrganizations();
+
+    const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBeNull();
+  });
+
+  it("preserva os tokens e não anuncia sessão expirada quando a conta está suspensa", async () => {
+    let refreshCalls = 0;
+    let orgCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/auth/web/refresh")) {
+        refreshCalls += 1;
+        return jsonResponse({ detail: { code: "account_suspended" } }, 401);
+      }
+      orgCalls += 1;
+      if (orgCalls === 1) {
+        return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+      }
+      return jsonResponse({ organizations: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    const listener = vi.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+
+    await expect(api.getOrganization("org-1")).rejects.toMatchObject({
+      status: 401,
+      code: "account_suspended",
+    });
+    expect(refreshCalls).toBe(1);
+    expect(listener).not.toHaveBeenCalled();
+
+    await api.listOrganizations();
+
+    const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer access-1");
+
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+  });
+
+  it("compartilha um único refresh entre requisições concorrentes", async () => {
+    let refreshCalls = 0;
+    let orgCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/web/refresh")) {
+        refreshCalls += 1;
+        return jsonResponse(sessionPayload());
+      }
+      orgCalls += 1;
+      if (orgCalls <= 2) {
+        return jsonResponse({ detail: { code: "invalid_token" } }, 401);
+      }
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-2");
+      return jsonResponse({ organizations: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    const [first, second] = await Promise.all([api.listOrganizations(), api.listOrganizations()]);
+
+    expect(first.organizations).toEqual([]);
+    expect(second.organizations).toEqual([]);
+    expect(refreshCalls).toBe(1);
   });
 
   it("captura o X-Request-ID para referência de suporte", async () => {

@@ -572,6 +572,10 @@ export function formatError(error: unknown): string {
       return "Notificação não encontrada ou já pertence a outro operador.";
     case "csrf_failed":
       return "Sessão inválida. Recarregue a página e entre novamente.";
+    case "refresh_retry_required":
+      return "Renovando sessão…";
+    case "account_suspended":
+      return "Sua conta está suspensa. Fale com o suporte para mais informações.";
     case "invalid_refresh_token":
     case "refresh_reuse_detected":
       return "Sua sessão expirou. Entre novamente.";

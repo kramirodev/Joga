@@ -82,6 +82,16 @@ describe("format", () => {
     );
   });
 
+  it("trata a renovação transitória sem anunciar sessão expirada", () => {
+    expect(formatError(new ApiError(401, "refresh_retry_required"))).toBe("Renovando sessão…");
+    expect(formatError(new ApiError(401, "account_suspended"))).toBe(
+      "Sua conta está suspensa. Fale com o suporte para mais informações.",
+    );
+    expect(formatError(new ApiError(401, "invalid_refresh_token"))).toBe(
+      "Sua sessão expirou. Entre novamente.",
+    );
+  });
+
   it("informa o tempo exato de espera em rate_limited", () => {
     expect(formatError(new ApiError(429, "rate_limited", undefined, null, [], 45))).toBe(
       "Muitas tentativas. Tente novamente em 45 segundos.",
