@@ -12,6 +12,7 @@ import { api, ApiError } from '../api/client';
 import type {
   ChatMessage,
   Clan,
+  ClanInvite as ClanInviteData,
   ClanMember,
   ClanRanking as ClanRankingData,
   ModerationAction,
@@ -22,12 +23,16 @@ import type {
 } from '../api/types';
 import { useApp } from '../state/app';
 import {
+  clanUpdatePatch,
   displayClanTag,
+  inviteExpiryLabel,
+  isAdminRole,
   isDuplicateReport,
   isOwnerRole,
   isReportableMessage,
   joinPolicyExplanation,
   joinPolicyLabel,
+  matchesSearch,
   memberDisplayName,
   mergeChatRows,
   myRoleLabel,
@@ -517,7 +522,7 @@ function ClanProfile() {
           {
             icon: 'gear' as const,
             title: 'Configurações do clã',
-            sub: 'Membros, papéis e saída',
+            sub: 'Editar nome, descrição e entrada',
             go: 'clan-settings',
           },
         ].map((item, index, all) => (
@@ -554,12 +559,16 @@ function joinErrorMessage(code: string): string {
   return map[code] ?? 'Não foi possível entrar no clã. Tente novamente.';
 }
 
+type ClanOpenFilter = 'all' | 'open' | 'closed';
+
 function ClanDiscovery() {
   const nav = useNav();
   const { session, clan: myClan, loadClan } = useApp();
   const token = session?.accessToken ?? null;
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
+  const [openFilter, setOpenFilter] = useState<ClanOpenFilter>('all');
+  const [withSlots, setWithSlots] = useState(false);
   const [result, setResult] = useState<{
     key: string;
     status: 'ready' | 'error';
@@ -584,7 +593,7 @@ function ClanDiscovery() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const requestKey = `${appliedQuery}|${retryTick}`;
+  const requestKey = `${appliedQuery}|${openFilter}|${withSlots ? 'slots' : 'any'}|${retryTick}`;
   const status = result?.key === requestKey ? result.status : 'loading';
   const clans = result?.key === requestKey && result.status === 'ready' ? result.clans : [];
 
@@ -594,7 +603,11 @@ function ClanDiscovery() {
     }
     const run = ++requestSeq.current;
     api.clans
-      .list(token, appliedQuery || undefined)
+      .list(token, {
+        q: appliedQuery || undefined,
+        open: openFilter === 'all' ? undefined : openFilter === 'open',
+        has_slots: withSlots || undefined,
+      })
       .then((response) => {
         if (run !== requestSeq.current) {
           return;
@@ -607,7 +620,7 @@ function ClanDiscovery() {
         }
         setResult({ key: requestKey, status: 'error', clans: [] });
       });
-  }, [token, appliedQuery, requestKey]);
+  }, [token, appliedQuery, openFilter, withSlots, requestKey]);
 
   const joinNow = useCallback(
     async (target: Clan) => {
@@ -651,6 +664,13 @@ function ClanDiscovery() {
 
   const searching = status === 'loading';
   const empty = status === 'ready' && clans.length === 0;
+  const hasFilters = appliedQuery.length > 0 || openFilter !== 'all' || withSlots;
+  const clearFilters = () => {
+    setQuery('');
+    setAppliedQuery('');
+    setOpenFilter('all');
+    setWithSlots(false);
+  };
 
   if (!token) {
     return (
@@ -684,25 +704,43 @@ function ClanDiscovery() {
         />
       </Field>
       {query.trim().length > 0 ? (
-        <TextBtn muted onPress={() => setQuery('')}>
+        <TextBtn
+          muted
+          onPress={() => {
+            setQuery('');
+            setAppliedQuery('');
+          }}
+        >
           Limpar busca
         </TextBtn>
       ) : null}
       <ChipRow>
-        <Chip disabled lock accessibilityLabel="Filtro Aberto, em breve">
+        <Chip
+          on={openFilter === 'open'}
+          onPress={() => setOpenFilter((current) => (current === 'open' ? 'all' : 'open'))}
+          accessibilityLabel="Filtrar clãs abertos"
+        >
           Aberto
         </Chip>
-        <Chip disabled lock accessibilityLabel="Filtro Fechado, em breve">
+        <Chip
+          on={openFilter === 'closed'}
+          onPress={() => setOpenFilter((current) => (current === 'closed' ? 'all' : 'closed'))}
+          accessibilityLabel="Filtrar clãs fechados"
+        >
           Fechado
         </Chip>
-        <Chip disabled lock accessibilityLabel="Filtro Com vaga, em breve">
+        <Chip
+          on={withSlots}
+          onPress={() => setWithSlots((current) => !current)}
+          accessibilityLabel="Filtrar clãs com vaga"
+        >
           Com vaga
         </Chip>
-        <Chip disabled lock accessibilityLabel="Filtro por esporte, em breve">
+        <Chip disabled lock accessibilityLabel="Filtro por esporte indisponível">
           Esporte
         </Chip>
       </ChipRow>
-      <Txt variant="tiny">Filtros em breve. Busque por nome ou tag.</Txt>
+      <Txt variant="tiny">Filtro por esporte ainda não disponível.</Txt>
 
       {joinError ? (
         <View style={{ gap: 6 }}>
@@ -737,7 +775,7 @@ function ClanDiscovery() {
         ? // O callback só roda no toque; `joinNow` lê o lock em handler, nunca no render.
           // eslint-disable-next-line react-hooks/refs
           clans.map((clan) => {
-            const isMine = myClan?.id === clan.id || clan.my_role !== null;
+            const isMine = myClan?.id === clan.id || clan.is_member || clan.my_role !== null;
             const full = clan.members >= clan.max_members;
             const policy = clan.join_policy;
             const busy = busyId === clan.id;
@@ -808,20 +846,20 @@ function ClanDiscovery() {
 
       {empty ? (
         <EmptyState
-          title={appliedQuery ? `Nenhum clã para “${appliedQuery}”` : 'Nenhum clã encontrado'}
+          title={hasFilters ? 'Nenhum clã com esses filtros' : 'Nenhum clã encontrado'}
           text={
-            appliedQuery
-              ? 'Confira a tag ou limpe a busca.'
+            hasFilters
+              ? 'Ajuste a busca ou limpe os filtros para ver todos os clãs.'
               : 'Ainda não há clãs visíveis. Você pode criar o seu.'
           }
           actions={
             <>
-              {appliedQuery ? (
-                <Btn tone="ghost" onPress={() => setQuery('')}>
-                  Limpar busca
+              {hasFilters ? (
+                <Btn tone="primary" onPress={clearFilters}>
+                  Limpar filtros
                 </Btn>
               ) : null}
-              <Btn tone="primary" go="clan-create">
+              <Btn tone={hasFilters ? 'ghost' : 'primary'} go="clan-create">
                 Criar clã
               </Btn>
             </>
@@ -987,7 +1025,7 @@ function ClanCreate() {
         <Kv label="Entrada" value="Por aprovação" />
       </Card>
       <Notice tone="blue" icon="info">
-        Entrada por aprovação. Clãs abertos em breve.
+        O clã começa com entrada por aprovação. Você pode mudar isso nas configurações.
       </Notice>
       {formError ? (
         <Notice tone="orange" icon="alert">
@@ -1382,6 +1420,7 @@ function ClanMembers() {
   const myRole =
     clan?.my_role ?? members.find((member) => member.user_id === session?.userId)?.role ?? null;
   const amOwner = isOwnerRole(myRole);
+  const canInvite = amOwner || myRole === 'admin';
   const officers = members.filter((member) => member.role === 'admin').length;
   const nameOf = (member: ClanMember) =>
     memberDisplayName(member, {
@@ -1677,9 +1716,11 @@ function ClanMembers() {
           );
         })}
       </CardList>
-      <Btn tone="ghost" disabled>
-        Convites em breve
-      </Btn>
+      {canInvite ? (
+        <Btn tone="primary" icon="plus" go="clan-invite">
+          Convidar membros
+        </Btn>
+      ) : null}
       <Notice tone="blue" icon="info">
         Dono e oficiais podem remover membros. O dono pode transferir a liderança.
       </Notice>
@@ -1690,15 +1731,133 @@ function ClanMembers() {
   );
 }
 
+type ClanDraftState = {
+  name: string;
+  description: string;
+  join_policy: string;
+};
+
+/**
+ * Rascunho da edição sobrevive à troca de aba. O app só mantém montada a pilha
+ * da aba ativa; este cache em memória (sem persistência) devolve o rascunho ao
+ * reabrir a mesma tela. Nunca contém tag: é o mesmo formato do PATCH.
+ */
+let clanSettingsDraft: {
+  clanId: string;
+  draft: ClanDraftState;
+  base: ClanDraftState;
+} | null = null;
+
+function ClanPolicyOption({
+  label,
+  explanation,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  explanation: string;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const { palette } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected, disabled }}
+      accessibilityLabel={`${label}. ${explanation}`}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: 56,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        borderWidth: selected ? 2 : 1.5,
+        borderColor: selected ? palette.ink : palette.lineStrong,
+        borderRadius: 12,
+        backgroundColor: selected ? palette.surface2 : palette.surface,
+        paddingHorizontal: selected ? 11 : 12,
+        paddingVertical: 10,
+        opacity: disabled ? 0.55 : pressed ? 0.9 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          borderWidth: 1.5,
+          borderColor: selected ? palette.ink : palette.lineStrong,
+          backgroundColor: selected ? palette.lime : 'transparent',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {selected ? <Icon name="check" size={14} color={palette.ink} /> : null}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14, lineHeight: 18, fontWeight: '800', color: palette.ink }}>
+          {label}
+        </Text>
+        <Text style={{ fontSize: 13, lineHeight: 18, color: palette.muted }}>{explanation}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function ClanSettings() {
   const nav = useNav();
-  const { clan, session, loadClan } = useApp();
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { clan, session, loadClan, setClan } = useApp();
+  const cached = clan && clanSettingsDraft?.clanId === clan.id ? clanSettingsDraft : null;
+  const initialDraft =
+    cached?.draft ??
+    (clan
+      ? {
+          name: clan.name,
+          description: clan.description ?? '',
+          join_policy: clan.join_policy,
+        }
+      : null);
+  const initialBase = cached?.base ?? initialDraft;
+  const [name, setName] = useState(initialDraft?.name ?? '');
+  const [description, setDescription] = useState(initialDraft?.description ?? '');
+  const [policy, setPolicy] = useState(initialDraft?.join_policy ?? 'approval');
+  const [base, setBase] = useState<ClanDraftState | null>(initialBase);
+  const [attempted, setAttempted] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [fetching, setFetching] = useState(!clan);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+  const saveLock = useRef(false);
   const leaveLock = useRef(false);
+  const initializedFor = useRef<string | null>(clan?.id ?? null);
   const mounted = useRef(true);
-  const isOwner = clan?.my_role === 'owner';
+  const canEdit = isAdminRole(clan?.my_role);
+  const isOwner = isOwnerRole(clan?.my_role);
+  const nameValue = name.trim();
+  const descriptionValue = description.trim();
+  const nameValid = nameValue.length >= 3 && nameValue.length <= 40;
+  const dirty =
+    !!base &&
+    (nameValue !== base.name.trim() ||
+      descriptionValue !== base.description.trim() ||
+      policy !== base.join_policy);
+  const canSave = canEdit && dirty && nameValid && !saving;
+  const shownNameError =
+    nameError ??
+    ((attempted || dirty) && !nameValid
+      ? nameValue.length === 0
+        ? 'Informe o nome do clã.'
+        : 'Use de 3 a 40 caracteres.'
+      : null);
 
   useEffect(() => {
     mounted.current = true;
@@ -1707,13 +1866,85 @@ function ClanSettings() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    if (clan) {
+      return;
+    }
+    loadClan()
+      .then(() => {
+        if (active) {
+          setFetching(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setFetching(false);
+          setLoadFailed(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [clan, loadClan, retryTick]);
+
+  useEffect(() => {
+    if (!clan || initializedFor.current === clan.id) {
+      return;
+    }
+    initializedFor.current = clan.id;
+    const next = {
+      name: clan.name,
+      description: clan.description ?? '',
+      join_policy: clan.join_policy,
+    };
+    setName(next.name);
+    setDescription(next.description);
+    setPolicy(next.join_policy);
+    setBase(next);
+  }, [clan]);
+
+  useEffect(() => {
+    if (!clan || !base || !dirty) {
+      clanSettingsDraft = null;
+      return;
+    }
+    clanSettingsDraft = {
+      clanId: clan.id,
+      draft: { name, description, join_policy: policy },
+      base,
+    };
+  }, [clan, base, dirty, name, description, policy]);
+
+  const requestExit = useCallback(() => {
+    if (saving) {
+      return;
+    }
+    if (dirty) {
+      setDiscardOpen(true);
+      return;
+    }
+    nav.back();
+  }, [dirty, nav, saving]);
+
+  useEffect(() => {
+    if (!dirty || nav.id !== 'clan-settings') {
+      return;
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setDiscardOpen(true);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [dirty, nav.id]);
+
   const leave = async () => {
     if (!session || !clan || leaveLock.current) {
       return;
     }
     leaveLock.current = true;
-    setBusy(true);
-    setError(null);
+    setLeaveBusy(true);
+    setLeaveError(null);
     try {
       await api.clans.leave(session.accessToken, clan.id);
       try {
@@ -1729,7 +1960,7 @@ function ClanSettings() {
     } catch (cause) {
       if (mounted.current) {
         const code = apiErrorCode(cause);
-        setError(permissionError(code));
+        setLeaveError(permissionError(code));
         if (code === 'transfer_ownership_first') {
           loadClan().catch(() => {
             // A tela de membros recarrega o papel real ao abrir.
@@ -1739,29 +1970,139 @@ function ClanSettings() {
     } finally {
       leaveLock.current = false;
       if (mounted.current) {
-        setBusy(false);
+        setLeaveBusy(false);
       }
     }
   };
 
+  const save = async () => {
+    setAttempted(true);
+    if (!clan || !session || !base || !canEdit || !nameValid || saveLock.current) {
+      return;
+    }
+    const patch = clanUpdatePatch(base, {
+      name,
+      description,
+      join_policy: policy,
+    });
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+    saveLock.current = true;
+    setSaving(true);
+    setError(null);
+    setNameError(null);
+    try {
+      const updated = await api.clans.update(session.accessToken, clan.id, patch);
+      if (!mounted.current) {
+        return;
+      }
+      setClan(updated);
+      const next = {
+        name: updated.name,
+        description: updated.description ?? '',
+        join_policy: updated.join_policy,
+      };
+      setName(next.name);
+      setDescription(next.description);
+      setPolicy(next.join_policy);
+      setBase(next);
+      setAttempted(false);
+      clanSettingsDraft = null;
+      nav.toast('Clã atualizado.');
+      AccessibilityInfo.announceForAccessibility('Clã atualizado');
+    } catch (cause) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(cause);
+      const forbidden =
+        (cause instanceof ApiError && cause.status === 403) ||
+        code === 'owner_required' ||
+        code === 'admin_required';
+      if (code === 'name_taken' || code === 'name_or_tag_taken') {
+        setNameError('Já existe um clã com esse nome.');
+      } else if (code === 'name_invalid') {
+        setNameError('Use de 3 a 40 caracteres.');
+      } else if (code === 'description_invalid') {
+        setError('A descrição deve ter até 280 caracteres.');
+      } else if (code === 'join_policy_invalid') {
+        setError('Escolha uma entrada válida.');
+      } else if (forbidden) {
+        setError('Só o Dono e os Oficiais podem editar o clã.');
+        loadClan().catch(() => {
+          // A tela mantém o rascunho e volta à leitura quando o clã recarrega.
+        });
+      } else {
+        setError('Não foi possível salvar. Tente de novo.');
+      }
+    } finally {
+      saveLock.current = false;
+      if (mounted.current) {
+        setSaving(false);
+      }
+    }
+  };
+
+  const discard = () => {
+    setDiscardOpen(false);
+    clanSettingsDraft = null;
+    if (base) {
+      setName(base.name);
+      setDescription(base.description);
+      setPolicy(base.join_policy);
+    }
+    nav.back();
+  };
+
   if (!clan) {
+    if (loadFailed) {
+      return (
+        <Page title="Configurações do clã">
+          <StateScreen
+            icon="wifi-off"
+            title="Não foi possível carregar o clã"
+            text="Verifique a conexão e tente novamente."
+            actions={
+              <Btn
+                tone="primary"
+                onPress={() => {
+                  setLoadFailed(false);
+                  setFetching(true);
+                  setRetryTick((value) => value + 1);
+                }}
+              >
+                Tentar novamente
+              </Btn>
+            }
+          />
+        </Page>
+      );
+    }
+    if (!fetching) {
+      return (
+        <Page title="Configurações do clã">
+          <EmptyState
+            title="Você não está em um clã"
+            text="Entre em um clã ou crie o seu para acessar as configurações."
+            actions={
+              <Btn tone="primary" go="clan-discovery">
+                Descobrir clãs
+              </Btn>
+            }
+          />
+        </Page>
+      );
+    }
     return (
-      <Page title="Clã">
-        <EmptyState
-          title="Você não está em um clã"
-          text="Entre em um clã ou crie o seu para acessar as configurações."
-          actions={
-            <Btn tone="primary" go="clan-discovery">
-              Descobrir clãs
-            </Btn>
-          }
-        />
+      <Page title="Configurações do clã">
+        <LoadingState label="Buscando seu clã." variant="clan" />
       </Page>
     );
   }
 
   return (
-    <Page title="Configurações do clã">
+    <Page title="Configurações do clã" onBack={requestExit}>
       <Card>
         <Row between>
           <Txt variant="h2" numberOfLines={2} style={{ flex: 1 }}>
@@ -1772,22 +2113,124 @@ function ClanSettings() {
           </Badge>
         </Row>
         <Txt variant="tiny" style={{ marginTop: 4 }}>
-          {displayClanTag(clan.tag)} · {clan.members}/{clan.max_members} membros ·{' '}
-          {number(clan.trophies)} troféus
+          {clan.members}/{clan.max_members} membros · {number(clan.trophies)} troféus
         </Txt>
         <Txt variant="sub" style={{ marginTop: 8 }}>
           {joinPolicyExplanation(clan.join_policy)}
         </Txt>
       </Card>
-      <Notice tone="blue" icon="info">
-        Edição do clã em breve.
-      </Notice>
+
+      <Card>
+        <View accessible accessibilityLabel="Tag do clã, não editável">
+          <Row between>
+            <Txt variant="tiny">Tag</Txt>
+            <Txt variant="h3">{displayClanTag(clan.tag)}</Txt>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 4 }}>
+            A tag não pode ser alterada.
+          </Txt>
+        </View>
+      </Card>
+
+      {canEdit ? (
+        <>
+          <Field label="Nome do clã">
+            <Input
+              value={name}
+              onChangeText={(value) => {
+                setName(value);
+                setNameError(null);
+                setError(null);
+              }}
+              maxLength={40}
+              placeholder="Nome do clã"
+              autoCorrect={false}
+              accessibilityLabel="Nome do clã"
+            />
+          </Field>
+          <Row between>
+            <Txt variant="tiny">{`${name.length}/40`}</Txt>
+            {shownNameError ? (
+              <Txt variant="tiny" color="red" align="right" style={{ flexShrink: 1 }}>
+                {shownNameError}
+              </Txt>
+            ) : null}
+          </Row>
+          <Field label="Descrição">
+            <Textarea
+              value={description}
+              onChangeText={(value) => {
+                setDescription(value);
+                setError(null);
+              }}
+              maxLength={280}
+              placeholder="O que o clã joga e onde"
+              accessibilityLabel="Descrição do clã"
+            />
+          </Field>
+          <Txt variant="tiny">{`${description.length}/280`}</Txt>
+          <Field label="Entrada no clã">
+            <View style={{ gap: 8 }}>
+              <ClanPolicyOption
+                label="Aberto"
+                explanation="Qualquer pessoa entra na hora."
+                selected={policy === 'open'}
+                disabled={saving}
+                onPress={() => {
+                  setPolicy('open');
+                  setError(null);
+                }}
+              />
+              <ClanPolicyOption
+                label="Aprovação"
+                explanation="Você aprova cada pedido de entrada."
+                selected={policy === 'approval'}
+                disabled={saving}
+                onPress={() => {
+                  setPolicy('approval');
+                  setError(null);
+                }}
+              />
+              <ClanPolicyOption
+                label="Fechado"
+                explanation="Só entra quem recebe convite."
+                selected={policy === 'closed'}
+                disabled={saving}
+                onPress={() => {
+                  setPolicy('closed');
+                  setError(null);
+                }}
+              />
+            </View>
+          </Field>
+          {error ? (
+            <Notice tone="orange" icon="alert">
+              {error}
+            </Notice>
+          ) : null}
+          <Btn tone="primary" onPress={() => void save()} disabled={!canSave}>
+            {saving ? 'Salvando.' : 'Salvar alterações'}
+          </Btn>
+        </>
+      ) : (
+        <>
+          <Notice tone="blue" icon="shield">
+            Só o Dono e os Oficiais podem editar o clã.
+          </Notice>
+          <Card>
+            <Kv label="Nome" value={clan.name} />
+            <Kv label="Descrição" value={clan.description ?? 'Sem descrição.'} />
+            <Kv label="Entrada" value={joinPolicyLabel(clan.join_policy)} />
+          </Card>
+        </>
+      )}
+
       <Btn tone="primary" go="clan-members">
         Membros e cargos
       </Btn>
-      {error ? (
+      {leaveError ? (
         <Notice tone="orange" icon="alert">
-          {error}
+          {leaveError}
         </Notice>
       ) : null}
       {isOwner ? (
@@ -1811,8 +2254,8 @@ function ClanSettings() {
             <Btn tone="ghost" onPress={() => setConfirmLeave(false)}>
               Ficar no clã
             </Btn>
-            <Btn tone="danger" onPress={leave} disabled={busy}>
-              {busy ? 'Saindo…' : 'Sair do clã'}
+            <Btn tone="danger" onPress={leave} disabled={leaveBusy}>
+              {leaveBusy ? 'Saindo…' : 'Sair do clã'}
             </Btn>
           </BtnRow>
         </>
@@ -1821,6 +2264,24 @@ function ClanSettings() {
           Sair do clã
         </Btn>
       )}
+
+      <BottomSheetFrame
+        visible={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        title="Descartar alterações?"
+        subtitle="Você alterou o clã e ainda não salvou."
+        accessibilityLabel="Descartar alterações"
+        footer={
+          <BtnRow>
+            <Btn tone="primary" onPress={() => setDiscardOpen(false)}>
+              Continuar editando
+            </Btn>
+            <Btn tone="danger" onPress={discard}>
+              Descartar
+            </Btn>
+          </BtnRow>
+        }
+      />
     </Page>
   );
 }
@@ -2776,43 +3237,242 @@ function Ranking() {
   );
 }
 
+type ClanInviteBlock = {
+  text: string;
+  showClan?: boolean;
+  hideActions?: boolean;
+  retryable?: boolean;
+};
+
 function Notifications() {
   const { palette } = useTheme();
   const nav = useNav();
   const {
+    session,
     notifications,
     unreadNotifications,
     loadNotifications,
     markNotificationRead,
     markAllNotificationsRead,
+    loadClan,
   } = useApp();
+  const token = session?.accessToken ?? null;
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [invites, setInvites] = useState<ClanInviteData[]>([]);
+  const [invitesFailed, setInvitesFailed] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState<string | null>(null);
+  const [inviteBusyAction, setInviteBusyAction] = useState<'accept' | 'decline' | null>(null);
+  const [inviteErrors, setInviteErrors] = useState<Record<string, string>>({});
+  const [inviteBlocks, setInviteBlocks] = useState<Record<string, ClanInviteBlock>>({});
+  const [joined, setJoined] = useState<{ id: string; clanName: string }[]>([]);
+  const inviteLock = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const actionsLocked = inviteBusy !== null;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const loadInvites = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+    try {
+      const result = await api.clans.receivedInvites(token);
+      if (mounted.current) {
+        setInvites(result.invites);
+        setInvitesFailed(false);
+      }
+    } catch {
+      if (mounted.current) {
+        setInvitesFailed(true);
+      }
+    }
+  }, [token]);
 
   useEffect(() => {
     let active = true;
-    loadNotifications()
-      .catch(() => {
-        if (active) {
-          setFailed(true);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
+    const invitesRequest = token
+      ? api.clans.receivedInvites(token).then((result) => result.invites)
+      : Promise.resolve<ClanInviteData[]>([]);
+    Promise.allSettled([loadNotifications(), invitesRequest]).then(([feed, inviteResult]) => {
+      if (!active) {
+        return;
+      }
+      if (inviteResult.status === 'fulfilled') {
+        setInvites(inviteResult.value);
+        setInvitesFailed(false);
+      } else {
+        setInvitesFailed(true);
+      }
+      setFailed(feed.status === 'rejected');
+      setLoading(false);
+    });
     return () => {
       active = false;
     };
-  }, [loadNotifications]);
+  }, [loadNotifications, token]);
 
   const retry = () => {
     setLoading(true);
     setFailed(false);
-    loadNotifications()
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+    setInvitesFailed(false);
+    Promise.allSettled([loadNotifications(), loadInvites()]).then(([feed]) => {
+      if (!mounted.current) {
+        return;
+      }
+      setFailed(feed.status === 'rejected');
+      setLoading(false);
+    });
+  };
+
+  const clearInviteState = (inviteId: string) => {
+    setInviteErrors((current) => {
+      const next = { ...current };
+      delete next[inviteId];
+      return next;
+    });
+    setInviteBlocks((current) => {
+      const next = { ...current };
+      delete next[inviteId];
+      return next;
+    });
+  };
+
+  const blockInvite = (inviteId: string, block: ClanInviteBlock) => {
+    setInviteErrors((current) => {
+      const next = { ...current };
+      delete next[inviteId];
+      return next;
+    });
+    setInviteBlocks((current) => ({ ...current, [inviteId]: block }));
+  };
+
+  const dropInvite = (inviteId: string) => {
+    setInvites((current) => current.filter((item) => item.id !== inviteId));
+    clearInviteState(inviteId);
+  };
+
+  const markInviteNotificationRead = (inviteId: string) => {
+    const item = notifications.find(
+      (notification) =>
+        (notification.data?.clan_invite_id ?? notification.data?.invite_id) === inviteId &&
+        !notification.read_at,
+    );
+    if (item) {
+      markNotificationRead(item.id).catch(() => undefined);
+    }
+  };
+
+  const accept = async (invite: ClanInviteData) => {
+    if (!token || inviteLock.current) {
+      return;
+    }
+    inviteLock.current = invite.id;
+    setInviteBusy(invite.id);
+    setInviteBusyAction('accept');
+    clearInviteState(invite.id);
+    try {
+      const updated = await api.clans.acceptInvite(token, invite.id);
+      if (!mounted.current) {
+        return;
+      }
+      const clanName = updated.name || invite.clan_name;
+      setInvites((current) => current.filter((item) => item.id !== invite.id));
+      setJoined((current) => [...current, { id: invite.id, clanName }]);
+      markInviteNotificationRead(invite.id);
+      AccessibilityInfo.announceForAccessibility(`Você entrou no clã ${clanName}`);
+      try {
+        await loadClan();
+      } catch {
+        // O perfil do clã refaz a leitura quando aberto.
+      }
+      loadNotifications().catch(() => undefined);
+    } catch (cause) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(cause);
+      if (code === 'already_in_clan') {
+        blockInvite(invite.id, { text: 'Você já está em um clã.', showClan: true });
+      } else if (code === 'clan_full') {
+        blockInvite(invite.id, { text: 'O clã está cheio.' });
+      } else if (code === 'clan_cooldown') {
+        blockInvite(invite.id, {
+          text: 'Você saiu de um clã há pouco. Tente novamente mais tarde.',
+          retryable: true,
+        });
+      } else if (code === 'invite_expired') {
+        blockInvite(invite.id, { text: 'Este convite expirou.', hideActions: true });
+      } else if (code === 'invite_not_pending') {
+        blockInvite(invite.id, {
+          text: 'Este convite não está mais disponível.',
+          hideActions: true,
+        });
+      } else if (code === 'invite_not_found' || code === 'not_found') {
+        dropInvite(invite.id);
+        nav.toast('Este convite não está mais disponível.');
+      } else {
+        setInviteErrors((current) => ({
+          ...current,
+          [invite.id]: 'Não foi possível aceitar. Tente de novo.',
+        }));
+      }
+    } finally {
+      inviteLock.current = null;
+      if (mounted.current) {
+        setInviteBusy(null);
+        setInviteBusyAction(null);
+      }
+    }
+  };
+
+  const decline = async (invite: ClanInviteData) => {
+    if (!token || inviteLock.current) {
+      return;
+    }
+    inviteLock.current = invite.id;
+    setInviteBusy(invite.id);
+    setInviteBusyAction('decline');
+    clearInviteState(invite.id);
+    try {
+      await api.clans.declineInvite(token, invite.id);
+      if (!mounted.current) {
+        return;
+      }
+      dropInvite(invite.id);
+      markInviteNotificationRead(invite.id);
+      AccessibilityInfo.announceForAccessibility('Convite recusado');
+    } catch (cause) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(cause);
+      if (
+        code === 'invite_expired' ||
+        code === 'invite_not_pending' ||
+        code === 'invite_not_found' ||
+        code === 'not_found'
+      ) {
+        dropInvite(invite.id);
+        nav.toast('Este convite não está mais disponível.');
+      } else {
+        setInviteErrors((current) => ({
+          ...current,
+          [invite.id]: 'Não foi possível recusar. Tente de novo.',
+        }));
+      }
+    } finally {
+      inviteLock.current = null;
+      if (mounted.current) {
+        setInviteBusy(null);
+        setInviteBusyAction(null);
+      }
+    }
   };
 
   const open = (item: Notification) => {
@@ -2833,6 +3493,15 @@ function Notifications() {
       nav.go('result-review', matchId ? { matchId } : undefined);
       return;
     }
+    // Convite de clã é tratado antes de `invite`: ele tem ação própria na
+    // seção "Convites de clã" e nunca deve abrir o convite de lobby.
+    if (item.kind.includes('clan')) {
+      if (item.kind.includes('invite')) {
+        return;
+      }
+      nav.go('clan');
+      return;
+    }
     if (item.kind.includes('invite')) {
       const inviteId =
         typeof data.invite_id === 'string'
@@ -2847,9 +3516,6 @@ function Notifications() {
       nav.go('lobby-detail', matchId ? { matchId } : undefined);
       return;
     }
-    if (item.kind.includes('clan')) {
-      nav.go('clan');
-    }
   };
 
   if (loading) {
@@ -2860,7 +3526,7 @@ function Notifications() {
     );
   }
 
-  if (failed) {
+  if (failed && invitesFailed) {
     return (
       <Page title="Notificações">
         <StateScreen
@@ -2877,7 +3543,7 @@ function Notifications() {
     );
   }
 
-  if (!notifications.length) {
+  if (!notifications.length && !invites.length && !joined.length && !invitesFailed && !failed) {
     return (
       <Page title="Notificações">
         <EmptyState
@@ -2894,64 +3560,175 @@ function Notifications() {
       sub={unreadNotifications > 0 ? `${unreadNotifications} não lidas` : 'Tudo em dia'}
     >
       <Row between>
-        <Txt variant="tiny">Recentes</Txt>
-        {unreadNotifications > 0 ? (
-          <TextBtn onPress={() => markAllNotificationsRead().catch(() => undefined)}>
-            Marcar lidas
+        <Txt variant="h3">Convites de clã{invites.length > 0 ? ` (${invites.length})` : ''}</Txt>
+        {invitesFailed ? (
+          <TextBtn muted onPress={() => void loadInvites()}>
+            Tentar novamente
           </TextBtn>
-        ) : (
-          <Txt variant="tiny">Sem pendências</Txt>
-        )}
+        ) : null}
       </Row>
-      <CardList>
-        {notifications.map((item, index) => {
-          const unread = !item.read_at;
-          const decision =
-            item.kind === 'moderation_appeal_result' && typeof item.data?.decision === 'string'
-              ? item.data.decision
-              : null;
-          const decisionLabel = appealDecisionLabel(decision);
-          return (
-            <ListRow
-              key={item.id}
-              last={index === notifications.length - 1}
-              onPress={() => open(item)}
-            >
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: unread ? palette.lime : palette.lineStrong,
-                }}
-              />
-              <View style={{ flex: 1 }}>
-                <Row between>
+      {invitesFailed ? (
+        <Notice tone="orange" icon="alert">
+          Não foi possível carregar os convites de clã.
+        </Notice>
+      ) : null}
+      {!invitesFailed && invites.length === 0 && joined.length === 0 ? (
+        <Card>
+          <Txt variant="tiny">Nenhum convite de clã no momento.</Txt>
+        </Card>
+      ) : null}
+      {joined.map((item) => (
+        <Card key={`joined-${item.id}`}>
+          <Txt variant="sub">Você entrou no clã {item.clanName}.</Txt>
+          <Row style={{ marginTop: 8 }}>
+            <Btn tone="primary" small block={false} onPress={() => nav.go('clan')}>
+              Abrir clã
+            </Btn>
+          </Row>
+        </Card>
+      ))}
+      {invites.length > 0 ? (
+        <CardList>
+          {invites.map((invite, index) => {
+            const inviter = invite.inviter_display_name ?? 'Jogador';
+            const expiry = inviteExpiryLabel(invite.expires_at);
+            const blocked = inviteBlocks[invite.id];
+            const rowError = inviteErrors[invite.id];
+            const busy = inviteBusy === invite.id;
+            return (
+              <ListRow key={invite.id} last={index === invites.length - 1}>
+                <IdentityBadge
+                  size={34}
+                  identity={identityFromSeed(invite.inviter_id)}
+                  palette={palette}
+                />
+                <View style={{ flex: 1, gap: 6 }}>
                   <Text
-                    numberOfLines={2}
-                    style={{ flex: 1, fontSize: 14, fontWeight: '800', color: palette.ink }}
+                    numberOfLines={3}
+                    style={{ fontSize: 14, lineHeight: 19, fontWeight: '800', color: palette.ink }}
                   >
-                    {item.title}
+                    {`${inviter} convidou você para o clã ${invite.clan_name}`}
                   </Text>
-                  <Txt variant="tiny">{shortDateTime(item.created_at)}</Txt>
-                </Row>
-                <Text
-                  numberOfLines={3}
-                  style={{ fontSize: 13, color: palette.muted, marginTop: 2 }}
+                  <Txt variant="tiny">{expiry ?? 'Convite válido por 7 dias.'}</Txt>
+                  {blocked ? (
+                    <Txt variant="tiny" color="red">
+                      {blocked.text}
+                    </Txt>
+                  ) : null}
+                  {rowError ? (
+                    <Txt variant="tiny" color="red">
+                      {rowError}
+                    </Txt>
+                  ) : null}
+                  {blocked?.showClan ? (
+                    <TextBtn onPress={() => nav.go('clan')}>Ver meu clã</TextBtn>
+                  ) : null}
+                  {!blocked || !blocked.hideActions ? (
+                    <BtnRow>
+                      <Btn
+                        tone="primary"
+                        small
+                        disabled={actionsLocked || (!!blocked && !blocked.retryable)}
+                        onPress={() => void accept(invite)}
+                      >
+                        {busy && inviteBusyAction === 'accept' ? 'Aceitando.' : 'Aceitar'}
+                      </Btn>
+                      <Btn
+                        tone="ghost"
+                        small
+                        disabled={actionsLocked}
+                        onPress={() => void decline(invite)}
+                      >
+                        {busy && inviteBusyAction === 'decline' ? 'Recusando.' : 'Recusar'}
+                      </Btn>
+                    </BtnRow>
+                  ) : null}
+                </View>
+              </ListRow>
+            );
+          })}
+        </CardList>
+      ) : null}
+
+      {failed && notifications.length === 0 ? (
+        <View style={{ gap: 6 }}>
+          <Notice tone="orange" icon="alert">
+            Não foi possível carregar o restante das notificações.
+          </Notice>
+          <TextBtn onPress={retry}>Tentar novamente</TextBtn>
+        </View>
+      ) : null}
+
+      {notifications.length > 0 ? (
+        <>
+          <Row between>
+            <Txt variant="tiny">Recentes</Txt>
+            {unreadNotifications > 0 ? (
+              <TextBtn onPress={() => markAllNotificationsRead().catch(() => undefined)}>
+                Marcar lidas
+              </TextBtn>
+            ) : (
+              <Txt variant="tiny">Sem pendências</Txt>
+            )}
+          </Row>
+          {failed ? (
+            <Notice tone="orange" icon="alert">
+              Algumas notificações não carregaram.
+            </Notice>
+          ) : null}
+          <CardList>
+            {notifications.map((item, index) => {
+              const unread = !item.read_at;
+              const decision =
+                item.kind === 'moderation_appeal_result' && typeof item.data?.decision === 'string'
+                  ? item.data.decision
+                  : null;
+              const decisionLabel = appealDecisionLabel(decision);
+              return (
+                <ListRow
+                  key={item.id}
+                  last={index === notifications.length - 1}
+                  onPress={() => open(item)}
                 >
-                  {item.body}
-                </Text>
-                {decisionLabel ? (
-                  <View style={{ marginTop: 6 }}>
-                    <Badge tone={decision === 'ACCEPTED' ? 'green' : 'red'}>{decisionLabel}</Badge>
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: unread ? palette.lime : palette.lineStrong,
+                    }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Row between>
+                      <Text
+                        numberOfLines={2}
+                        style={{ flex: 1, fontSize: 14, fontWeight: '800', color: palette.ink }}
+                      >
+                        {item.title}
+                      </Text>
+                      <Txt variant="tiny">{shortDateTime(item.created_at)}</Txt>
+                    </Row>
+                    <Text
+                      numberOfLines={3}
+                      style={{ fontSize: 13, color: palette.muted, marginTop: 2 }}
+                    >
+                      {item.body}
+                    </Text>
+                    {decisionLabel ? (
+                      <View style={{ marginTop: 6 }}>
+                        <Badge tone={decision === 'ACCEPTED' ? 'green' : 'red'}>
+                          {decisionLabel}
+                        </Badge>
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
-              </View>
-              {unread ? <Badge tone="lime">NOVA</Badge> : null}
-            </ListRow>
-          );
-        })}
-      </CardList>
+                  {unread ? <Badge tone="lime">NOVA</Badge> : null}
+                </ListRow>
+              );
+            })}
+          </CardList>
+        </>
+      ) : null}
     </Page>
   );
 }
@@ -3627,24 +4404,401 @@ function BlockUser() {
   );
 }
 
+type PendingClanInvite = {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+};
+
 function ClanInvite() {
-  return (
-    <Page title="Convidar membros">
-      <StateScreen
-        icon="users"
-        title="Convites em breve"
-        text="Entre pela descoberta: clãs abertos entram direto; os demais recebem pedido."
-        actions={
-          <>
+  const nav = useNav();
+  const { palette } = useTheme();
+  const { clan, clanMembers, friends, session, loadSocial } = useApp();
+  const token = session?.accessToken ?? null;
+  const [query, setQuery] = useState('');
+  const [friendsLoading, setFriendsLoading] = useState(friends.length === 0);
+  const [friendsFailed, setFriendsFailed] = useState(false);
+  const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [rowBlocks, setRowBlocks] = useState<Record<string, string>>({});
+  const [pending, setPending] = useState<PendingClanInvite[]>([]);
+  const [cancelBusy, setCancelBusy] = useState<string | null>(null);
+  const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
+  const sendingRef = useRef<Set<string>>(new Set());
+  const cancelLock = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const canInvite = isAdminRole(clan?.my_role);
+  const isFull = !!clan && clan.members >= clan.max_members;
+  const memberIds = new Set(clanMembers.map((member) => member.user_id));
+  const pendingIds = new Set(pending.map((invite) => invite.userId));
+  const nameOf = (friend: { display_name: string | null }) =>
+    friend.display_name?.trim() || 'Jogador';
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (friends.length > 0) {
+      return;
+    }
+    let active = true;
+    loadSocial()
+      .then(() => {
+        if (active) {
+          setFriendsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setFriendsLoading(false);
+          setFriendsFailed(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadSocial, friends.length]);
+
+  const clearRow = (userId: string) => {
+    setRowErrors((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+    setRowBlocks((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+  };
+
+  const send = async (friend: { user_id: string; display_name: string | null }) => {
+    if (!clan || !token || isFull) {
+      return;
+    }
+    if (
+      memberIds.has(friend.user_id) ||
+      pendingIds.has(friend.user_id) ||
+      sendingRef.current.has(friend.user_id)
+    ) {
+      return;
+    }
+    sendingRef.current.add(friend.user_id);
+    setSendingIds((current) => ({ ...current, [friend.user_id]: true }));
+    clearRow(friend.user_id);
+    try {
+      const created = await api.clans.invite(token, clan.id, friend.user_id);
+      if (!mounted.current) {
+        return;
+      }
+      setPending((current) => [
+        {
+          id: created.id,
+          userId: friend.user_id,
+          name: nameOf(friend),
+          createdAt: created.created_at,
+        },
+        ...current.filter((item) => item.userId !== friend.user_id),
+      ]);
+      AccessibilityInfo.announceForAccessibility('Convite enviado');
+    } catch (cause) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(cause);
+      const block =
+        code === 'not_friends'
+          ? 'Só é possível convidar amigos.'
+          : code === 'blocked'
+            ? 'Não é possível convidar esta pessoa.'
+            : code === 'already_invited'
+              ? 'Este convite já foi enviado.'
+              : code === 'already_member'
+                ? 'Essa pessoa já está no clã.'
+                : code === 'clan_full'
+                  ? 'O clã está cheio.'
+                  : code === 'cannot_invite_self'
+                    ? 'Você não pode convidar a si mesmo.'
+                    : null;
+      if (block) {
+        setRowBlocks((current) => ({ ...current, [friend.user_id]: block }));
+      } else {
+        setRowErrors((current) => ({
+          ...current,
+          [friend.user_id]: 'Não foi possível enviar. Tente de novo.',
+        }));
+      }
+    } finally {
+      sendingRef.current.delete(friend.user_id);
+      if (mounted.current) {
+        setSendingIds((current) => {
+          const next = { ...current };
+          delete next[friend.user_id];
+          return next;
+        });
+      }
+    }
+  };
+
+  const cancel = async (invite: PendingClanInvite) => {
+    if (!clan || !token || cancelLock.current) {
+      return;
+    }
+    cancelLock.current = invite.id;
+    setCancelBusy(invite.id);
+    setCancelErrors((current) => {
+      const next = { ...current };
+      delete next[invite.id];
+      return next;
+    });
+    try {
+      await api.clans.cancelInvite(token, clan.id, invite.id);
+      if (!mounted.current) {
+        return;
+      }
+      setPending((current) => current.filter((item) => item.id !== invite.id));
+      AccessibilityInfo.announceForAccessibility('Convite cancelado');
+    } catch (cause) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(cause);
+      if (
+        code === 'not_found' ||
+        code === 'invite_not_found' ||
+        code === 'invite_not_pending' ||
+        code === 'invite_expired'
+      ) {
+        setPending((current) => current.filter((item) => item.id !== invite.id));
+      } else {
+        setCancelErrors((current) => ({
+          ...current,
+          [invite.id]: 'Não foi possível cancelar. Tente de novo.',
+        }));
+      }
+    } finally {
+      cancelLock.current = null;
+      if (mounted.current) {
+        setCancelBusy(null);
+      }
+    }
+  };
+
+  if (!clan) {
+    return (
+      <Page title="Convidar membros">
+        <EmptyState
+          title="Você não está em um clã"
+          text="Entre em um clã para convidar seus amigos."
+          actions={
             <Btn tone="primary" go="clan-discovery">
               Descobrir clãs
             </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (!canInvite) {
+    return (
+      <Page title="Convidar membros">
+        <StateScreen
+          icon="shield"
+          title="Sem permissão para convidar"
+          text="Só o Dono e os Oficiais podem convidar."
+          actions={
             <Btn tone="ghost" back>
               Voltar
             </Btn>
-          </>
-        }
-      />
+          }
+        />
+      </Page>
+    );
+  }
+
+  const matching = friends.filter((friend) => matchesSearch(nameOf(friend), query));
+
+  return (
+    <Page title="Convidar membros" sub={clan.name}>
+      {isFull ? (
+        <Notice tone="orange" icon="alert">
+          Seu clã está cheio. Libere uma vaga para convidar.
+        </Notice>
+      ) : null}
+      <Field label="Buscar amigo">
+        <Input
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Nome do amigo"
+          maxLength={60}
+          autoCorrect={false}
+          autoCapitalize="none"
+          accessibilityLabel="Buscar amigo para convidar"
+        />
+      </Field>
+      {query.trim().length > 0 ? (
+        <TextBtn muted onPress={() => setQuery('')}>
+          Limpar busca
+        </TextBtn>
+      ) : null}
+
+      {friendsLoading && friends.length === 0 ? (
+        <LoadingState label="Buscando seus amigos." variant="list" />
+      ) : friendsFailed && friends.length === 0 ? (
+        <StateScreen
+          icon="wifi-off"
+          title="Não foi possível carregar seus amigos"
+          text="Verifique a conexão e tente novamente."
+          actions={
+            <Btn
+              tone="primary"
+              onPress={() => {
+                setFriendsFailed(false);
+                setFriendsLoading(true);
+                loadSocial()
+                  .then(() => setFriendsLoading(false))
+                  .catch(() => {
+                    setFriendsLoading(false);
+                    setFriendsFailed(true);
+                  });
+              }}
+            >
+              Tentar novamente
+            </Btn>
+          }
+        />
+      ) : friends.length === 0 ? (
+        <EmptyState
+          title="Você ainda não tem amigos para convidar"
+          text="Adicione amigos para trazer mais gente para o clã."
+          actions={
+            <Btn tone="primary" go="friends">
+              Ver amigos
+            </Btn>
+          }
+        />
+      ) : matching.length === 0 ? (
+        <EmptyState
+          title="Nenhum amigo com esse nome"
+          text="Confira a grafia ou limpe a busca."
+          actions={
+            <Btn tone="ghost" onPress={() => setQuery('')}>
+              Limpar busca
+            </Btn>
+          }
+        />
+      ) : (
+        <CardList>
+          {matching.map((friend, index) => {
+            const name = nameOf(friend);
+            const isMember = memberIds.has(friend.user_id);
+            const isPending = pendingIds.has(friend.user_id);
+            const block = rowBlocks[friend.user_id];
+            const rowError = rowErrors[friend.user_id];
+            const sending = !!sendingIds[friend.user_id];
+            const subtitle = isMember
+              ? 'Já está no clã'
+              : isPending
+                ? 'Convite pendente'
+                : isFull
+                  ? 'Sem vaga no clã'
+                  : 'Amigo';
+            return (
+              <ListRow key={friend.user_id} last={index === matching.length - 1}>
+                <IdentityBadge
+                  size={34}
+                  identity={identityFromSeed(friend.user_id)}
+                  palette={palette}
+                />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Text
+                    numberOfLines={2}
+                    style={{ fontSize: 14, lineHeight: 18, fontWeight: '800', color: palette.ink }}
+                  >
+                    {name}
+                  </Text>
+                  <Text style={{ fontSize: 13, lineHeight: 18, color: palette.muted }}>
+                    {block ?? subtitle}
+                  </Text>
+                  {rowError ? (
+                    <Txt variant="tiny" color="red">
+                      {rowError}
+                    </Txt>
+                  ) : null}
+                </View>
+                {!isMember && !isPending && !block ? (
+                  <Btn
+                    tone="primary"
+                    small
+                    block={false}
+                    disabled={isFull || sending}
+                    onPress={() => void send(friend)}
+                  >
+                    {sending ? 'Enviando.' : rowError ? 'Tentar de novo' : 'Convidar'}
+                  </Btn>
+                ) : null}
+              </ListRow>
+            );
+          })}
+        </CardList>
+      )}
+
+      {pending.length > 0 ? (
+        <>
+          <Txt variant="h3">Convites pendentes</Txt>
+          <CardList>
+            {pending.map((invite, index) => {
+              const busy = cancelBusy === invite.id;
+              const cancelError = cancelErrors[invite.id];
+              return (
+                <ListRow key={invite.id} last={index === pending.length - 1}>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        fontSize: 14,
+                        lineHeight: 18,
+                        fontWeight: '800',
+                        color: palette.ink,
+                      }}
+                    >
+                      {invite.name}
+                    </Text>
+                    <Txt variant="tiny">{`${shortDateTime(invite.createdAt)} · vale por 7 dias`}</Txt>
+                    {cancelError ? (
+                      <Txt variant="tiny" color="red">
+                        {cancelError}
+                      </Txt>
+                    ) : null}
+                  </View>
+                  <Btn
+                    tone="ghost"
+                    small
+                    block={false}
+                    disabled={busy}
+                    onPress={() => void cancel(invite)}
+                  >
+                    {busy ? 'Cancelando.' : 'Cancelar'}
+                  </Btn>
+                </ListRow>
+              );
+            })}
+          </CardList>
+        </>
+      ) : null}
+
+      <Notice tone="blue" icon="info">
+        Só amigos podem ser convidados. O convite vale por 7 dias.
+      </Notice>
+      <TextBtn muted onPress={() => nav.back()}>
+        Voltar
+      </TextBtn>
     </Page>
   );
 }
@@ -3688,6 +4842,6 @@ export const socialScreens: ScreenDef[] = [
   { id: 'report-message', tab: 'social', render: () => <ReportMessage /> },
   { id: 'moderation-status', tab: 'social', render: () => <ModerationStatus /> },
   { id: 'block-user', tab: 'social', hidden: true, render: () => <BlockUser /> },
-  { id: 'clan-invite', tab: 'social', hidden: true, render: () => <ClanInvite /> },
+  { id: 'clan-invite', tab: 'social', render: () => <ClanInvite /> },
   { id: 'clan-full', tab: 'social', render: () => <ClanFull /> },
 ];
