@@ -4,29 +4,36 @@ import test from 'node:test';
 import {
   applyNetworkFailure,
   applyReplaceResult,
-  buildLevelAssignments,
   buildSelection,
+  buildSelectionItems,
+  buildSelectionPayload,
   cancelOutcome,
+  emptySelection,
   formatLabelFromCatalog,
   isExpired,
   isNetworkFailure,
   isStaleRevision,
-  levelAssignmentsMatch,
-  levelKey,
+  itemsToPairs,
   lobbyIdFromQueue,
   nextPollDelay,
   oldestCreatedAt,
-  optionalLevelsPayload,
   queueFailureMessage,
-  reconcileEntries,
   queueContinuity,
+  reconcileEntries,
+  resolveCasualLevel,
+  selectionCount,
   selectionError,
   selectionFromEntries,
-  selectionProduct,
-  selectionProductCount,
+  selectionItemsError,
+  selectionPairs,
+  snapshotCoversPairs,
   snapshotCoversSelection,
   snapshotFromEntries,
   summarizeEntries,
+  withFormatToggled,
+  withLevel,
+  withModeToggled,
+  withoutRanked,
 } from './queueState.ts';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
@@ -58,38 +65,195 @@ function lobby(id = 'lobby-1') {
   };
 }
 
-test('1 formato × 1 modo → uma entrada', () => {
-  const selection = buildSelection(['f1'], ['casual']);
-  assert.deepEqual(selection, { formats: ['f1'], modes: ['casual'] });
-  assert.equal(selectionProductCount(selection), 1);
-  assert.deepEqual(selectionProduct(selection), [{ formatId: 'f1', mode: 'casual' }]);
+/** Atalho: `{ f1: ['ranked'], f2: ['casual'] }` → seleção por esporte. */
+function selectionOf(entries) {
+  const formats = Object.keys(entries);
+  const byFormat = Object.fromEntries(
+    Object.entries(entries).map(([formatId, modes]) => [formatId, { modes }]),
+  );
+  return buildSelection(formats, byFormat);
+}
+
+test('futebol ranqueada + vôlei casual → dois pares, nunca quatro', () => {
+  const selection = selectionOf({ futebol: ['ranked'], volei: ['casual'] });
+  assert.deepEqual(selectionPairs(selection), [
+    { formatId: 'futebol', mode: 'ranked' },
+    { formatId: 'volei', mode: 'casual' },
+  ]);
+  assert.equal(selectionCount(selection), 2);
 });
 
-test('1 formato × 2 modos → duas entradas', () => {
-  const selection = buildSelection(['f1'], ['casual', 'ranked']);
-  assert.equal(selectionProductCount(selection), 2);
+test('um esporte com os dois modos → dois pares daquele esporte', () => {
+  const selection = selectionOf({ futebol: ['casual', 'ranked'] });
+  assert.deepEqual(selectionPairs(selection), [
+    { formatId: 'futebol', mode: 'casual' },
+    { formatId: 'futebol', mode: 'ranked' },
+  ]);
+  assert.equal(selectionCount(selection), 2);
+});
+
+test('modos são por esporte: 3 pares reais, sem combinação fantasma', () => {
+  const selection = selectionOf({
+    f1: ['casual', 'ranked'],
+    f2: ['casual'],
+    f3: ['ranked'],
+  });
+  assert.equal(selectionCount(selection), 4);
   assert.deepEqual(
-    selectionProduct(selection).map((item) => item.mode),
-    ['casual', 'ranked'],
+    selectionPairs(selection).map((item) => `${item.formatId}:${item.mode}`),
+    ['f1:casual', 'f1:ranked', 'f2:casual', 'f3:ranked'],
+  );
+  assert.equal(
+    selectionPairs(selection).some((item) => item.formatId === 'f2' && item.mode === 'ranked'),
+    false,
   );
 });
 
-test('2 formatos × 2 modos → quatro combinações sem duplicata', () => {
-  const selection = buildSelection(['f1', 'f2', 'f1'], ['casual', 'ranked', 'casual']);
-  assert.deepEqual(selection, { formats: ['f1', 'f2'], modes: ['casual', 'ranked'] });
-  const product = selectionProduct(selection);
-  assert.equal(product.length, 4);
-  assert.equal(new Set(product.map((item) => `${item.formatId}:${item.mode}`)).size, 4);
+test('buildSelection deduplica formatos, normaliza modo e preserva a ordem', () => {
+  const selection = buildSelection(['f1', 'f2', 'f1', '', 'f3'], {
+    f1: { modes: ['ranked', 'invalid', 'ranked'] },
+    f2: { modes: ['casual'] },
+  });
+  assert.deepEqual(selection.formats, ['f1', 'f2', 'f3']);
+  assert.deepEqual(selection.byFormat.f1.modes, ['ranked']);
+  assert.deepEqual(selection.byFormat.f3.modes, ['casual']);
 });
 
-test('arrays vazios, modo inválido e duplicidade são validados antes da rede', () => {
-  assert.match(selectionError({ formats: [], modes: ['casual'] }) ?? '', /esporte/);
-  assert.match(selectionError({ formats: ['f1'], modes: [] }) ?? '', /modo/);
-  assert.equal(selectionError({ formats: ['f1'], modes: ['casual'] }), null);
-  assert.deepEqual(buildSelection([], ['casual', 'invalid', 'casual']), {
-    formats: [],
-    modes: ['casual'],
+test('seleção vazia e esporte sem modo são validados antes da rede', () => {
+  assert.match(selectionError(emptySelection()) ?? '', /esporte/);
+  const semModo = buildSelection(['f1'], { f1: { modes: [] } });
+  assert.match(selectionError(semModo) ?? '', /casual, ranqueada/);
+  assert.equal(selectionError(selectionOf({ f1: ['casual'] })), null);
+});
+
+test('payload: casual leva nível, ranqueada omite a chave (não envia null)', () => {
+  const selection = selectionOf({ futebol: ['ranked'], volei: ['casual'] });
+  const items = buildSelectionItems(selection, () => 'beginner');
+  assert.deepEqual(items, [
+    { format_id: 'futebol', mode: 'ranked' },
+    { format_id: 'volei', mode: 'casual', level: 'beginner' },
+  ]);
+  assert.equal('level' in items[0], false);
+  assert.equal(JSON.stringify(items).includes('"level":null'), false);
+});
+
+test('payload único: selections + court_preference, sem formats/modes/levels', () => {
+  const selection = selectionOf({ futebol: ['ranked'], volei: ['casual'] });
+  const payload = buildSelectionPayload(selection, () => 'advanced', 'PUBLIC_ONLY');
+  assert.deepEqual(payload, {
+    selections: [
+      { format_id: 'futebol', mode: 'ranked' },
+      { format_id: 'volei', mode: 'casual', level: 'advanced' },
+    ],
+    court_preference: 'PUBLIC_ONLY',
   });
+  assert.equal('formats' in payload, false);
+  assert.equal('modes' in payload, false);
+  assert.equal('levels' in payload, false);
+  assert.deepEqual(itemsToPairs(payload.selections), selectionPairs(selection));
+});
+
+test('nível casual: escolha local → servidor → perfil → intermediário', () => {
+  assert.equal(resolveCasualLevel('advanced', 'beginner', 'intermediate'), 'advanced');
+  assert.equal(resolveCasualLevel(undefined, 'beginner', 'intermediate'), 'beginner');
+  assert.equal(resolveCasualLevel('pro', undefined, 'intermediate'), 'intermediate');
+  assert.equal(resolveCasualLevel(undefined, undefined, undefined), 'intermediate');
+});
+
+test('remover e readicionar casual preserva o nível escolhido', () => {
+  let selection = withLevel(selectionOf({ f1: ['casual'] }), 'f1', 'advanced');
+  selection = withModeToggled(selection, 'f1', 'casual');
+  assert.deepEqual(selectionPairs(selection), []);
+  selection = withModeToggled(selection, 'f1', 'casual');
+  assert.deepEqual(selectionPairs(selection), [{ formatId: 'f1', mode: 'casual' }]);
+  assert.equal(selection.byFormat.f1.level, 'advanced');
+});
+
+test('remover e readicionar esporte preserva modos e nível casual', () => {
+  let selection = withLevel(selectionOf({ f1: ['casual', 'ranked'] }), 'f1', 'beginner');
+  selection = withFormatToggled(selection, 'f1');
+  assert.deepEqual(selection.formats, []);
+  assert.deepEqual(selectionPairs(selection), []);
+  selection = withFormatToggled(selection, 'f1');
+  assert.deepEqual(selection.byFormat.f1.modes, ['casual', 'ranked']);
+  assert.equal(selection.byFormat.f1.level, 'beginner');
+});
+
+test('adicionar esporte novo nasce casual; nunca auto-seleciona ranqueada', () => {
+  const selection = withFormatToggled(emptySelection(), 'f1');
+  assert.deepEqual(selection.byFormat.f1.modes, ['casual']);
+  assert.equal(selection.byFormat.f1.level, undefined);
+});
+
+test('ranqueada não herda nível casual no payload', () => {
+  let selection = withLevel(selectionOf({ f1: ['casual'] }), 'f1', 'advanced');
+  selection = withModeToggled(selection, 'f1', 'ranked');
+  const items = buildSelectionItems(selection, (formatId, mode) =>
+    mode === 'casual' ? selection.byFormat[formatId].level : undefined,
+  );
+  assert.deepEqual(items, [
+    { format_id: 'f1', mode: 'casual', level: 'advanced' },
+    { format_id: 'f1', mode: 'ranked' },
+  ]);
+});
+
+test('ranked_restricted desliga ranqueada sem perder casual nem nível', () => {
+  let selection = withLevel(
+    selectionOf({ f1: ['casual', 'ranked'], f2: ['ranked'] }),
+    'f1',
+    'beginner',
+  );
+  selection = withoutRanked(selection);
+  assert.deepEqual(selection.byFormat.f1.modes, ['casual']);
+  assert.deepEqual(selection.byFormat.f2.modes, ['casual']);
+  assert.equal(selection.byFormat.f1.level, 'beginner');
+});
+
+test('validação final barra duplicata, nível em ranqueada e casual sem nível', () => {
+  assert.match(selectionItemsError([]) ?? '', /esporte/);
+  assert.match(
+    selectionItemsError([
+      { format_id: 'f1', mode: 'casual', level: 'beginner' },
+      { format_id: 'f1', mode: 'casual', level: 'advanced' },
+    ]) ?? '',
+    /duas vezes/,
+  );
+  assert.match(
+    selectionItemsError([{ format_id: 'f1', mode: 'ranked', level: 'beginner' }]) ?? '',
+    /ranqueada/,
+  );
+  assert.match(selectionItemsError([{ format_id: 'f1', mode: 'casual' }]) ?? '', /nível/);
+  assert.equal(
+    selectionItemsError([
+      { format_id: 'f1', mode: 'casual', level: 'beginner' },
+      { format_id: 'f1', mode: 'ranked' },
+    ]),
+    null,
+  );
+});
+
+test('GET reconcilia um par por entrada, casual com nível e ranqueada sem nível', () => {
+  const selection = selectionFromEntries([
+    entry({ id: 'a', format_id: 'f1', mode: 'ranked', level: 'advanced' }),
+    entry({ id: 'b', format_id: 'f1', mode: 'casual', level: 'beginner' }),
+    entry({ id: 'c', format_id: 'f2', mode: 'casual', level: 'intermediate' }),
+  ]);
+  assert.deepEqual(selection.formats, ['f1', 'f2']);
+  assert.deepEqual(selection.byFormat.f1.modes, ['casual', 'ranked']);
+  assert.equal(selection.byFormat.f1.level, 'beginner');
+  assert.deepEqual(selection.byFormat.f2.modes, ['casual']);
+  assert.equal(selection.byFormat.f2.level, 'intermediate');
+});
+
+test('seleção derivada do GET não cria combinação que o servidor não tem', () => {
+  const selection = selectionFromEntries([
+    entry({ id: 'a', format_id: 'futebol', mode: 'ranked' }),
+    entry({ id: 'b', format_id: 'volei', mode: 'casual' }),
+  ]);
+  assert.deepEqual(
+    selectionPairs(selection).map((item) => `${item.formatId}:${item.mode}`),
+    ['futebol:ranked', 'volei:casual'],
+  );
 });
 
 test('GET reconcilia entries e usa entry legado só como compatibilidade', () => {
@@ -140,13 +304,13 @@ test('PUT substitui a seleção: não soma entradas antigas', () => {
   );
 });
 
-test('continuidade: mantém as combinações que continuam e separa as que serão canceladas', () => {
+test('continuidade: mantém os pares que continuam e separa os que serão cancelados', () => {
   const entries = [
-    entry({ id: 'a', format_id: 'f1' }),
+    entry({ id: 'a', format_id: 'f1', mode: 'casual' }),
     entry({ id: 'b', format_id: 'f1', mode: 'ranked' }),
-    entry({ id: 'c', format_id: 'f2' }),
+    entry({ id: 'c', format_id: 'f2', mode: 'casual' }),
   ];
-  const continuity = queueContinuity(entries, buildSelection(['f1', 'f3'], ['casual']));
+  const continuity = queueContinuity(entries, selectionOf({ f1: ['casual'], f3: ['casual'] }));
   assert.deepEqual(
     continuity.kept.map((item) => item.id),
     ['a'],
@@ -158,9 +322,9 @@ test('continuidade: mantém as combinações que continuam e separa as que serã
   assert.deepEqual(continuity.added, [{ formatId: 'f3', mode: 'casual' }]);
 });
 
-test('continuidade: seleção vazia cancela todas e não inventa combinações', () => {
+test('continuidade: seleção vazia cancela todas e não inventa pares', () => {
   const entries = [entry({ id: 'a' }), entry({ id: 'b', mode: 'ranked' })];
-  const continuity = queueContinuity(entries, buildSelection([], []));
+  const continuity = queueContinuity(entries, emptySelection());
   assert.equal(continuity.kept.length, 0);
   assert.deepEqual(
     continuity.removed.map((item) => item.id),
@@ -169,87 +333,9 @@ test('continuidade: seleção vazia cancela todas e não inventa combinações',
   assert.deepEqual(continuity.added, []);
 });
 
-test('nível por modo: casual e ranqueada têm escolhas independentes', () => {
-  const chosen = {
-    [levelKey('f1', 'casual')]: 'beginner',
-    [levelKey('f1', 'ranked')]: 'advanced',
-  };
-  const assignments = buildLevelAssignments(
-    buildSelection(['f1'], ['casual', 'ranked']),
-    chosen,
-    () => 'intermediate',
-  );
-  assert.deepEqual(assignments, [
-    { format_id: 'f1', mode: 'casual', level: 'beginner' },
-    { format_id: 'f1', mode: 'ranked', level: 'advanced' },
-  ]);
-});
-
-test('nível por modo: remover e readicionar modo preserva o nível do outro', () => {
-  const chosen = {
-    [levelKey('f1', 'casual')]: 'advanced',
-    [levelKey('f1', 'ranked')]: 'beginner',
-  };
-  const onlyCasual = buildLevelAssignments(
-    buildSelection(['f1'], ['casual']),
-    chosen,
-    () => 'intermediate',
-  );
-  assert.deepEqual(onlyCasual, [{ format_id: 'f1', mode: 'casual', level: 'advanced' }]);
-  const both = buildLevelAssignments(
-    buildSelection(['f1'], ['casual', 'ranked']),
-    chosen,
-    () => 'intermediate',
-  );
-  assert.equal(both[1].level, 'beginner');
-});
-
-test('nível por entrada: valor inválido cai no default do perfil', () => {
-  const assignments = buildLevelAssignments(
-    buildSelection(['f1', 'f2'], ['casual']),
-    { [levelKey('f1', 'casual')]: 'pro' },
-    (formatId) => (formatId === 'f1' ? 'beginner' : undefined),
-  );
-  assert.deepEqual(assignments, [
-    { format_id: 'f1', mode: 'casual', level: 'beginner' },
-    { format_id: 'f2', mode: 'casual', level: 'intermediate' },
-  ]);
-  assert.equal(
-    levelAssignmentsMatch(assignments, [
-      { format_id: 'f2', mode: 'casual', level: 'intermediate' },
-      { format_id: 'f1', mode: 'casual', level: 'beginner' },
-    ]),
-    true,
-  );
-  assert.equal(
-    levelAssignmentsMatch(assignments, [
-      { format_id: 'f1', mode: 'casual', level: 'advanced' },
-      { format_id: 'f2', mode: 'casual', level: 'intermediate' },
-    ]),
-    false,
-  );
-});
-
-test('payload de níveis: igual ao default omite o campo; diferente envia tudo', () => {
-  const selected = buildSelection(['f1'], ['casual', 'ranked']);
-  const defaults = buildLevelAssignments(selected, {}, () => 'intermediate');
-  const unchanged = buildLevelAssignments(selected, {}, () => 'intermediate');
-  assert.equal(optionalLevelsPayload(unchanged, defaults), undefined);
-
-  const custom = buildLevelAssignments(
-    selected,
-    { [levelKey('f1', 'casual')]: 'beginner' },
-    () => 'intermediate',
-  );
-  assert.deepEqual(optionalLevelsPayload(custom, defaults), [
-    { format_id: 'f1', mode: 'casual', level: 'beginner' },
-    { format_id: 'f1', mode: 'ranked', level: 'intermediate' },
-  ]);
-});
-
 test('timeout no PUT + GET com seleção nova adota a nova', () => {
   const previous = snapshotFromEntries([entry({ id: 'old', format_id: 'f1' })]);
-  const selection = buildSelection(['f1', 'f2'], ['casual']);
+  const selection = selectionOf({ f1: ['casual'], f2: ['casual'] });
   const reloaded = {
     entries: [entry({ id: 'new-1', format_id: 'f1' }), entry({ id: 'new-2', format_id: 'f2' })],
     entry: null,
@@ -258,11 +344,12 @@ test('timeout no PUT + GET com seleção nova adota a nova', () => {
   assert.equal(outcome.reconciled, true);
   assert.equal(outcome.snapshot.entries.length, 2);
   assert.equal(snapshotCoversSelection(outcome.snapshot, selection), true);
+  assert.equal(snapshotCoversPairs(outcome.snapshot, selectionPairs(selection)), true);
 });
 
 test('timeout no PUT + GET com seleção antiga mantém a antiga', () => {
   const previous = snapshotFromEntries([entry({ id: 'old', format_id: 'f1' })]);
-  const selection = buildSelection(['f1', 'f2'], ['casual']);
+  const selection = selectionOf({ f1: ['casual'], f2: ['casual'] });
   const reloaded = {
     entries: [entry({ id: 'old', format_id: 'f1' })],
     entry: entry({ id: 'old', format_id: 'f1' }),
@@ -302,6 +389,27 @@ test('403 ranked_restricted exibe erro e preserva a lista anterior', () => {
   const message = queueFailureMessage('ranked_restricted');
   assert.match(message, /Ranqueada indisponível/);
   assert.doesNotMatch(message, /ranked_restricted/);
+});
+
+test('422 level_not_applicable_for_ranked é bug de montagem, sem pedir nível', () => {
+  const message = queueFailureMessage('level_not_applicable_for_ranked');
+  assert.match(message, /ranqueada/);
+  assert.match(message, /Nada foi alterado/);
+  assert.doesNotMatch(message, /level_not_applicable_for_ranked/);
+  assert.doesNotMatch(message, /escolha.*nível/i);
+});
+
+test('422/409 do contrato têm texto acionável e não vazam código', () => {
+  for (const code of [
+    'duplicate_queue_selection',
+    'ambiguous_queue_selection',
+    'invalid_level_override',
+    'queue_conflict',
+  ]) {
+    const message = queueFailureMessage(code);
+    assert.equal(message.includes(code), false);
+    assert.ok(message.length > 20);
+  }
 });
 
 test('entrada matched + três waiting: distingue sem escolher vencedor', () => {
@@ -412,10 +520,9 @@ test('resumo, mais antiga, modos e seleção derivada do servidor', () => {
     { mode: 'casual', count: 2 },
     { mode: 'ranked', count: 1 },
   ]);
-  assert.deepEqual(selectionFromEntries(entries), {
-    formats: ['f1', 'f2'],
-    modes: ['casual', 'ranked'],
-  });
+  const selection = selectionFromEntries(entries);
+  assert.deepEqual(selection.formats, ['f1', 'f2']);
+  assert.deepEqual(selection.byFormat.f1.modes, ['casual', 'ranked']);
 });
 
 test('formato desconhecido usa rótulo fallback sem quebrar', () => {

@@ -187,11 +187,16 @@ export type QueueCourtPreference = 'PUBLIC_ONLY' | 'PRIVATE_ONLY' | 'ANY';
 
 export type QueueLevel = 'beginner' | 'intermediate' | 'advanced';
 
-/** Nível explícito de uma entrada: a entrada é o par `(format_id, mode)`. */
-export type QueueLevelAssignment = {
+/**
+ * Par explícito da seleção da fila (contrato 0057).
+ *
+ * `level` só existe em `mode="casual"`; em ranqueada o campo é omitido porque o
+ * pareamento usa MMR/divisão. `undefined` nunca vira `null` no JSON.
+ */
+export type QueueSelectionItem = {
   format_id: string;
   mode: QueueMode;
-  level: QueueLevel;
+  level?: QueueLevel;
 };
 
 export type QueueLobby = {
@@ -229,13 +234,9 @@ export type QueueStateResponse = {
 };
 
 export type QueueSelectionPayload = {
-  formats: string[];
-  modes: QueueMode[];
-  /**
-   * Opcional no contrato: enviado apenas quando algum nível escolhido difere
-   * do default do servidor. Leva uma atribuição explícita por `(format, mode)`.
-   */
-  levels?: QueueLevelAssignment[];
+  /** Lista exata de entradas; substitui o antigo `formats × modes`. */
+  selections: QueueSelectionItem[];
+  /** Global para todas as seleções. */
   court_preference?: QueueCourtPreference | null;
 };
 
