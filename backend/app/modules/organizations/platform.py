@@ -28,6 +28,9 @@ def ensure_platform_organization(
         is_platform=True,
         status="active",
         payout_status="blocked",
+        # A organização da plataforma é operada pelo próprio JOGA e não passa
+        # pela verificação de CNPJ de fornecedores (ADR 0062).
+        verification_status="verified",
     )
     session.add(organization)
     session.flush()

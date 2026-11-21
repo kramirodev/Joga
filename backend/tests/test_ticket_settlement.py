@@ -26,6 +26,7 @@ from app.modules.payments.models import VenueRelease
 from app.modules.pricing.service import resolve_band
 from app.modules.tickets.service import get_balance, grant
 from app.modules.venues.models import VenueAvailability, VenueSpace
+from tests.cnpj_helpers import next_test_cnpj
 from tests.helpers_results import make_format, make_token, make_user
 
 START = datetime(2026, 12, 15, 18, 0, tzinfo=UTC)
@@ -54,6 +55,9 @@ def setup_context(db_session: Session, *, tickets: int = TICKETS_PER_SEAT) -> di
     _, format_ = make_format(db_session, team_size=TEAM_SIZE)
     organization = Organization(
         name="Arena Ingresso",
+        cnpj=next_test_cnpj(),
+        cnpj_status="ATIVA",
+        verification_status="verified",
         legal_document="12345678000199",
         pix_key_type="cnpj",
         pix_key="12345678000199",
