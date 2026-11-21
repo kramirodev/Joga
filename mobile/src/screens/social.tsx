@@ -69,6 +69,7 @@ import {
   Row,
   Seg,
   SegBtn,
+  SegContent,
   StateScreen,
   Textarea,
   TextBtn,
@@ -274,45 +275,47 @@ function Friends() {
               </SegBtn>
             ))}
           </Seg>
-          {tab === 'Amigos' ? (
-            list.length ? (
-              <CardList>
-                {list.map((friend, index) => (
-                  <ListRow
-                    key={friend.id}
-                    last={index === list.length - 1}
-                    onPress={() =>
-                      nav.go('profile-other', { userId: friend.id, name: friend.name })
-                    }
-                  >
-                    <IdentityBadge
-                      size={34}
-                      identity={identityFromSeed(friend.id)}
-                      palette={palette}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                        {friend.name}{' '}
-                      </Text>
-                      <Text style={{ fontSize: 13, color: palette.muted }}>{friend.meta}</Text>
-                    </View>
-                    <Text style={{ color: palette.muted }}>›</Text>
-                  </ListRow>
-                ))}
-              </CardList>
+          <SegContent value={tab}>
+            {tab === 'Amigos' ? (
+              list.length ? (
+                <CardList>
+                  {list.map((friend, index) => (
+                    <ListRow
+                      key={friend.id}
+                      last={index === list.length - 1}
+                      onPress={() =>
+                        nav.go('profile-other', { userId: friend.id, name: friend.name })
+                      }
+                    >
+                      <IdentityBadge
+                        size={34}
+                        identity={identityFromSeed(friend.id)}
+                        palette={palette}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                          {friend.name}{' '}
+                        </Text>
+                        <Text style={{ fontSize: 13, color: palette.muted }}>{friend.meta}</Text>
+                      </View>
+                      <Text style={{ color: palette.muted }}>›</Text>
+                    </ListRow>
+                  ))}
+                </CardList>
+              ) : (
+                <EmptyState
+                  title="Nenhum amigo ainda"
+                  text="Adicione amigos para convidar para lobbies."
+                />
+              )
             ) : (
-              <EmptyState
-                title="Nenhum amigo ainda"
-                text="Adicione amigos para convidar para lobbies."
-              />
-            )
-          ) : (
-            <Notice tone="blue" icon="info">
-              {tab === 'Solicitações'
-                ? 'Nenhuma solicitação pendente.'
-                : 'Nenhum jogador bloqueado.'}
-            </Notice>
-          )}
+              <Notice tone="blue" icon="info">
+                {tab === 'Solicitações'
+                  ? 'Nenhuma solicitação pendente.'
+                  : 'Nenhum jogador bloqueado.'}
+              </Notice>
+            )}
+          </SegContent>
         </>
       )}
       <Notice tone="blue" icon="shield">

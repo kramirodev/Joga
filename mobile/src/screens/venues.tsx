@@ -41,6 +41,7 @@ import {
   Row,
   Seg,
   SegBtn,
+  SegContent,
   StateScreen,
   Textarea,
   TextBtn,
@@ -2285,100 +2286,102 @@ function Matches() {
           </SegBtn>
         ))}
       </Seg>
-      {loading ? (
-        <LoadingState label="Buscando suas partidas." variant="cards" />
-      ) : failed ? (
-        <StateScreen
-          icon="wifi-off"
-          title="Não foi possível carregar suas partidas"
-          text="Verifique a conexão e tente novamente. A partida em andamento continua reservada."
-          actions={
-            <Btn tone="primary" onPress={retry}>
-              Tentar novamente
-            </Btn>
-          }
-        />
-      ) : filtered.length > 0 ? (
-        filtered.map((match) => (
-          <View key={match.id} style={{ gap: 8 }}>
-            <Card
-              onPress={() =>
-                nav.go(match.state === 'FINALIZED' ? 'match-detail' : 'lobby-detail', {
-                  matchId: match.id,
-                })
-              }
-            >
-              <Row between>
-                {matchBadge(match.state)}
-                <Txt variant="tiny">{averageMatchTitle(match)}</Txt>
-              </Row>
-              <Txt variant="h2" style={{ marginTop: 7, marginBottom: 2 }}>
-                Partida
-              </Txt>
-              <Txt variant="tiny">
-                {match.state === 'RESULT_PENDING' || match.state === 'DISPUTED'
-                  ? 'Resultado divergente · divisão congelada'
-                  : `${match.my_status === 'confirmed' ? 'Participação confirmada' : 'Aguardando confirmação'} · ${match.participants?.length ?? 10} jogadores`}
-              </Txt>
-            </Card>
-            {match.state === 'PENDING_CONFIRMATION' ? (
-              <Btn tone="primary" small onPress={() => nav.go('lobby-t1', { matchId: match.id })}>
-                Confirmar participação
+      <SegContent value={tab}>
+        {loading ? (
+          <LoadingState label="Buscando suas partidas." variant="cards" />
+        ) : failed ? (
+          <StateScreen
+            icon="wifi-off"
+            title="Não foi possível carregar suas partidas"
+            text="Verifique a conexão e tente novamente. A partida em andamento continua reservada."
+            actions={
+              <Btn tone="primary" onPress={retry}>
+                Tentar novamente
               </Btn>
-            ) : match.state === 'RESULT_PENDING' || match.state === 'DISPUTED' ? (
-              <BtnRow>
-                <Btn
-                  tone="primary"
-                  small
-                  onPress={() => nav.go('report-result', { matchId: match.id })}
-                >
-                  Relatar resultado
+            }
+          />
+        ) : filtered.length > 0 ? (
+          filtered.map((match) => (
+            <View key={match.id} style={{ gap: 8 }}>
+              <Card
+                onPress={() =>
+                  nav.go(match.state === 'FINALIZED' ? 'match-detail' : 'lobby-detail', {
+                    matchId: match.id,
+                  })
+                }
+              >
+                <Row between>
+                  {matchBadge(match.state)}
+                  <Txt variant="tiny">{averageMatchTitle(match)}</Txt>
+                </Row>
+                <Txt variant="h2" style={{ marginTop: 7, marginBottom: 2 }}>
+                  Partida
+                </Txt>
+                <Txt variant="tiny">
+                  {match.state === 'RESULT_PENDING' || match.state === 'DISPUTED'
+                    ? 'Resultado divergente · divisão congelada'
+                    : `${match.my_status === 'confirmed' ? 'Participação confirmada' : 'Aguardando confirmação'} · ${match.participants?.length ?? 10} jogadores`}
+                </Txt>
+              </Card>
+              {match.state === 'PENDING_CONFIRMATION' ? (
+                <Btn tone="primary" small onPress={() => nav.go('lobby-t1', { matchId: match.id })}>
+                  Confirmar participação
                 </Btn>
-                <Btn
-                  tone="ghost"
-                  small
-                  onPress={() => nav.go('result-review', { matchId: match.id })}
-                >
-                  Ver análise
-                </Btn>
-              </BtnRow>
-            ) : match.state !== 'FINALIZED' ? (
-              <BtnRow>
-                <Btn
-                  tone="primary"
-                  small
-                  onPress={() => nav.go('checkin-pre', { matchId: match.id })}
-                >
-                  Fazer check-in
-                </Btn>
-                <Btn
-                  tone="ghost"
-                  small
-                  onPress={() => nav.go('lobby-detail', { matchId: match.id })}
-                >
-                  Ver lobby
-                </Btn>
-              </BtnRow>
-            ) : null}
-          </View>
-        ))
-      ) : (
-        <EmptyState
-          title={
-            tab === 'Histórico'
-              ? 'Nenhuma partida no histórico'
-              : tab === 'Próximas'
-                ? 'Nenhuma partida futura'
-                : 'Nenhuma partida em andamento'
-          }
-          text="Quando você confirmar uma partida, ela aparece aqui."
-          actions={
-            <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
-              Buscar partida
-            </Btn>
-          }
-        />
-      )}
+              ) : match.state === 'RESULT_PENDING' || match.state === 'DISPUTED' ? (
+                <BtnRow>
+                  <Btn
+                    tone="primary"
+                    small
+                    onPress={() => nav.go('report-result', { matchId: match.id })}
+                  >
+                    Relatar resultado
+                  </Btn>
+                  <Btn
+                    tone="ghost"
+                    small
+                    onPress={() => nav.go('result-review', { matchId: match.id })}
+                  >
+                    Ver análise
+                  </Btn>
+                </BtnRow>
+              ) : match.state !== 'FINALIZED' ? (
+                <BtnRow>
+                  <Btn
+                    tone="primary"
+                    small
+                    onPress={() => nav.go('checkin-pre', { matchId: match.id })}
+                  >
+                    Fazer check-in
+                  </Btn>
+                  <Btn
+                    tone="ghost"
+                    small
+                    onPress={() => nav.go('lobby-detail', { matchId: match.id })}
+                  >
+                    Ver lobby
+                  </Btn>
+                </BtnRow>
+              ) : null}
+            </View>
+          ))
+        ) : (
+          <EmptyState
+            title={
+              tab === 'Histórico'
+                ? 'Nenhuma partida no histórico'
+                : tab === 'Próximas'
+                  ? 'Nenhuma partida futura'
+                  : 'Nenhuma partida em andamento'
+            }
+            text="Quando você confirmar uma partida, ela aparece aqui."
+            actions={
+              <Btn tone="primary" icon="search" onPress={() => nav.go('queue', { mode: 'casual' })}>
+                Buscar partida
+              </Btn>
+            }
+          />
+        )}
+      </SegContent>
       <Btn tone="ghost" go="match-history">
         Ver histórico completo
       </Btn>

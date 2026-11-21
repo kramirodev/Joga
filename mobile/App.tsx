@@ -132,14 +132,17 @@ function TabButton({
 
   useEffect(() => {
     if (reduceMotion) {
+      focus.stopAnimation();
       focus.setValue(active ? 1 : 0);
       return;
     }
-    Animated.spring(focus, {
+    const animation = Animated.spring(focus, {
       toValue: active ? 1 : 0,
       useNativeDriver: true,
       ...spring,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [active, focus, reduceMotion]);
 
   return (
@@ -160,25 +163,6 @@ function TabButton({
       })}
     >
       <Animated.View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: '26%',
-          right: '26%',
-          height: 3,
-          borderBottomLeftRadius: 3,
-          borderBottomRightRadius: 3,
-          backgroundColor: palette.lime,
-          opacity: focus,
-          transform: [
-            {
-              scaleX: focus.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
-            },
-          ],
-        }}
-      />
-      <Animated.View
         style={{
           transform: [
             {
@@ -187,17 +171,17 @@ function TabButton({
           ],
         }}
       >
-        <Icon name={icon} size={19} color={active ? palette.lime : palette.muted} />
+        <Icon name={icon} size={24} color={active ? palette.lime : palette.muted} />
       </Animated.View>
       <Text
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.75}
-        maxFontSizeMultiplier={1.2}
+        minimumFontScale={0.92}
+        maxFontSizeMultiplier={1.09}
         style={{
           fontSize: 11,
-          lineHeight: 13,
-          fontWeight: '800',
+          lineHeight: 14,
+          fontWeight: active ? '900' : '700',
           letterSpacing: 0.2,
           color: active ? palette.ink : palette.muted,
         }}
@@ -218,22 +202,80 @@ function TabBar({
   bottomInset: number;
 }) {
   const { palette } = useTheme();
+  const reduceMotion = useReducedMotion();
   const paddingBottom = Math.max(0, bottomInset);
+  const activeIndex = Math.max(
+    0,
+    TABS.findIndex((item) => item.key === tab),
+  );
+  const [barWidth, setBarWidth] = useState(0);
+  const [slot] = useState(() => new Animated.Value(activeIndex));
+
+  useEffect(() => {
+    if (reduceMotion) {
+      slot.stopAnimation();
+      slot.setValue(activeIndex);
+      return;
+    }
+    const animation = Animated.timing(slot, {
+      toValue: activeIndex,
+      duration: duration.medium,
+      easing: easing.standard,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [activeIndex, reduceMotion, slot]);
+
+  // Mesmo trilho do conteúdo: 5 alvos iguais, gap de 3 e padding de 5.
+  const tabGap = 3;
+  const tabPadding = 5;
+  const innerWidth = Math.max(0, barWidth - tabPadding * 2 - tabGap * (TABS.length - 1));
+  const itemWidth = innerWidth / TABS.length;
+  const indicatorWidth = itemWidth * 0.56;
+  const indicatorTravel = slot.interpolate({
+    inputRange: [0, TABS.length - 1],
+    outputRange: [0, (itemWidth + tabGap) * (TABS.length - 1)],
+  });
+
   return (
     <View style={{ flexShrink: 0, backgroundColor: palette.bg }}>
       <View
+        onLayout={(event) => {
+          const next = event.nativeEvent.layout.width;
+          if (Math.abs(next - barWidth) > 0.5) {
+            setBarWidth(next);
+          }
+        }}
         style={{
           minHeight: 54,
-          borderTopWidth: 1.5,
+          borderTopWidth: 1,
           borderTopColor: palette.line,
           backgroundColor: palette.surface,
           flexDirection: 'row',
-          gap: 3,
+          gap: tabGap,
           paddingTop: 3,
-          paddingHorizontal: 5,
+          paddingHorizontal: tabPadding,
           paddingBottom: 3,
+          position: 'relative',
         }}
       >
+        {indicatorWidth > 0.5 ? (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: tabPadding + (itemWidth - indicatorWidth) / 2,
+              width: indicatorWidth,
+              height: 3,
+              borderBottomLeftRadius: 3,
+              borderBottomRightRadius: 3,
+              backgroundColor: palette.lime,
+              transform: [{ translateX: indicatorTravel }],
+            }}
+          />
+        ) : null}
         {TABS.map((item) => (
           <TabButton
             key={item.key}
