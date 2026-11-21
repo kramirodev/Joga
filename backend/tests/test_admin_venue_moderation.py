@@ -65,6 +65,7 @@ def seed_venue(
     organization = organization or Organization(
         name="Arena Privada",
         legal_document="12345678000199",
+        verification_status="verified",
         pix_key_type="cnpj",
         pix_key="12345678000199",
         payout_status="active",

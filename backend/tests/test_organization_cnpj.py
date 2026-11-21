@@ -43,6 +43,7 @@ from tests.cnpj_helpers import (
     attach_partner_profile,
     cnpj_record,
     make_cnpj_user,
+    next_partner_cpf,
 )
 from tests.helpers_results import make_token, make_user
 
@@ -286,6 +287,28 @@ def test_rejects_cpf_divergent_from_stored_profile(
     assert response.json() == {"detail": {"code": "cnpj_owner_mismatch"}}
 
 
+def test_rejects_cpf_owned_by_another_account(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Um CPF só pode pertencer a uma conta, inclusive no cadastro da organização."""
+    api = api_with_lookup(client, db_session, FakeCnpjLookup())
+    login_with_partner(db_session)
+    other_user = make_user(db_session)
+    db_session.add(UserProfile(user_id=other_user, display_name=PARTNER_NAME))
+    db_session.commit()
+    other_token = make_token(db_session, other_user)
+
+    response = api.post(
+        "/api/v1/organizations",
+        headers=bearer(other_token),
+        json=create_org_payload(),
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "cpf_already_registered"}}
+    assert PARTNER_CPF not in response.text
+
+
 def test_rejects_missing_responsible_name(client: TestClient, db_session: Session) -> None:
     api = api_with_lookup(client, db_session, FakeCnpjLookup())
     user_id = make_user(db_session)
@@ -337,12 +360,13 @@ def test_duplicate_cnpj_is_rejected(client: TestClient, db_session: Session) -> 
     api = api_with_lookup(client, db_session, FakeCnpjLookup())
     _, first_token = login_with_partner(db_session)
     create_verified_org(api, first_token)
-    _, second_token = login_with_partner(db_session)
+    second_cpf = next_partner_cpf()
+    _, second_token = login_with_partner(db_session, cpf=second_cpf)
 
     response = api.post(
         "/api/v1/organizations",
         headers=bearer(second_token),
-        json=create_org_payload(),
+        json=create_org_payload(cpf=second_cpf),
     )
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "cnpj_already_registered"}}

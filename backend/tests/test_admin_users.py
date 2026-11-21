@@ -134,6 +134,7 @@ def test_detail_masks_cpf(client: TestClient, db_session: Session) -> None:
             cpf_ciphertext=b"\x00" * 40,
             cpf_key_id="test-key",
             cpf_last2="99",
+            cpf_hash="0" * 64,
         )
     )
     db_session.commit()
@@ -142,6 +143,7 @@ def test_detail_masks_cpf(client: TestClient, db_session: Session) -> None:
     assert detail.status_code == 200, detail.text
     assert detail.json()["cpf_masked"] == "***.***.***-99"
     assert "cpf_ciphertext" not in detail.text
+    assert "cpf_hash" not in detail.text
 
 
 def test_search_and_pagination(client: TestClient, db_session: Session) -> None:

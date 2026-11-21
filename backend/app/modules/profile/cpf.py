@@ -1,18 +1,26 @@
-"""CPF: validação, cifra AES-256-GCM e máscara (ADR 0049 §9.3).
+"""CPF: validação, cifra AES-256-GCM, hash de unicidade e máscara.
 
 O CPF é dado pessoal e nunca circula em claro fora da memória da requisição.
 O ciphertext é ``nonce(12) || ciphertext || tag(16)`` e usa o ``user_id`` como
 AAD: copiar o valor de um usuário para outro não decifra.
 
-A chave vive apenas em configuração (``JOGA_CPF_KEY``/``JOGA_CPF_KEY_ID``), nunca
-no banco, no Git, no bundle ou em log. Para rotação, a chave anterior fica em
-``JOGA_CPF_PREVIOUS_KEYS`` e o ciphertext guarda o ``cpf_key_id`` usado.
+A chave de cifra vive apenas em configuração (``JOGA_CPF_KEY``/
+``JOGA_CPF_KEY_ID``), nunca no banco, no Git, no bundle ou em log. Para rotação,
+a chave anterior fica em ``JOGA_CPF_PREVIOUS_KEYS`` e o ciphertext guarda o
+``cpf_key_id`` usado.
+
+A unicidade por conta usa HMAC-SHA256 do CPF normalizado (ADR 0065). O segredo
+é o ``JOGA_PHONE_HASH_SECRET``, já exigido fora do ambiente local, com o rótulo
+``cpf`` para separar domínios. Não usamos a chave de cifra porque a rotação
+dela mudaria todos os hashes; o hash precisa ser estável.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
+import hmac
 import re
 import secrets
 import uuid
@@ -47,6 +55,10 @@ class CpfDecryptionError(CpfError):
     """Ciphertext corrompido, de outra chave ou vinculado a outro usuário."""
 
 
+class CpfAlreadyRegistered(CpfError):
+    """CPF já vinculado a outra conta; nenhuma conta é escolhida pelo sistema."""
+
+
 def normalize_cpf(value: str) -> str:
     """Remove formatação e valida os 11 dígitos e os verificadores."""
     if not isinstance(value, str):
@@ -77,6 +89,19 @@ def mask_cpf(last2: str | None) -> str | None:
     if last2 is None or len(last2) != 2 or not last2.isdigit():
         return None
     return f"***.***.***-{last2}"
+
+
+def hash_cpf(cpf: str, settings: Settings) -> str:
+    """HMAC-SHA256 estável do CPF normalizado, usado só para unicidade.
+
+    O rótulo ``cpf:`` separa este uso do hash de telefone/OTP que compartilha o
+    mesmo segredo. O resultado nunca é devolvido em resposta nem registrado em
+    log; ele existe apenas para o índice único parcial.
+    """
+    normalized = normalize_cpf(cpf)
+    secret = settings.phone_hash_secret.get_secret_value()
+    message = f"cpf:{normalized}".encode("ascii")
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
 def _decode_key(value: str) -> bytes:

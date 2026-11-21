@@ -10,6 +10,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.types import UserDefinedType
 
@@ -17,7 +18,12 @@ from app.core.config import Settings
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.profile.cep import CepResolver
-from app.modules.profile.cpf import encrypt_cpf, mask_cpf
+from app.modules.profile.cpf import (
+    CpfAlreadyRegistered,
+    encrypt_cpf,
+    hash_cpf,
+    mask_cpf,
+)
 from app.modules.profile.models import (
     COURT_PREFERENCES,
     LEVELS,
@@ -195,7 +201,16 @@ class ProfileService:
     def set_cpf(
         self, user_id: uuid.UUID, value: str, settings: Settings
     ) -> tuple[bool, str | None]:
-        """Cifra e grava o CPF; a auditoria não recebe o número."""
+        """Cifra e grava o CPF; o hash garante uma conta por CPF (ADR 0065)."""
+        cpf_hash = hash_cpf(value, settings)
+        other = self._session.scalar(
+            select(UserProfile.user_id).where(
+                UserProfile.cpf_hash == cpf_hash,
+                UserProfile.user_id != user_id,
+            )
+        )
+        if other is not None:
+            raise CpfAlreadyRegistered("CPF já cadastrado em outra conta")
         ciphertext, key_id, last2 = encrypt_cpf(value, user_id, settings)
         profile = self._session.get(UserProfile, user_id)
         if profile is None:
@@ -204,6 +219,7 @@ class ProfileService:
         profile.cpf_ciphertext = ciphertext
         profile.cpf_key_id = key_id
         profile.cpf_last2 = last2
+        profile.cpf_hash = cpf_hash
         profile.cpf_updated_at = utcnow()
         record_audit(
             self._session,
@@ -213,7 +229,12 @@ class ProfileService:
             resource_id=user_id,
             details={"cpf_present": True},
         )
-        self._session.flush()
+        try:
+            self._session.flush()
+        except IntegrityError as exc:
+            # Corrida entre duas contas com o mesmo CPF: o índice único vence.
+            self._session.rollback()
+            raise CpfAlreadyRegistered("CPF já cadastrado em outra conta") from exc
         return True, mask_cpf(last2)
 
     def clear_cpf(self, user_id: uuid.UUID) -> tuple[bool, str | None]:
@@ -224,6 +245,7 @@ class ProfileService:
         profile.cpf_ciphertext = None
         profile.cpf_key_id = None
         profile.cpf_last2 = None
+        profile.cpf_hash = None
         profile.cpf_updated_at = None
         record_audit(
             self._session,

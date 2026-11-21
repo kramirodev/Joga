@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
+from app.infrastructure.database.dependency import get_session
 from app.modules.chat.models import LobbyMessage
-from app.modules.identity.models import User
+from app.modules.identity.models import AuditLog, User
 from app.modules.matchmaking.models import LobbyParticipant
 from app.modules.moderation.models import ModerationOperator
 from app.modules.moderation.service import (
@@ -441,6 +445,119 @@ def test_non_moderator_cannot_read_queue(client: TestClient, db_session: Session
     response = api.get("/api/v1/moderation/queue", headers=bearer(context["tokens"][0]))
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "moderator_required"
+
+
+def moderation_api(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    platform_admins: str = "",
+    moderation_admin_user_ids: str = "",
+) -> TestClient:
+    settings = Settings(
+        _env_file=None,
+        platform_admins=platform_admins,
+        moderation_admin_user_ids=moderation_admin_user_ids,
+    )
+
+    def override_session() -> Session:
+        return db_session
+
+    client.app.dependency_overrides[get_session] = override_session
+    client.app.dependency_overrides[get_settings] = lambda: settings
+    monkeypatch.setattr(
+        "app.modules.moderation.service.get_settings",
+        lambda: settings,
+    )
+    return client
+
+
+def test_platform_admin_implies_moderation(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = context_with_messages(db_session)
+    admin_id = make_user(db_session)
+    admin_token = make_token(db_session, admin_id)
+    api = moderation_api(
+        client,
+        db_session,
+        monkeypatch,
+        platform_admins=str(admin_id),
+    )
+
+    me = api.get("/api/v1/moderation/me", headers=bearer(admin_token))
+    assert me.status_code == 200, me.text
+    assert me.json() == {"user_id": str(admin_id), "role": "ADMIN"}
+
+    report = api.post(
+        "/api/v1/moderation/reports",
+        headers=bearer(context["tokens"][0]),
+        json={
+            "target_user_id": str(context["users"][1]),
+            "lobby_id": str(context["lobbies"][0].id),
+            "category": "SPAM",
+            "description": "Spam no lobby",
+        },
+    )
+    assert report.status_code == 201, report.text
+
+    queue = api.get("/api/v1/moderation/queue", headers=bearer(admin_token))
+    assert queue.status_code == 200, queue.text
+    report_id = queue.json()["reports"][0]["id"]
+
+    decision = api.post(
+        f"/api/v1/moderation/reports/{report_id}/decision",
+        headers=bearer(admin_token),
+        json={"decision": "WARN", "reason": "Aviso formal"},
+    )
+    assert decision.status_code == 200, decision.text
+
+    audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.action == "moderation.report_reviewed")
+    )
+    assert audit is not None
+    assert audit.details["operator"] == str(admin_id)
+
+
+def test_platform_admin_does_not_authorize_a_common_user(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = context_with_messages(db_session)
+    platform_admin_id = make_user(db_session)
+    api = moderation_api(
+        client,
+        db_session,
+        monkeypatch,
+        platform_admins=str(platform_admin_id),
+    )
+
+    response = api.get("/api/v1/moderation/me", headers=bearer(context["tokens"][0]))
+    assert response.status_code == 403
+    assert response.json() == {"detail": {"code": "moderator_required"}}
+
+
+def test_moderation_allowlist_still_authorizes(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_with_messages(db_session)
+    operator_id = make_user(db_session)
+    api = moderation_api(
+        client,
+        db_session,
+        monkeypatch,
+        moderation_admin_user_ids=str(operator_id),
+    )
+
+    me = api.get("/api/v1/moderation/me", headers=bearer(make_token(db_session, operator_id)))
+    assert me.status_code == 200, me.text
+    assert me.json()["role"] == "ADMIN"
 
 
 def test_admin_can_add_operator(client: TestClient, db_session: Session) -> None:

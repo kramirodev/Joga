@@ -25,7 +25,7 @@ from app.modules.profile.cep import (
     CepResolver,
     InvalidCep,
 )
-from app.modules.profile.cpf import CpfKeyUnavailable, InvalidCpf
+from app.modules.profile.cpf import CpfAlreadyRegistered, CpfKeyUnavailable, InvalidCpf
 from app.modules.profile.models import Sport, SportFormat
 from app.modules.profile.service import (
     DiscoveryError,
@@ -322,6 +322,8 @@ def update_my_cpf(
 ) -> CpfView:
     try:
         present, masked = service.set_cpf(current.user_id, payload.cpf, settings)
+    except CpfAlreadyRegistered:
+        raise _error(status.HTTP_409_CONFLICT, "cpf_already_registered") from None
     except InvalidCpf:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_cpf") from None
     except CpfKeyUnavailable:
