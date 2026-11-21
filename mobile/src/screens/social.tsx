@@ -74,7 +74,7 @@ import {
   TextBtn,
   Txt,
 } from '../ui/kit';
-import { divisionLabel, number, shortDateTime } from '../ui/datetime';
+import { divisionLabel, formatTime, number, shortDateTime } from '../ui/datetime';
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
@@ -2631,8 +2631,9 @@ function ClanChat() {
         return 'mensagem';
       }
       const preview = row.body.length > 24 ? `${row.body.slice(0, 24)}…` : row.body;
-      const time = row.createdAt ? ` (${row.createdAt.slice(11, 16)})` : '';
-      return `${preview}${time}`;
+      const time = formatTime(row.createdAt);
+      const sentAt = time ? ` (${time})` : '';
+      return `${preview}${sentAt}`;
     });
     const extra = failed.length > 3 ? `; +${failed.length - 3}` : '';
     const summary = `${failed.length} de ${targets.length} não ${failed.length === 1 ? 'foi denunciada' : 'foram denunciadas'}: ${details.join('; ')}${extra}.`;
@@ -2646,6 +2647,7 @@ function ClanChat() {
     const reportable = isReportableMessage(item);
     const isSelected = !!item.serverId && selectedIds.includes(item.serverId);
     const author = mine ? 'Você' : item.displayName?.trim() || 'Membro';
+    const sentAt = formatTime(item.createdAt);
     const bubbleStyle = {
       alignSelf: mine ? ('flex-end' as const) : ('flex-start' as const),
       maxWidth: '88%' as const,
@@ -2680,7 +2682,7 @@ function ClanChat() {
           <IdentityBadge size={24} identity={identityFromSeed(item.senderId)} palette={palette} />
           <Txt variant="tiny">
             <Text style={{ fontWeight: '800', color: palette.ink }}>{author}</Text>
-            {item.createdAt ? ` · ${item.createdAt.slice(11, 16)}` : ''}
+            {sentAt ? ` · ${sentAt}` : ''}
           </Txt>
         </View>
         <Text style={{ marginTop: 3, fontSize: 14, color: palette.ink }}>{item.body}</Text>
