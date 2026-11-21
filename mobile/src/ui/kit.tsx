@@ -1999,6 +1999,7 @@ export function Page({
   rightNode,
   hideHeader,
   scroll = true,
+  onBack,
 }: PropsWithChildren<{
   title?: string;
   sub?: string;
@@ -2011,6 +2012,11 @@ export function Page({
   hideHeader?: boolean;
   /** Desliga o ScrollView para telas que hospedam uma FlatList própria. */
   scroll?: boolean;
+  /**
+   * Intercepta o botão de voltar do cabeçalho (ex.: confirmar descarte de um
+   * formulário sujo). Sem a prop, o comportamento continua sendo `nav.back()`.
+   */
+  onBack?: () => void;
 }>) {
   const { palette, contentBottomInset } = useTheme();
   const nav = useNav();
@@ -2044,7 +2050,13 @@ export function Page({
         zIndex: 5,
       }}
     >
-      {back && nav.canGoBack ? <IconBtn icon="back" label="Voltar" plain back /> : null}
+      {back && nav.canGoBack ? (
+        onBack ? (
+          <IconBtn icon="back" label="Voltar" plain onPress={onBack} />
+        ) : (
+          <IconBtn icon="back" label="Voltar" plain back />
+        )
+      ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           accessibilityRole="header"

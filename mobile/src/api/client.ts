@@ -8,9 +8,11 @@ import type {
   Challenge,
   ChatMessage,
   Clan,
+  ClanInvite,
   ClanMember,
   ClanMessage,
   ClanRanking,
+  ClanUpdate,
   CpfStatus,
   Device,
   EmailCredential,
@@ -1136,8 +1138,27 @@ export const api = {
         token,
       });
     },
-    list(token: string, query?: string, limit = 20) {
-      return call<{ clans: Clan[] }>(`/clans${qs({ q: query, limit })}`, { token });
+    list(
+      token: string,
+      filters: { q?: string; open?: boolean; has_slots?: boolean; limit?: number } = {},
+    ) {
+      return call<{ clans: Clan[] }>(
+        `/clans${qs({
+          q: filters.q,
+          open: filters.open,
+          has_slots: filters.has_slots,
+          limit: filters.limit ?? 20,
+        })}`,
+        { token },
+      );
+    },
+    /** Só nome, descrição e política: a tag é imutável e não existe no tipo. */
+    update(token: string, clanId: string, patch: ClanUpdate) {
+      return call<Clan>(`/clans/${encodeURIComponent(clanId)}`, {
+        method: 'PATCH',
+        body: patch,
+        token,
+      });
     },
     ranking(token: string, formatId?: string, limit = 20) {
       return call<ClanRanking>(`/clans/ranking${qs({ format_id: formatId, limit })}`, { token });
@@ -1216,6 +1237,34 @@ export const api = {
       return call<unknown>(
         `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}/decide`,
         { method: 'POST', body: { approve }, token },
+      );
+    },
+    invite(token: string, clanId: string, userId: string) {
+      return call<ClanInvite>(`/clans/${encodeURIComponent(clanId)}/invites`, {
+        method: 'POST',
+        body: { user_id: userId },
+        token,
+      });
+    },
+    receivedInvites(token: string) {
+      return call<{ invites: ClanInvite[] }>('/me/clan-invites', { token });
+    },
+    acceptInvite(token: string, inviteId: string) {
+      return call<Clan>(`/clans/invites/${encodeURIComponent(inviteId)}/accept`, {
+        method: 'POST',
+        token,
+      });
+    },
+    declineInvite(token: string, inviteId: string) {
+      return call<ClanInvite>(`/clans/invites/${encodeURIComponent(inviteId)}/decline`, {
+        method: 'POST',
+        token,
+      });
+    },
+    cancelInvite(token: string, clanId: string, inviteId: string) {
+      return call<ClanInvite>(
+        `/clans/${encodeURIComponent(clanId)}/invites/${encodeURIComponent(inviteId)}`,
+        { method: 'DELETE', token },
       );
     },
   },
