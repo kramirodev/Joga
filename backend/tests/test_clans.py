@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
-from app.modules.clans.models import ClanMember, ClanTrophyEvent
+from app.modules.clans.models import Clan, ClanMember, ClanTrophyEvent
 from app.modules.clans.service import (
     clan_ranking,
     create_clan,
@@ -19,6 +19,7 @@ from app.modules.clans.service import (
     trophy_total,
 )
 from app.modules.identity.clock import utcnow
+from app.modules.identity.models import AuditLog
 from app.modules.season.service import active_season
 from tests.helpers_results import build_match, make_token, make_user
 from tests.test_results_service import AT, close_round, open_round, submit
@@ -56,9 +57,11 @@ def test_create_clan_makes_the_creator_owner(client: TestClient, db_session: Ses
     _, token = make_player(db_session)
 
     clan = create_clan_api(api, token)
+    assert clan["tag"] == "#TFC"
     assert clan["members"] == 1
     assert clan["max_members"] == 30
     assert clan["my_role"] == "owner"
+    assert clan["is_member"] is True
     assert clan["join_policy"] == "approval"
 
     mine = api.get("/api/v1/me/clan", headers=bearer(token))
@@ -72,6 +75,44 @@ def test_create_clan_makes_the_creator_owner(client: TestClient, db_session: Ses
     )
     assert second.status_code == 409
     assert second.json()["detail"]["code"] == "already_in_clan"
+
+
+def test_tag_is_canonical_with_hash(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+
+    for raw, expected in (("6666", "#6666"), (" #abcd ", "#ABCD"), ("##tfc", "#TFC")):
+        _, token = make_player(db_session)
+        clan = create_clan_api(api, token, name=f"Clã {expected}", tag=raw)
+        assert clan["tag"] == expected
+
+
+def test_tag_rejects_invalid_core(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, token = make_player(db_session)
+
+    for index, raw in enumerate(("A", "ABCDEFGH", "A-B", "A B", "ÁBC")):
+        rejected = api.post(
+            "/api/v1/clans",
+            headers=bearer(token),
+            json={"name": f"Clã Inválido {index}", "tag": raw},
+        )
+        assert rejected.status_code == 409, (raw, rejected.text)
+        assert rejected.json()["detail"]["code"] == "tag_invalid"
+
+
+def test_tag_collision_after_normalization(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, first_token = make_player(db_session)
+    _, second_token = make_player(db_session)
+    create_clan_api(api, first_token, name="Primeiro", tag="TAG1")
+
+    rejected = api.post(
+        "/api/v1/clans",
+        headers=bearer(second_token),
+        json={"name": "Segundo", "tag": "#tag1"},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "tag_taken"
 
 
 def test_join_is_approved_by_an_admin(client: TestClient, db_session: Session) -> None:
@@ -106,6 +147,103 @@ def test_join_is_approved_by_an_admin(client: TestClient, db_session: Session) -
 
     members = api.get(f"/api/v1/clans/{clan['id']}/members", headers=bearer(member_token))
     assert len(members.json()["members"]) == 2
+
+
+def test_list_marks_own_clan_and_filters_open_and_slots(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, other_token = make_player(db_session)
+    mine = create_clan_api(api, owner_token, name="Tijuca FC", tag="TFC")
+    other = create_clan_api(api, other_token, name="Andaraí", tag="AND")
+    other_clan = db_session.get(Clan, uuid.UUID(other["id"]))
+    assert other_clan is not None
+    other_clan.join_policy = "open"
+    db_session.commit()
+
+    listed = api.get("/api/v1/clans", headers=bearer(owner_token)).json()["clans"]
+    by_id = {item["id"]: item for item in listed}
+    assert by_id[mine["id"]]["my_role"] == "owner"
+    assert by_id[mine["id"]]["is_member"] is True
+    assert by_id[other["id"]]["my_role"] is None
+    assert by_id[other["id"]]["is_member"] is False
+
+    already_member = api.post(
+        f"/api/v1/clans/{mine['id']}/join", headers=bearer(owner_token), json={}
+    )
+    assert already_member.status_code == 409, already_member.text
+    assert already_member.json()["detail"]["code"] == "already_member"
+
+    open_clans = api.get(
+        "/api/v1/clans", headers=bearer(owner_token), params={"open": "true"}
+    ).json()["clans"]
+    assert [item["id"] for item in open_clans] == [other["id"]]
+    closed_clans = api.get(
+        "/api/v1/clans", headers=bearer(owner_token), params={"open": "false"}
+    ).json()["clans"]
+    assert [item["id"] for item in closed_clans] == [mine["id"]]
+
+    for term in ("TFC", "#TFC"):
+        found = api.get("/api/v1/clans", headers=bearer(owner_token), params={"q": term}).json()[
+            "clans"
+        ]
+        assert [item["id"] for item in found] == [mine["id"]]
+
+    for _ in range(29):
+        db_session.add(
+            ClanMember(
+                clan_id=uuid.UUID(mine["id"]),
+                user_id=make_user(db_session, available=False),
+                role="member",
+                status="active",
+                joined_at=utcnow(),
+            )
+        )
+    db_session.commit()
+
+    full = api.get(
+        "/api/v1/clans", headers=bearer(owner_token), params={"has_slots": "false"}
+    ).json()["clans"]
+    assert [item["id"] for item in full] == [mine["id"]]
+    assert full[0]["members"] == 30
+    with_slots = api.get(
+        "/api/v1/clans", headers=bearer(owner_token), params={"has_slots": "true"}
+    ).json()["clans"]
+    assert [item["id"] for item in with_slots] == [other["id"]]
+
+
+def test_member_count_excludes_pending_requests_and_left_members(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, active_token = make_player(db_session)
+    _, pending_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    for token in (active_token, pending_token):
+        joined = api.post(f"/api/v1/clans/{clan['id']}/join", headers=bearer(token), json={}).json()
+        if token == active_token:
+            approved = api.post(
+                f"/api/v1/clans/{clan['id']}/requests/{joined['request']['id']}/decide",
+                headers=bearer(owner_token),
+                json={"approve": True},
+            )
+            assert approved.status_code == 200, approved.text
+
+    view = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(owner_token)).json()
+    assert view["members"] == 2
+
+    left = api.post(f"/api/v1/clans/{clan['id']}/leave", headers=bearer(active_token))
+    assert left.status_code == 204, left.text
+
+    after = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(owner_token)).json()
+    assert after["members"] == 1
+    requests = api.get(f"/api/v1/clans/{clan['id']}/requests", headers=bearer(owner_token)).json()[
+        "requests"
+    ]
+    assert [item["status"] for item in requests] == ["pending"]
 
 
 def test_leaving_starts_a_seven_day_cooldown(client: TestClient, db_session: Session) -> None:
@@ -169,6 +307,95 @@ def test_owner_must_transfer_before_leaving(client: TestClient, db_session: Sess
 
     left = api.post(f"/api/v1/clans/{clan['id']}/leave", headers=bearer(owner_token))
     assert left.status_code == 204
+
+
+def _join_approved(api: TestClient, clan_id: str, owner_token: str, token: str) -> None:
+    joined = api.post(f"/api/v1/clans/{clan_id}/join", headers=bearer(token), json={}).json()
+    decided = api.post(
+        f"/api/v1/clans/{clan_id}/requests/{joined['request']['id']}/decide",
+        headers=bearer(owner_token),
+        json={"approve": True},
+    )
+    assert decided.status_code == 200, decided.text
+
+
+def test_transfer_promotes_target_demotes_owner_and_audits(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    member_id, member_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, member_token)
+
+    transferred = api.post(
+        f"/api/v1/clans/{clan['id']}/transfer",
+        headers=bearer(owner_token),
+        json={"user_id": str(member_id)},
+    )
+    assert transferred.status_code == 200, transferred.text
+    assert transferred.json()["role"] == "owner"
+
+    members = api.get(f"/api/v1/clans/{clan['id']}/members", headers=bearer(member_token)).json()[
+        "members"
+    ]
+    roles = {item["user_id"]: item["role"] for item in members}
+    assert roles[str(owner_id)] == "member"
+    assert roles[str(member_id)] == "owner"
+
+    old_owner_view = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(owner_token)).json()
+    assert old_owner_view["my_role"] == "member"
+    assert old_owner_view["is_member"] is True
+
+    audit = db_session.query(AuditLog).filter_by(action="clan.ownership_transferred").one()
+    assert audit.actor_user_id == owner_id
+    assert audit.resource_id == clan["id"]
+
+
+def test_transfer_rejects_target_outside_the_clan(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    outsider_id, _ = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    rejected = api.post(
+        f"/api/v1/clans/{clan['id']}/transfer",
+        headers=bearer(owner_token),
+        json={"user_id": str(outsider_id)},
+    )
+    assert rejected.status_code == 404, rejected.text
+    assert rejected.json()["detail"]["code"] == "not_found"
+
+
+def test_transfer_requires_the_current_owner(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, member_token = make_player(db_session)
+    third_id, _ = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, member_token)
+
+    rejected = api.post(
+        f"/api/v1/clans/{clan['id']}/transfer",
+        headers=bearer(member_token),
+        json={"user_id": str(third_id)},
+    )
+    assert rejected.status_code == 403, rejected.text
+    assert rejected.json()["detail"]["code"] == "owner_required"
+
+
+def test_transfer_to_self_is_rejected(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    rejected = api.post(
+        f"/api/v1/clans/{clan['id']}/transfer",
+        headers=bearer(owner_token),
+        json={"user_id": str(owner_id)},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "already_owner"
 
 
 def test_chat_reports_hide_immediately_and_admin_can_restore(

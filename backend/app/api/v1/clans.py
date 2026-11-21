@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
@@ -67,6 +67,7 @@ class ClanSummaryView(BaseModel):
     max_members: int
     trophies: int
     my_role: str | None
+    is_member: bool
 
 
 class ClanListView(BaseModel):
@@ -182,6 +183,7 @@ def _clan_view(
             format_id=format_id,
         ),
         my_role=membership.role if membership else None,
+        is_member=membership is not None,
     )
 
 
@@ -229,7 +231,8 @@ def _handle(exc: Exception) -> HTTPException:
 
 class ClanCreateRequest(BaseModel):
     name: FreeText = Field(min_length=3, max_length=40)
-    tag: FreeText = Field(min_length=2, max_length=8)
+    # O serviço normaliza e valida o miolo (2 a 7), aceitando "#" e espaços.
+    tag: FreeText = Field(min_length=1, max_length=16)
     description: OptionalMultilineText = Field(default=None, max_length=280)
 
 
@@ -289,14 +292,40 @@ def list_clans(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
     q: Annotated[str | None, Query(max_length=40)] = None,
+    open_only: Annotated[bool | None, Query(alias="open")] = None,
+    has_slots: Annotated[bool | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> ClanListView:
     statement = select(Clan).where(Clan.status == "active")
     if q:
-        term = f"%{escape_like(q.strip())}%"
+        # A tag canônica tem "#", mas a busca aceita o miolo ou a forma com "#".
+        text = q.strip()
+        if text.startswith("#"):
+            text = text[1:].strip()
+        term = f"%{escape_like(text)}%"
         statement = statement.where(
             Clan.name.ilike(term, escape="\\") | Clan.tag.ilike(term, escape="\\")
         )
+    if open_only is not None:
+        if open_only:
+            statement = statement.where(Clan.join_policy == "open")
+        else:
+            statement = statement.where(Clan.join_policy != "open")
+    member_total = (
+        select(func.count())
+        .select_from(ClanMember)
+        .where(
+            ClanMember.clan_id == Clan.id,
+            ClanMember.status == "active",
+        )
+        .correlate(Clan)
+        .scalar_subquery()
+    )
+    if has_slots is not None:
+        if has_slots:
+            statement = statement.where(member_total < MAX_MEMBERS)
+        else:
+            statement = statement.where(member_total >= MAX_MEMBERS)
     clans = session.scalars(statement.order_by(Clan.name.asc()).limit(limit)).all()
     return ClanListView(clans=[_clan_view(session, clan, current.user_id) for clan in clans])
 
