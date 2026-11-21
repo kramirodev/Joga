@@ -356,7 +356,9 @@ export function ModerationPage() {
       <>
         <PageHeader eyebrow="JOGA y MODERAÇÃO" title="Moderação" />
         <EmptyState title="Acesso restrito" icon={<ShieldIcon size={30} />}>
-          Sua conta não tem permissão de moderação. Peça a um administrador para incluí-la.
+          Sua conta não está habilitada como moderador. Peça para incluir seu UUID em{" "}
+          <code>JOGA_MODERATION_ADMIN_USER_IDS</code> (ou cadastrá-lo como operador) e recarregue
+          esta página.
         </EmptyState>
       </>
     );

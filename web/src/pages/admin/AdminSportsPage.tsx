@@ -580,6 +580,7 @@ export function AdminSportsPage() {
 
   async function submitSport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saveMutation.isPending || preflightPending) return;
     const validation = validateSportDraft(draft, {
       editing: formMode === "edit",
       iconKeys,
@@ -622,7 +623,7 @@ export function AdminSportsPage() {
   }
 
   function confirmStatus() {
-    if (!statusTarget) return;
+    if (!statusTarget || statusMutation.isPending) return;
     const validation = textError(statusReason, { label: "o motivo", min: 3, max: 500 });
     if (validation) {
       setStatusReasonError(validation);
