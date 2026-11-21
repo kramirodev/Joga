@@ -2,29 +2,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, View } from 'react-native';
 
 import { describeApiError, ApiError } from '../api/client';
-import type { QueueEntry, QueueLevel, QueueMode, Sport } from '../api/types';
+import type { MyRating, QueueEntry, QueueLevel, QueueMode, Sport } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import {
   QUEUE_LEVELS,
   QUEUE_MODES,
-  buildLevelAssignments,
   buildSelection,
+  buildSelectionPayload,
+  emptySelection,
   entryMode,
   formatLabelFromCatalog,
+  isFormatSelected,
   isQueueLevel,
   levelKey,
   levelLabel,
   modeLabel,
   oldestCreatedAt,
-  optionalLevelsPayload,
   queueContinuity,
   queueCourtPreference,
   queueFailureMessage,
+  resolveCasualLevel,
+  selectionCount,
   selectionError,
   selectionFromEntries,
-  selectionProduct,
-  selectionProductCount,
+  selectionItemsError,
+  selectionPairs,
+  withFormatToggled,
+  withLevel,
+  withModeToggled,
+  withoutRanked,
+  type QueueSelection,
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { divisionLabel, elapsed, timeOnly, WEEKDAY_NAMES } from '../ui/datetime';
@@ -56,9 +64,7 @@ type QueueView = 'overview' | 'edit';
 
 type QueueDraft = {
   step: QueueStep;
-  formats: string[];
-  modes: QueueMode[];
-  levels: Record<string, QueueLevel>;
+  selection: QueueSelection;
   court: CourtChoice;
 };
 
@@ -69,8 +75,6 @@ type QueueDraft = {
  */
 let queueDraft: QueueDraft | null = null;
 
-type LevelRow = { mode: QueueMode; level: QueueLevel };
-
 function formatName(catalog: readonly Sport[], formatId: string): string {
   return formatLabelFromCatalog(catalog, formatId);
 }
@@ -78,6 +82,20 @@ function formatName(catalog: readonly Sport[], formatId: string): string {
 function modesLabel(modes: readonly QueueMode[]): string {
   const selected = QUEUE_MODES.filter((mode) => modes.includes(mode));
   return selected.length > 0 ? selected.map(modeLabel).join(' e ') : 'Escolha ao menos um';
+}
+
+function entryLevelDetail(entry: QueueEntry): string {
+  return entryMode(entry) === 'casual' && isQueueLevel(entry.level)
+    ? ` · ${levelLabel(entry.level)}`
+    : '';
+}
+
+/** Ranqueada mostra divisão/MMR; nunca nível. */
+function rankedDetail(rating: MyRating | undefined): string {
+  if (!rating) {
+    return 'Definida pelo seu histórico';
+  }
+  return rating.provisional ? 'Provisória' : divisionLabel(rating.division);
 }
 
 function ConfigLine({ label, value }: { label: string; value: string }) {
@@ -97,33 +115,74 @@ function SportConfigCard({
   formatId,
   catalog,
   modes,
-  levelRows,
-  court,
+  level,
+  rating,
   profileReady,
   kept,
   removed,
   onCompleteProfile,
+  onModeToggle,
   onLevelChange,
 }: {
   formatId: string;
   catalog: readonly Sport[];
   modes: readonly QueueMode[];
-  levelRows: readonly LevelRow[];
-  court: CourtChoice;
+  level: QueueLevel;
+  rating: MyRating | undefined;
   profileReady: boolean | null;
   kept: QueueEntry[];
   removed: QueueEntry[];
   onCompleteProfile: () => void;
-  onLevelChange: (mode: QueueMode, level: QueueLevel) => void;
+  onModeToggle: (mode: QueueMode) => void;
+  onLevelChange: (level: QueueLevel) => void;
 }) {
+  const casual = modes.includes('casual');
+  const ranked = modes.includes('ranked');
+  const name = formatName(catalog, formatId);
   return (
     <Card>
       <Txt variant="lead" weight="800">
-        {formatName(catalog, formatId)}
+        {name}
       </Txt>
-      <View style={{ marginTop: 10, gap: 8 }}>
-        <ConfigLine label="Modos" value={modesLabel(modes)} />
-        <ConfigLine label="Quadra" value={court} />
+      <Txt variant="label" style={{ marginTop: 10 }}>
+        Modos
+      </Txt>
+      <ChipRow style={{ marginTop: 8 }}>
+        {QUEUE_MODES.map((mode) => (
+          <Chip
+            key={mode}
+            on={modes.includes(mode)}
+            accessibilityLabel={`${modeLabel(mode)} em ${name}`}
+            onPress={() => onModeToggle(mode)}
+          >
+            {modeLabel(mode)}
+          </Chip>
+        ))}
+      </ChipRow>
+      {ranked ? (
+        <View style={{ marginTop: 8, gap: 2 }}>
+          <Txt variant="tiny">Ranqueada · {rankedDetail(rating)}</Txt>
+          <Txt variant="tiny">A ranqueada usa sua divisão e compatibilidade; não há nível.</Txt>
+        </View>
+      ) : null}
+      {casual ? (
+        <View style={{ marginTop: 12, gap: 6 }}>
+          <Txt variant="label">Nível no casual</Txt>
+          <ChipRow>
+            {QUEUE_LEVELS.map((option) => (
+              <Chip
+                key={option}
+                on={level === option}
+                accessibilityLabel={`Nível no casual de ${name}: ${levelLabel(option)}`}
+                onPress={() => onLevelChange(option)}
+              >
+                {levelLabel(option)}
+              </Chip>
+            ))}
+          </ChipRow>
+        </View>
+      ) : null}
+      <View style={{ marginTop: 12, gap: 8 }}>
         <ConfigLine
           label="Perfil"
           value={
@@ -149,23 +208,6 @@ function SportConfigCard({
           />
         ))}
       </View>
-      {levelRows.map((row) => (
-        <View key={row.mode} style={{ marginTop: 12, gap: 6 }}>
-          <Txt variant="label">Nível no {modeLabel(row.mode).toLowerCase()}</Txt>
-          <ChipRow>
-            {QUEUE_LEVELS.map((option) => (
-              <Chip
-                key={option}
-                on={row.level === option}
-                accessibilityLabel={`Nível no ${modeLabel(row.mode).toLowerCase()}: ${levelLabel(option)}`}
-                onPress={() => onLevelChange(row.mode, option)}
-              >
-                {levelLabel(option)}
-              </Chip>
-            ))}
-          </ChipRow>
-        </View>
-      ))}
       {profileReady === false ? (
         <TextBtn onPress={onCompleteProfile}>Completar este esporte</TextBtn>
       ) : null}
@@ -203,10 +245,8 @@ export function QueueScreen() {
     draftAtMount || nav.params.from === 'queue-search' ? 'edit' : 'overview',
   );
   const [step, setStep] = useState<QueueStep>(() => draftAtMount?.step ?? 1);
-  const [selected, setSelected] = useState<string[]>(() => draftAtMount?.formats ?? []);
-  const [modes, setModes] = useState<QueueMode[]>(() => draftAtMount?.modes ?? initialModes);
-  const [levels, setLevels] = useState<Record<string, QueueLevel>>(
-    () => draftAtMount?.levels ?? {},
+  const [selection, setSelection] = useState<QueueSelection>(
+    () => draftAtMount?.selection ?? emptySelection(),
   );
   const [court, setCourt] = useState<CourtChoice>(() => draftAtMount?.court ?? 'Tanto faz');
   const [busy, setBusy] = useState(false);
@@ -312,97 +352,77 @@ export function QueueScreen() {
     if (queue.length > 0) {
       const fromQueue = selectionFromEntries(queue);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelected(fromQueue.formats.filter((id) => optionById.has(id)));
-      setModes(fromQueue.modes.length > 0 ? fromQueue.modes : initialModes);
-      // O nível default de cada modo vem do servidor; escolha local posterior
-      // nunca é sobrescrita porque este efeito só roda antes de `touched`.
-      setLevels(serverLevels);
+      setSelection(
+        buildSelection(
+          fromQueue.formats.filter((id) => optionById.has(id)),
+          fromQueue.byFormat,
+        ),
+      );
       return;
     }
-    setSelected((current) => {
-      if (current.length > 0) {
+    setSelection((current) => {
+      if (current.formats.length > 0) {
         return current;
       }
       if (primaryFormatId && optionById.has(primaryFormatId)) {
-        return [primaryFormatId];
+        return buildSelection([primaryFormatId], {
+          [primaryFormatId]: { modes: initialModes },
+        });
       }
-      return formats.length > 0 ? [formats[0].id] : [];
+      if (formats.length > 0) {
+        return buildSelection([formats[0].id], { [formats[0].id]: { modes: initialModes } });
+      }
+      return current;
     });
-  }, [formats, initialModes, optionById, primaryFormatId, queue, serverLevels]);
+  }, [formats, initialModes, optionById, primaryFormatId, queue]);
 
-  const selection = useMemo(() => buildSelection(selected, modes), [modes, selected]);
-  const count = selectionProductCount(selection);
+  const count = selectionCount(selection);
   const continuity = useMemo(() => queueContinuity(queue, selection), [queue, selection]);
   const hasConfirmed = queue.length > 0 || matchedEntry !== null;
   const showOverview = view === 'overview' && hasConfirmed && !syncing;
-  const rankedSelected = selection.modes.includes('ranked');
+  const modesFor = useCallback(
+    (formatId: string): QueueMode[] => selection.byFormat[formatId]?.modes ?? [],
+    [selection],
+  );
+  const rankedFormatIds = useMemo(
+    () =>
+      selection.formats.filter((formatId) =>
+        (selection.byFormat[formatId]?.modes ?? []).includes('ranked'),
+      ),
+    [selection],
+  );
 
   const profileLevelFor = useCallback(
     (formatId: string) => profile?.sports.find((sport) => sport.format_id === formatId)?.level,
     [profile],
   );
 
-  // Default por `(format, mode)`: level já confirmado no servidor para aquela
-  // entrada; na ausência dele, o nível do perfil do formato.
+  // Default do nível casual: escolha local → entrada confirmada no GET →
+  // perfil esportivo. Ranqueada não tem nível.
   const defaultLevelFor = useCallback(
-    (formatId: string, mode: QueueMode): string | undefined =>
-      serverLevels[levelKey(formatId, mode)] ?? profileLevelFor(formatId),
-    [profileLevelFor, serverLevels],
+    (formatId: string, mode: QueueMode): QueueLevel | undefined => {
+      if (mode !== 'casual') {
+        return undefined;
+      }
+      return resolveCasualLevel(
+        selection.byFormat[formatId]?.level,
+        serverLevels[levelKey(formatId, 'casual')],
+        profileLevelFor(formatId),
+      );
+    },
+    [profileLevelFor, selection.byFormat, serverLevels],
   );
 
-  // O nível só se aplica a casual (ADR 0057 + PR #44): ranqueada usa divisão.
-  // O `PUT` continua no formato `formats`/`modes`/`levels` nesta rodada; a
-  // conversão para `selections` fica para a rodada de modo por esporte.
-  const levelSelection = useMemo(
-    () =>
-      buildSelection(
-        selection.formats,
-        selection.modes.filter((mode) => mode === 'casual'),
-      ),
-    [selection.formats, selection.modes],
-  );
-
-  const levelAssignments = useMemo(
-    () => buildLevelAssignments(levelSelection, levels, defaultLevelFor),
-    [defaultLevelFor, levelSelection, levels],
-  );
-
-  // Default que o backend aplica quando `levels` está ausente: nível do perfil.
-  const backendDefaults = useMemo(
-    () => buildLevelAssignments(levelSelection, {}, (formatId) => profileLevelFor(formatId)),
-    [levelSelection, profileLevelFor],
-  );
-
-  // Só envia o campo opcional quando a revisão difere do default do servidor;
-  // quando envia, vai uma atribuição explícita para cada entrada casual.
-  const payloadLevels = useMemo(
-    () => optionalLevelsPayload(levelAssignments, backendDefaults),
-    [backendDefaults, levelAssignments],
-  );
-
-  const levelRowsFor = useCallback(
-    (formatId: string): LevelRow[] =>
-      levelSelection.modes.map((mode) => ({
-        mode,
-        level:
-          levelAssignments.find((item) => item.format_id === formatId && item.mode === mode)
-            ?.level ?? 'intermediate',
-      })),
-    [levelAssignments, levelSelection.modes],
-  );
-
-  // Revisão cobre todas as entradas (inclusive ranqueada); o nível aparece só
-  // quando existe, ou seja, nas entradas casuais.
+  // Revisão: um par por linha; casual mostra nível, ranqueada mostra divisão.
   const reviewRows = useMemo(
     () =>
-      selectionProduct(selection).map(({ formatId, mode }) => ({
+      selectionPairs(selection).map(({ formatId, mode }) => ({
         formatId,
         mode,
-        level:
-          levelAssignments.find((item) => item.format_id === formatId && item.mode === mode)
-            ?.level ?? null,
+        level: mode === 'casual' ? (defaultLevelFor(formatId, mode) ?? 'intermediate') : null,
+        ranked: mode === 'ranked' ? rankedDetail(ratings[formatId]) : null,
       })),
-    [levelAssignments, selection],
+    [defaultLevelFor, ratings, selection],
   );
 
   // Mantém o rascunho enquanto o usuário está no formulário. O servidor só é
@@ -411,11 +431,9 @@ export function QueueScreen() {
     if (view !== 'edit') {
       return;
     }
-    queueDraft = { step, formats: selected, modes, levels, court };
-  }, [court, levels, modes, selected, step, view]);
+    queueDraft = { step, selection, court };
+  }, [court, selection, step, view]);
 
-  const selectedFormatId = selection.formats[0] ?? primaryFormatId ?? formats[0]?.id ?? null;
-  const rating = selectedFormatId ? ratings[selectedFormatId] : undefined;
   const ratingsRef = useRef(ratings);
   const requestedRatings = useRef(new Set<string>());
 
@@ -423,18 +441,18 @@ export function QueueScreen() {
     ratingsRef.current = ratings;
   }, [ratings]);
 
+  // Ranqueada exibe a divisão de cada esporte; buscamos o rating por formato.
   useEffect(() => {
-    if (!rankedSelected || !selectedFormatId) {
-      return;
+    for (const formatId of rankedFormatIds) {
+      if (ratingsRef.current[formatId] || requestedRatings.current.has(formatId)) {
+        continue;
+      }
+      requestedRatings.current.add(formatId);
+      loadRating(formatId).catch(() => {
+        requestedRatings.current.delete(formatId);
+      });
     }
-    if (ratingsRef.current[selectedFormatId] || requestedRatings.current.has(selectedFormatId)) {
-      return;
-    }
-    requestedRatings.current.add(selectedFormatId);
-    loadRating(selectedFormatId).catch(() => {
-      requestedRatings.current.delete(selectedFormatId);
-    });
-  }, [loadRating, rankedSelected, selectedFormatId]);
+  }, [loadRating, rankedFormatIds]);
 
   const windows = profile?.availability ?? [];
   const firstWindow = windows[0];
@@ -454,21 +472,15 @@ export function QueueScreen() {
   const toggleFormat = useCallback(
     (formatId: string) => {
       markTouched();
-      setSelected((current) =>
-        current.includes(formatId)
-          ? current.filter((value) => value !== formatId)
-          : [...current, formatId],
-      );
+      setSelection((current) => withFormatToggled(current, formatId));
     },
     [markTouched],
   );
 
   const toggleMode = useCallback(
-    (mode: QueueMode) => {
+    (formatId: string, mode: QueueMode) => {
       markTouched();
-      setModes((current) =>
-        current.includes(mode) ? current.filter((value) => value !== mode) : [...current, mode],
-      );
+      setSelection((current) => withModeToggled(current, formatId, mode));
     },
     [markTouched],
   );
@@ -482,11 +494,10 @@ export function QueueScreen() {
   );
 
   const changeLevel = useCallback(
-    (formatId: string, mode: QueueMode, level: QueueLevel) => {
+    (formatId: string, level: QueueLevel) => {
       markTouched();
-      // Preserva as outras combinações (inclusive modos desmarcados): remover
-      // ranqueada e adicioná-la de novo não apaga o nível já escolhido.
-      setLevels((current) => ({ ...current, [levelKey(formatId, mode)]: level }));
+      // Só casual tem nível; desmarcar/remarcar o modo preserva a escolha.
+      setSelection((current) => withLevel(current, formatId, level));
     },
     [markTouched],
   );
@@ -498,13 +509,14 @@ export function QueueScreen() {
     setStep(1);
     if (queue.length > 0) {
       const fromQueue = selectionFromEntries(queue);
-      setSelected(fromQueue.formats.filter((id) => optionById.has(id)));
-      if (fromQueue.modes.length > 0) {
-        setModes(fromQueue.modes);
-      }
-      setLevels(serverLevels);
+      setSelection(
+        buildSelection(
+          fromQueue.formats.filter((id) => optionById.has(id)),
+          fromQueue.byFormat,
+        ),
+      );
     }
-  }, [optionById, queue, serverLevels]);
+  }, [optionById, queue]);
 
   const backToOverview = useCallback(() => {
     setFailure(null);
@@ -561,18 +573,20 @@ export function QueueScreen() {
       setFailure({ code: 'invalid_selection', message: problem });
       return;
     }
+    // Um único payload explícito: casual leva nível; ranqueada omite a chave.
+    const payload = buildSelectionPayload(selection, defaultLevelFor, queueCourtPreference(court));
+    const payloadProblem = selectionItemsError(payload.selections);
+    if (payloadProblem) {
+      setFailure({ code: 'invalid_selection', message: payloadProblem });
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setFailure(null);
     clearQueueNotice();
     try {
       // Uma única chamada: o servidor substitui todas as entradas de uma vez.
-      const result = await replaceQueue(
-        selection.formats,
-        selection.modes,
-        queueCourtPreference(court),
-        payloadLevels,
-      );
+      const result = await replaceQueue(payload);
       if (result.ok) {
         touched.current = false;
         queueDraft = null;
@@ -594,7 +608,16 @@ export function QueueScreen() {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [clearQueueNotice, court, hasConfirmed, nav, payloadLevels, replaceQueue, selection, session]);
+  }, [
+    clearQueueNotice,
+    court,
+    defaultLevelFor,
+    hasConfirmed,
+    nav,
+    replaceQueue,
+    selection,
+    session,
+  ]);
 
   const oldestQueue = oldestCreatedAt(queue);
   const tick = useCallback(() => setNow(new Date()), []);
@@ -645,7 +668,7 @@ export function QueueScreen() {
                 {queue.map((entry) => (
                   <Txt key={entry.id} variant="tiny">
                     {formatName(catalog, entry.format_id)} · {modeLabel(entryMode(entry))}
-                    {isQueueLevel(entry.level) ? ` · ${levelLabel(entry.level)}` : ''}
+                    {entryLevelDetail(entry)}
                   </Txt>
                 ))}
               </View>
@@ -661,7 +684,7 @@ export function QueueScreen() {
                 <Txt variant="lead" weight="800">
                   {formatName(catalog, matchedEntry.format_id)} ·{' '}
                   {modeLabel(entryMode(matchedEntry))}
-                  {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+                  {entryLevelDetail(matchedEntry)}
                 </Txt>
                 <Txt variant="tiny">As outras buscas continuam aguardando.</Txt>
               </View>
@@ -715,7 +738,7 @@ export function QueueScreen() {
           <>
             <Card>
               <Row between>
-                <Txt variant="h3">Esportes</Txt>
+                <Txt variant="h3">Escolha os esportes</Txt>
                 <Txt variant="tiny">{formats.length} no catálogo</Txt>
               </Row>
               {catalogBusy ? (
@@ -730,7 +753,8 @@ export function QueueScreen() {
                   {formats.map((format) => (
                     <Chip
                       key={format.id}
-                      on={selected.includes(format.id)}
+                      on={isFormatSelected(selection, format.id)}
+                      accessibilityLabel={`${format.name}, ${isFormatSelected(selection, format.id) ? 'selecionado' : 'não selecionado'}`}
                       onPress={() => toggleFormat(format.id)}
                     >
                       {format.name}
@@ -749,10 +773,19 @@ export function QueueScreen() {
                 {count} {count === 1 ? 'busca' : 'buscas'}
               </Txt>
               <Txt variant="tiny" style={{ marginTop: 4 }}>
-                {selection.formats.length} {selection.formats.length === 1 ? 'esporte' : 'esportes'}{' '}
-                × {selection.modes.length} {selection.modes.length === 1 ? 'modo' : 'modos'}.
-                {selection.modes.length > 0 ? ` ${modesLabel(selection.modes)}.` : ''}
+                {selection.formats.length}{' '}
+                {selection.formats.length === 1 ? 'esporte selecionado' : 'esportes selecionados'} ·{' '}
+                {count} {count === 1 ? 'par real' : 'pares reais'}.
               </Txt>
+              {selection.formats.length > 0 ? (
+                <View style={{ marginTop: 8, gap: 4 }}>
+                  {selection.formats.map((formatId) => (
+                    <Txt key={formatId} variant="tiny">
+                      {formatName(catalog, formatId)} · {modesLabel(modesFor(formatId))}
+                    </Txt>
+                  ))}
+                </View>
+              ) : null}
               {hasConfirmed && continuity.kept.length > 0 ? (
                 <Txt variant="tiny" style={{ marginTop: 6 }}>
                   {continuity.kept.length}{' '}
@@ -795,7 +828,7 @@ export function QueueScreen() {
             <Card tone="flat">
               <Txt variant="h2">Ajuste cada esporte</Txt>
               <Txt variant="tiny" style={{ marginTop: 4 }}>
-                Nível por esporte; modos e quadra valem para todos.
+                O horário e a preferência de quadra valem para todos.
               </Txt>
             </Card>
 
@@ -809,7 +842,7 @@ export function QueueScreen() {
                   <Txt variant="lead" weight="800">
                     {formatName(catalog, matchedEntry.format_id)} ·{' '}
                     {modeLabel(entryMode(matchedEntry))}
-                    {isQueueLevel(matchedEntry.level) ? ` · ${levelLabel(matchedEntry.level)}` : ''}
+                    {entryLevelDetail(matchedEntry)}
                   </Txt>
                   <Txt variant="tiny">As outras buscas continuam aguardando.</Txt>
                   <TextBtn onPress={() => nav.go('queue-search')}>Ver partida</TextBtn>
@@ -817,73 +850,20 @@ export function QueueScreen() {
               </Appear>
             ) : null}
 
-            <Card tone="blue">
-              <Row between>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Txt variant="h3">Vale para todos os esportes</Txt>
-                  <Txt variant="tiny" style={{ marginTop: 4 }}>
-                    Nível em cada esporte.
-                  </Txt>
-                </View>
-                <Badge>compartilhado</Badge>
-              </Row>
-              <Txt variant="label" style={{ marginTop: 10 }}>
-                Modos
-              </Txt>
-              <ChipRow style={{ marginTop: 8 }}>
-                {QUEUE_MODES.map((mode) => (
-                  <Chip
-                    key={mode}
-                    on={selection.modes.includes(mode)}
-                    onPress={() => toggleMode(mode)}
-                  >
-                    {modeLabel(mode)}
-                  </Chip>
-                ))}
-              </ChipRow>
-              {rankedSelected ? (
-                <View style={{ marginTop: 4, gap: 2 }}>
-                  <Txt variant="tiny">
-                    Divisão:{' '}
-                    {rating?.provisional
-                      ? 'provisória'
-                      : rating
-                        ? divisionLabel(rating.division)
-                        : 'carregando'}
-                  </Txt>
-                  <Txt variant="tiny">Ranqueada considera sua divisão e compatibilidade.</Txt>
-                </View>
-              ) : null}
-              {selection.modes.includes('casual') ? (
-                <Txt variant="tiny" style={{ marginTop: 4 }}>
-                  Casual não altera sua divisão.
-                </Txt>
-              ) : null}
-              <Txt variant="label" style={{ marginTop: 12 }}>
-                Preferência de quadra
-              </Txt>
-              <ChipRow style={{ marginTop: 8 }}>
-                {COURT_OPTIONS.map((item) => (
-                  <Chip key={item} on={court === item} onPress={() => chooseCourt(item)}>
-                    {item}
-                  </Chip>
-                ))}
-              </ChipRow>
-            </Card>
-
             {selection.formats.map((formatId) => (
               <SportConfigCard
                 key={formatId}
                 formatId={formatId}
                 catalog={catalog}
-                modes={selection.modes}
-                levelRows={levelRowsFor(formatId)}
-                court={court}
+                modes={modesFor(formatId)}
+                level={defaultLevelFor(formatId, 'casual') ?? 'intermediate'}
+                rating={ratings[formatId]}
                 profileReady={profile ? profileFormatIds.includes(formatId) : null}
                 kept={continuity.kept.filter((entry) => entry.format_id === formatId)}
                 removed={continuity.removed.filter((entry) => entry.format_id === formatId)}
                 onCompleteProfile={() => nav.go('sports')}
-                onLevelChange={(mode, level) => changeLevel(formatId, mode, level)}
+                onModeToggle={(mode) => toggleMode(formatId, mode)}
+                onLevelChange={(level) => changeLevel(formatId, level)}
               />
             ))}
 
@@ -899,6 +879,28 @@ export function QueueScreen() {
               <TextBtn onPress={() => nav.go('availability')}>
                 {windows.length > 0 ? 'Editar horários' : 'Adicionar horários'}
               </TextBtn>
+            </Card>
+
+            <Card>
+              <Row between>
+                <Txt variant="h3">Preferência de quadra</Txt>
+                <Badge>para todos</Badge>
+              </Row>
+              <Txt variant="tiny" style={{ marginTop: 4 }}>
+                Vale para todas as buscas.
+              </Txt>
+              <ChipRow style={{ marginTop: 8 }}>
+                {COURT_OPTIONS.map((item) => (
+                  <Chip
+                    key={item}
+                    on={court === item}
+                    accessibilityLabel={`Quadra: ${item}`}
+                    onPress={() => chooseCourt(item)}
+                  >
+                    {item}
+                  </Chip>
+                ))}
+              </ChipRow>
             </Card>
 
             <Card>
@@ -975,8 +977,12 @@ export function QueueScreen() {
                         variant="sub"
                         style={{ flexShrink: 1 }}
                       >
-                        {formatName(catalog, row.formatId)} · {modeLabel(row.mode)}
-                        {row.level ? ` · ${levelLabel(row.level)}` : ''}
+                        {formatName(catalog, row.formatId)} · {modeLabel(row.mode)} ·{' '}
+                        {row.mode === 'ranked'
+                          ? row.ranked
+                          : row.level
+                            ? levelLabel(row.level)
+                            : 'Nível a definir'}
                       </Txt>
                     ))}
                   </View>
@@ -1020,7 +1026,7 @@ export function QueueScreen() {
                 ) : failure.code === 'ranked_restricted' ? (
                   <TextBtn
                     onPress={() => {
-                      setModes(['casual']);
+                      setSelection((current) => withoutRanked(current));
                       setFailure(null);
                     }}
                   >

@@ -2,8 +2,9 @@ import type {
   QueueCourtPreference,
   QueueEntry,
   QueueLevel,
-  QueueLevelAssignment,
   QueueMode,
+  QueueSelectionItem,
+  QueueSelectionPayload,
   QueueStateResponse,
   Sport,
 } from '../api/types';
@@ -12,7 +13,8 @@ import type {
  * Lógica pura da fila multi-entrada (ADR 0057). Nada aqui fala com React ou
  * rede: são funções testáveis por `node --test`.
  *
- * Regra central: a seleção local é intenção; as entradas confirmadas vêm
+ * Regra central: a seleção local é uma lista explícita de pares
+ * `(formato, modo)`, nunca um produto cartesiano. As entradas confirmadas vêm
  * sempre do servidor (`entries` + `entry` legado).
  */
 
@@ -22,12 +24,25 @@ export const QUEUE_LEVELS: readonly QueueLevel[] = ['beginner', 'intermediate', 
 
 export const DEFAULT_QUEUE_MODES: readonly QueueMode[] = ['casual'];
 
-export type QueueSelection = {
-  formats: string[];
+/** Escolha de um esporte: modos marcados e, só no casual, o nível. */
+export type SportQueueChoice = {
   modes: QueueMode[];
+  /** Nível do casual; ausente = default do servidor/perfil. */
+  level?: QueueLevel;
 };
 
-export type QueueCombination = {
+/**
+ * Seleção local por esporte. `byFormat` preserva modos e nível de esportes
+ * desmarcados no Passo 1, então remover e readicionar não perde a escolha.
+ */
+export type QueueSelection = {
+  /** Formatos escolhidos, na ordem de escolha do usuário. */
+  formats: string[];
+  byFormat: Record<string, SportQueueChoice>;
+};
+
+/** Par explícito da fila. */
+export type QueuePair = {
   formatId: string;
   mode: QueueMode;
 };
@@ -71,16 +86,20 @@ export type QueueSummary = {
  * fluxo linear antes do `PUT`: nada é removido da lista confirmada antes do 2xx.
  */
 export type QueueContinuity = {
-  /** Entradas confirmadas cuja combinação continua na seleção. */
+  /** Entradas confirmadas cujo par continua na seleção. */
   kept: QueueEntry[];
   /** Entradas confirmadas que serão canceladas ao confirmar. */
   removed: QueueEntry[];
-  /** Combinações da seleção que ainda não existem no servidor. */
-  added: QueueCombination[];
+  /** Pares da seleção que ainda não existem no servidor. */
+  added: QueuePair[];
 };
 
 export function emptySnapshot(): QueueSnapshot {
   return { entries: [], matched: null, expired: [], duplicates: 0 };
+}
+
+export function emptySelection(): QueueSelection {
+  return { formats: [], byFormat: {} };
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -97,15 +116,72 @@ export function normalizeModes(modes: readonly string[]): QueueMode[] {
   return result;
 }
 
-/** Payload deduplicado e em ordem estável para o `PUT` atômico. */
+export function isQueueLevel(value: unknown): value is QueueLevel {
+  return value === 'beginner' || value === 'intermediate' || value === 'advanced';
+}
+
+export function levelLabel(level: QueueLevel): string {
+  if (level === 'beginner') {
+    return 'Iniciante';
+  }
+  return level === 'advanced' ? 'Avançado' : 'Intermediário';
+}
+
+export function modeLabel(mode: QueueMode): string {
+  return mode === 'ranked' ? 'Ranqueada' : 'Casual';
+}
+
+/**
+ * Escolha de um esporte. Sem modos explícitos o default é casual; um esporte
+ * com `modes: []` é intencionalmente vazio (erro acionável no Passo 2).
+ */
+export function sportChoice(
+  modes: readonly string[] = DEFAULT_QUEUE_MODES,
+  level?: QueueLevel | null,
+): SportQueueChoice {
+  const normalized = normalizeModes(modes);
+  return {
+    modes: QUEUE_MODES.filter((mode) => normalized.includes(mode)),
+    ...(isQueueLevel(level) ? { level } : {}),
+  };
+}
+
+/**
+ * Materializa a seleção a partir da lista de formatos e das escolhas por
+ * formato. Deduplica formatos e mantém a ordem escolhida; não cria par que o
+ * usuário não marcou.
+ */
 export function buildSelection(
   formats: readonly string[],
-  modes: readonly string[],
+  byFormat: Readonly<Record<string, SportQueueChoice | undefined>>,
 ): QueueSelection {
-  return {
-    formats: unique(formats.filter((value) => typeof value === 'string' && value.length > 0)),
-    modes: normalizeModes(modes),
-  };
+  const selected: string[] = [];
+  const result: Record<string, SportQueueChoice> = {};
+  for (const formatId of formats) {
+    if (typeof formatId !== 'string' || formatId.length === 0 || selected.includes(formatId)) {
+      continue;
+    }
+    selected.push(formatId);
+    const choice = byFormat[formatId];
+    result[formatId] = choice ? sportChoice(choice.modes, choice.level) : sportChoice();
+  }
+  return { formats: selected, byFormat: result };
+}
+
+/** Pares reais da seleção, em ordem estável (formato escolhido, casual antes). */
+export function selectionPairs(selection: QueueSelection): QueuePair[] {
+  const pairs: QueuePair[] = [];
+  for (const formatId of selection.formats) {
+    const modes = normalizeModes(selection.byFormat[formatId]?.modes ?? DEFAULT_QUEUE_MODES);
+    for (const mode of modes) {
+      pairs.push({ formatId, mode });
+    }
+  }
+  return pairs;
+}
+
+export function selectionCount(selection: QueueSelection): number {
+  return selectionPairs(selection).length;
 }
 
 /** Validação local antes de chamar o servidor; devolve texto acionável. */
@@ -113,25 +189,85 @@ export function selectionError(selection: QueueSelection): string | null {
   if (selection.formats.length === 0) {
     return 'Escolha pelo menos um esporte para buscar partida.';
   }
-  if (selection.modes.length === 0) {
-    return 'Escolha pelo menos um modo: casual ou ranqueada.';
+  for (const formatId of selection.formats) {
+    const modes = selection.byFormat[formatId]?.modes ?? [];
+    if (modes.length === 0) {
+      return 'Escolha casual, ranqueada ou ambos em cada esporte selecionado.';
+    }
   }
   return null;
 }
 
-/** Produto cartesiano usado na prévia ("4 buscas: 2 formatos × 2 modos"). */
-export function selectionProduct(selection: QueueSelection): QueueCombination[] {
-  const product: QueueCombination[] = [];
-  for (const formatId of selection.formats) {
-    for (const mode of selection.modes) {
-      product.push({ formatId, mode });
-    }
-  }
-  return product;
+export function isFormatSelected(selection: QueueSelection, formatId: string): boolean {
+  return selection.formats.includes(formatId);
 }
 
-export function selectionProductCount(selection: QueueSelection): number {
-  return selection.formats.length * selection.modes.length;
+/** Liga/desliga um esporte sem descartar modos e nível já escolhidos. */
+export function withFormatToggled(selection: QueueSelection, formatId: string): QueueSelection {
+  if (!formatId) {
+    return selection;
+  }
+  if (selection.formats.includes(formatId)) {
+    return { ...selection, formats: selection.formats.filter((id) => id !== formatId) };
+  }
+  const current = selection.byFormat[formatId];
+  const choice =
+    current && current.modes.length > 0
+      ? sportChoice(current.modes, current.level)
+      : sportChoice(DEFAULT_QUEUE_MODES, current?.level);
+  return {
+    formats: [...selection.formats, formatId],
+    byFormat: { ...selection.byFormat, [formatId]: choice },
+  };
+}
+
+/** Liga/desliga um modo daquele esporte; o nível casual é preservado. */
+export function withModeToggled(
+  selection: QueueSelection,
+  formatId: string,
+  mode: QueueMode,
+): QueueSelection {
+  const current = selection.byFormat[formatId] ?? sportChoice();
+  const modes = current.modes.includes(mode)
+    ? current.modes.filter((value) => value !== mode)
+    : [...current.modes, mode];
+  return {
+    ...selection,
+    byFormat: {
+      ...selection.byFormat,
+      [formatId]: {
+        ...current,
+        modes: QUEUE_MODES.filter((value) => modes.includes(value)),
+      },
+    },
+  };
+}
+
+/** Guarda o nível casual escolhido para aquele esporte (nunca em ranqueada). */
+export function withLevel(
+  selection: QueueSelection,
+  formatId: string,
+  level: QueueLevel,
+): QueueSelection {
+  const current = selection.byFormat[formatId] ?? sportChoice();
+  return {
+    ...selection,
+    byFormat: { ...selection.byFormat, [formatId]: { ...current, level } },
+  };
+}
+
+/**
+ * Reação a `ranked_restricted`: desliga ranqueada em todos os esportes e
+ * garante ao menos casual em cada um, sem perder o nível já escolhido.
+ */
+export function withoutRanked(selection: QueueSelection): QueueSelection {
+  const byFormat: Record<string, SportQueueChoice> = { ...selection.byFormat };
+  for (const formatId of selection.formats) {
+    const current = byFormat[formatId] ?? sportChoice();
+    const modes = QUEUE_MODES.filter((mode) => mode !== 'ranked' && current.modes.includes(mode));
+    byFormat[formatId] = { ...current, modes: modes.length > 0 ? modes : sportChoice().modes };
+  }
+  return { ...selection, byFormat };
 }
 
 export function isExpired(entry: QueueEntry, now: number = Date.now()): boolean {
@@ -141,10 +277,6 @@ export function isExpired(entry: QueueEntry, now: number = Date.now()): boolean 
 
 export function entryMode(entry: QueueEntry): QueueMode {
   return entry.mode === 'ranked' ? 'ranked' : 'casual';
-}
-
-export function modeLabel(mode: QueueMode): string {
-  return mode === 'ranked' ? 'Ranqueada' : 'Casual';
 }
 
 /**
@@ -260,65 +392,88 @@ export function levelKey(formatId: string, mode: QueueMode): string {
   return combinationKey(formatId, mode);
 }
 
-export function isQueueLevel(value: unknown): value is QueueLevel {
-  return value === 'beginner' || value === 'intermediate' || value === 'advanced';
-}
-
-export function levelLabel(level: QueueLevel): string {
-  if (level === 'beginner') {
-    return 'Iniciante';
+/**
+ * Default do nível casual: escolha local → nível da entrada confirmada no
+ * servidor → nível do perfil esportivo → intermediário (mesmo default da tela
+ * de esportes). Nunca é usado para ranqueada.
+ */
+export function resolveCasualLevel(
+  chosen: string | null | undefined,
+  serverLevel: string | null | undefined,
+  profileLevel: string | null | undefined,
+): QueueLevel {
+  if (isQueueLevel(chosen)) {
+    return chosen;
   }
-  return level === 'advanced' ? 'Avançado' : 'Intermediário';
+  if (isQueueLevel(serverLevel)) {
+    return serverLevel;
+  }
+  if (isQueueLevel(profileLevel)) {
+    return profileLevel;
+  }
+  return 'intermediate';
 }
 
 /**
- * Uma atribuição explícita de nível por entrada `(format_id, mode)`.
- *
- * `chosen` guarda a escolha local/servidor por chave; `fallback` resolve o
- * default daquela combinação (nível do perfil, por exemplo). Se o valor salvo
- * não for um nível válido, o default é usado; se o default também não for,
- * cai em `intermediate`, o mesmo default da tela de esportes.
+ * Itens do campo `selections` do `PUT`, na ordem dos pares. Casual recebe o
+ * nível resolvido; ranqueada **não** recebe a chave `level` (nem `null`).
  */
-export function buildLevelAssignments(
+export function buildSelectionItems(
   selection: QueueSelection,
-  chosen: Readonly<Record<string, string | undefined>>,
-  fallback: (formatId: string, mode: QueueMode) => string | null | undefined,
-): QueueLevelAssignment[] {
-  return selectionProduct(selection).map(({ formatId, mode }) => {
-    const stored = chosen[levelKey(formatId, mode)];
-    const candidate = isQueueLevel(stored) ? stored : fallback(formatId, mode);
+  levelFor: (formatId: string, mode: QueueMode) => string | null | undefined,
+): QueueSelectionItem[] {
+  return selectionPairs(selection).map(({ formatId, mode }) => {
+    if (mode === 'ranked') {
+      return { format_id: formatId, mode };
+    }
+    const level = levelFor(formatId, mode);
     return {
       format_id: formatId,
       mode,
-      level: isQueueLevel(candidate) ? candidate : 'intermediate',
+      level: isQueueLevel(level) ? level : 'intermediate',
     };
   });
 }
 
-/** Compara duas listas por `(format, mode)`, sem depender da ordem. */
-export function levelAssignmentsMatch(
-  left: readonly QueueLevelAssignment[],
-  right: readonly QueueLevelAssignment[],
-): boolean {
-  if (left.length !== right.length) {
-    return false;
+/**
+ * Validação final do payload. Duplicata de par, `level` em ranqueada ou casual
+ * sem nível válido são bugs de montagem: barramos antes da rede.
+ */
+export function selectionItemsError(items: readonly QueueSelectionItem[]): string | null {
+  if (items.length === 0) {
+    return 'Escolha pelo menos um esporte e um modo para buscar partida.';
   }
-  const byKey = new Map(
-    right.map((item) => [levelKey(item.format_id, item.mode), item.level] as const),
-  );
-  return left.every((item) => byKey.get(levelKey(item.format_id, item.mode)) === item.level);
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = combinationKey(item.format_id, item.mode);
+    if (seen.has(key)) {
+      return 'A mesma combinação de esporte e modo apareceu duas vezes. Revise a seleção.';
+    }
+    seen.add(key);
+    if (item.mode === 'ranked' && item.level !== undefined) {
+      return 'Não foi possível montar a busca ranqueada. Nada foi alterado; tente novamente.';
+    }
+    if (item.mode === 'casual' && !isQueueLevel(item.level)) {
+      return 'Escolha um nível válido para o casual.';
+    }
+  }
+  return null;
 }
 
-/**
- * Campo `levels` do `PUT`: opcional. Só é enviado quando algum nível escolhido
- * difere do default do servidor; nesse caso leva **todas** as entradas
- * selecionadas, para a revisão e o payload serem idênticos.
- */
-export function optionalLevelsPayload(
-  assignments: readonly QueueLevelAssignment[],
-  serverDefaults: readonly QueueLevelAssignment[],
-): QueueLevelAssignment[] | undefined {
-  return levelAssignmentsMatch(assignments, serverDefaults) ? undefined : [...assignments];
+/** Payload único do `PUT`: pares explícitos + preferência de quadra global. */
+export function buildSelectionPayload(
+  selection: QueueSelection,
+  levelFor: (formatId: string, mode: QueueMode) => string | null | undefined,
+  courtPreference: QueueCourtPreference = 'ANY',
+): QueueSelectionPayload {
+  return {
+    selections: buildSelectionItems(selection, levelFor),
+    court_preference: courtPreference,
+  };
+}
+
+export function itemsToPairs(items: readonly QueueSelectionItem[]): QueuePair[] {
+  return items.map((item) => ({ formatId: item.format_id, mode: item.mode }));
 }
 
 /**
@@ -330,8 +485,8 @@ export function queueContinuity(
   entries: readonly QueueEntry[],
   selection: QueueSelection,
 ): QueueContinuity {
-  const product = selectionProduct(selection);
-  const wanted = new Set(product.map((item) => combinationKey(item.formatId, item.mode)));
+  const pairs = selectionPairs(selection);
+  const wanted = new Set(pairs.map((item) => combinationKey(item.formatId, item.mode)));
   const present = new Set<string>();
   const kept: QueueEntry[] = [];
   const removed: QueueEntry[] = [];
@@ -347,7 +502,7 @@ export function queueContinuity(
   return {
     kept,
     removed,
-    added: product.filter((item) => !present.has(combinationKey(item.formatId, item.mode))),
+    added: pairs.filter((item) => !present.has(combinationKey(item.formatId, item.mode))),
   };
 }
 
@@ -355,13 +510,8 @@ export function queueContinuity(
  * A seleção pedida está materializada no servidor? Usado só depois de um
  * timeout no `PUT`, para saber se a releitura confirma o commit.
  */
-export function snapshotCoversSelection(
-  snapshot: QueueSnapshot,
-  selection: QueueSelection,
-): boolean {
-  const expected = new Set(
-    selectionProduct(selection).map((item) => combinationKey(item.formatId, item.mode)),
-  );
+export function snapshotCoversPairs(snapshot: QueueSnapshot, pairs: readonly QueuePair[]): boolean {
+  const expected = new Set(pairs.map((item) => combinationKey(item.formatId, item.mode)));
   const actual = new Set<string>();
   for (const entry of snapshot.entries) {
     actual.add(combinationKey(entry.format_id, entryMode(entry)));
@@ -378,6 +528,13 @@ export function snapshotCoversSelection(
     }
   }
   return true;
+}
+
+export function snapshotCoversSelection(
+  snapshot: QueueSnapshot,
+  selection: QueueSelection,
+): boolean {
+  return snapshotCoversPairs(snapshot, selectionPairs(selection));
 }
 
 export function oldestCreatedAt(entries: readonly QueueEntry[]): string | null {
@@ -412,19 +569,40 @@ export function summarizeEntries(entries: readonly QueueEntry[]): QueueSummary {
   };
 }
 
+/**
+ * Reconstrói a seleção a partir das entradas confirmadas: um modo por entrada
+ * e o nível casual que o servidor devolveu. Não existem pares fantasmas.
+ */
 export function selectionFromEntries(entries: readonly QueueEntry[]): QueueSelection {
   const formats: string[] = [];
-  const modes: QueueMode[] = [];
+  const byFormat: Record<string, SportQueueChoice> = {};
   for (const entry of entries) {
-    if (!formats.includes(entry.format_id)) {
-      formats.push(entry.format_id);
+    const formatId = entry.format_id;
+    if (!formatId) {
+      continue;
     }
+    if (!formats.includes(formatId)) {
+      formats.push(formatId);
+    }
+    const current = byFormat[formatId] ?? { modes: [] };
     const mode = entryMode(entry);
-    if (!modes.includes(mode)) {
-      modes.push(mode);
+    const fallback: SportQueueChoice = {
+      modes: unique<QueueMode>([...current.modes, mode]),
+      ...(current.level ? { level: current.level } : {}),
+    };
+    byFormat[formatId] = fallback;
+    if (mode === 'casual' && isQueueLevel(entry.level)) {
+      byFormat[formatId] = { ...fallback, level: entry.level };
     }
   }
-  return { formats, modes };
+  for (const formatId of formats) {
+    const current = byFormat[formatId];
+    byFormat[formatId] = {
+      ...current,
+      modes: QUEUE_MODES.filter((mode) => current.modes.includes(mode)),
+    };
+  }
+  return { formats, byFormat };
 }
 
 /** Lobby em jogo para denúncia/reserva: a entrada encontrada tem prioridade. */
@@ -486,6 +664,14 @@ export function queueFailureMessage(code: string | null | undefined): string {
       return 'Modo de partida inválido. Revise a seleção e tente novamente.';
     case 'queue_conflict':
       return 'Já havia uma atualização em andamento. Relemos sua fila; tente novamente.';
+    case 'duplicate_queue_selection':
+      return 'A mesma combinação de esporte e modo apareceu duas vezes. Revise a seleção.';
+    case 'ambiguous_queue_selection':
+      return 'A busca foi enviada em um formato ambíguo. Nada foi alterado; tente novamente.';
+    case 'invalid_level_override':
+      return 'O nível escolhido não pôde ser aplicado. Revise o nível do casual e tente novamente.';
+    case 'level_not_applicable_for_ranked':
+      return 'Não foi possível montar a busca ranqueada com nível. Nada foi alterado; tente novamente.';
     case 'request_timeout':
     case 'network_unavailable':
       return 'A conexão falhou. Vamos reler sua fila antes de tentar novamente.';

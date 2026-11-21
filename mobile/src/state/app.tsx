@@ -49,10 +49,8 @@ import type {
   PassSubscription,
   Profile,
   Progress,
-  QueueCourtPreference,
   QueueEntry,
-  QueueLevelAssignment,
-  QueueMode,
+  QueueSelectionPayload,
   Sport,
   Stats,
   TicketPack,
@@ -73,16 +71,16 @@ import {
 import { DEFAULT_IDENTITY, LOCAL_VISUAL_CATALOG, normalizeIdentity } from '../ui/identity';
 import {
   applyNetworkFailure,
-  buildSelection,
   cancelOutcome,
   emptySnapshot,
   formatLabelFromCatalog,
   isExpired,
   isNetworkFailure,
   isStaleRevision,
+  itemsToPairs,
   reconcileEntries,
-  selectionError,
-  snapshotCoversSelection,
+  selectionItemsError,
+  snapshotCoversPairs,
   snapshotFromEntries,
   type QueueCancelOutcome,
   type QueueReplaceOutcome,
@@ -170,12 +168,8 @@ type AppValue = {
   loadSeason: () => Promise<void>;
   loadMatches: () => Promise<MatchSummary[]>;
   loadQueue: () => Promise<QueueSnapshot | null>;
-  replaceQueue: (
-    formats: string[],
-    modes: QueueMode[],
-    courtPreference?: QueueCourtPreference,
-    levels?: QueueLevelAssignment[],
-  ) => Promise<QueueReplaceOutcome>;
+  /** Um único `PUT` com `selections` explícitas (pares, sem produto cartesiano). */
+  replaceQueue: (payload: QueueSelectionPayload) => Promise<QueueReplaceOutcome>;
   cancelQueue: () => Promise<QueueCancelOutcome>;
   clearQueueNotice: () => void;
   loadStore: () => Promise<void>;
@@ -334,12 +328,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   }, [token, commitQueueSnapshot]);
 
   const replaceQueue = useCallback(
-    async (
-      formats: string[],
-      modes: QueueMode[],
-      courtPreference: QueueCourtPreference = 'ANY',
-      levels?: QueueLevelAssignment[],
-    ): Promise<QueueReplaceOutcome> => {
+    async (payload: QueueSelectionPayload): Promise<QueueReplaceOutcome> => {
       if (!token) {
         return {
           ok: false,
@@ -348,8 +337,7 @@ export function AppProvider({ children }: PropsWithChildren) {
           reconciled: false,
         };
       }
-      const selection = buildSelection(formats, modes);
-      if (selectionError(selection)) {
+      if (selectionItemsError(payload.selections)) {
         return {
           ok: false,
           code: 'invalid_selection',
@@ -361,14 +349,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       const revision = queueRevisionRef.current;
       setQueueNotice(null);
       try {
-        // Uma única chamada atômica com todos os formatos e modos. `levels` é
-        // opcional no contrato e só vai quando difere do default do servidor.
-        const response = await api.queue.replace(token, {
-          formats: selection.formats,
-          modes: selection.modes,
-          court_preference: courtPreference,
-          ...(levels && levels.length > 0 ? { levels } : {}),
-        });
+        // Uma única chamada atômica com os pares explícitos. Sem `formats`,
+        // `modes` ou `levels`: são mutuamente exclusivos com `selections`.
+        const response = await api.queue.replace(token, payload);
         const snapshot = reconcileEntries(response, Date.now());
         if (revision === queueRevisionRef.current) {
           commitQueueSnapshot(snapshot);
@@ -396,7 +379,7 @@ export function AppProvider({ children }: PropsWithChildren) {
             const outcome = applyNetworkFailure(queueSnapshotRef.current, reloaded, Date.now());
             commitQueueSnapshot(outcome.snapshot);
             queueRevisionRef.current += 1;
-            if (snapshotCoversSelection(outcome.snapshot, selection)) {
+            if (snapshotCoversPairs(outcome.snapshot, itemsToPairs(payload.selections))) {
               return { ok: true, snapshot: outcome.snapshot, reconciled: true };
             }
             return {
