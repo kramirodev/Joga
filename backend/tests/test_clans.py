@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
-from app.modules.clans.models import Clan, ClanMember, ClanTrophyEvent
+from app.modules.clans.models import Clan, ClanInvite, ClanMember, ClanTrophyEvent
 from app.modules.clans.service import (
     clan_ranking,
     create_clan,
@@ -20,7 +20,9 @@ from app.modules.clans.service import (
 )
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import AuditLog
+from app.modules.notifications.models import Notification
 from app.modules.season.service import active_season
+from app.modules.social.models import Friendship, UserBlock
 from tests.helpers_results import build_match, make_token, make_user
 from tests.test_results_service import AT, close_round, open_round, submit
 
@@ -561,3 +563,435 @@ def test_finalized_match_credits_clan_trophies(db_session: Session) -> None:
 
     season = active_season(db_session, AT)
     assert trophy_total(db_session, clan.id, season_id=season.id) == 100
+
+
+# Edição de clã -----------------------------------------------------------
+
+
+def make_friends(session: Session, first: uuid.UUID, second: uuid.UUID) -> None:
+    low, high = (first, second) if str(first) < str(second) else (second, first)
+    session.add(
+        Friendship(
+            user_low_id=low,
+            user_high_id=high,
+            requested_by=first,
+            status="ACCEPTED",
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+    )
+    session.commit()
+
+
+def block_user(session: Session, blocker: uuid.UUID, blocked: uuid.UUID) -> None:
+    session.add(UserBlock(blocker_id=blocker, blocked_id=blocked, created_at=utcnow()))
+    session.commit()
+
+
+def promote_admin(api: TestClient, clan_id: str, owner_token: str, user_id: uuid.UUID) -> None:
+    promoted = api.post(
+        f"/api/v1/clans/{clan_id}/members/{user_id}/role",
+        headers=bearer(owner_token),
+        json={"role": "admin"},
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["role"] == "admin"
+
+
+def test_owner_edits_name_description_and_policy_with_audit(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    edited = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={
+            "name": "Tijuca United",
+            "description": "Treino as terças",
+            "join_policy": "open",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert body["name"] == "Tijuca United"
+    assert body["description"] == "Treino as terças"
+    assert body["join_policy"] == "open"
+    assert body["tag"] == "#TFC"
+    assert body["my_role"] == "owner"
+
+    audit = db_session.query(AuditLog).filter_by(action="clan.updated").one()
+    assert audit.actor_user_id == owner_id
+    assert audit.resource_id == clan["id"]
+    assert audit.details["changes"] == {
+        "name": {"from": "Tijuca FC", "to": "Tijuca United"},
+        "description": {"from": None, "to": "Treino as terças"},
+        "join_policy": {"from": "approval", "to": "open"},
+    }
+
+    cleared = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"description": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["description"] is None
+    assert db_session.query(AuditLog).filter_by(action="clan.updated").count() == 2
+
+    unchanged = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"join_policy": "open"},
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert db_session.query(AuditLog).filter_by(action="clan.updated").count() == 2
+
+
+def test_admin_edits_but_common_member_cannot(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    admin_id, admin_token = make_player(db_session)
+    _, member_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, admin_token)
+    _join_approved(api, clan["id"], owner_token, member_token)
+    promote_admin(api, clan["id"], owner_token, admin_id)
+
+    admin_edit = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(admin_token),
+        json={"description": "descrição do admin"},
+    )
+    assert admin_edit.status_code == 200, admin_edit.text
+    assert admin_edit.json()["description"] == "descrição do admin"
+
+    forbidden = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(member_token),
+        json={"description": "não pode"},
+    )
+    assert forbidden.status_code == 403, forbidden.text
+    assert forbidden.json()["detail"]["code"] == "admin_required"
+
+
+def test_tag_cannot_be_changed(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    rejected = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"tag": "#NOVA"},
+    )
+    assert rejected.status_code == 422, rejected.text
+    stored = db_session.get(Clan, uuid.UUID(clan["id"]))
+    assert stored is not None
+    assert stored.tag == "#TFC"
+
+    still = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(owner_token))
+    assert still.json()["tag"] == "#TFC"
+
+
+def test_duplicate_name_is_conflict(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, first_token = make_player(db_session)
+    _, second_token = make_player(db_session)
+    create_clan_api(api, first_token, name="Tijuca FC", tag="TFC")
+    other = create_clan_api(api, second_token, name="Andaraí", tag="AND")
+
+    rejected = api.patch(
+        f"/api/v1/clans/{other['id']}",
+        headers=bearer(second_token),
+        json={"name": "Tijuca FC"},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "name_taken"
+
+
+def test_invalid_fields_are_rejected(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    long_description = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"description": "x" * 281},
+    )
+    assert long_description.status_code == 422, long_description.text
+
+    invalid_policy = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"join_policy": "aberto"},
+    )
+    assert invalid_policy.status_code == 422, invalid_policy.text
+
+    short_name = api.patch(
+        f"/api/v1/clans/{clan['id']}",
+        headers=bearer(owner_token),
+        json={"name": "ab"},
+    )
+    assert short_name.status_code == 422, short_name.text
+
+
+# Convites de clã ---------------------------------------------------------
+
+
+def invite_api(
+    api: TestClient,
+    clan_id: str,
+    token: str,
+    invitee_id: uuid.UUID,
+) -> object:
+    return api.post(
+        f"/api/v1/clans/{clan_id}/invites",
+        headers=bearer(token),
+        json={"user_id": str(invitee_id)},
+    )
+
+
+def test_invite_friend_lists_and_notifies(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+
+    created = invite_api(api, clan["id"], owner_token, friend_id)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["status"] == "pending"
+    assert body["clan_id"] == clan["id"]
+    assert body["clan_name"] == "Tijuca FC"
+    assert body["clan_tag"] == "#TFC"
+    assert body["inviter_id"] == str(owner_id)
+
+    listed = api.get("/api/v1/me/clan-invites", headers=bearer(friend_token))
+    assert listed.status_code == 200, listed.text
+    invites = listed.json()["invites"]
+    assert [item["id"] for item in invites] == [body["id"]]
+    assert invites[0]["clan_name"] == "Tijuca FC"
+
+    notification = (
+        db_session.query(Notification).filter_by(user_id=friend_id, kind="clan_invite").one()
+    )
+    assert notification.data["clan_id"] == clan["id"]
+    assert notification.data["invite_id"] == body["id"]
+
+
+def test_invite_requires_friendship_and_rejects_block(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    stranger_id, _ = make_player(db_session)
+    friend_id, _ = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    not_friend = invite_api(api, clan["id"], owner_token, stranger_id)
+    assert not_friend.status_code == 403, not_friend.text
+    assert not_friend.json()["detail"]["code"] == "not_friends"
+
+    make_friends(db_session, owner_id, friend_id)
+    block_user(db_session, owner_id, friend_id)
+    blocked = invite_api(api, clan["id"], owner_token, friend_id)
+    assert blocked.status_code == 403, blocked.text
+    assert blocked.json()["detail"]["code"] == "blocked"
+
+
+def test_invite_rejects_full_clan_and_duplicates(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, _ = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+
+    first = invite_api(api, clan["id"], owner_token, friend_id)
+    assert first.status_code == 201, first.text
+
+    duplicate = invite_api(api, clan["id"], owner_token, friend_id)
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["detail"]["code"] == "already_invited"
+
+    db_session.query(ClanInvite).filter_by(id=uuid.UUID(first.json()["id"])).delete()
+    for _ in range(29):
+        db_session.add(
+            ClanMember(
+                clan_id=uuid.UUID(clan["id"]),
+                user_id=make_user(db_session, available=False),
+                role="member",
+                status="active",
+                joined_at=utcnow(),
+            )
+        )
+    db_session.commit()
+
+    roomless = invite_api(api, clan["id"], owner_token, friend_id)
+    assert roomless.status_code == 409, roomless.text
+    assert roomless.json()["detail"]["code"] == "clan_full"
+
+
+def test_accept_invite_makes_active_member_and_audits(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+    invite = invite_api(api, clan["id"], owner_token, friend_id).json()
+
+    accepted = api.post(
+        f"/api/v1/clans/invites/{invite['id']}/accept", headers=bearer(friend_token)
+    )
+    assert accepted.status_code == 200, accepted.text
+    body = accepted.json()
+    assert body["id"] == clan["id"]
+    assert body["members"] == 2
+    assert body["my_role"] == "member"
+    assert body["is_member"] is True
+
+    stored = db_session.get(ClanInvite, uuid.UUID(invite["id"]))
+    assert stored is not None
+    assert stored.status == "accepted"
+    assert stored.answered_at is not None
+
+    audit = db_session.query(AuditLog).filter_by(action="clan.invite_accepted").one()
+    assert audit.actor_user_id == friend_id
+    assert audit.details["invite_id"] == invite["id"]
+
+
+def test_accept_invite_with_active_clan_is_conflict(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+    invite = invite_api(api, clan["id"], owner_token, friend_id).json()
+    create_clan_api(api, friend_token, name="Clã do Amigo", tag="AMG")
+
+    rejected = api.post(
+        f"/api/v1/clans/invites/{invite['id']}/accept", headers=bearer(friend_token)
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "already_in_clan"
+
+
+def test_expired_invite_cannot_be_accepted(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+    invite = invite_api(api, clan["id"], owner_token, friend_id).json()
+
+    stored = db_session.get(ClanInvite, uuid.UUID(invite["id"]))
+    assert stored is not None
+    stored.expires_at = utcnow() - timedelta(minutes=1)
+    db_session.commit()
+
+    rejected = api.post(
+        f"/api/v1/clans/invites/{invite['id']}/accept", headers=bearer(friend_token)
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "invite_expired"
+
+    listed = api.get("/api/v1/me/clan-invites", headers=bearer(friend_token)).json()["invites"]
+    assert listed == []
+    db_session.refresh(stored)
+    assert stored.status == "expired"
+
+
+def test_decline_own_invite_but_not_someone_elses(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    stranger_id, stranger_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+    invite = invite_api(api, clan["id"], owner_token, friend_id).json()
+
+    foreign = api.post(
+        f"/api/v1/clans/invites/{invite['id']}/decline", headers=bearer(stranger_token)
+    )
+    assert foreign.status_code == 404, foreign.text
+
+    declined = api.post(
+        f"/api/v1/clans/invites/{invite['id']}/decline", headers=bearer(friend_token)
+    )
+    assert declined.status_code == 200, declined.text
+    assert declined.json()["status"] == "declined"
+    assert declined.json()["answered_at"] is not None
+
+    again = api.post(f"/api/v1/clans/invites/{invite['id']}/accept", headers=bearer(friend_token))
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"]["code"] == "invite_not_pending"
+
+
+def test_admin_cancels_pending_invite_but_member_cannot(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    admin_id, admin_token = make_player(db_session)
+    friend_id, friend_token = make_player(db_session)
+    _, member_token = make_player(db_session)
+    make_friends(db_session, owner_id, friend_id)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, admin_token)
+    _join_approved(api, clan["id"], owner_token, member_token)
+    promote_admin(api, clan["id"], owner_token, admin_id)
+    invite = invite_api(api, clan["id"], owner_token, friend_id).json()
+
+    forbidden = api.delete(
+        f"/api/v1/clans/{clan['id']}/invites/{invite['id']}", headers=bearer(member_token)
+    )
+    assert forbidden.status_code == 403, forbidden.text
+    assert forbidden.json()["detail"]["code"] == "admin_required"
+
+    cancelled = api.delete(
+        f"/api/v1/clans/{clan['id']}/invites/{invite['id']}", headers=bearer(admin_token)
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "expired"
+
+    listed = api.get("/api/v1/me/clan-invites", headers=bearer(friend_token)).json()["invites"]
+    assert listed == []
+
+    audit = db_session.query(AuditLog).filter_by(action="clan.invite_cancelled").one()
+    assert audit.actor_user_id == admin_id
+    assert audit.details["invite_id"] == invite["id"]
+
+    after = api.post(f"/api/v1/clans/invites/{invite['id']}/accept", headers=bearer(friend_token))
+    assert after.status_code == 409, after.text
+    assert after.json()["detail"]["code"] == "invite_expired"
+
+
+def test_invitee_only_sees_own_invites(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    first_id, first_token = make_player(db_session)
+    second_id, second_token = make_player(db_session)
+    third_id, third_token = make_player(db_session)
+    make_friends(db_session, owner_id, first_id)
+    make_friends(db_session, owner_id, second_id)
+    clan = create_clan_api(api, owner_token)
+    first_invite = invite_api(api, clan["id"], owner_token, first_id).json()
+    invite_api(api, clan["id"], owner_token, second_id)
+
+    first_list = api.get("/api/v1/me/clan-invites", headers=bearer(first_token)).json()["invites"]
+    assert [item["id"] for item in first_list] == [first_invite["id"]]
+
+    third_list = api.get("/api/v1/me/clan-invites", headers=bearer(third_token)).json()["invites"]
+    assert third_list == []
+
+    foreign_accept = api.post(
+        f"/api/v1/clans/invites/{first_invite['id']}/accept", headers=bearer(third_token)
+    )
+    assert foreign_accept.status_code == 404, foreign_accept.text
