@@ -42,6 +42,7 @@ import {
   Btn,
   BtnRow,
   Card,
+  CardHeader,
   Chip,
   ChipRow,
   EmptyState,
@@ -653,13 +654,12 @@ export function QueueScreen() {
         ) : null}
         <Animated.View style={{ opacity: listOpacity }}>
           <Card tone="blue">
-            <Row between>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />
-                <Txt variant="label">Buscas ativas</Txt>
-              </View>
-              <Badge>{queue.length}</Badge>
-            </Row>
+            <CardHeader
+              variant="label"
+              icon={<PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />}
+              title="Buscas ativas"
+              badge={<Badge>{queue.length}</Badge>}
+            />
             <Txt variant="h2" style={{ marginTop: 4 }}>
               {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
             </Txt>
@@ -737,10 +737,10 @@ export function QueueScreen() {
         {step === 1 ? (
           <>
             <Card>
-              <Row between>
-                <Txt variant="h3">Escolha os esportes</Txt>
-                <Txt variant="tiny">{formats.length} no catálogo</Txt>
-              </Row>
+              <CardHeader
+                title="Escolha os esportes"
+                badge={<Txt variant="tiny">{formats.length} no catálogo</Txt>}
+              />
               {catalogBusy ? (
                 <LoadingState label="Carregando esportes…" />
               ) : formats.length === 0 ? (
@@ -765,10 +765,7 @@ export function QueueScreen() {
             </Card>
 
             <Card tone="flat">
-              <Row between>
-                <Txt variant="label">Serão enviadas</Txt>
-                <Badge>{count}</Badge>
-              </Row>
+              <CardHeader variant="label" title="Serão enviadas" badge={<Badge>{count}</Badge>} />
               <Txt variant="num" style={{ marginTop: 4 }}>
                 {count} {count === 1 ? 'busca' : 'buscas'}
               </Txt>
@@ -835,10 +832,11 @@ export function QueueScreen() {
             {matchedEntry ? (
               <Appear>
                 <Card tone="blue">
-                  <Row between>
-                    <Txt variant="label">Partida encontrada</Txt>
-                    <Badge>enquanto você ajustava</Badge>
-                  </Row>
+                  <CardHeader
+                    variant="label"
+                    title="Partida encontrada"
+                    badge={<Badge>enquanto você ajustava</Badge>}
+                  />
                   <Txt variant="lead" weight="800">
                     {formatName(catalog, matchedEntry.format_id)} ·{' '}
                     {modeLabel(entryMode(matchedEntry))}
@@ -868,10 +866,7 @@ export function QueueScreen() {
             ))}
 
             <Card>
-              <Row between>
-                <Txt variant="h3">Horário de disponibilidade</Txt>
-                <Badge>para todos</Badge>
-              </Row>
+              <CardHeader title="Horário de disponibilidade" badge={<Badge>para todos</Badge>} />
               <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
                 {availabilityTitle}
               </Txt>
@@ -882,10 +877,7 @@ export function QueueScreen() {
             </Card>
 
             <Card>
-              <Row between>
-                <Txt variant="h3">Preferência de quadra</Txt>
-                <Badge>para todos</Badge>
-              </Row>
+              <CardHeader title="Preferência de quadra" badge={<Badge>para todos</Badge>} />
               <Txt variant="tiny" style={{ marginTop: 4 }}>
                 Vale para todas as buscas.
               </Txt>
@@ -904,10 +896,12 @@ export function QueueScreen() {
             </Card>
 
             <Card>
-              <Row between>
-                <Txt variant="h3">Região</Txt>
-                <Badge>{profile?.region ? `${profile.region.radius_km} km` : 'definir'}</Badge>
-              </Row>
+              <CardHeader
+                title="Região"
+                badge={
+                  <Badge>{profile?.region ? `${profile.region.radius_km} km` : 'definir'}</Badge>
+                }
+              />
               <Txt variant="lead" weight="800" style={{ marginTop: 8 }}>
                 {profile?.region?.city ?? 'Sem região definida'}
               </Txt>
@@ -938,10 +932,11 @@ export function QueueScreen() {
               </Card>
             ) : court === 'Públicas' ? (
               <Card tone="flat">
-                <Row between>
-                  <Txt variant="label">Quadra</Txt>
-                  <Badge tone="green">Grátis</Badge>
-                </Row>
+                <CardHeader
+                  variant="label"
+                  title="Quadra"
+                  badge={<Badge tone="green">Grátis</Badge>}
+                />
                 <Txt variant="tiny" style={{ marginTop: 4 }}>
                   Quadra pública não consome ingressos.
                 </Txt>
@@ -958,10 +953,7 @@ export function QueueScreen() {
 
             <Animated.View style={{ opacity: listOpacity }}>
               <Card tone="flat">
-                <Row between>
-                  <Txt variant="label">Revisão</Txt>
-                  <Badge>{count}</Badge>
-                </Row>
+                <CardHeader variant="label" title="Revisão" badge={<Badge>{count}</Badge>} />
                 <Txt variant="h2" style={{ marginTop: 4 }}>
                   {count} {count === 1 ? 'busca' : 'buscas'}
                 </Txt>
@@ -1250,10 +1242,11 @@ export function QueueSearch() {
       {matchedEntry ? (
         <Appear>
           <Card tone="blue">
-            <Row between>
-              <Txt variant="label">Partida encontrada</Txt>
-              <Badge>encontrada</Badge>
-            </Row>
+            <CardHeader
+              variant="label"
+              title="Partida encontrada"
+              badge={<Badge>encontrada</Badge>}
+            />
             <Text
               numberOfLines={2}
               style={{ fontSize: 20, lineHeight: 24, fontWeight: '900', color: palette.ink }}
@@ -1284,15 +1277,11 @@ export function QueueSearch() {
       ) : null}
       <Appear>
         <Card>
-          <Row between>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />
-              <Txt variant="h3">
-                {queue.length} {queue.length === 1 ? 'busca ativa' : 'buscas ativas'}
-              </Txt>
-            </View>
-            {queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
-          </Row>
+          <CardHeader
+            icon={<PulseDot color={palette.limeDeep} size={7} active={queue.length > 0} />}
+            title={`${queue.length} ${queue.length === 1 ? 'busca ativa' : 'buscas ativas'}`}
+            badge={queueReconnecting ? <Badge>reconectando</Badge> : <Badge>atualizado</Badge>}
+          />
           {queue.length === 0 ? (
             <Txt variant="tiny" style={{ marginTop: 8 }}>
               A partida encontrada é a única pendência.

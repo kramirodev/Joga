@@ -27,9 +27,9 @@ const AdminUsersPage = lazy(() =>
 const AdminSportsPage = lazy(() =>
   import("./pages/admin/AdminSportsPage").then((module) => ({ default: module.AdminSportsPage })),
 );
-const AdminPublicVenuesPage = lazy(() =>
-  import("./pages/admin/AdminPublicVenuesPage").then((module) => ({
-    default: module.AdminPublicVenuesPage,
+const AdminVenuesPage = lazy(() =>
+  import("./pages/admin/AdminVenuesPage").then((module) => ({
+    default: module.AdminVenuesPage,
   })),
 );
 
@@ -96,7 +96,7 @@ export default function App() {
                     <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
                     <Route path="/admin/users" element={<AdminUsersPage />} />
                     <Route path="/admin/sports" element={<AdminSportsPage />} />
-                    <Route path="/admin/venues" element={<AdminPublicVenuesPage />} />
+                    <Route path="/admin/venues" element={<AdminVenuesPage />} />
                   </Route>
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />

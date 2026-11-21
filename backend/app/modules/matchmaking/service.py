@@ -6,7 +6,7 @@ import random
 import secrets
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -42,6 +42,10 @@ from app.modules.ratings.trust import TrustService
 
 MMR_ALGORITHM_VERSION = "mmr_v1"
 MAX_RANKED_TEAM_SPAN = 800.0
+# Nível usado apenas para criar o perfil de um formato que entra na fila
+# ranqueada sem perfil. Ranqueada pareia por MMR (ADR 0064).
+DEFAULT_RANKED_LEVEL = "intermediate"
+DEFAULT_COURT_PREFERENCE = "ANY"
 
 
 class QueueError(Exception):
@@ -150,15 +154,6 @@ class MatchmakingService:
         if sport_format is None or not sport_format.active:
             raise InvalidFormat("formato inexistente ou inativo")
 
-        sport_profile = self._session.scalar(
-            select(UserSportProfile).where(
-                UserSportProfile.user_id == user_id,
-                UserSportProfile.format_id == format_id,
-            )
-        )
-        if sport_profile is None:
-            raise SportProfileRequired("defina nível e preferência para o formato")
-
         region = self._session.get(UserRegion, user_id)
         if region is None:
             raise RegionRequired("defina uma região antes de entrar na fila")
@@ -178,6 +173,19 @@ class MatchmakingService:
         )
         if existing is not None:
             raise AlreadyQueued("já existe entrada ativa na fila")
+
+        # A escolha da fila vira a última preferência do perfil (ADR 0064). A
+        # criação só acontece depois de todas as validações de erro, para que
+        # uma requisição recusada não deixe perfil pendente na sessão. No
+        # ``POST`` casual não há nível no payload: sem perfil, continua
+        # exigindo que o app informe o nível (``SportProfileRequired``).
+        sport_profile = self._upsert_sport_profiles(
+            user_id,
+            [format_id],
+            levels={},
+            ranked_formats={format_id} if mode == "ranked" else frozenset(),
+            court_preference=court_preference,
+        )[format_id]
 
         entry = QueueEntry(
             user_id=user_id,
@@ -301,11 +309,13 @@ class MatchmakingService:
 
         ``levels`` mapeia ``(format_id, mode)`` para um nível explícito, apenas
         em pares casuais. Só é aceito para pares da seleção; par ranqueado com
-        override é rejeitado (ranqueada pareia por MMR, não por nível). Sem
-        override, a entrada usa o nível do perfil esportivo (comportamento
-        histórico). Preservar ``created_at`` é o que sustenta o cronômetro de
-        espera no app. Lista vazia apenas cancela a seleção. Par repetido é
-        rejeitado: duas entradas para a mesma combinação seriam ambíguas.
+        override é rejeitado (ranqueada pareia por MMR, não por nível). O nível
+        casual também passa a ser a última preferência do perfil esportivo
+        daquele formato (ADR 0064); par ranqueado sem perfil usa
+        ``intermediate`` como default e nunca sobrescreve nível já salvo.
+        Preservar ``created_at`` é o que sustenta o cronômetro de espera no
+        app. Lista vazia apenas cancela a seleção. Par repetido é rejeitado:
+        duas entradas para a mesma combinação seriam ambíguas.
         """
         target = list(dict.fromkeys(targets))
         if len(target) != len(targets):
@@ -325,7 +335,6 @@ class MatchmakingService:
             raise LevelNotApplicableForRanked("nível não se aplica a partida ranqueada")
 
         current = ensure_utc(now or utcnow())
-        profiles: dict[uuid.UUID, UserSportProfile] = {}
         unique_formats = list(dict.fromkeys(format_id for format_id, _ in target))
         region = self._session.get(UserRegion, user_id)
         if target:
@@ -335,15 +344,6 @@ class MatchmakingService:
                 sport_format = self._session.get(SportFormat, format_id)
                 if sport_format is None or not sport_format.active:
                     raise InvalidFormat("formato inexistente ou inativo")
-                sport_profile = self._session.scalar(
-                    select(UserSportProfile).where(
-                        UserSportProfile.user_id == user_id,
-                        UserSportProfile.format_id == format_id,
-                    )
-                )
-                if sport_profile is None:
-                    raise SportProfileRequired("defina nível e preferência para o formato")
-                profiles[format_id] = sport_profile
             if any(mode == "ranked" for _, mode in target) and TrustService(
                 self._session
             ).is_ranked_restricted(user_id, now=current):
@@ -360,6 +360,22 @@ class MatchmakingService:
             # Inalcançável: a validação acima já exigiria a região. Mantido
             # explícito para o type checker, sem depender de ``assert``.
             raise RegionRequired("defina uma região antes de entrar na fila")
+
+        # A escolha da fila vira a última preferência do perfil (ADR 0064),
+        # somente para os formatos que entram na fila. Feito depois de todas as
+        # validações de erro e dentro da mesma transação da fila: falha no
+        # ``PUT`` não persiste perfil.
+        profiles = self._upsert_sport_profiles(
+            user_id,
+            unique_formats,
+            levels={
+                format_id: level
+                for (format_id, mode), level in override_levels.items()
+                if mode == "casual"
+            },
+            ranked_formats={format_id for format_id, mode in target if mode == "ranked"},
+            court_preference=court_preference,
+        )
 
         existing = list(
             self._session.scalars(
@@ -384,8 +400,9 @@ class MatchmakingService:
 
         entries: list[QueueEntry] = []
         for format_id, mode in target:
-            # Sem override explícito, o nível é o do perfil (default histórico),
-            # inclusive para entrada preservada pelo diff.
+            # Sem override explícito, o nível é o do perfil já atualizado pela
+            # escolha casual desta requisição (ADR 0064), inclusive para a
+            # entrada preservada pelo diff.
             level = override_levels.get((format_id, mode), profiles[format_id].level)
             preserved = kept.get((format_id, mode))
             if preserved is not None:
@@ -410,6 +427,70 @@ class MatchmakingService:
             )
         self._session.flush()
         return entries
+
+    def _upsert_sport_profiles(
+        self,
+        user_id: uuid.UUID,
+        format_ids: Sequence[uuid.UUID],
+        *,
+        levels: Mapping[uuid.UUID, str],
+        ranked_formats: Collection[uuid.UUID],
+        court_preference: str | None,
+    ) -> dict[uuid.UUID, UserSportProfile]:
+        """Cria/atualiza o perfil esportivo a partir da escolha da fila (ADR 0064).
+
+        ``levels`` traz apenas níveis casuais explícitos. Regras:
+
+        - casual com nível explícito: grava o nível no perfil (última
+          preferência vence);
+        - ranqueada sem perfil: cria com ``intermediate`` e mantém o nível
+          existente quando já houver perfil (ranqueada pareia por MMR);
+        - ``court_preference`` global do payload atualiza todos os formatos
+          selecionados; sem ele, a preferência existente é preservada e a
+          criação usa ``ANY``;
+        - formato selecionado apenas em casual, sem nível explícito e sem
+          perfil continua respondendo ``SportProfileRequired``.
+
+        Os formatos fora de ``format_ids`` não são tocados. A sessão é a mesma
+        da fila e o ``PUT``/``POST`` só faz commit depois; qualquer erro antes
+        do commit é desfeito pelo ``rollback`` da rota.
+        """
+        existing = {
+            profile.format_id: profile
+            for profile in self._session.scalars(
+                select(UserSportProfile).where(
+                    UserSportProfile.user_id == user_id,
+                    UserSportProfile.format_id.in_(list(format_ids)),
+                )
+            )
+        }
+        for format_id in format_ids:
+            if (
+                format_id not in existing
+                and format_id not in levels
+                and format_id not in ranked_formats
+            ):
+                raise SportProfileRequired("defina nível e preferência para o formato")
+
+        profiles: dict[uuid.UUID, UserSportProfile] = {}
+        for format_id in format_ids:
+            profile = existing.get(format_id)
+            if profile is None:
+                profile = UserSportProfile(
+                    user_id=user_id,
+                    format_id=format_id,
+                    level=levels.get(format_id, DEFAULT_RANKED_LEVEL),
+                    court_preference=court_preference or DEFAULT_COURT_PREFERENCE,
+                )
+                self._session.add(profile)
+            else:
+                level = levels.get(format_id)
+                if level is not None:
+                    profile.level = level
+                if court_preference is not None:
+                    profile.court_preference = court_preference
+            profiles[format_id] = profile
+        return profiles
 
     def _refresh_entry(
         self,

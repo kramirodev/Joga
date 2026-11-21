@@ -81,6 +81,8 @@ export const queryKeys = {
     ["admin", "pricing", "suggest", teamSize, mode] as const,
   adminVisualCatalog: ["admin", "visual-catalog"] as const,
   adminVenues: (active: string, page: number) => ["admin", "venues", active, page] as const,
+  adminVenueDirectory: (query: string, status: string, visibility: string, page: number) =>
+    ["admin", "venues", "directory", query, status, visibility, page] as const,
   adminVenue: (venueId: string) => ["admin", "venues", venueId] as const,
   adminVenueAvailability: (venueId: string) =>
     ["admin", "venues", venueId, "availability"] as const,

@@ -17,10 +17,13 @@ import type {
   AdminUserAuditResponse,
   AdminUserDetail,
   AdminUserListResponse,
+  AdminVenue,
   AdminVenueAvailability,
   AdminVenueAvailabilityPayload,
   AdminVenueBusinessHour,
   AdminVenueBusinessHourPayload,
+  AdminVenueListResponse,
+  AdminVenueUpdatePayload,
   AuditListResponse,
   Booking,
   BookingFinancialResponse,
@@ -1282,6 +1285,53 @@ export const api = {
 
   listVisualCatalog(): Promise<VisualCatalogResponse> {
     return request<VisualCatalogResponse>("/catalog/visual");
+  },
+
+  listAdminVenues(
+    params: {
+      q?: string;
+      status?: "active" | "inactive";
+      is_public?: boolean;
+      organization_id?: string;
+      active?: boolean;
+      page?: number;
+      page_size?: number;
+    } = {},
+  ): Promise<AdminVenueListResponse> {
+    const query = new URLSearchParams();
+    if (params.q?.trim()) query.set("q", params.q.trim());
+    if (params.status) query.set("status", params.status);
+    if (params.is_public !== undefined) query.set("is_public", String(params.is_public));
+    if (params.organization_id) query.set("organization_id", params.organization_id);
+    if (params.active !== undefined) query.set("active", String(params.active));
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", String(params.page_size ?? 20));
+    return request<AdminVenueListResponse>(`/admin/venues?${query.toString()}`);
+  },
+
+  getAdminVenue(venueId: string): Promise<AdminVenue> {
+    return request<AdminVenue>(adminVenuePath(venueId));
+  },
+
+  updateAdminVenue(venueId: string, payload: AdminVenueUpdatePayload): Promise<AdminVenue> {
+    return request<AdminVenue>(adminVenuePath(venueId), {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  suspendAdminVenue(venueId: string, reason: string): Promise<AdminVenue> {
+    return request<AdminVenue>(`${adminVenuePath(venueId)}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  reactivateAdminVenue(venueId: string, reason: string): Promise<AdminVenue> {
+    return request<AdminVenue>(`${adminVenuePath(venueId)}/reactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
   },
 
   listAdminPublicVenues(
