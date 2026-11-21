@@ -69,9 +69,6 @@ def seed_venue(
         pix_key_type="cnpj",
         pix_key="12345678000199",
         payout_status="active",
-        # ADR 0062: vitrine e reserva só aceitam organização verificada (ou da
-        # plataforma). A suspensão testada aqui deve ser a única causa da saída.
-        verification_status="verified",
     )
     if organization.id is None:
         db_session.add(organization)
