@@ -27,7 +27,7 @@ import {
   TextBtn,
   Txt,
 } from '../ui/kit';
-import { divisionLabel } from '../ui/datetime';
+import { divisionLabel, formatDateShort, formatTime } from '../ui/datetime';
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
@@ -225,7 +225,7 @@ function StatsVenues() {
     matches: `${court.matches} partidas`,
     record:
       court.matches < 20 ? 'amostra pequena' : `${court.wins}V · ${court.matches - court.wins}D`,
-    time: court.last_played_at ? court.last_played_at.slice(11, 16) : '—',
+    time: court.last_played_at ? formatTime(court.last_played_at) : '—',
   }));
   return (
     <Page title="Minhas quadras">
@@ -334,7 +334,7 @@ function StatsPassport() {
                 </Text>
               </View>
               <Txt variant="tiny">
-                {court.last_played_at ? court.last_played_at.slice(0, 10) : '—'}
+                {court.last_played_at ? formatDateShort(court.last_played_at) : '—'}
               </Txt>
             </ListRow>
           ))}
