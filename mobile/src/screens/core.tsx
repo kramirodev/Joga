@@ -17,6 +17,7 @@ import {
   Btn,
   BtnRow,
   Card,
+  CardHeader,
   CardList,
   Chip,
   ChipRow,
@@ -287,10 +288,11 @@ function Home() {
       </Card>
       {mission ? (
         <Card onPress={() => nav.go('missions')}>
-          <Row between>
-            <Txt variant="label">Missão da semana</Txt>
-            <Badge tone="lime">+{mission.xp_reward} XP</Badge>
-          </Row>
+          <CardHeader
+            variant="label"
+            title="Missão da semana"
+            badge={<Badge tone="lime">+{mission.xp_reward} XP</Badge>}
+          />
           <Txt variant="h3" style={{ marginTop: 7, marginBottom: 3 }}>
             {missionLabel}
           </Txt>
@@ -303,10 +305,11 @@ function Home() {
         </Card>
       ) : null}
       <Card onPress={() => nav.go('season')}>
-        <Row between>
-          <Txt variant="label">Temporada {progress?.season.code ?? '2026-Q4'}</Txt>
-          <Badge>{`${tier.toUpperCase()} ${level}`}</Badge>
-        </Row>
+        <CardHeader
+          variant="label"
+          title={`Temporada ${progress?.season.code ?? '2026-Q4'}`}
+          badge={<Badge>{`${tier.toUpperCase()} ${level}`}</Badge>}
+        />
         <Row between wrap gap={8} style={{ marginTop: 8, marginBottom: 5 }}>
           <Txt variant="h3">{number(xp)} XP</Txt>
           <Txt variant="tiny" style={{ flexShrink: 1, textAlign: 'right' }}>
@@ -524,10 +527,10 @@ function LobbyDetail() {
           <Badge tone="lime">CONGELADO</Badge>
         </Row>
       </Card>
-      <Row between>
-        <Txt variant="h3">Times</Txt>
-        <Badge>{current?.participants?.length ?? 10} jogadores</Badge>
-      </Row>
+      <CardHeader
+        title="Times"
+        badge={<Badge>{current?.participants?.length ?? 10} jogadores</Badge>}
+      />
       <View style={{ gap: 8 }}>
         {grouped ? (
           <>
@@ -730,10 +733,11 @@ function LobbyChat() {
   return (
     <Page title="Chat da partida">
       <Card tone="flat" padding={9}>
-        <Row between>
-          <Txt variant="tiny">Mensagens deste lobby</Txt>
-          <Badge tone="green">só participantes</Badge>
-        </Row>
+        <CardHeader
+          variant="tiny"
+          title="Mensagens deste lobby"
+          badge={<Badge tone="green">só participantes</Badge>}
+        />
       </Card>
       <View style={{ gap: 10 }}>
         {visible.length === 0 ? (
@@ -2147,10 +2151,7 @@ function Sports() {
                   borderTopColor: palette.line,
                 }}
               >
-                <Row between>
-                  <Txt variant="h3">{format.name}</Txt>
-                  <Badge tone="green">ATIVO</Badge>
-                </Row>
+                <CardHeader title={format.name} badge={<Badge tone="green">ATIVO</Badge>} />
                 <Txt variant="tiny" style={{ marginTop: 4 }}>
                   {format.total_participants} jogadores · {format.play_minutes} min de jogo
                 </Txt>
@@ -2311,10 +2312,7 @@ function Region() {
   return (
     <Page title="Região">
       <Card>
-        <Row between>
-          <Txt variant="h3">Localização do aparelho</Txt>
-          <Badge tone="green">GRÁTIS</Badge>
-        </Row>
+        <CardHeader title="Localização do aparelho" badge={<Badge tone="green">GRÁTIS</Badge>} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
           <IconBtn icon="pin" label="Usar GPS" ink onPress={locate} />
           <View style={{ flex: 1 }}>
@@ -2334,10 +2332,7 @@ function Region() {
         </View>
       </Card>
       <Card>
-        <Row between>
-          <Txt variant="h3">Busca por CEP</Txt>
-          <Badge tone="blue">PASSE</Badge>
-        </Row>
+        <CardHeader title="Busca por CEP" badge={<Badge tone="blue">PASSE</Badge>} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
           <IconBtn icon="search" label="Buscar CEP" go="region-cep-locked" />
           <View style={{ flex: 1 }}>
@@ -2350,10 +2345,7 @@ function Region() {
         </View>
       </Card>
       <Card>
-        <Row between>
-          <Txt variant="h3">Raio de busca</Txt>
-          <Badge>{radius} km</Badge>
-        </Row>
+        <CardHeader title="Raio de busca" badge={<Badge>{radius} km</Badge>} />
         <View style={{ marginTop: 8 }}>
           <Range min={1} max={50} value={radius} onChange={setRadius} />
         </View>

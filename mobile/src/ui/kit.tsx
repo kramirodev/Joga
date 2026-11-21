@@ -61,6 +61,8 @@ export function Txt({
   weight,
   align,
   numberOfLines,
+  adjustsFontSizeToFit,
+  minimumFontScale,
   style,
 }: PropsWithChildren<{
   variant?: TextVariant;
@@ -68,6 +70,8 @@ export function Txt({
   weight?: TextStyle['fontWeight'];
   align?: TextStyle['textAlign'];
   numberOfLines?: number;
+  adjustsFontSizeToFit?: boolean;
+  minimumFontScale?: number;
   style?: StyleProp<TextStyle>;
 }>) {
   const { palette } = useTheme();
@@ -89,6 +93,8 @@ export function Txt({
   return (
     <Text
       numberOfLines={numberOfLines}
+      adjustsFontSizeToFit={adjustsFontSizeToFit}
+      minimumFontScale={minimumFontScale}
       maxFontSizeMultiplier={1.3}
       style={[
         {
@@ -261,6 +267,53 @@ export function Badge({ children, tone = 'default' }: PropsWithChildren<{ tone?:
       >
         {children}
       </Text>
+    </View>
+  );
+}
+
+export function CardHeader({
+  title,
+  badge,
+  variant = 'h3',
+  icon,
+}: {
+  title: string;
+  badge?: ReactNode;
+  variant?: 'h3' | 'label' | 'tiny';
+  icon?: ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <View
+        style={{
+          flexGrow: 1,
+          flexShrink: 1,
+          flexBasis: '55%',
+          minWidth: 0,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        {icon}
+        <Txt
+          variant={variant}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          style={{ flexShrink: 1, minWidth: 0 }}
+        >
+          {title}
+        </Txt>
+      </View>
+      {badge ? <View style={{ flexShrink: 0, marginLeft: 'auto' }}>{badge}</View> : null}
     </View>
   );
 }
