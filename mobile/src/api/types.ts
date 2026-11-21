@@ -688,6 +688,33 @@ export type Clan = {
   max_members: number;
   trophies: number;
   my_role: string | null;
+  is_member: boolean;
+};
+
+/** Política de entrada aceita na edição do clã. */
+export type ClanJoinPolicy = 'open' | 'approval' | 'closed';
+
+/**
+ * Corpo do `PATCH /clans/{id}`. A tag **nunca** entra aqui: ela é imutável e o
+ * tipo existe justamente para impedir que uma tela futura a envie.
+ */
+export type ClanUpdate = {
+  name?: string;
+  description?: string | null;
+  join_policy?: ClanJoinPolicy;
+};
+
+export type ClanInvite = {
+  id: string;
+  clan_id: string;
+  clan_name: string;
+  clan_tag: string;
+  inviter_id: string;
+  inviter_display_name: string | null;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  answered_at: string | null;
 };
 
 export type ClanMember = {

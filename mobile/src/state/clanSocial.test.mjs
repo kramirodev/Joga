@@ -3,13 +3,17 @@ import test from 'node:test';
 
 import {
   chatRowFromMessage,
+  clanUpdatePatch,
   displayClanTag,
+  inviteExpiryLabel,
   isDuplicateReport,
   isReportableMessage,
   joinPolicyLabel,
+  matchesSearch,
   memberDisplayName,
   mergeChatRows,
   myRoleLabel,
+  normalizeSearchText,
   normalizeTagInput,
   sortMembers,
   tagIsValid,
@@ -92,6 +96,42 @@ test('409 e duplicata contam como já denunciada', () => {
   assert.equal(isDuplicateReport({ status: 201, code: 'duplicate_report' }), true);
   assert.equal(isDuplicateReport({ status: 500, code: 'server_error' }), false);
   assert.equal(isDuplicateReport({ status: 404, code: 'not_found' }), false);
+});
+
+test('edição do clã envia só o que mudou e nunca inclui tag', () => {
+  const base = { name: 'Time A', description: '', join_policy: 'approval' };
+  assert.deepEqual(clanUpdatePatch(base, base), {});
+  const patch = clanUpdatePatch(base, {
+    name: '  Time A  ',
+    description: '  Novo texto  ',
+    join_policy: 'open',
+  });
+  assert.deepEqual(patch, { description: 'Novo texto', join_policy: 'open' });
+  assert.equal('tag' in patch, false);
+  assert.deepEqual(
+    clanUpdatePatch(
+      { name: 'A', description: 'algo', join_policy: 'open' },
+      { name: 'B', description: '   ', join_policy: 'open' },
+    ),
+    { name: 'B', description: null },
+  );
+});
+
+test('busca de amigos ignora maiúsculas e acentos', () => {
+  assert.equal(normalizeSearchText('  João  '), 'joao');
+  assert.equal(matchesSearch('João', 'JOAO'), true);
+  assert.equal(matchesSearch('Ana', 'jo'), false);
+  assert.equal(matchesSearch('Ana', '   '), true);
+});
+
+test('validade do convite só aparece com data e nunca fica negativa', () => {
+  const now = new Date('2026-01-01T12:00:00Z');
+  assert.equal(inviteExpiryLabel(null, now), null);
+  assert.equal(inviteExpiryLabel('inválida', now), null);
+  assert.equal(inviteExpiryLabel('2026-01-08T12:00:00Z', now), 'Expira em 7 dias.');
+  assert.equal(inviteExpiryLabel('2026-01-02T18:00:00Z', now), 'Expira em 1 dia.');
+  assert.equal(inviteExpiryLabel('2026-01-01T18:00:00Z', now), 'Expira em menos de 1 dia.');
+  assert.equal(inviteExpiryLabel('2025-12-31T12:00:00Z', now), 'Este convite expirou.');
 });
 
 test('membros são ordenados por dono, oficiais e nome', () => {

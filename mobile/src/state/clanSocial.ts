@@ -1,4 +1,4 @@
-import type { ClanMessage } from '../api/types';
+import type { ClanJoinPolicy, ClanMessage } from '../api/types';
 
 /**
  * Regras puras de clã compartilhadas pelas telas sociais.
@@ -131,6 +131,91 @@ export function isOwnerRole(role: string | null | undefined): boolean {
 
 export function isAdminRole(role: string | null | undefined): boolean {
   return role === 'admin' || role === 'owner';
+}
+
+export type ClanDraft = {
+  name: string;
+  description: string;
+  join_policy: string;
+};
+
+/**
+ * Corpo do `PATCH /clans/{id}` a partir do rascunho e da base carregada.
+ *
+ * Só envia o que mudou (descrição vazia vira `null`) e **nunca** inclui `tag`:
+ * a tag do clã é imutável por decisão de produto, não apenas por omissão da
+ * tela. O tipo de retorno não tem o campo.
+ */
+export function clanUpdatePatch(
+  baseline: ClanDraft,
+  draft: ClanDraft,
+): {
+  name?: string;
+  description?: string | null;
+  join_policy?: ClanJoinPolicy;
+} {
+  const patch: {
+    name?: string;
+    description?: string | null;
+    join_policy?: ClanJoinPolicy;
+  } = {};
+  const name = draft.name.trim();
+  if (name && name !== baseline.name.trim()) {
+    patch.name = name;
+  }
+  const description = draft.description.trim();
+  if (description !== baseline.description.trim()) {
+    patch.description = description.length > 0 ? description : null;
+  }
+  if (
+    draft.join_policy !== baseline.join_policy &&
+    (draft.join_policy === 'open' ||
+      draft.join_policy === 'approval' ||
+      draft.join_policy === 'closed')
+  ) {
+    patch.join_policy = draft.join_policy;
+  }
+  return patch;
+}
+
+/** Busca local de amigos: sem diferenciar maiúsculas nem acentos. */
+export function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function matchesSearch(name: string, query: string): boolean {
+  const term = normalizeSearchText(query);
+  return term.length === 0 || normalizeSearchText(name).includes(term);
+}
+
+/**
+ * Validade de um convite recebido em texto curto. Devolve `null` quando a data
+ * não vem ou é inválida, para a tela não inventar prazo.
+ */
+export function inviteExpiryLabel(
+  expiresAt: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!expiresAt) {
+    return null;
+  }
+  const end = Date.parse(expiresAt);
+  if (!Number.isFinite(end)) {
+    return null;
+  }
+  const diff = end - now.getTime();
+  if (diff <= 0) {
+    return 'Este convite expirou.';
+  }
+  if (diff < 86_400_000) {
+    return 'Expira em menos de 1 dia.';
+  }
+  const days = Math.floor(diff / 86_400_000);
+  return days === 1 ? 'Expira em 1 dia.' : `Expira em ${days} dias.`;
 }
 
 function roleOrder(role: string): number {
