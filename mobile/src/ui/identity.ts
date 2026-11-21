@@ -7,6 +7,7 @@ import type {
 } from '../api/types';
 
 import { ICONS, type IconName } from './icon-data';
+import { buildVisualPayload, type VisualPayload } from './visualPayload';
 
 /**
  * Fallback local do contrato de identidade visual. É usado enquanto
@@ -372,6 +373,34 @@ export function normalizeIdentity(
     ),
     catalog_version: String(catalogVersion).length > 0 ? catalogVersion : 'local',
   };
+}
+
+/**
+ * `true` quando só o fallback local está disponível. Nesse caso o app não pode
+ * inventar chaves para o servidor: elas precisam vir de `GET /me/visual`.
+ */
+export function isLocalVisualCatalog(catalog: VisualCatalog): boolean {
+  return (
+    catalog === LOCAL_VISUAL_CATALOG ||
+    catalogVersionOf(catalog) === catalogVersionOf(LOCAL_VISUAL_CATALOG)
+  );
+}
+
+/**
+ * Corpo seguro para `PUT /me/visual`. A montagem pura fica em
+ * `visualPayload.ts`; aqui só decidimos se o catálogo é o fallback local.
+ */
+export function visualUpdatePayload(
+  identity: VisualIdentity,
+  catalog: VisualCatalog,
+  confirmed?: Partial<VisualIdentityResponse> | Partial<VisualIdentity> | null,
+): VisualPayload | null {
+  return buildVisualPayload({
+    identity,
+    catalog,
+    confirmed,
+    localOnly: isLocalVisualCatalog(catalog),
+  });
 }
 
 /** Identidade determinística para participantes sem dados visuais no payload. */
