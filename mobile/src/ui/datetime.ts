@@ -143,6 +143,60 @@ export function countdown(target: string | Date, now = new Date()): string {
   return `${hours}h ${minutes}min`;
 }
 
+function plural(value: number, singular: string, pluralForm: string): string {
+  return `${value} ${value === 1 ? singular : pluralForm}`;
+}
+
+/**
+ * Contagem regressiva da temporada para o perfil.
+ *
+ * `ends_at` é UTC e só o relativo é exibido. Data ausente/inválida devolve
+ * `null` para a tela manter o texto fixo de fallback. O texto curto nunca
+ * mostra número negativo.
+ */
+export function formatSeasonCountdown(
+  endsAt: string | null | undefined,
+  now: Date = new Date(),
+): { short: string; long: string } | null {
+  if (!endsAt) {
+    return null;
+  }
+  const end = new Date(endsAt).getTime();
+  if (!Number.isFinite(end)) {
+    return null;
+  }
+  const diff = end - now.getTime();
+  if (diff <= 0) {
+    return { short: 'Temporada encerrada', long: 'A temporada terminou' };
+  }
+  const days = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  const minutes = Math.floor((diff % 3_600_000) / 60_000);
+  if (days >= 1) {
+    const short = hours >= 1 ? `${days}d ${hours}h` : `${days}d`;
+    const long =
+      hours >= 1
+        ? `${plural(days, 'dia', 'dias')} e ${plural(hours, 'hora', 'horas')}`
+        : plural(days, 'dia', 'dias');
+    return { short: `Termina em ${short}`, long: `A temporada termina em ${long}` };
+  }
+  if (hours >= 1) {
+    const short = minutes >= 1 ? `${hours}h ${minutes}min` : `${hours}h`;
+    const long =
+      minutes >= 1
+        ? `${plural(hours, 'hora', 'horas')} e ${plural(minutes, 'minuto', 'minutos')}`
+        : plural(hours, 'hora', 'horas');
+    return { short: `Termina em ${short}`, long: `A temporada termina em ${long}` };
+  }
+  if (minutes >= 1) {
+    return {
+      short: `Termina em ${minutes}min`,
+      long: `A temporada termina em ${plural(minutes, 'minuto', 'minutos')}`,
+    };
+  }
+  return { short: 'Encerrando…', long: 'A temporada está encerrando' };
+}
+
 export function elapsed(since: string | Date, now = new Date()): string {
   const start = typeof since === 'string' ? new Date(since) : since;
   const diff = Math.max(0, now.getTime() - start.getTime());
