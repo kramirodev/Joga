@@ -583,13 +583,27 @@ export const api = {
   discovery: {
     bookableVenues(
       token: string,
-      options: { page?: number; pageSize?: number; city?: string | null } = {},
+      options: {
+        page?: number;
+        pageSize?: number;
+        city?: string | null;
+        formatId?: string | null;
+        sportId?: string | null;
+        covered?: boolean | null;
+        maxDistanceKm?: number | null;
+      } = {},
     ) {
       return call<BookableVenuePage>(
         `/discovery/bookable-venues${qs({
           page: options.page ?? 1,
           page_size: options.pageSize ?? 20,
           ...(options.city ? { city: options.city } : {}),
+          ...(options.formatId ? { format_id: options.formatId } : {}),
+          ...(options.sportId ? { sport_id: options.sportId } : {}),
+          ...(options.covered !== undefined && options.covered !== null
+            ? { covered: options.covered }
+            : {}),
+          ...(options.maxDistanceKm != null ? { max_distance_km: options.maxDistanceKm } : {}),
         })}`,
         { token },
       );
