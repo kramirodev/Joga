@@ -2060,3 +2060,175 @@ def test_put_failure_after_profile_upsert_rolls_back_sport_profile(
     db_session.expire_all()
     assert get_sport_profile(db_session, user_id, sport_format.id) is None
     assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+
+
+def test_put_selections_court_preference_per_pair_and_profile(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id)
+    give_sport_profile(db_session, user_id, volei.id)
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {
+                    "format_id": str(futebol.id),
+                    "mode": "casual",
+                    "court_preference": "PRIVATE_ONLY",
+                },
+                {
+                    "format_id": str(volei.id),
+                    "mode": "ranked",
+                    "court_preference": "PUBLIC_ONLY",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    by_pair = {(item["format_id"], item["mode"]): item for item in response.json()["entries"]}
+    assert by_pair[(str(futebol.id), "casual")]["court_preference"] == "PRIVATE_ONLY"
+    # Ranqueada aceita a preferência sem nível: o pareamento continua por MMR.
+    assert by_pair[(str(volei.id), "ranked")]["court_preference"] == "PUBLIC_ONLY"
+
+    db_session.expire_all()
+    futebol_profile = get_sport_profile(db_session, user_id, futebol.id)
+    volei_profile = get_sport_profile(db_session, user_id, volei.id)
+    assert futebol_profile is not None and futebol_profile.court_preference == "PRIVATE_ONLY"
+    assert volei_profile is not None and volei_profile.court_preference == "PUBLIC_ONLY"
+
+    state = api.get("/api/v1/matchmaking/queue", headers=bearer(token))
+    assert state.status_code == 200
+    effective = {
+        (item["format_id"], item["mode"]): item["court_preference"]
+        for item in state.json()["entries"]
+    }
+    assert effective == {
+        (str(futebol.id), "casual"): "PRIVATE_ONLY",
+        (str(volei.id), "ranked"): "PUBLIC_ONLY",
+    }
+
+
+def test_put_selections_item_court_preference_beats_global(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id, court="ANY")
+    give_sport_profile(db_session, user_id, volei.id, court="ANY")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {
+                    "format_id": str(futebol.id),
+                    "mode": "casual",
+                    "court_preference": "PRIVATE_ONLY",
+                },
+                {"format_id": str(volei.id), "mode": "casual"},
+            ],
+            "court_preference": "ANY",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    by_pair = {(item["format_id"], item["mode"]): item for item in response.json()["entries"]}
+    assert by_pair[(str(futebol.id), "casual")]["court_preference"] == "PRIVATE_ONLY"
+    # Sem item, vale o global legado.
+    assert by_pair[(str(volei.id), "casual")]["court_preference"] == "ANY"
+
+    db_session.expire_all()
+    futebol_profile = get_sport_profile(db_session, user_id, futebol.id)
+    volei_profile = get_sport_profile(db_session, user_id, volei.id)
+    assert futebol_profile is not None and futebol_profile.court_preference == "PRIVATE_ONLY"
+    assert volei_profile is not None and volei_profile.court_preference == "ANY"
+
+
+def test_put_selections_with_only_global_court_preference_applies_to_every_pair(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    futebol, volei = _seed_two_formats(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, futebol.id, court="ANY")
+    give_sport_profile(db_session, user_id, volei.id, court="ANY")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {"format_id": str(futebol.id), "mode": "casual"},
+                {"format_id": str(volei.id), "mode": "ranked"},
+            ],
+            "court_preference": "PUBLIC_ONLY",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert {item["court_preference"] for item in response.json()["entries"]} == {"PUBLIC_ONLY"}
+    db_session.expire_all()
+    for format_id in (futebol.id, volei.id):
+        profile = get_sport_profile(db_session, user_id, format_id)
+        assert profile is not None and profile.court_preference == "PUBLIC_ONLY"
+
+
+def test_put_invalid_item_court_preference_is_422_without_writes(
+    api: TestClient, db_session: Session
+) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, court="ANY")
+    db_session.commit()
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "selections": [
+                {
+                    "format_id": str(sport_format.id),
+                    "mode": "casual",
+                    "court_preference": "SOMETIMES",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "invalid_court_preference"}}
+    db_session.expire_all()
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None
+    profile = get_sport_profile(db_session, user_id, sport_format.id)
+    assert profile is not None and profile.court_preference == "ANY"
+
+
+def test_put_invalid_global_court_preference_is_422(api: TestClient, db_session: Session) -> None:
+    user_id, token = make_user_with_tokens(db_session)
+    sport_format = seed_format(db_session)
+    give_region(db_session, user_id)
+    give_sport_profile(db_session, user_id, sport_format.id, court="ANY")
+
+    response = api.put(
+        "/api/v1/matchmaking/queue",
+        headers=bearer(token),
+        json={
+            "formats": [str(sport_format.id)],
+            "modes": ["casual"],
+            "court_preference": "SOMETIMES",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "invalid_court_preference"}}
+    db_session.expire_all()
+    assert db_session.scalar(select(QueueEntry).where(QueueEntry.user_id == user_id)) is None

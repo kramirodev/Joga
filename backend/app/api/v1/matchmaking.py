@@ -19,6 +19,7 @@ from app.modules.matchmaking.models import Lobby, QueueEntry
 from app.modules.matchmaking.service import (
     AlreadyQueued,
     DuplicateSelection,
+    InvalidCourtPreference,
     InvalidFormat,
     InvalidLevelOverride,
     InvalidMode,
@@ -31,7 +32,6 @@ from app.modules.matchmaking.service import (
 
 router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
-CourtPreference = Literal["PUBLIC_ONLY", "PRIVATE_ONLY", "ANY"]
 Mode = Literal["casual", "ranked"]
 Level = Literal["beginner", "intermediate", "advanced"]
 DEFAULT_MODES: list[Mode] = ["casual"]
@@ -39,7 +39,9 @@ DEFAULT_MODES: list[Mode] = ["casual"]
 
 class EnqueueRequest(BaseModel):
     format_id: UUID
-    court_preference: CourtPreference | None = None
+    # Validado no serviço para devolver ``422 invalid_court_preference`` com o
+    # mesmo ``detail.code`` do PUT e do item de ``selections[]``.
+    court_preference: str | None = None
     mode: Mode = "casual"
 
 
@@ -58,11 +60,16 @@ class QueueSelection(BaseModel):
     vale para esse par e substitui o nível do perfil; quando ausente, usa o
     nível atual do perfil esportivo. Em ``mode="ranked"`` o campo é rejeitado,
     porque ranqueada pareia por MMR e divisão por rating.
+
+    ``court_preference`` é opcional e vale **só para este par**: quando
+    presente, vence o ``court_preference`` global do corpo e é gravado no
+    perfil do formato (ADR 0067).
     """
 
     format_id: UUID
     mode: Mode
     level: Level | None = None
+    court_preference: str | None = None
 
 
 class QueueReplaceRequest(BaseModel):
@@ -78,7 +85,7 @@ class QueueReplaceRequest(BaseModel):
     modes: list[Mode] = Field(default_factory=lambda: list(DEFAULT_MODES), max_length=2)
     levels: list[QueueLevelOverride] = Field(default_factory=list, max_length=40)
     selections: list[QueueSelection] | None = Field(default=None, max_length=40)
-    court_preference: CourtPreference | None = None
+    court_preference: str | None = None
 
     @field_validator("formats", "modes", mode="before")
     @classmethod
@@ -195,6 +202,8 @@ def enqueue(
         session.commit()
     except InvalidMode:
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_mode") from None
+    except InvalidCourtPreference:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_court_preference") from None
     except InvalidFormat:
         raise _error(status.HTTP_400_BAD_REQUEST, "invalid_format") from None
     except SportProfileRequired:
@@ -253,6 +262,11 @@ def replace_queue(
                 current.user_id,
                 [(item.format_id, item.mode) for item in payload.selections],
                 court_preference=payload.court_preference,
+                court_preferences={
+                    (item.format_id, item.mode): item.court_preference
+                    for item in payload.selections
+                    if item.court_preference is not None
+                },
                 levels={
                     (item.format_id, item.mode): item.level
                     for item in payload.selections
@@ -285,6 +299,9 @@ def replace_queue(
     except InvalidLevelOverride:
         session.rollback()
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_level_override") from None
+    except InvalidCourtPreference:
+        session.rollback()
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_court_preference") from None
     except SportProfileRequired:
         session.rollback()
         raise _error(status.HTTP_409_CONFLICT, "sport_profile_required") from None

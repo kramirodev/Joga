@@ -79,6 +79,15 @@ class PhotoView(BaseModel):
     content_url: str
 
 
+class VenueCardSportView(BaseModel):
+    """Formato aceito pela quadra, com a modalidade para agrupar no app."""
+
+    sport_id: UUID
+    sport_name: str
+    format_id: UUID
+    name: str
+
+
 class VenueCardView(BaseModel):
     id: UUID
     organization_id: UUID
@@ -91,6 +100,7 @@ class VenueCardView(BaseModel):
     timezone: str
     is_public: bool
     covered: bool
+    sports: list[VenueCardSportView]
     spaces_count: int
     min_price_cents: int
     min_tickets: int | None
@@ -148,8 +158,17 @@ def list_bookable_venues(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=50)] = 20,
     city: Annotated[str | None, Query(max_length=120)] = None,
+    format_id: Annotated[UUID | None, Query()] = None,
+    sport_id: Annotated[UUID | None, Query()] = None,
+    covered: Annotated[bool | None, Query()] = None,
+    max_distance_km: Annotated[int | None, Query(ge=1, le=100)] = None,
 ) -> VenueCardListResponse:
-    """Estabelecimentos ativos com ao menos uma quadra e uma janela de agenda."""
+    """Estabelecimentos ativos com quadra, agenda e filtros aplicados no servidor.
+
+    ``max_distance_km`` exige região gravada do usuário; sem ela responde
+    ``422 region_required``. Estabelecimentos sem coordenada são excluídos
+    quando o filtro de distância está ativo.
+    """
     service = _service(session, storage)
     try:
         result = service.list_venues(
@@ -157,6 +176,10 @@ def list_bookable_venues(
             page=page,
             page_size=page_size,
             city=city,
+            format_id=format_id,
+            sport_id=sport_id,
+            covered=covered,
+            max_distance_km=max_distance_km,
         )
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
@@ -174,6 +197,15 @@ def list_bookable_venues(
                 timezone=item.timezone,
                 is_public=item.is_public,
                 covered=item.covered,
+                sports=[
+                    VenueCardSportView(
+                        sport_id=sport.sport_id,
+                        sport_name=sport.sport_name,
+                        format_id=sport.format_id,
+                        name=sport.name,
+                    )
+                    for sport in item.sports
+                ],
                 spaces_count=item.spaces_count,
                 min_price_cents=item.min_price_cents,
                 min_tickets=item.min_tickets,
