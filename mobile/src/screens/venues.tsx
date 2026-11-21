@@ -121,6 +121,14 @@ function venueLocation(venue: BookableVenue): string {
   return [venue.address_line, venue.city, venue.state].filter(Boolean).join(' · ');
 }
 
+function ticketCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'ingresso' : 'ingressos'}`;
+}
+
+function ticketsPerSeatLabel(tickets: number): string {
+  return `${ticketCountLabel(tickets)}/vaga`;
+}
+
 function PublicVenueBadge() {
   return (
     <View accessible accessibilityLabel="Quadra pública" accessibilityRole="text">
@@ -320,11 +328,30 @@ function Venues() {
                   {venue.spaces_count} {venue.spaces_count === 1 ? 'espaço' : 'espaços'}
                   {venue.distance_km != null ? ` · ${venue.distance_km.toFixed(1)} km` : ''}
                 </Txt>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Txt variant="num" style={{ fontSize: 18 }}>
-                    {cents(venue.min_price_cents)}
-                  </Txt>
-                  <Txt variant="tiny">a partir</Txt>
+                <View style={{ alignItems: 'flex-end', flexShrink: 1, maxWidth: '48%' }}>
+                  {venue.min_tickets == null ? (
+                    <Txt variant="tiny" align="right">
+                      Ingressos não configurados
+                    </Txt>
+                  ) : venue.min_tickets === 0 ? (
+                    <>
+                      <Txt variant="num" align="right" style={{ fontSize: 18 }}>
+                        Grátis
+                      </Txt>
+                      <Txt variant="tiny" align="right">
+                        quadra pública
+                      </Txt>
+                    </>
+                  ) : (
+                    <>
+                      <Txt variant="tiny" align="right">
+                        a partir de
+                      </Txt>
+                      <Txt variant="num" align="right" style={{ fontSize: 18 }}>
+                        {ticketCountLabel(venue.min_tickets)}
+                      </Txt>
+                    </>
+                  )}
                 </View>
               </Row>
             </View>
@@ -380,11 +407,13 @@ function SpaceBookingCard({
   venueId,
   venueName,
   timezone,
+  isPublic,
 }: {
   space: BookableVenueSpace;
   venueId: string;
   venueName: string;
   timezone: string;
+  isPublic: boolean;
 }) {
   const nav = useNav();
   const { palette } = useTheme();
@@ -394,6 +423,13 @@ function SpaceBookingCard({
   const slots = space.next_slots.slice(0, 5);
   const bandLabel = (code: string) =>
     space.availability.find((item) => item.band?.code === code)?.band?.label ?? humanizeBand(code);
+  const ticketBands = format
+    ? Object.entries(format.tickets_by_band).filter(([, tickets]) => tickets > 0)
+    : [];
+  const ticketsForBand = (code: string | null | undefined) => {
+    const tickets = code ? format?.tickets_by_band[code] : undefined;
+    return tickets != null && tickets > 0 ? tickets : null;
+  };
 
   return (
     <Card>
@@ -428,14 +464,21 @@ function SpaceBookingCard({
         </Notice>
       )}
 
-      {format && Object.keys(format.tickets_by_band).length ? (
+      {!isPublic && ticketBands.length ? (
         <View style={{ marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {Object.entries(format.tickets_by_band).map(([code, tickets]) => (
+          {ticketBands.map(([code, tickets]) => (
             <Badge key={code}>
-              {bandLabel(code).toUpperCase()} · {tickets} INGRESSOS
+              {bandLabel(code).toUpperCase()} ·{' '}
+              {tickets === 1 ? '1 INGRESSO' : `${tickets} INGRESSOS`}
             </Badge>
           ))}
         </View>
+      ) : null}
+
+      {!isPublic && format && !ticketBands.length ? (
+        <Notice tone="orange" icon="alert">
+          Ingressos não configurados neste formato.
+        </Notice>
       ) : null}
 
       <Txt variant="label" style={{ marginTop: 14 }}>
@@ -444,7 +487,7 @@ function SpaceBookingCard({
       {slots.length ? (
         <View style={{ marginTop: 6 }}>
           {slots.map((slot) => {
-            const tickets = format?.tickets_by_band[slot.band_code] ?? null;
+            const tickets = ticketsForBand(slot.band_code);
             return (
               <View
                 key={`${slot.starts_at}-${slot.band_code}`}
@@ -462,10 +505,13 @@ function SpaceBookingCard({
                     {zonedShortDateTime(slot.starts_at, timezone)}
                   </Text>
                   <Text style={{ fontSize: 13, color: palette.muted, marginTop: 2 }}>
-                    {bandLabel(slot.band_code)} · {cents(slot.price_cents)}
-                    {tickets != null
-                      ? ` · ${tickets} ingressos/vaga`
-                      : ' · ingressos não configurados'}
+                    {isPublic
+                      ? 'Pública — grátis'
+                      : `${bandLabel(slot.band_code)} · ${
+                          tickets != null
+                            ? ticketsPerSeatLabel(tickets)
+                            : 'Ingressos não configurados'
+                        }`}
                   </Text>
                 </View>
                 <Btn
@@ -508,17 +554,26 @@ function SpaceBookingCard({
         <View style={{ marginTop: 14 }}>
           <Txt variant="label">Agenda semanal</Txt>
           <View style={{ marginTop: 6, gap: 6 }}>
-            {space.availability.slice(0, 4).map((item) => (
-              <Row key={`${item.weekday}-${item.start_time}-${item.band?.code ?? ''}`} between>
-                <Txt variant="tiny">
-                  {weekdayLabel(item.weekday)} · {item.start_time.slice(0, 5)}–
-                  {item.end_time.slice(0, 5)}
-                </Txt>
-                <Txt variant="tiny">
-                  {item.band?.label ?? 'Sem faixa'} · {cents(item.price_cents)}
-                </Txt>
-              </Row>
-            ))}
+            {space.availability.slice(0, 4).map((item) => {
+              const tickets = ticketsForBand(item.band?.code);
+              return (
+                <Row key={`${item.weekday}-${item.start_time}-${item.band?.code ?? ''}`} between>
+                  <Txt variant="tiny">
+                    {weekdayLabel(item.weekday)} · {item.start_time.slice(0, 5)}–
+                    {item.end_time.slice(0, 5)}
+                  </Txt>
+                  <Txt variant="tiny" style={{ flexShrink: 1, textAlign: 'right' }}>
+                    {isPublic
+                      ? 'Grátis'
+                      : `${item.band?.label ?? 'Sem faixa'} · ${
+                          tickets != null
+                            ? ticketsPerSeatLabel(tickets)
+                            : 'Ingressos não configurados'
+                        }`}
+                  </Txt>
+                </Row>
+              );
+            })}
           </View>
         </View>
       ) : null}
@@ -647,7 +702,7 @@ function VenueDetail() {
       {detail.is_public === true ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <PublicVenueBadge />
-          <Txt variant="tiny">Quadra da plataforma JOGA</Txt>
+          <Txt variant="tiny">Pública — grátis</Txt>
         </View>
       ) : null}
       <Card tone="flat">
@@ -668,6 +723,7 @@ function VenueDetail() {
             venueId={detail.id}
             venueName={venueName}
             timezone={detail.timezone}
+            isPublic={detail.is_public === true}
           />
         ))
       ) : (
@@ -2767,11 +2823,6 @@ function BookingHistory() {
         <EmptyState
           title="Nenhuma reserva ainda"
           text="Quando você solicitar uma quadra, a reserva aparece aqui com status e comprovantes."
-          actions={
-            <Btn tone="primary" go="venues">
-              Ver quadras
-            </Btn>
-          }
         />
       </Page>
     );

@@ -103,6 +103,8 @@ export type BookableVenue = {
   is_public?: boolean;
   spaces_count: number;
   min_price_cents: number;
+  /** Menor quantidade de ingressos entre as faixas ativas; `0` = pública e `null` = não configurado. */
+  min_tickets: number | null;
   distance_km: number | null;
   photo_url: string | null;
 };
