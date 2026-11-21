@@ -130,7 +130,8 @@ describe("ModerationPage — fila interna", () => {
     renderPage();
 
     expect(await screen.findByText("Acesso restrito")).toBeInTheDocument();
-    expect(screen.getByText(/Sua conta não tem permissão de moderação/)).toBeInTheDocument();
+    expect(screen.getByText(/não está habilitada como moderador/)).toBeInTheDocument();
+    expect(screen.getByText("JOGA_MODERATION_ADMIN_USER_IDS")).toBeInTheDocument();
   });
 
   it("admin vê fila, contexto e registra decisão", async () => {

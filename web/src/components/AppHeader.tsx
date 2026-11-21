@@ -15,6 +15,9 @@ export function AppHeader() {
   const adminArea = location.pathname.startsWith("/admin");
   const canModerate = capabilities.includes("moderation.read");
   const canAdmin = capabilities.includes(PLATFORM_ADMIN_CAPABILITY);
+  // Administradores da plataforma também precisam descobrir a área de moderação.
+  // A autorização real continua no servidor (GET /moderation/me).
+  const showModerationLink = canModerate || canAdmin;
   const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function handleSignOut() {
@@ -47,7 +50,7 @@ export function AppHeader() {
           >
             Organizações
           </NavLink>
-          {canModerate ? (
+          {showModerationLink ? (
             <NavLink
               to="/moderation"
               className={({ isActive }) => (isActive ? "app-nav__link is-active" : "app-nav__link")}

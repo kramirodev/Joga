@@ -414,7 +414,7 @@ export function AdminUsersPage() {
           }
         />
 
-        <form className="filters-form" onSubmit={submitSearch} noValidate>
+        <form className="filters-form filters-form--search" onSubmit={submitSearch} noValidate>
           <TextField
             id="admin-user-query"
             label="Buscar"

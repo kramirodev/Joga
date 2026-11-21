@@ -1345,16 +1345,30 @@ pre {
 .filters-form {
   display: grid;
   grid-template-columns: minmax(11rem, 0.8fr) minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
-  align-items: end;
-  gap: 0.6rem;
+  /* Rótulos alinhados no topo; o rodapé de cada campo (dica/contador) fica abaixo. */
+  align-items: start;
+  gap: 0.38rem 0.65rem;
   flex: 1 1 100%;
+  min-width: 0;
+}
+
+/* Busca + status + ações: três colunas, com a busca mais larga. */
+.filters-form--search {
+  grid-template-columns: minmax(12rem, 2fr) minmax(11rem, 1.25fr) auto;
+}
+
+.filters-form > .field {
+  min-width: 0;
 }
 
 .filters-form__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  align-self: start;
   gap: 0.45rem;
+  /* Altura do rótulo + gap do campo: os botões ficam na linha dos inputs. */
+  padding-top: calc(0.83rem * 1.35 + 0.38rem);
 }
 
 .filters-panel__search {
@@ -3445,8 +3459,13 @@ pre {
     width: 100%;
   }
 
-  .filters-form {
+  .filters-form,
+  .filters-form--search {
     grid-template-columns: 1fr;
+  }
+
+  .filters-form__actions {
+    padding-top: 0;
   }
 
   .filters-form__actions .button {
