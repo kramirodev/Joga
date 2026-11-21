@@ -2,14 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, View } from 'react-native';
 
 import { describeApiError, ApiError } from '../api/client';
-import type { MyRating, QueueEntry, QueueLevel, QueueMode, Sport } from '../api/types';
+import type {
+  MyRating,
+  QueueCourtPreference,
+  QueueEntry,
+  QueueLevel,
+  QueueMode,
+  Sport,
+} from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
 import {
+  QUEUE_COURT_OPTIONS,
   QUEUE_LEVELS,
   QUEUE_MODES,
   buildSelection,
   buildSelectionPayload,
+  divergentCourtFormats,
   emptySelection,
   entryMode,
   formatLabelFromCatalog,
@@ -23,11 +32,13 @@ import {
   queueCourtPreference,
   queueFailureMessage,
   resolveCasualLevel,
+  resolveCourtPreference,
   selectionCount,
   selectionError,
   selectionFromEntries,
   selectionItemsError,
   selectionPairs,
+  withCourt,
   withFormatToggled,
   withLevel,
   withModeToggled,
@@ -35,7 +46,7 @@ import {
   type QueueSelection,
 } from '../state/queueState';
 import { useActiveInterval } from '../state/useActiveInterval';
-import { divisionLabel, elapsed, timeOnly, WEEKDAY_NAMES } from '../ui/datetime';
+import { courtLabel, divisionLabel, elapsed, timeOnly, WEEKDAY_NAMES } from '../ui/datetime';
 import { Appear } from '../ui/Appear';
 import {
   Badge,
@@ -57,17 +68,16 @@ import { duration, easing, motionDuration, useReducedMotion } from '../ui/motion
 import { PulseDot } from '../ui/PulseDot';
 import { Text } from '../ui/text';
 
-const COURT_OPTIONS = ['Públicas', 'Particulares', 'Tanto faz'] as const;
-type CourtChoice = (typeof COURT_OPTIONS)[number];
-
 type QueueStep = 1 | 2;
 type QueueView = 'overview' | 'edit';
 
 type QueueDraft = {
   step: QueueStep;
   selection: QueueSelection;
-  court: CourtChoice;
 };
+
+/** Formato antigo do rascunho, lido só para migrar a quadra global. */
+type LegacyQueueDraft = QueueDraft & { court?: string };
 
 /**
  * Rascunho da seleção ainda não confirmada. Vive só em memória: sair da tela
@@ -117,6 +127,9 @@ function SportConfigCard({
   catalog,
   modes,
   level,
+  court,
+  courtDisabled,
+  divergentCourt,
   rating,
   profileReady,
   kept,
@@ -124,11 +137,15 @@ function SportConfigCard({
   onCompleteProfile,
   onModeToggle,
   onLevelChange,
+  onCourtChange,
 }: {
   formatId: string;
   catalog: readonly Sport[];
   modes: readonly QueueMode[];
   level: QueueLevel;
+  court: QueueCourtPreference | undefined;
+  courtDisabled: boolean;
+  divergentCourt: boolean;
   rating: MyRating | undefined;
   profileReady: boolean | null;
   kept: QueueEntry[];
@@ -136,6 +153,7 @@ function SportConfigCard({
   onCompleteProfile: () => void;
   onModeToggle: (mode: QueueMode) => void;
   onLevelChange: (level: QueueLevel) => void;
+  onCourtChange: (court: QueueCourtPreference) => void;
 }) {
   const casual = modes.includes('casual');
   const ranked = modes.includes('ranked');
@@ -183,6 +201,25 @@ function SportConfigCard({
           </ChipRow>
         </View>
       ) : null}
+      <View style={{ marginTop: 12, gap: 6 }}>
+        <Txt variant="label">Quadra</Txt>
+        <ChipRow>
+          {QUEUE_COURT_OPTIONS.map((option) => (
+            <Chip
+              key={option}
+              on={court === option}
+              disabled={courtDisabled}
+              accessibilityLabel={`Quadra de ${name}: ${courtLabel(option)}`}
+              onPress={() => onCourtChange(option)}
+            >
+              {courtLabel(option)}
+            </Chip>
+          ))}
+        </ChipRow>
+        {divergentCourt ? (
+          <Txt variant="tiny">Ao confirmar, as buscas deste esporte usam a mesma quadra.</Txt>
+        ) : null}
+      </View>
       <View style={{ marginTop: 12, gap: 8 }}>
         <ConfigLine
           label="Perfil"
@@ -227,6 +264,7 @@ export function QueueScreen() {
     primaryFormatId,
     loadRating,
     loadCatalog,
+    loadProfile,
     session,
     queue,
     matchedEntry,
@@ -241,7 +279,8 @@ export function QueueScreen() {
   );
   // Lido uma única vez, no primeiro render: o rascunho sobrevive à saída da
   // tela sem virar fonte de verdade do servidor.
-  const draftAtMount = queueDraft;
+  const draftAtMount = queueDraft as LegacyQueueDraft | null;
+  const legacyCourt = draftAtMount?.court ? queueCourtPreference(draftAtMount.court) : undefined;
   const [view, setView] = useState<QueueView>(() =>
     draftAtMount || nav.params.from === 'queue-search' ? 'edit' : 'overview',
   );
@@ -249,11 +288,12 @@ export function QueueScreen() {
   const [selection, setSelection] = useState<QueueSelection>(
     () => draftAtMount?.selection ?? emptySelection(),
   );
-  const [court, setCourt] = useState<CourtChoice>(() => draftAtMount?.court ?? 'Tanto faz');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [syncing, setSyncing] = useState(() => !!session);
   const [syncError, setSyncError] = useState(false);
+  const [profileFailed, setProfileFailed] = useState(false);
+  const [profileTick, setProfileTick] = useState(0);
   const [catalogLoading, setCatalogLoading] = useState(() => catalog.length === 0);
   const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -330,6 +370,29 @@ export function QueueScreen() {
     }
   }, [loadQueue]);
 
+  // Perfil é a fonte do default da quadra. Se ainda não chegou, tenta de novo
+  // aqui; falha vira aviso com retry, nunca `ANY` silencioso.
+  useEffect(() => {
+    if (profile || !session) {
+      return;
+    }
+    let active = true;
+    loadProfile()
+      .then(() => {
+        if (active) {
+          setProfileFailed(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setProfileFailed(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadProfile, profile, profileTick, session]);
+
   // Reconcilia com o servidor ao montar; a lista exibida nunca vem de
   // `nav.params` nem da seleção local.
   useEffect(() => {
@@ -398,6 +461,24 @@ export function QueueScreen() {
     [profile],
   );
 
+  // Default da quadra: escolha local → entrada ativa → perfil do formato →
+  // rascunho global antigo → ANY. `ANY` do perfil não é sobrescrito.
+  const courtFor = useCallback(
+    (formatId: string): QueueCourtPreference | undefined => {
+      const entry = queue.find((item) => item.format_id === formatId);
+      const profileCourt = profile?.sports.find(
+        (sport) => sport.format_id === formatId,
+      )?.court_preference;
+      return resolveCourtPreference(
+        selection.byFormat[formatId]?.court,
+        entry?.court_preference,
+        profileCourt,
+        legacyCourt,
+      );
+    },
+    [legacyCourt, profile, queue, selection.byFormat],
+  );
+
   // Default do nível casual: escolha local → entrada confirmada no GET →
   // perfil esportivo. Ranqueada não tem nível.
   const defaultLevelFor = useCallback(
@@ -422,9 +503,21 @@ export function QueueScreen() {
         mode,
         level: mode === 'casual' ? (defaultLevelFor(formatId, mode) ?? 'intermediate') : null,
         ranked: mode === 'ranked' ? rankedDetail(ratings[formatId]) : null,
+        court: courtFor(formatId),
       })),
-    [defaultLevelFor, ratings, selection],
+    [courtFor, defaultLevelFor, ratings, selection],
   );
+  const divergentCourts = useMemo(() => new Set(divergentCourtFormats(queue)), [queue]);
+  const profileBlocked =
+    profile === null || selection.formats.some((formatId) => !profileFormatIds.includes(formatId));
+  // Custo por seleção (Prompt 8 A16–A19 superado): privado mantém o card,
+  // público vira "Grátis" sem número, mistura/ANY não mostra número.
+  const allPrivate =
+    selection.formats.length > 0 &&
+    selection.formats.every((formatId) => courtFor(formatId) === 'PRIVATE_ONLY');
+  const allPublic =
+    selection.formats.length > 0 &&
+    selection.formats.every((formatId) => courtFor(formatId) === 'PUBLIC_ONLY');
 
   // Mantém o rascunho enquanto o usuário está no formulário. O servidor só é
   // alterado no `PUT` de confirmação.
@@ -432,8 +525,8 @@ export function QueueScreen() {
     if (view !== 'edit') {
       return;
     }
-    queueDraft = { step, selection, court };
-  }, [court, selection, step, view]);
+    queueDraft = { step, selection };
+  }, [selection, step, view]);
 
   const ratingsRef = useRef(ratings);
   const requestedRatings = useRef(new Set<string>());
@@ -487,9 +580,9 @@ export function QueueScreen() {
   );
 
   const chooseCourt = useCallback(
-    (value: CourtChoice) => {
+    (formatId: string, value: QueueCourtPreference) => {
       markTouched();
-      setCourt(value);
+      setSelection((current) => withCourt(current, formatId, value));
     },
     [markTouched],
   );
@@ -575,7 +668,8 @@ export function QueueScreen() {
       return;
     }
     // Um único payload explícito: casual leva nível; ranqueada omite a chave.
-    const payload = buildSelectionPayload(selection, defaultLevelFor, queueCourtPreference(court));
+    // A quadra vai em cada item; o global legado não é enviado.
+    const payload = buildSelectionPayload(selection, defaultLevelFor, courtFor);
     const payloadProblem = selectionItemsError(payload.selections);
     if (payloadProblem) {
       setFailure({ code: 'invalid_selection', message: payloadProblem });
@@ -611,7 +705,7 @@ export function QueueScreen() {
     }
   }, [
     clearQueueNotice,
-    court,
+    courtFor,
     defaultLevelFor,
     hasConfirmed,
     nav,
@@ -732,6 +826,21 @@ export function QueueScreen() {
           </TextBtn>
         </View>
       ) : null}
+      {profileFailed && profile === null ? (
+        <View style={{ gap: 8 }}>
+          <Notice tone="orange" icon="alert">
+            Não foi possível carregar seu perfil.
+          </Notice>
+          <TextBtn
+            onPress={() => {
+              setProfileFailed(false);
+              setProfileTick((current) => current + 1);
+            }}
+          >
+            Tentar de novo
+          </TextBtn>
+        </View>
+      ) : null}
 
       <Appear key={step} trigger={step} style={{ gap: 14 }}>
         {step === 1 ? (
@@ -825,7 +934,7 @@ export function QueueScreen() {
             <Card tone="flat">
               <Txt variant="h2">Ajuste cada esporte</Txt>
               <Txt variant="tiny" style={{ marginTop: 4 }}>
-                O horário e a preferência de quadra valem para todos.
+                O horário vale para todos. A quadra pode mudar a cada esporte.
               </Txt>
             </Card>
 
@@ -855,6 +964,9 @@ export function QueueScreen() {
                 catalog={catalog}
                 modes={modesFor(formatId)}
                 level={defaultLevelFor(formatId, 'casual') ?? 'intermediate'}
+                court={courtFor(formatId)}
+                courtDisabled={profile === null || !profileFormatIds.includes(formatId)}
+                divergentCourt={divergentCourts.has(formatId)}
                 rating={ratings[formatId]}
                 profileReady={profile ? profileFormatIds.includes(formatId) : null}
                 kept={continuity.kept.filter((entry) => entry.format_id === formatId)}
@@ -862,6 +974,7 @@ export function QueueScreen() {
                 onCompleteProfile={() => nav.go('sports')}
                 onModeToggle={(mode) => toggleMode(formatId, mode)}
                 onLevelChange={(level) => changeLevel(formatId, level)}
+                onCourtChange={(court) => chooseCourt(formatId, court)}
               />
             ))}
 
@@ -874,25 +987,6 @@ export function QueueScreen() {
               <TextBtn onPress={() => nav.go('availability')}>
                 {windows.length > 0 ? 'Editar horários' : 'Adicionar horários'}
               </TextBtn>
-            </Card>
-
-            <Card>
-              <CardHeader title="Preferência de quadra" badge={<Badge>para todos</Badge>} />
-              <Txt variant="tiny" style={{ marginTop: 4 }}>
-                Vale para todas as buscas.
-              </Txt>
-              <ChipRow style={{ marginTop: 8 }}>
-                {COURT_OPTIONS.map((item) => (
-                  <Chip
-                    key={item}
-                    on={court === item}
-                    accessibilityLabel={`Quadra: ${item}`}
-                    onPress={() => chooseCourt(item)}
-                  >
-                    {item}
-                  </Chip>
-                ))}
-              </ChipRow>
             </Card>
 
             <Card>
@@ -915,7 +1009,7 @@ export function QueueScreen() {
               </TextBtn>
             </Card>
 
-            {court === 'Particulares' ? (
+            {allPrivate ? (
               <Card tone="flat">
                 <Row between>
                   <View style={{ flex: 1, minWidth: 0 }}>
@@ -930,7 +1024,7 @@ export function QueueScreen() {
                 </Row>
                 <Txt variant="tiny">O valor final aparece na confirmação da vaga.</Txt>
               </Card>
-            ) : court === 'Públicas' ? (
+            ) : allPublic ? (
               <Card tone="flat">
                 <CardHeader
                   variant="label"
@@ -974,7 +1068,8 @@ export function QueueScreen() {
                           ? row.ranked
                           : row.level
                             ? levelLabel(row.level)
-                            : 'Nível a definir'}
+                            : 'Nível a definir'}{' '}
+                        · {row.court ? courtLabel(row.court) : 'Quadra a definir'}
                       </Txt>
                     ))}
                   </View>
@@ -1034,7 +1129,7 @@ export function QueueScreen() {
               tone="primary"
               icon="search"
               onPress={submit}
-              disabled={busy || count === 0 || selection.formats.length === 0}
+              disabled={busy || count === 0 || selection.formats.length === 0 || profileBlocked}
             >
               {busy
                 ? hasConfirmed

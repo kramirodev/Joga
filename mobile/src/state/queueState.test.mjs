@@ -8,9 +8,11 @@ import {
   buildSelectionItems,
   buildSelectionPayload,
   cancelOutcome,
+  divergentCourtFormats,
   emptySelection,
   formatLabelFromCatalog,
   isExpired,
+  isCourtPreference,
   isNetworkFailure,
   isStaleRevision,
   itemsToPairs,
@@ -21,6 +23,7 @@ import {
   queueContinuity,
   reconcileEntries,
   resolveCasualLevel,
+  resolveCourtPreference,
   selectionCount,
   selectionError,
   selectionFromEntries,
@@ -30,6 +33,7 @@ import {
   snapshotCoversSelection,
   snapshotFromEntries,
   summarizeEntries,
+  withCourt,
   withFormatToggled,
   withLevel,
   withModeToggled,
@@ -126,30 +130,48 @@ test('seleção vazia e esporte sem modo são validados antes da rede', () => {
   assert.equal(selectionError(selectionOf({ f1: ['casual'] })), null);
 });
 
-test('payload: casual leva nível, ranqueada omite a chave (não envia null)', () => {
+test('payload: quadra em todo item; casual leva nível e ranqueada não', () => {
   const selection = selectionOf({ futebol: ['ranked'], volei: ['casual'] });
-  const items = buildSelectionItems(selection, () => 'beginner');
+  const items = buildSelectionItems(
+    selection,
+    () => 'beginner',
+    (formatId) => (formatId === 'futebol' ? 'PUBLIC_ONLY' : 'PRIVATE_ONLY'),
+  );
   assert.deepEqual(items, [
-    { format_id: 'futebol', mode: 'ranked' },
-    { format_id: 'volei', mode: 'casual', level: 'beginner' },
+    { format_id: 'futebol', mode: 'ranked', court_preference: 'PUBLIC_ONLY' },
+    {
+      format_id: 'volei',
+      mode: 'casual',
+      court_preference: 'PRIVATE_ONLY',
+      level: 'beginner',
+    },
   ]);
   assert.equal('level' in items[0], false);
   assert.equal(JSON.stringify(items).includes('"level":null'), false);
 });
 
-test('payload único: selections + court_preference, sem formats/modes/levels', () => {
+test('payload único: selections com quadra por item e sem global', () => {
   const selection = selectionOf({ futebol: ['ranked'], volei: ['casual'] });
-  const payload = buildSelectionPayload(selection, () => 'advanced', 'PUBLIC_ONLY');
+  const payload = buildSelectionPayload(
+    selection,
+    () => 'advanced',
+    (formatId) => (formatId === 'futebol' ? 'PUBLIC_ONLY' : 'PRIVATE_ONLY'),
+  );
   assert.deepEqual(payload, {
     selections: [
-      { format_id: 'futebol', mode: 'ranked' },
-      { format_id: 'volei', mode: 'casual', level: 'advanced' },
+      { format_id: 'futebol', mode: 'ranked', court_preference: 'PUBLIC_ONLY' },
+      {
+        format_id: 'volei',
+        mode: 'casual',
+        court_preference: 'PRIVATE_ONLY',
+        level: 'advanced',
+      },
     ],
-    court_preference: 'PUBLIC_ONLY',
   });
   assert.equal('formats' in payload, false);
   assert.equal('modes' in payload, false);
   assert.equal('levels' in payload, false);
+  assert.equal('court_preference' in payload, false);
   assert.deepEqual(itemsToPairs(payload.selections), selectionPairs(selection));
 });
 
@@ -158,6 +180,65 @@ test('nível casual: escolha local → servidor → perfil → intermediário', 
   assert.equal(resolveCasualLevel(undefined, 'beginner', 'intermediate'), 'beginner');
   assert.equal(resolveCasualLevel('pro', undefined, 'intermediate'), 'intermediate');
   assert.equal(resolveCasualLevel(undefined, undefined, undefined), 'intermediate');
+});
+
+test('quadra: local → entrada → perfil → rascunho antigo → indefinida', () => {
+  assert.equal(
+    resolveCourtPreference('PRIVATE_ONLY', 'PUBLIC_ONLY', 'ANY', 'PUBLIC_ONLY'),
+    'PRIVATE_ONLY',
+  );
+  assert.equal(
+    resolveCourtPreference(undefined, 'PUBLIC_ONLY', 'ANY', 'PRIVATE_ONLY'),
+    'PUBLIC_ONLY',
+  );
+  assert.equal(resolveCourtPreference(undefined, undefined, 'ANY', 'PRIVATE_ONLY'), 'ANY');
+  assert.equal(
+    resolveCourtPreference(undefined, undefined, undefined, 'PRIVATE_ONLY'),
+    'PRIVATE_ONLY',
+  );
+  assert.equal(resolveCourtPreference(undefined, undefined, undefined, undefined), undefined);
+  assert.equal(
+    resolveCourtPreference('invalida', 'PUBLIC_ONLY', undefined, undefined),
+    'PUBLIC_ONLY',
+  );
+  assert.equal(isCourtPreference('ANY'), true);
+  assert.equal(isCourtPreference('Tanto faz'), false);
+});
+
+test('item sem quadra ou com valor inválido é rejeitado antes da rede', () => {
+  assert.match(
+    selectionItemsError([{ format_id: 'f1', mode: 'casual', level: 'beginner' }]) ?? '',
+    /quadra/i,
+  );
+  assert.match(
+    selectionItemsError([
+      { format_id: 'f1', mode: 'casual', level: 'beginner', court_preference: 'PUBLICA' },
+    ]) ?? '',
+    /quadra/i,
+  );
+  assert.equal(
+    selectionItemsError([
+      { format_id: 'f1', mode: 'casual', level: 'beginner', court_preference: 'ANY' },
+    ]),
+    null,
+  );
+});
+
+test('dois formatos com quadras diferentes convivem no mesmo payload', () => {
+  const selection = selectionOf({ futebol: ['casual'], volei: ['casual'] });
+  const payload = buildSelectionPayload(
+    selection,
+    () => 'intermediate',
+    (formatId) => (formatId === 'futebol' ? 'PUBLIC_ONLY' : 'PRIVATE_ONLY'),
+  );
+  assert.equal(payload.selections.length, 2);
+  assert.deepEqual(
+    payload.selections.map((item) => [item.format_id, item.court_preference]),
+    [
+      ['futebol', 'PUBLIC_ONLY'],
+      ['volei', 'PRIVATE_ONLY'],
+    ],
+  );
 });
 
 test('remover e readicionar casual preserva o nível escolhido', () => {
@@ -169,31 +250,40 @@ test('remover e readicionar casual preserva o nível escolhido', () => {
   assert.equal(selection.byFormat.f1.level, 'advanced');
 });
 
-test('remover e readicionar esporte preserva modos e nível casual', () => {
-  let selection = withLevel(selectionOf({ f1: ['casual', 'ranked'] }), 'f1', 'beginner');
+test('remover e readicionar esporte preserva modos, nível e quadra', () => {
+  let selection = withCourt(
+    withLevel(selectionOf({ f1: ['casual', 'ranked'] }), 'f1', 'beginner'),
+    'f1',
+    'PRIVATE_ONLY',
+  );
   selection = withFormatToggled(selection, 'f1');
   assert.deepEqual(selection.formats, []);
   assert.deepEqual(selectionPairs(selection), []);
   selection = withFormatToggled(selection, 'f1');
   assert.deepEqual(selection.byFormat.f1.modes, ['casual', 'ranked']);
   assert.equal(selection.byFormat.f1.level, 'beginner');
+  assert.equal(selection.byFormat.f1.court, 'PRIVATE_ONLY');
 });
 
 test('adicionar esporte novo nasce casual; nunca auto-seleciona ranqueada', () => {
   const selection = withFormatToggled(emptySelection(), 'f1');
   assert.deepEqual(selection.byFormat.f1.modes, ['casual']);
   assert.equal(selection.byFormat.f1.level, undefined);
+  assert.equal(selection.byFormat.f1.court, undefined);
 });
 
-test('ranqueada não herda nível casual no payload', () => {
+test('ranqueada não herda nível casual no payload, mas leva quadra', () => {
   let selection = withLevel(selectionOf({ f1: ['casual'] }), 'f1', 'advanced');
   selection = withModeToggled(selection, 'f1', 'ranked');
-  const items = buildSelectionItems(selection, (formatId, mode) =>
-    mode === 'casual' ? selection.byFormat[formatId].level : undefined,
+  selection = withCourt(selection, 'f1', 'PUBLIC_ONLY');
+  const items = buildSelectionItems(
+    selection,
+    (formatId, mode) => (mode === 'casual' ? selection.byFormat[formatId].level : undefined),
+    () => 'PUBLIC_ONLY',
   );
   assert.deepEqual(items, [
-    { format_id: 'f1', mode: 'casual', level: 'advanced' },
-    { format_id: 'f1', mode: 'ranked' },
+    { format_id: 'f1', mode: 'casual', court_preference: 'PUBLIC_ONLY', level: 'advanced' },
+    { format_id: 'f1', mode: 'ranked', court_preference: 'PUBLIC_ONLY' },
   ]);
 });
 
@@ -213,20 +303,25 @@ test('validação final barra duplicata, nível em ranqueada e casual sem nível
   assert.match(selectionItemsError([]) ?? '', /esporte/);
   assert.match(
     selectionItemsError([
-      { format_id: 'f1', mode: 'casual', level: 'beginner' },
-      { format_id: 'f1', mode: 'casual', level: 'advanced' },
+      { format_id: 'f1', mode: 'casual', level: 'beginner', court_preference: 'ANY' },
+      { format_id: 'f1', mode: 'casual', level: 'advanced', court_preference: 'ANY' },
     ]) ?? '',
     /duas vezes/,
   );
   assert.match(
-    selectionItemsError([{ format_id: 'f1', mode: 'ranked', level: 'beginner' }]) ?? '',
+    selectionItemsError([
+      { format_id: 'f1', mode: 'ranked', level: 'beginner', court_preference: 'ANY' },
+    ]) ?? '',
     /ranqueada/,
   );
-  assert.match(selectionItemsError([{ format_id: 'f1', mode: 'casual' }]) ?? '', /nível/);
+  assert.match(
+    selectionItemsError([{ format_id: 'f1', mode: 'casual', court_preference: 'ANY' }]) ?? '',
+    /nível/,
+  );
   assert.equal(
     selectionItemsError([
-      { format_id: 'f1', mode: 'casual', level: 'beginner' },
-      { format_id: 'f1', mode: 'ranked' },
+      { format_id: 'f1', mode: 'casual', level: 'beginner', court_preference: 'ANY' },
+      { format_id: 'f1', mode: 'ranked', court_preference: 'ANY' },
     ]),
     null,
   );
@@ -243,6 +338,29 @@ test('GET reconcilia um par por entrada, casual com nível e ranqueada sem níve
   assert.equal(selection.byFormat.f1.level, 'beginner');
   assert.deepEqual(selection.byFormat.f2.modes, ['casual']);
   assert.equal(selection.byFormat.f2.level, 'intermediate');
+});
+
+test('GET entrega a quadra efetiva por entrada e preserva a primeira', () => {
+  const selection = selectionFromEntries([
+    entry({ id: 'a', format_id: 'f1', court_preference: 'PUBLIC_ONLY' }),
+    entry({ id: 'b', format_id: 'f1', mode: 'ranked', court_preference: 'PRIVATE_ONLY' }),
+    entry({ id: 'c', format_id: 'f2', court_preference: 'ANY' }),
+  ]);
+  assert.equal(selection.byFormat.f1.court, 'PUBLIC_ONLY');
+  assert.equal(selection.byFormat.f2.court, 'ANY');
+});
+
+test('duas entradas do mesmo formato com quadras diferentes são sinalizadas', () => {
+  const divergent = divergentCourtFormats([
+    entry({ id: 'a', format_id: 'f1', court_preference: 'PUBLIC_ONLY' }),
+    entry({ id: 'b', format_id: 'f1', mode: 'ranked', court_preference: 'PRIVATE_ONLY' }),
+    entry({ id: 'c', format_id: 'f2', court_preference: 'ANY' }),
+  ]);
+  assert.deepEqual(divergent, ['f1']);
+  assert.deepEqual(
+    divergentCourtFormats([entry({ id: 'a', format_id: 'f1', court_preference: 'ANY' })]),
+    [],
+  );
 });
 
 test('seleção derivada do GET não cria combinação que o servidor não tem', () => {
@@ -404,6 +522,7 @@ test('422/409 do contrato têm texto acionável e não vazam código', () => {
     'duplicate_queue_selection',
     'ambiguous_queue_selection',
     'invalid_level_override',
+    'invalid_court_preference',
     'queue_conflict',
   ]) {
     const message = queueFailureMessage(code);

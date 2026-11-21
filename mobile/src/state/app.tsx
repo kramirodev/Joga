@@ -50,6 +50,7 @@ import type {
   Profile,
   Progress,
   QueueEntry,
+  QueueCourtPreference,
   QueueSelectionPayload,
   Sport,
   Stats,
@@ -80,6 +81,7 @@ import {
   cancelOutcome,
   emptySnapshot,
   formatLabelFromCatalog,
+  isCourtPreference,
   isExpired,
   isNetworkFailure,
   isStaleRevision,
@@ -356,6 +358,37 @@ export function AppProvider({ children }: PropsWithChildren) {
       queueRevisionRef.current += 1;
       const revision = queueRevisionRef.current;
       setQueueNotice(null);
+      // O PUT grava a quadra efetiva no perfil de cada formato (ADR 0067).
+      // Refletimos em memória o que o servidor devolveu, sem PUT de perfil.
+      const applyServerCourts = (snapshot: QueueSnapshot) => {
+        const courts = new Map<string, QueueCourtPreference>();
+        for (const entry of [
+          ...snapshot.entries,
+          ...(snapshot.matched ? [snapshot.matched] : []),
+        ]) {
+          if (isCourtPreference(entry.court_preference)) {
+            courts.set(entry.format_id, entry.court_preference);
+          }
+        }
+        if (courts.size === 0) {
+          return;
+        }
+        setProfile((current) => {
+          if (!current) {
+            return current;
+          }
+          let changed = false;
+          const sports = current.sports.map((sport) => {
+            const court = courts.get(sport.format_id);
+            if (!court || sport.court_preference === court) {
+              return sport;
+            }
+            changed = true;
+            return { ...sport, court_preference: court };
+          });
+          return changed ? { ...current, sports } : current;
+        });
+      };
       try {
         // Uma única chamada atômica com os pares explícitos. Sem `formats`,
         // `modes` ou `levels`: são mutuamente exclusivos com `selections`.
@@ -363,6 +396,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         const snapshot = reconcileEntries(response, Date.now());
         if (revision === queueRevisionRef.current) {
           commitQueueSnapshot(snapshot);
+          applyServerCourts(snapshot);
         }
         // Invalida GETs que começaram durante o PUT: eles podem trazer o
         // estado antigo e não podem repor a fila depois da substituição.
@@ -386,6 +420,7 @@ export function AppProvider({ children }: PropsWithChildren) {
             }
             const outcome = applyNetworkFailure(queueSnapshotRef.current, reloaded, Date.now());
             commitQueueSnapshot(outcome.snapshot);
+            applyServerCourts(outcome.snapshot);
             queueRevisionRef.current += 1;
             if (snapshotCoversPairs(outcome.snapshot, itemsToPairs(payload.selections))) {
               return { ok: true, snapshot: outcome.snapshot, reconciled: true };

@@ -22,13 +22,22 @@ export const QUEUE_MODES: readonly QueueMode[] = ['casual', 'ranked'];
 
 export const QUEUE_LEVELS: readonly QueueLevel[] = ['beginner', 'intermediate', 'advanced'];
 
+/** Ordem aprovada na fila (difere da ordem do editor de perfil). */
+export const QUEUE_COURT_OPTIONS: readonly QueueCourtPreference[] = [
+  'PUBLIC_ONLY',
+  'PRIVATE_ONLY',
+  'ANY',
+];
+
 export const DEFAULT_QUEUE_MODES: readonly QueueMode[] = ['casual'];
 
-/** Escolha de um esporte: modos marcados e, só no casual, o nível. */
+/** Escolha de um esporte: modos marcados, nível casual e quadra. */
 export type SportQueueChoice = {
   modes: QueueMode[];
   /** Nível do casual; ausente = default do servidor/perfil. */
   level?: QueueLevel;
+  /** Quadra escolhida no card; ausente = ainda resolvendo o default. */
+  court?: QueueCourtPreference;
 };
 
 /**
@@ -120,6 +129,36 @@ export function isQueueLevel(value: unknown): value is QueueLevel {
   return value === 'beginner' || value === 'intermediate' || value === 'advanced';
 }
 
+export function isCourtPreference(value: unknown): value is QueueCourtPreference {
+  return value === 'PUBLIC_ONLY' || value === 'PRIVATE_ONLY' || value === 'ANY';
+}
+
+/**
+ * Default da quadra de um formato (ADR 0067): escolha local da sessão → valor
+ * efetivo da entrada ativa → perfil do formato → rascunho global antigo →
+ * `ANY`. `ANY` é valor real, nunca ausência.
+ */
+export function resolveCourtPreference(
+  local: unknown,
+  entry: unknown,
+  profile: unknown,
+  legacyDraft?: unknown,
+): QueueCourtPreference | undefined {
+  if (isCourtPreference(local)) {
+    return local;
+  }
+  if (isCourtPreference(entry)) {
+    return entry;
+  }
+  if (isCourtPreference(profile)) {
+    return profile;
+  }
+  if (isCourtPreference(legacyDraft)) {
+    return legacyDraft;
+  }
+  return undefined;
+}
+
 export function levelLabel(level: QueueLevel): string {
   if (level === 'beginner') {
     return 'Iniciante';
@@ -138,11 +177,13 @@ export function modeLabel(mode: QueueMode): string {
 export function sportChoice(
   modes: readonly string[] = DEFAULT_QUEUE_MODES,
   level?: QueueLevel | null,
+  court?: QueueCourtPreference | null,
 ): SportQueueChoice {
   const normalized = normalizeModes(modes);
   return {
     modes: QUEUE_MODES.filter((mode) => normalized.includes(mode)),
     ...(isQueueLevel(level) ? { level } : {}),
+    ...(isCourtPreference(court) ? { court } : {}),
   };
 }
 
@@ -163,7 +204,9 @@ export function buildSelection(
     }
     selected.push(formatId);
     const choice = byFormat[formatId];
-    result[formatId] = choice ? sportChoice(choice.modes, choice.level) : sportChoice();
+    result[formatId] = choice
+      ? sportChoice(choice.modes, choice.level, choice.court)
+      : sportChoice();
   }
   return { formats: selected, byFormat: result };
 }
@@ -213,8 +256,8 @@ export function withFormatToggled(selection: QueueSelection, formatId: string): 
   const current = selection.byFormat[formatId];
   const choice =
     current && current.modes.length > 0
-      ? sportChoice(current.modes, current.level)
-      : sportChoice(DEFAULT_QUEUE_MODES, current?.level);
+      ? sportChoice(current.modes, current.level, current.court)
+      : sportChoice(DEFAULT_QUEUE_MODES, current?.level, current?.court);
   return {
     formats: [...selection.formats, formatId],
     byFormat: { ...selection.byFormat, [formatId]: choice },
@@ -253,6 +296,19 @@ export function withLevel(
   return {
     ...selection,
     byFormat: { ...selection.byFormat, [formatId]: { ...current, level } },
+  };
+}
+
+/** Escolhe a quadra daquele formato; modos e nível ficam intactos. */
+export function withCourt(
+  selection: QueueSelection,
+  formatId: string,
+  court: QueueCourtPreference,
+): QueueSelection {
+  const current = selection.byFormat[formatId] ?? sportChoice();
+  return {
+    ...selection,
+    byFormat: { ...selection.byFormat, [formatId]: { ...current, court } },
   };
 }
 
@@ -421,15 +477,21 @@ export function resolveCasualLevel(
 export function buildSelectionItems(
   selection: QueueSelection,
   levelFor: (formatId: string, mode: QueueMode) => string | null | undefined,
+  courtFor: (formatId: string) => QueueCourtPreference | undefined,
 ): QueueSelectionItem[] {
   return selectionPairs(selection).map(({ formatId, mode }) => {
+    const court = courtFor(formatId);
+    const base: QueueSelectionItem = {
+      format_id: formatId,
+      mode,
+      ...(isCourtPreference(court) ? { court_preference: court } : {}),
+    };
     if (mode === 'ranked') {
-      return { format_id: formatId, mode };
+      return base;
     }
     const level = levelFor(formatId, mode);
     return {
-      format_id: formatId,
-      mode,
+      ...base,
       level: isQueueLevel(level) ? level : 'intermediate',
     };
   });
@@ -456,6 +518,9 @@ export function selectionItemsError(items: readonly QueueSelectionItem[]): strin
     if (item.mode === 'casual' && !isQueueLevel(item.level)) {
       return 'Escolha um nível válido para o casual.';
     }
+    if (!isCourtPreference(item.court_preference)) {
+      return 'Escolha a quadra de cada esporte antes de confirmar.';
+    }
   }
   return null;
 }
@@ -464,11 +529,11 @@ export function selectionItemsError(items: readonly QueueSelectionItem[]): strin
 export function buildSelectionPayload(
   selection: QueueSelection,
   levelFor: (formatId: string, mode: QueueMode) => string | null | undefined,
-  courtPreference: QueueCourtPreference = 'ANY',
+  courtFor: (formatId: string) => QueueCourtPreference | undefined,
 ): QueueSelectionPayload {
+  // Sem `court_preference` global: a quadra viaja em cada item (ADR 0067).
   return {
-    selections: buildSelectionItems(selection, levelFor),
-    court_preference: courtPreference,
+    selections: buildSelectionItems(selection, levelFor, courtFor),
   };
 }
 
@@ -586,9 +651,13 @@ export function selectionFromEntries(entries: readonly QueueEntry[]): QueueSelec
     }
     const current = byFormat[formatId] ?? { modes: [] };
     const mode = entryMode(entry);
+    const court =
+      current.court ??
+      (isCourtPreference(entry.court_preference) ? entry.court_preference : undefined);
     const fallback: SportQueueChoice = {
       modes: unique<QueueMode>([...current.modes, mode]),
       ...(current.level ? { level: current.level } : {}),
+      ...(court ? { court } : {}),
     };
     byFormat[formatId] = fallback;
     if (mode === 'casual' && isQueueLevel(entry.level)) {
@@ -603,6 +672,22 @@ export function selectionFromEntries(entries: readonly QueueEntry[]): QueueSelec
     };
   }
   return { formats, byFormat };
+}
+
+/**
+ * Formatos com mais de uma quadra diferente entre entradas ativas do mesmo
+ * formato (dado legado). A tela unifica na revisão ao confirmar.
+ */
+export function divergentCourtFormats(entries: readonly QueueEntry[]): string[] {
+  const seen: Record<string, Set<QueueCourtPreference>> = {};
+  for (const entry of entries) {
+    if (!isCourtPreference(entry.court_preference)) {
+      continue;
+    }
+    seen[entry.format_id] = seen[entry.format_id] ?? new Set<QueueCourtPreference>();
+    seen[entry.format_id].add(entry.court_preference);
+  }
+  return Object.keys(seen).filter((formatId) => seen[formatId].size > 1);
 }
 
 /** Lobby em jogo para denúncia/reserva: a entrada encontrada tem prioridade. */
@@ -672,6 +757,8 @@ export function queueFailureMessage(code: string | null | undefined): string {
       return 'O nível escolhido não pôde ser aplicado. Revise o nível do casual e tente novamente.';
     case 'level_not_applicable_for_ranked':
       return 'Não foi possível montar a busca ranqueada com nível. Nada foi alterado; tente novamente.';
+    case 'invalid_court_preference':
+      return 'Não foi possível usar essa preferência de quadra. Nada foi alterado; revise a quadra de cada esporte.';
     case 'request_timeout':
     case 'network_unavailable':
       return 'A conexão falhou. Vamos reler sua fila antes de tentar novamente.';
