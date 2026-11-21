@@ -110,6 +110,100 @@ export function zonedDateOnly(value: string | Date, timeZone: string | null): st
   }
 }
 
+type DisplayParts = {
+  weekday: string;
+  day: string;
+  month: string;
+  hours: string;
+  minutes: string;
+};
+
+/**
+ * Partes de exibição de um instante UTC no fuso do aparelho.
+ *
+ * `timeZone` existe só para testes determinísticos; em produção é omitido e o
+ * `Intl` usa o fuso configurado no aparelho. Valor ausente ou inválido devolve
+ * `null` para a tela manter o próprio fallback, nunca "Invalid Date".
+ */
+function displayParts(
+  value: string | Date | null | undefined,
+  timeZone?: string,
+): DisplayParts | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+  try {
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+      ...(timeZone ? { timeZone } : {}),
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const values = Object.fromEntries(
+      formatter
+        .formatToParts(date)
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, part.value]),
+    ) as Record<string, string>;
+    return {
+      weekday: (values.weekday ?? '').replace('.', '').toLowerCase(),
+      day: String(Number(values.day ?? 0)),
+      month: MONTHS[Math.max(0, Number(values.month) - 1)] ?? '',
+      hours: (values.hour ?? '00').replace('24', '00'),
+      minutes: values.minute ?? '00',
+    };
+  } catch {
+    // Fuso IANA inválido: volta ao fuso do aparelho em vez de quebrar a tela.
+    return timeZone ? displayParts(date) : null;
+  }
+}
+
+/** Horário local `HH:mm` de um instante UTC. Ausente/inválido devolve `''`. */
+export function formatTime(value: string | Date | null | undefined, timeZone?: string): string {
+  const item = displayParts(value, timeZone);
+  return item ? `${item.hours}:${item.minutes}` : '';
+}
+
+/** Data e hora locais no padrão das telas: `sáb, 21 nov · 01:54`. */
+export function formatDateTimeShort(
+  value: string | Date | null | undefined,
+  timeZone?: string,
+): string {
+  const item = displayParts(value, timeZone);
+  return item ? `${item.weekday}, ${item.day} ${item.month} · ${item.hours}:${item.minutes}` : '';
+}
+
+/** Data local no padrão das telas: `21 nov`. Ausente/inválida devolve `''`. */
+export function formatDateShort(
+  value: string | Date | null | undefined,
+  timeZone?: string,
+): string {
+  const item = displayParts(value, timeZone);
+  return item ? `${item.day} ${item.month}` : '';
+}
+
+/** Saudação pela hora local do aparelho: noite (0–4), dia (5–11), tarde (12–17), noite (18–23). */
+export function greetingForHour(hour: number): string {
+  if (!Number.isFinite(hour)) {
+    return 'Boa noite';
+  }
+  const normalized = ((Math.floor(hour) % 24) + 24) % 24;
+  if (normalized >= 5 && normalized < 12) {
+    return 'Bom dia';
+  }
+  if (normalized >= 12 && normalized < 18) {
+    return 'Boa tarde';
+  }
+  return 'Boa noite';
+}
+
 export function timeOnly(value: string | Date): string {
   const item = parts(value);
   return `${item.hours}:${item.minutes}`;

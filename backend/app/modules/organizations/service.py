@@ -6,7 +6,7 @@ import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,6 +18,12 @@ from app.core.text import UnsafeText, reject_control_characters
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import AuditLog, User
+from app.modules.organizations.cnpj import (
+    InvalidCnpj,
+    address_matches,
+    mask_cnpj,
+    normalize_cnpj,
+)
 from app.modules.organizations.models import (
     Organization,
     OrganizationMembership,
@@ -27,6 +33,13 @@ from app.modules.organizations.permissions import (
     Capability,
     Role,
     capabilities_for,
+)
+from app.modules.organizations.verification import (
+    VERIFICATION_PENDING,
+    VERIFICATION_VERIFIED,
+    CnpjAddressMismatch,
+    CnpjVerification,
+    validate_venue_address,
 )
 from app.modules.profile.models import UserProfile
 from app.modules.profile.models import Venue as DiscoveryVenue
@@ -76,6 +89,22 @@ class InvalidInput(OrganizationError):
     """Dados inválidos para a operação."""
 
 
+class CnpjAlreadyRegistered(OrganizationError):
+    """O CNPJ já pertence a outra organização."""
+
+
+class OrganizationNotVerified(OrganizationError):
+    """A organização ainda não teve o CNPJ aprovado para operar quadras."""
+
+
+class OrganizationNotVerifiable(OrganizationError):
+    """A organização da plataforma não passa pela verificação de fornecedor."""
+
+
+class CnpjChangeNotAllowed(OrganizationError):
+    """O CNPJ já aprovado não pode ser trocado por outro documento."""
+
+
 @dataclass(frozen=True)
 class OrganizationAccess:
     """Organização e o papel do usuário nela."""
@@ -111,7 +140,10 @@ class OrganizationService:
         """Cria a organização e o vínculo de proprietário na mesma transação."""
 
         self._require_active_user(actor_user_id)
-        organization = Organization(name=_clean_organization_name(name))
+        organization = Organization(
+            name=_clean_organization_name(name),
+            verification_status=VERIFICATION_PENDING,
+        )
         self.session.add(organization)
         self.session.flush()
 
@@ -129,7 +161,144 @@ class OrganizationService:
             action="organization.created",
             resource_type="organization",
             resource_id=organization.id,
-            details={"name": organization.name},
+            details={"name": organization.name, "verification_status": VERIFICATION_PENDING},
+        )
+        self.session.flush()
+        return organization
+
+    def create_verified(
+        self,
+        actor_user_id: uuid.UUID,
+        name: str,
+        verification: CnpjVerification,
+        *,
+        recheck_days: int = 7,
+    ) -> Organization:
+        """Cria organização com CNPJ já aprovado e vínculo de proprietário.
+
+        A verificação em si acontece fora do serviço, porque depende do provedor
+        HTTP. Aqui só persistimos o resultado aprovado na mesma transação do
+        vínculo e da auditoria.
+        """
+
+        if recheck_days < 1:
+            raise InvalidInput
+        self._require_active_user(actor_user_id)
+        now = utcnow()
+        organization = Organization(
+            name=_clean_organization_name(name),
+            cnpj=verification.cnpj,
+            cnpj_status=verification.status,
+            cnpj_verified_at=now,
+            # Sete dias contados do cadastro; o relógio é por organização.
+            cnpj_next_check_at=now + timedelta(days=recheck_days),
+            cnpj_snapshot=verification.snapshot,
+            verification_status=VERIFICATION_VERIFIED,
+            created_at=now,
+        )
+        try:
+            with self.session.begin_nested():
+                self.session.add(organization)
+                self.session.flush()
+        except IntegrityError as exc:
+            raise CnpjAlreadyRegistered from exc
+
+        self.session.add(
+            OrganizationMembership(
+                organization_id=organization.id,
+                user_id=actor_user_id,
+                role=Role.OWNER.value,
+            )
+        )
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            organization_id=organization.id,
+            action="organization.created",
+            resource_type="organization",
+            resource_id=organization.id,
+            details={
+                "name": organization.name,
+                "verification_status": VERIFICATION_VERIFIED,
+                "cnpj_masked": mask_cnpj(verification.cnpj),
+            },
+        )
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            organization_id=organization.id,
+            action="organization.cnpj_verified",
+            resource_type="organization",
+            resource_id=organization.id,
+            details=verification.audit_details(),
+        )
+        self.session.flush()
+        return organization
+
+    def apply_verification(
+        self,
+        actor_user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        verification: CnpjVerification,
+        *,
+        recheck_days: int = 7,
+    ) -> Organization:
+        """Aprova o CNPJ de uma organização existente (onboarding/retry).
+
+        Organizações anteriores ao marco nascem ``pending`` e usam este caminho
+        para se regularizar. O CNPJ aprovado não pode ser trocado depois; para
+        trocar de empresa é necessário um novo cadastro.
+        """
+
+        if recheck_days < 1:
+            raise InvalidInput
+        organization = self._lock_organization(organization_id)
+        self._require_capability(actor_user_id, organization_id, Capability.ORGANIZATION_UPDATE)
+        if organization.is_platform:
+            raise OrganizationNotVerifiable
+        if organization.cnpj is not None and organization.cnpj != verification.cnpj:
+            raise CnpjChangeNotAllowed
+
+        active_venues = self.session.scalars(
+            select(OrganizationVenue).where(
+                OrganizationVenue.organization_id == organization_id,
+                OrganizationVenue.status == "active",
+            )
+        ).all()
+        for venue in active_venues:
+            if not address_matches(
+                verification.snapshot,
+                city=venue.city,
+                state=venue.state,
+                postal_code=venue.postal_code,
+            ):
+                raise CnpjAddressMismatch(
+                    "address_mismatch",
+                    details={
+                        "cnpj_masked": mask_cnpj(verification.cnpj),
+                        "venue_id": str(venue.id),
+                    },
+                )
+
+        now = utcnow()
+        organization.cnpj = verification.cnpj
+        organization.cnpj_status = verification.status
+        organization.cnpj_verified_at = now
+        organization.cnpj_next_check_at = now + timedelta(days=recheck_days)
+        organization.cnpj_snapshot = verification.snapshot
+        organization.verification_status = VERIFICATION_VERIFIED
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            raise CnpjAlreadyRegistered from exc
+        record_audit(
+            self.session,
+            actor_user_id=actor_user_id,
+            organization_id=organization_id,
+            action="organization.cnpj_verified",
+            resource_type="organization",
+            resource_id=organization_id,
+            details={**verification.audit_details(), "source": "resubmission"},
         )
         self.session.flush()
         return organization
@@ -209,7 +378,17 @@ class OrganizationService:
 
         organization = self._lock_organization(organization_id)
         self._require_capability(actor_user_id, organization_id, Capability.FINANCIAL_MANAGE)
-        document = normalize_cnpj(legal_document)
+        try:
+            document = normalize_cnpj(legal_document)
+        except InvalidCnpj as exc:
+            raise InvalidInput from exc
+        if (
+            not organization.is_platform
+            and organization.cnpj is not None
+            and document != organization.cnpj
+        ):
+            # O repasse sai para o mesmo CNPJ que foi verificado no cadastro.
+            raise InvalidInput
         key_type, key = normalize_pix_key(pix_key_type, pix_key)
 
         previous_type = organization.pix_key_type
@@ -412,9 +591,22 @@ class OrganizationService:
         is_public: bool = False,
         allow_missing_coordinates: bool = False,
     ) -> OrganizationVenue:
-        """Cria um estabelecimento vinculado à organização."""
+        """Cria um estabelecimento vinculado à organização.
 
+        A quadra só nasce em organização com CNPJ aprovado. O endereço informado
+        precisa ficar no município/CEP do CNPJ; quando não há endereço, a
+        validação falha fechada.
+        """
+
+        organization = self._lock_organization(organization_id)
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
+        self._ensure_verified(organization)
+        validate_venue_address(
+            organization,
+            city=city,
+            state=state,
+            postal_code=postal_code,
+        )
         clean_latitude: float | None
         clean_longitude: float | None
         if allow_missing_coordinates and latitude is None and longitude is None:
@@ -506,6 +698,7 @@ class OrganizationService:
     ) -> OrganizationVenue:
         """Atualiza apenas campos permitidos do estabelecimento."""
 
+        organization = self._lock_organization(organization_id)
         self._require_capability(actor_user_id, organization_id, Capability.VENUES_MANAGE)
         venue = self.session.scalar(
             select(OrganizationVenue).where(
@@ -515,6 +708,16 @@ class OrganizationService:
         )
         if venue is None:
             raise VenueNotFound
+
+        if changes.get("is_public") is True or changes.get("status") == "active":
+            self._ensure_verified(organization)
+        if {"city", "state", "postal_code"} & changes.keys():
+            validate_venue_address(
+                organization,
+                city=changes.get("city", venue.city),
+                state=changes.get("state", venue.state),
+                postal_code=changes.get("postal_code", venue.postal_code),
+            )
 
         applied: dict[str, Any] = {}
         changes = dict(changes)
@@ -736,6 +939,14 @@ class OrganizationService:
             raise UserNotActive
         return user
 
+    @staticmethod
+    def _ensure_verified(organization: Organization) -> None:
+        """A plataforma opera as quadras públicas sem CNPJ próprio."""
+        if organization.is_platform:
+            return
+        if organization.verification_status != VERIFICATION_VERIFIED:
+            raise OrganizationNotVerified
+
     def _validate_discovery_venue(self, venue_id: object | None) -> uuid.UUID | None:
         """Valida o vínculo com um local privado do catálogo de descoberta."""
 
@@ -894,25 +1105,6 @@ def _audit_value(value: Any) -> Any:
 PIX_KEY_TYPES = ("cnpj", "email", "phone", "random")
 
 
-def normalize_cnpj(value: str) -> str:
-    """Valida o CNPJ (14 dígitos, com dígitos verificadores) e devolve só números."""
-
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) != 14 or len(set(digits)) == 1:
-        raise InvalidInput
-    weights_first = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
-    weights_second = (6, *weights_first)
-    for weights, position in ((weights_first, 12), (weights_second, 13)):
-        total = sum(
-            int(digit) * weight for digit, weight in zip(digits[:position], weights, strict=True)
-        )
-        remainder = total % 11
-        expected = 0 if remainder < 2 else 11 - remainder
-        if int(digits[position]) != expected:
-            raise InvalidInput
-    return digits
-
-
 def normalize_pix_key(key_type: str, value: str) -> tuple[str, str]:
     """Valida a chave Pix conforme o tipo e devolve o par normalizado."""
 
@@ -922,7 +1114,10 @@ def normalize_pix_key(key_type: str, value: str) -> tuple[str, str]:
     if not raw:
         raise InvalidInput
     if key_type == "cnpj":
-        return key_type, normalize_cnpj(raw)
+        try:
+            return key_type, normalize_cnpj(raw)
+        except InvalidCnpj as exc:
+            raise InvalidInput from exc
     if key_type == "email":
         normalized = raw.lower()
         if len(normalized) > 77 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", normalized):

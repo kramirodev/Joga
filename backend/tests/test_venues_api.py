@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
 from io import BytesIO
 from pathlib import Path
 
@@ -11,21 +10,24 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.infrastructure.database.dependency import get_session
 from app.modules.profile.models import Sport
 from app.modules.profile.models import Venue as DiscoveryVenue
 from app.modules.venues.storage import LocalPhotoStorage, get_photo_storage
-from tests.helpers_results import make_token, make_user
+from tests.cnpj_helpers import (
+    PARTNER_CPF,
+    FakeCnpjLookup,
+    api_with_lookup,
+    make_cnpj_user,
+    next_test_cnpj,
+)
+from tests.helpers_results import make_token
 
 
 def api_client(client: TestClient, db_session: Session, media_root: Path) -> TestClient:
-    def override_session() -> Iterator[Session]:
-        yield db_session
-
+    api = api_with_lookup(client, db_session, FakeCnpjLookup())
     storage = LocalPhotoStorage(media_root)
-    client.app.dependency_overrides[get_session] = override_session
-    client.app.dependency_overrides[get_photo_storage] = lambda: storage
-    return client
+    api.app.dependency_overrides[get_photo_storage] = lambda: storage
+    return api
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -36,7 +38,7 @@ def create_organization(api: TestClient, token: str, name: str) -> dict:
     response = api.post(
         "/api/v1/organizations",
         headers=bearer(token),
-        json={"name": name},
+        json={"name": name, "cnpj": next_test_cnpj(), "cpf": PARTNER_CPF},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -79,7 +81,7 @@ def setup_tenant(
     *,
     name: str = "Arena Teste",
 ) -> tuple[uuid.UUID, str, dict, dict]:
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
     organization = create_organization(api, token, name)
     venue = create_venue(api, token, organization["id"], f"{name} Centro")
@@ -145,6 +147,8 @@ def test_venue_can_link_only_private_discovery_venue(
         json={
             "name": "Arena Vinculada",
             "venue_id": str(private.id),
+            "city": "Rio de Janeiro",
+            "state": "RJ",
             "latitude": -22.9,
             "longitude": -43.2,
         },
@@ -241,7 +245,7 @@ def test_cross_organization_access_is_denied(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, first_token, first_org, first_venue = setup_tenant(api, db_session, name="Arena A")
-    second_user = make_user(db_session)
+    second_user = make_cnpj_user(db_session)
     second_token = make_token(db_session, second_user)
     second_org = create_organization(api, second_token, "Arena B")
     second_venue = create_venue(api, second_token, second_org["id"], "Arena B Centro")
@@ -281,7 +285,7 @@ def test_operator_can_manage_spaces_but_cannot_review_photos(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, owner_token, organization, venue = setup_tenant(api, db_session)
-    operator = make_user(db_session)
+    operator = make_cnpj_user(db_session)
     operator_token = make_token(db_session, operator)
     add_member(api, owner_token, organization["id"], operator, "OPERATOR")
     base = base_path(organization, venue)
@@ -518,7 +522,7 @@ def test_photo_requires_member_of_the_same_venue(
 ) -> None:
     api = api_client(client, db_session, tmp_path)
     _, first_token, first_org, first_venue = setup_tenant(api, db_session, name="Arena A")
-    second_user = make_user(db_session)
+    second_user = make_cnpj_user(db_session)
     second_token = make_token(db_session, second_user)
     second_org = create_organization(api, second_token, "Arena B")
     second_venue = create_venue(api, second_token, second_org["id"], "Arena B Centro")

@@ -29,6 +29,7 @@ import {
   Toggle,
   Txt,
 } from '../ui/kit';
+import { formatDateShort } from '../ui/datetime';
 import { Text } from '../ui/text';
 import type { ScreenDef } from './types';
 
@@ -325,8 +326,8 @@ function Security() {
     id: item.credential_id,
     name: item.name ?? 'Passkey',
     sub: item.last_used_at
-      ? `último uso em ${item.last_used_at.slice(0, 10)}`
-      : `cadastrada em ${item.created_at.slice(0, 10)}`,
+      ? `último uso em ${formatDateShort(item.last_used_at)}`
+      : `cadastrada em ${formatDateShort(item.created_at)}`,
   }));
   const revoke = async (id: string) => {
     if (!session) {
@@ -485,7 +486,7 @@ function Devices() {
   const list = devices.map((item) => ({
     id: item.id,
     name: item.name ?? item.platform,
-    sub: item.last_seen_at ? `último acesso ${item.last_seen_at.slice(0, 10)}` : 'sessão ativa',
+    sub: item.last_seen_at ? `último acesso ${formatDateShort(item.last_seen_at)}` : 'sessão ativa',
   }));
   const revoke = async (id: string) => {
     if (!session) {

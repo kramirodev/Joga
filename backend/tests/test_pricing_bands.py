@@ -3,27 +3,27 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.infrastructure.database.dependency import get_session
 from app.modules.bookings.models import Booking
 from app.modules.matchmaking.models import Lobby
 from app.modules.payments.money import compute_fee_cents
 from app.modules.pricing.service import BAND_TICKETS, DEFAULT_BANDS, TICKET_CALIBRATION_CENTS
 from app.modules.profile.models import Sport, SportFormat
-from tests.helpers_results import make_token, make_user
+from tests.cnpj_helpers import (
+    PARTNER_CPF,
+    FakeCnpjLookup,
+    api_with_lookup,
+    make_cnpj_user,
+)
+from tests.helpers_results import make_token
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
-    def override_session() -> Iterator[Session]:
-        yield db_session
-
-    client.app.dependency_overrides[get_session] = override_session
-    return client
+    return api_with_lookup(client, db_session, FakeCnpjLookup())
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -31,9 +31,13 @@ def bearer(token: str) -> dict[str, str]:
 
 
 def setup_space(api: TestClient, db_session: Session) -> tuple[str, str, str, str]:
-    user_id = make_user(db_session)
+    user_id = make_cnpj_user(db_session)
     token = make_token(db_session, user_id)
-    org = api.post("/api/v1/organizations", headers=bearer(token), json={"name": "Arena Faixa"})
+    org = api.post(
+        "/api/v1/organizations",
+        headers=bearer(token),
+        json={"name": "Arena Faixa", "cnpj": "11222333000181", "cpf": PARTNER_CPF},
+    )
     assert org.status_code == 201, org.text
     organization_id = org.json()["id"]
     venue = api.post(

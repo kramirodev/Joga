@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -13,15 +15,19 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
+
+JsonType = JSON().with_variant(JSONB(astext_type=Text()), "postgresql")
 
 
 class Organization(Base):
@@ -42,6 +48,12 @@ class Organization(Base):
             "OR (pix_key IS NOT NULL AND pix_key_type IS NOT NULL)",
             name="pix_key_pair_valid",
         ),
+        CheckConstraint(
+            "verification_status IN ('pending', 'verified', 'invalid')",
+            name="verification_status_valid",
+        ),
+        Index("uq_organizations_cnpj", "cnpj", unique=True),
+        Index("ix_organizations_cnpj_next_check_at", "cnpj_next_check_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -52,6 +64,20 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default=text("'active'")
+    )
+    # Verificação automática de CNPJ (ADR 0062). O snapshot guarda apenas a
+    # resposta mascarada necessária à auditoria e à conferência de endereço.
+    cnpj: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    cnpj_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cnpj_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cnpj_next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cnpj_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
+    verification_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default=text("'pending'")
     )
     legal_document: Mapped[str | None] = mapped_column(String(14), nullable=True)
     pix_key_type: Mapped[str | None] = mapped_column(String(10), nullable=True)

@@ -51,6 +51,7 @@ import {
   dateOnly,
   divisionLabel,
   formatSeasonCountdown,
+  greetingForHour,
   levelLabel,
   longDate,
   number,
@@ -131,10 +132,10 @@ function Home() {
     session,
     unreadNotifications,
   } = useApp();
-  const [now] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useActiveInterval(() => setNow(Date.now()), 60_000);
   const name = profile?.display_name ?? onboarding.displayName ?? 'Jogador';
-  const hour = new Date(now).getHours();
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  const greeting = greetingForHour(new Date(now).getHours());
   const nextMatch = matches.find(
     (match) => !['CANCELLED', 'EXPIRED', 'FINALIZED', 'VOIDED'].includes(match.state),
   );

@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.infrastructure.database.dependency import get_session
 from app.modules.identity.models import User
-from tests.helpers_results import make_token, make_user
+from tests.cnpj_helpers import (
+    PARTNER_CPF,
+    FakeCnpjLookup,
+    api_with_lookup,
+    make_cnpj_user,
+    next_test_cnpj,
+)
+from tests.helpers_results import make_token
 
 
 def api_client(client: TestClient, db_session: Session) -> TestClient:
-    def override_session() -> Iterator[Session]:
-        yield db_session
-
-    client.app.dependency_overrides[get_session] = override_session
-    return client
+    return api_with_lookup(client, db_session, FakeCnpjLookup())
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -29,7 +30,7 @@ def create_organization(api: TestClient, token: str, name: str = "Arena Teste") 
     response = api.post(
         "/api/v1/organizations",
         headers=bearer(token),
-        json={"name": name},
+        json={"name": name, "cnpj": next_test_cnpj(), "cpf": PARTNER_CPF},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -77,7 +78,7 @@ def test_venue_postal_code_and_geocoding_provenance(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    owner = make_user(db_session)
+    owner = make_cnpj_user(db_session)
     token = make_token(db_session, owner)
     org = create_organization(api, token)
     base = f"/api/v1/organizations/{org['id']}/venues"
@@ -128,7 +129,13 @@ def test_venue_postal_code_and_geocoding_provenance(
     plain = api.post(
         base,
         headers=bearer(token),
-        json={"name": "Arena Manual", "latitude": 0.0, "longitude": 0.0},
+        json={
+            "name": "Arena Manual",
+            "city": "Rio de Janeiro",
+            "state": "RJ",
+            "latitude": 0.0,
+            "longitude": 0.0,
+        },
     )
     assert plain.status_code == 201, plain.text
     assert plain.json()["postal_code"] is None
@@ -140,6 +147,8 @@ def test_venue_postal_code_and_geocoding_provenance(
         headers=bearer(token),
         json={
             "name": "Arena CEP inválido",
+            "city": "Rio de Janeiro",
+            "state": "RJ",
             "latitude": 0.0,
             "longitude": 0.0,
             "postal_code": "123",
@@ -170,8 +179,8 @@ def test_owner_and_shared_identity_across_organizations(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    first = make_user(db_session)
-    second = make_user(db_session)
+    first = make_cnpj_user(db_session)
+    second = make_cnpj_user(db_session)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
 
@@ -205,8 +214,8 @@ def test_cross_organization_access_is_denied_with_404(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    first = make_user(db_session)
-    second = make_user(db_session)
+    first = make_cnpj_user(db_session)
+    second = make_cnpj_user(db_session)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
     first_org = create_organization(api, first_token, "Arena A")
@@ -271,9 +280,9 @@ def test_operator_can_read_and_manage_venues_but_not_members(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    owner = make_user(db_session)
-    operator = make_user(db_session)
-    other = make_user(db_session)
+    owner = make_cnpj_user(db_session)
+    operator = make_cnpj_user(db_session)
+    other = make_cnpj_user(db_session)
     owner_token = make_token(db_session, owner)
     operator_token = make_token(db_session, operator)
     org = create_organization(api, owner_token)
@@ -333,11 +342,10 @@ def test_operator_can_read_and_manage_venues_but_not_members(
     updated = api.patch(
         f"/api/v1/organizations/{org['id']}/venues/{venue['id']}",
         headers=bearer(operator_token),
-        json={"name": "Quadra Renomeada", "state": "sp"},
+        json={"name": "Quadra Renomeada"},
     )
     assert updated.status_code == 200
     assert updated.json()["name"] == "Quadra Renomeada"
-    assert updated.json()["state"] == "SP"
 
 
 def test_admin_cannot_manage_owners_or_other_admins(
@@ -345,11 +353,11 @@ def test_admin_cannot_manage_owners_or_other_admins(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    owner = make_user(db_session)
-    admin = make_user(db_session)
-    operator = make_user(db_session)
-    second_admin = make_user(db_session)
-    second_owner = make_user(db_session)
+    owner = make_cnpj_user(db_session)
+    admin = make_cnpj_user(db_session)
+    operator = make_cnpj_user(db_session)
+    second_admin = make_cnpj_user(db_session)
+    second_owner = make_cnpj_user(db_session)
     owner_token = make_token(db_session, owner)
     admin_token = make_token(db_session, admin)
     org = create_organization(api, owner_token)
@@ -425,8 +433,8 @@ def test_last_owner_cannot_be_removed_or_demoted(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    owner = make_user(db_session)
-    successor = make_user(db_session)
+    owner = make_cnpj_user(db_session)
+    successor = make_cnpj_user(db_session)
     owner_token = make_token(db_session, owner)
     org = create_organization(api, owner_token)
 
@@ -468,8 +476,8 @@ def test_duplicate_and_missing_members_are_rejected(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    owner = make_user(db_session)
-    member = make_user(db_session)
+    owner = make_cnpj_user(db_session)
+    member = make_cnpj_user(db_session)
     owner_token = make_token(db_session, owner)
     org = create_organization(api, owner_token)
     add_member(api, owner_token, org["id"], member, "OPERATOR")
@@ -507,8 +515,8 @@ def test_audit_is_scoped_and_records_administrative_actions(
     db_session: Session,
 ) -> None:
     api = api_client(client, db_session)
-    first = make_user(db_session)
-    second = make_user(db_session)
+    first = make_cnpj_user(db_session)
+    second = make_cnpj_user(db_session)
     first_token = make_token(db_session, first)
     second_token = make_token(db_session, second)
     first_org = create_organization(api, first_token, "Arena Auditada")
@@ -523,7 +531,7 @@ def test_audit_is_scoped_and_records_administrative_actions(
     api.patch(
         f"/api/v1/organizations/{first_org['id']}/venues/{venue['id']}",
         headers=bearer(first_token),
-        json={"city": "Niterói"},
+        json={"address_line": "Rua Nova, 10"},
     )
 
     audit = api.get(
