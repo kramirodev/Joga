@@ -155,6 +155,52 @@ function currentCsrf(): string | null {
   return csrfToken ?? readCookie(CSRF_COOKIE);
 }
 
+function buildApiError(
+  status: number,
+  text: string,
+  requestId: string | null,
+  retryAfterSeconds: number | null,
+): ApiError {
+  let code = "request_failed";
+  let message = `Falha na requisição (${status}).`;
+  let fields: ValidationField[] = [];
+  if (text) {
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body.detail === "object" && body.detail !== null) {
+        const detail = body.detail as {
+          code?: unknown;
+          message?: unknown;
+          fields?: unknown;
+        };
+        if (typeof detail.code === "string") code = detail.code;
+        if (typeof detail.message === "string") message = detail.message;
+        if (Array.isArray(detail.fields)) {
+          fields = detail.fields
+            .filter(
+              (field): field is ValidationField =>
+                typeof field === "object" &&
+                field !== null &&
+                typeof (field as ValidationField).field === "string" &&
+                typeof (field as ValidationField).code === "string" &&
+                typeof (field as ValidationField).message === "string",
+            )
+            .map((field) => ({
+              field: field.field,
+              code: field.code,
+              message: field.message,
+            }));
+        }
+      } else if (typeof body.detail === "string") {
+        message = body.detail;
+      }
+    } catch {
+      // Resposta não JSON: mantém a mensagem genérica.
+    }
+  }
+  return new ApiError(status, code, message, requestId, fields, retryAfterSeconds);
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
@@ -164,48 +210,18 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
   const text = await response.text();
   if (!response.ok) {
-    let code = "request_failed";
-    let message = `Falha na requisição (${response.status}).`;
-    let fields: ValidationField[] = [];
-    if (text) {
-      try {
-        const body = JSON.parse(text) as { detail?: unknown };
-        if (typeof body.detail === "object" && body.detail !== null) {
-          const detail = body.detail as {
-            code?: unknown;
-            message?: unknown;
-            fields?: unknown;
-          };
-          if (typeof detail.code === "string") code = detail.code;
-          if (typeof detail.message === "string") message = detail.message;
-          if (Array.isArray(detail.fields)) {
-            fields = detail.fields
-              .filter(
-                (field): field is ValidationField =>
-                  typeof field === "object" &&
-                  field !== null &&
-                  typeof (field as ValidationField).field === "string" &&
-                  typeof (field as ValidationField).code === "string" &&
-                  typeof (field as ValidationField).message === "string",
-              )
-              .map((field) => ({
-                field: field.field,
-                code: field.code,
-                message: field.message,
-              }));
-          }
-        } else if (typeof body.detail === "string") {
-          message = body.detail;
-        }
-      } catch {
-        // Resposta não JSON: mantém a mensagem genérica.
-      }
-    }
-    throw new ApiError(response.status, code, message, requestId, fields, retryAfterSeconds);
+    throw buildApiError(response.status, text, requestId, retryAfterSeconds);
   }
 
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
+}
+
+async function readApiError(response: Response): Promise<ApiError> {
+  const requestId = response.headers.get("x-request-id");
+  const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+  const text = await response.text();
+  return buildApiError(response.status, text, requestId, retryAfterSeconds);
 }
 
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -263,19 +279,40 @@ async function doRefresh(): Promise<WebSessionPayload | null> {
   const csrf = currentCsrf();
   if (!csrf) return null;
 
-  const response = await fetch(`${API_BASE}/auth/web/refresh`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: withClientHeaders({ "X-CSRF-Token": csrf }),
-  });
-  if (response.status === 401 || response.status === 403) {
+  let retried = false;
+  for (;;) {
+    const response = await fetch(`${API_BASE}/auth/web/refresh`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: withClientHeaders({ "X-CSRF-Token": csrf }),
+    });
+    if (response.ok) {
+      const payload = await parseResponse<WebSessionPayload>(response);
+      setAuthTokens({ accessToken: payload.access_token, csrfToken: payload.csrf_token });
+      return payload;
+    }
+
+    const error = await readApiError(response);
+    if (error.status !== 401 && error.status !== 403) {
+      throw error;
+    }
+    // Conta suspensa é um estado próprio: não apaga tokens nem anuncia sessão expirada.
+    if (error.code === "account_suspended") {
+      throw error;
+    }
+    // Corrida de refresh (ADR 0058): o par vencedor já está no cookie; repete uma vez.
+    if (error.code === "refresh_retry_required") {
+      if (!retried) {
+        retried = true;
+        continue;
+      }
+      // Ainda transitório: não limpa a sessão; a próxima chamada pode recuperar.
+      throw error;
+    }
+
     clearAuthTokens();
     return null;
   }
-
-  const payload = await parseResponse<WebSessionPayload>(response);
-  setAuthTokens({ accessToken: payload.access_token, csrfToken: payload.csrf_token });
-  return payload;
 }
 
 export function refreshSession(): Promise<WebSessionPayload | null> {
