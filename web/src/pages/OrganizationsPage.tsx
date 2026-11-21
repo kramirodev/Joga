@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { EmptyState, ErrorNotice, SkeletonList } from "../components/Feedback";
+import { EmptyState, ErrorNotice, InfoNotice, SkeletonList } from "../components/Feedback";
 import { TextField } from "../components/ui/Field";
 import { ArrowRightIcon, BuildingIcon, PlusIcon } from "../components/ui/Icons";
 import { PageHeader, SectionHeading } from "../components/ui/PageHeader";
@@ -11,7 +11,16 @@ import { api } from "../lib/api";
 import { formatError, organizationStatusLabel, requestIdOf, roleLabel } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
-import { normalizeWhitespace, textError } from "../lib/validation";
+import {
+  cnpjError,
+  cpfError,
+  formatCnpj,
+  formatCpf,
+  normalizeCnpj,
+  normalizeCpf,
+  normalizeWhitespace,
+  textError,
+} from "../lib/validation";
 import type { Organization } from "../types";
 
 const NAME_RULE = {
@@ -25,8 +34,8 @@ export function OrganizationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [name, setName] = useState("");
-  const [nameError, setNameError] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", cnpj: "", cpf: "" });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const organizationsQuery = useQuery({
     queryKey: queryKeys.organizations,
@@ -34,28 +43,47 @@ export function OrganizationsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (organizationName: string) => api.createOrganization(organizationName),
+    mutationFn: (payload: { name: string; cnpj: string; cpf: string }) =>
+      api.createOrganization(payload),
     onSuccess: (organization: Organization) => {
-      setName("");
-      setNameError(null);
+      // O CPF só existe no formulário; depois do envio ele nunca é reexibido.
+      setForm({ name: "", cnpj: "", cpf: "" });
+      setErrors({});
       void queryClient.invalidateQueries({ queryKey: queryKeys.organizations });
       toast.push({
         title: "Organização criada",
-        description: "Você entrou como proprietário e já pode configurar o estabelecimento.",
+        description:
+          "O CNPJ foi verificado. Você entrou como proprietário e já pode configurar o estabelecimento.",
       });
       navigate(`/organizations/${organization.id}`);
     },
   });
 
+  function update(field: keyof typeof form, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+    if (errors[field]) setErrors((current) => ({ ...current, [field]: "" }));
+  }
+
   function createOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const error = textError(name, NAME_RULE);
-    if (error) {
-      setNameError(error);
-      document.getElementById("org-name")?.focus();
+    const next: Record<string, string> = {};
+    const nameError = textError(form.name, NAME_RULE);
+    if (nameError) next.name = nameError;
+    const cnpjValidation = cnpjError(form.cnpj);
+    if (cnpjValidation) next.cnpj = cnpjValidation;
+    const cpfValidation = cpfError(form.cpf);
+    if (cpfValidation) next.cpf = cpfValidation;
+    if (Object.keys(next).length > 0) {
+      setErrors(next);
+      const first = ["name", "cnpj", "cpf"].find((field) => next[field]);
+      if (first) document.getElementById(`org-${first}`)?.focus();
       return;
     }
-    createMutation.mutate(normalizeWhitespace(name));
+    createMutation.mutate({
+      name: normalizeWhitespace(form.name),
+      cnpj: normalizeCnpj(form.cnpj),
+      cpf: normalizeCpf(form.cpf),
+    });
   }
 
   const organizations = organizationsQuery.data ?? [];
@@ -138,19 +166,16 @@ export function OrganizationsPage() {
         <aside className="card card--form">
           <SectionHeading
             title="Nova organização"
-            description="O criador entra automaticamente como proprietário e pode adicionar administradores e operadores."
+            description="O criador entra automaticamente como proprietário. O CNPJ precisa estar ativo e o CPF deve ser de um responsável no QSA."
             level={2}
           />
           <form className="form" onSubmit={createOrganization} noValidate>
             <TextField
               id="org-name"
               label="Nome da organização ou arena"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                if (nameError) setNameError(null);
-              }}
-              error={nameError}
+              value={form.name}
+              onChange={(event) => update("name", event.target.value)}
+              error={errors.name}
               hint="De 2 a 120 caracteres. Esse nome aparece no painel e na auditoria."
               minLength={2}
               maxLength={120}
@@ -158,13 +183,43 @@ export function OrganizationsPage() {
               autoComplete="organization"
               required
             />
+            <TextField
+              id="org-cnpj"
+              label="CNPJ"
+              value={form.cnpj}
+              onChange={(event) => update("cnpj", formatCnpj(event.target.value))}
+              error={errors.cnpj}
+              hint="Somente CNPJ ativo de empresa com atividade esportiva."
+              maxLength={18}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="00.000.000/0000-00"
+              required
+            />
+            <TextField
+              id="org-cpf"
+              label="CPF do responsável"
+              value={form.cpf}
+              onChange={(event) => update("cpf", formatCpf(event.target.value))}
+              error={errors.cpf}
+              hint="Precisa ser de um sócio do QSA. Não guardamos nem exibimos o CPF no painel depois do envio."
+              maxLength={14}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000.000.000-00"
+              required
+            />
+            <InfoNotice>
+              A verificação consulta a Receita Federal. Se o CNPJ estiver inativo, com atividade
+              incompatível ou o CPF não estiver no QSA, a organização não é criada.
+            </InfoNotice>
             <button
               type="submit"
               className="button button--primary button--block"
               disabled={createMutation.isPending}
               aria-busy={createMutation.isPending || undefined}
             >
-              {createMutation.isPending ? "Criando..." : "Criar organização"}
+              {createMutation.isPending ? "Verificando CNPJ..." : "Verificar CNPJ e criar"}
             </button>
           </form>
         </aside>

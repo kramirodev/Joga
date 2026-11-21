@@ -1,9 +1,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { EmptyState, ErrorNotice, SkeletonList } from "../../components/Feedback";
 import { CheckboxField, SelectField, TextField } from "../../components/ui/Field";
-import { BuildingIcon, SearchIcon } from "../../components/ui/Icons";
+import { BuildingIcon, PlusIcon, SearchIcon } from "../../components/ui/Icons";
 import { ReasonDialog } from "../../components/ui/Modal";
 import { PageHeader, SectionHeading } from "../../components/ui/PageHeader";
 import { Pagination } from "../../components/ui/Pagination";
@@ -16,6 +17,7 @@ import { useDocumentTitle } from "../../lib/useDocumentTitle";
 import { digitsOnly, normalizeWhitespace, textError } from "../../lib/validation";
 import type { AdminVenue, AdminVenueUpdatePayload } from "../../types";
 import { AdminForbiddenState } from "./AdminShared";
+import { AdminVenueCreateDialog } from "./AdminVenueCreateDialog";
 
 const PAGE_SIZE = 20;
 
@@ -164,12 +166,14 @@ export function AdminVenuesPage() {
   useDocumentTitle("Quadras");
   const queryClient = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [visibility, setVisibility] = useState("");
   const [page, setPage] = useState(1);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [statusTarget, setStatusTarget] = useState<StatusTarget | null>(null);
   const [statusReason, setStatusReason] = useState("");
@@ -253,6 +257,16 @@ export function AdminVenuesPage() {
     setStatus("");
     setVisibility("");
     setPage(1);
+  }
+
+  function handleCreated(venue: AdminVenue) {
+    setCreateOpen(false);
+    toast.push({
+      title: "Quadra criada",
+      description: "A quadra está inativa. Adicione espaços e publique quando estiver pronta.",
+    });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "venues"] });
+    navigate(`/admin/venues/${venue.id}`);
   }
 
   function openStatus(venue: AdminVenue, action: StatusAction) {
@@ -354,6 +368,16 @@ export function AdminVenuesPage() {
         <SectionHeading
           title="Todas as quadras"
           description="A busca considera nome, cidade e endereço. A suspensão vale imediatamente para a descoberta e para novas reservas."
+          actions={
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <PlusIcon size={16} />
+              Nova quadra
+            </button>
+          }
         />
 
         <form className="filters-form filters-form--venues" role="search" onSubmit={submitSearch}>
@@ -531,6 +555,13 @@ export function AdminVenuesPage() {
                           >
                             Editar
                           </button>
+                          <Link
+                            className="button button--small button--primary"
+                            to={`/admin/venues/${venue.id}`}
+                            aria-label={`Gerenciar espaços e agenda de ${venue.name}`}
+                          >
+                            Gerenciar
+                          </Link>
                         </div>
                       </td>
                     </tr>
@@ -692,6 +723,12 @@ export function AdminVenuesPage() {
           </>
         ) : null}
       </ReasonDialog>
+
+      <AdminVenueCreateDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={handleCreated}
+      />
     </>
   );
 }

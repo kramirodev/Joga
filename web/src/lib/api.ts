@@ -22,6 +22,7 @@ import type {
   AdminVenueAvailabilityPayload,
   AdminVenueBusinessHour,
   AdminVenueBusinessHourPayload,
+  AdminVenueDetail,
   AdminVenueListResponse,
   AdminVenueUpdatePayload,
   AuditListResponse,
@@ -448,11 +449,24 @@ export const api = {
     return request<OrganizationListResponse>("/organizations");
   },
 
-  createOrganization(name: string): Promise<Organization> {
+  createOrganization(payload: { name: string; cnpj: string; cpf: string }): Promise<Organization> {
     return request<Organization>("/organizations", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     });
+  },
+
+  verifyOrganization(
+    organizationId: string,
+    payload: { cnpj: string; cpf: string },
+  ): Promise<Organization> {
+    return request<Organization>(
+      `/organizations/${encodeURIComponent(organizationId)}/verification`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   getOrganization(organizationId: string): Promise<Organization> {
@@ -1309,8 +1323,15 @@ export const api = {
     return request<AdminVenueListResponse>(`/admin/venues?${query.toString()}`);
   },
 
-  getAdminVenue(venueId: string): Promise<AdminVenue> {
-    return request<AdminVenue>(adminVenuePath(venueId));
+  getAdminVenue(venueId: string): Promise<AdminVenueDetail> {
+    return request<AdminVenueDetail>(adminVenuePath(venueId));
+  },
+
+  createAdminVenue(payload: AdminPublicVenueCreatePayload): Promise<AdminVenue> {
+    return request<AdminVenue>("/admin/venues", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   updateAdminVenue(venueId: string, payload: AdminVenueUpdatePayload): Promise<AdminVenue> {

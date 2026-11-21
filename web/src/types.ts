@@ -13,11 +13,18 @@ export interface WebSessionPayload {
   capabilities: string[];
 }
 
+export type VerificationStatus = "pending" | "verified" | "invalid" | string;
+
 export interface Organization {
   id: string;
   name: string;
   status: string;
   role: Role;
+  cnpj: string | null;
+  cnpj_status: string | null;
+  verification_status: VerificationStatus;
+  cnpj_verified_at: string | null;
+  cnpj_next_check_at: string | null;
   payout_ready: boolean;
   payout_status: string;
   pix_key_type: string | null;
@@ -672,6 +679,11 @@ export interface AdminVenueListResponse {
   venues: AdminVenue[];
 }
 
+/** Detalhe da quadra na administração, com os espaços vinculados. */
+export interface AdminVenueDetail extends AdminVenue {
+  spaces: AdminPublicVenueSpace[];
+}
+
 export interface AdminVenueUpdatePayload {
   name?: string;
   city?: string;
@@ -692,7 +704,7 @@ export interface AdminPublicVenueCreatePayload {
   postal_code: string | null;
   latitude: number;
   longitude: number;
-  is_public: true;
+  is_public: boolean;
   reason: string;
 }
 

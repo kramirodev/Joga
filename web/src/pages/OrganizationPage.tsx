@@ -2,25 +2,37 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
-import { ErrorNotice, SkeletonList } from "../components/Feedback";
+import { ErrorNotice, InfoNotice, SkeletonList } from "../components/Feedback";
 import { TextField } from "../components/ui/Field";
 import { BuildingIcon } from "../components/ui/Icons";
-import { Breadcrumbs, PageHeader } from "../components/ui/PageHeader";
+import { Modal } from "../components/ui/Modal";
+import { Breadcrumbs, PageHeader, SectionHeading } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { tabId, tabPanelId } from "../components/ui/tab-ids";
 import { useToast } from "../components/ui/toast-context";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth-context";
 import {
+  cnpjStatusLabel,
   formatDate,
   formatError,
   organizationStatusLabel,
   requestIdOf,
   roleLabel,
+  verificationStatusLabel,
 } from "../lib/format";
 import { queryKeys } from "../lib/query";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
-import { normalizeWhitespace, textError } from "../lib/validation";
+import {
+  cnpjError,
+  cpfError,
+  formatCnpj,
+  formatCpf,
+  normalizeCnpj,
+  normalizeCpf,
+  normalizeWhitespace,
+  textError,
+} from "../lib/validation";
 import type { BookingListParams, Organization } from "../types";
 import { AuditPanel } from "./organization/AuditPanel";
 import { BookingsPanel } from "./organization/BookingsPanel";
@@ -45,6 +57,9 @@ export function OrganizationPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verifyDraft, setVerifyDraft] = useState({ cnpj: "", cpf: "" });
+  const [verifyErrors, setVerifyErrors] = useState<Record<string, string>>({});
   const [bookingParams, setBookingParams] = useState<BookingListParams>({
     limit: 50,
     offset: 0,
@@ -105,6 +120,60 @@ export function OrganizationPage() {
     },
     onError: (caught) => setNameError(formatError(caught)),
   });
+
+  const verifyMutation = useMutation({
+    mutationFn: () =>
+      api.verifyOrganization(organizationId, {
+        cnpj: normalizeCnpj(verifyDraft.cnpj),
+        cpf: normalizeCpf(verifyDraft.cpf),
+      }),
+    onSuccess: (updated: Organization) => {
+      queryClient.setQueryData(queryKeys.organization(organizationId), updated);
+      setVerifyOpen(false);
+      setVerifyDraft({ cnpj: "", cpf: "" });
+      setVerifyErrors({});
+      toast.push({
+        title: "CNPJ verificado",
+        description: "A organização está regularizada e já pode cadastrar e publicar quadras.",
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.organizations });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.venues(organizationId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.audit(organizationId) });
+    },
+  });
+
+  function openVerification() {
+    if (!organization) return;
+    verifyMutation.reset();
+    setVerifyDraft({ cnpj: organization.cnpj ? formatCnpj(organization.cnpj) : "", cpf: "" });
+    setVerifyErrors({});
+    setVerifyOpen(true);
+  }
+
+  function closeVerification() {
+    if (verifyMutation.isPending) return;
+    setVerifyOpen(false);
+    setVerifyDraft({ cnpj: "", cpf: "" });
+    setVerifyErrors({});
+    verifyMutation.reset();
+  }
+
+  function submitVerification(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (verifyMutation.isPending) return;
+    const next: Record<string, string> = {};
+    const cnpjValidation = cnpjError(verifyDraft.cnpj);
+    if (cnpjValidation) next.cnpj = cnpjValidation;
+    const cpfValidation = cpfError(verifyDraft.cpf);
+    if (cpfValidation) next.cpf = cpfValidation;
+    if (Object.keys(next).length > 0) {
+      setVerifyErrors(next);
+      document.getElementById(next.cnpj ? "org-verify-cnpj" : "org-verify-cpf")?.focus();
+      return;
+    }
+    setVerifyErrors({});
+    verifyMutation.mutate();
+  }
 
   function setTab(next: Tab) {
     const params = new URLSearchParams(searchParams);
@@ -169,6 +238,7 @@ export function OrganizationPage() {
   }
 
   const canUpdateOrganization = organization.role !== "OPERATOR";
+  const verified = organization.verification_status === "verified";
   const hasBookingFilters = Boolean(bookingParams.status || bookingParams.from || bookingParams.to);
   const tabItems = [
     { id: "members", label: "Membros", count: members.length },
@@ -247,6 +317,65 @@ export function OrganizationPage() {
         </div>
       ) : null}
 
+      <section className="card">
+        <SectionHeading
+          title="Cadastro empresarial"
+          description="O CNPJ é verificado na Receita Federal e reconferido periodicamente. Quadras só podem ser publicadas com o cadastro regular."
+          actions={
+            !verified && canUpdateOrganization ? (
+              <button type="button" className="button button--primary" onClick={openVerification}>
+                Verificar CNPJ
+              </button>
+            ) : null
+          }
+        />
+        <dl className="admin-meta">
+          <div>
+            <dt>CNPJ</dt>
+            <dd>{organization.cnpj ? formatCnpj(organization.cnpj) : "Não informado"}</dd>
+          </div>
+          <div>
+            <dt>Situação na Receita</dt>
+            <dd>{cnpjStatusLabel(organization.cnpj_status)}</dd>
+          </div>
+          <div>
+            <dt>Verificação</dt>
+            <dd>
+              <span
+                className={
+                  verified
+                    ? "badge badge--success"
+                    : organization.verification_status === "invalid"
+                      ? "badge badge--danger"
+                      : "badge badge--warning"
+                }
+              >
+                {verificationStatusLabel(organization.verification_status)}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Verificado em</dt>
+            <dd>
+              {organization.cnpj_verified_at ? formatDate(organization.cnpj_verified_at) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>Próxima conferência</dt>
+            <dd>
+              {organization.cnpj_next_check_at ? formatDate(organization.cnpj_next_check_at) : "—"}
+            </dd>
+          </div>
+        </dl>
+        {!verified && canUpdateOrganization ? (
+          <InfoNotice>
+            {organization.verification_status === "invalid"
+              ? "A verificação do CNPJ não está válida. As quadras desta organização ficam fora da descoberta até a regularização."
+              : "Esta organização ainda não teve o CNPJ verificado. Cadastrar quadras e publicar continuam bloqueados até a aprovação."}
+          </InfoNotice>
+        ) : null}
+      </section>
+
       <div className="context-note">
         <BuildingIcon size={17} />
         <span>
@@ -313,6 +442,85 @@ export function OrganizationPage() {
           <AuditPanel organizationId={organization.id} />
         ) : null}
       </div>
+
+      <Modal
+        open={verifyOpen}
+        title="Verificar CNPJ"
+        description="Confirme o CNPJ ativo e o CPF de um responsável no QSA. O CPF é enviado apenas nesta etapa e não fica visível no painel."
+        onClose={closeVerification}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={closeVerification}
+              disabled={verifyMutation.isPending}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form="organization-verification-form"
+              className="button button--primary"
+              disabled={verifyMutation.isPending}
+              aria-busy={verifyMutation.isPending || undefined}
+            >
+              {verifyMutation.isPending ? "Verificando..." : "Verificar CNPJ"}
+            </button>
+          </>
+        }
+      >
+        <form
+          id="organization-verification-form"
+          className="form"
+          onSubmit={submitVerification}
+          noValidate
+        >
+          {verifyMutation.error ? (
+            <ErrorNotice
+              message={formatError(verifyMutation.error)}
+              requestId={requestIdOf(verifyMutation.error)}
+            />
+          ) : null}
+          <TextField
+            id="org-verify-cnpj"
+            label="CNPJ"
+            value={verifyDraft.cnpj}
+            onChange={(event) => {
+              setVerifyDraft((current) => ({
+                ...current,
+                cnpj: formatCnpj(event.target.value),
+              }));
+              if (verifyErrors.cnpj) setVerifyErrors((current) => ({ ...current, cnpj: "" }));
+            }}
+            error={verifyErrors.cnpj}
+            hint="O CNPJ aprovado não pode ser trocado depois."
+            maxLength={18}
+            inputMode="numeric"
+            autoComplete="off"
+            required
+            data-autofocus
+          />
+          <TextField
+            id="org-verify-cpf"
+            label="CPF do responsável"
+            value={verifyDraft.cpf}
+            onChange={(event) => {
+              setVerifyDraft((current) => ({
+                ...current,
+                cpf: formatCpf(event.target.value),
+              }));
+              if (verifyErrors.cpf) setVerifyErrors((current) => ({ ...current, cpf: "" }));
+            }}
+            error={verifyErrors.cpf}
+            hint="Precisa constar no QSA do CNPJ. Não reexibimos este valor."
+            maxLength={14}
+            inputMode="numeric"
+            autoComplete="off"
+            required
+          />
+        </form>
+      </Modal>
     </>
   );
 }

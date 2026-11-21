@@ -142,6 +142,44 @@ export function cnpjError(value: string, required = true): string | null {
   return null;
 }
 
+export function normalizeCpf(value: string): string {
+  return digitsOnly(value);
+}
+
+export function formatCpf(value: string): string {
+  const digits = digitsOnly(value).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  }
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+/** Mesmo cálculo de dígitos verificadores do backend. */
+export function isValidCpf(value: string): boolean {
+  const digits = normalizeCpf(value);
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+  for (const position of [9, 10] as const) {
+    let total = 0;
+    for (let index = 0; index < position; index += 1) {
+      total += Number(digits[index]) * (position + 1 - index);
+    }
+    const remainder = (total * 10) % 11;
+    const expected = remainder === 10 ? 0 : remainder;
+    if (Number(digits[position]) !== expected) return false;
+  }
+  return true;
+}
+
+export function cpfError(value: string, required = true): string | null {
+  const digits = normalizeCpf(value);
+  if (!digits) return required ? "Informe o CPF do responsável." : null;
+  if (digits.length !== 11) return "O CPF deve ter 11 dígitos.";
+  if (!isValidCpf(digits)) return "CPF inválido. Confira os dígitos.";
+  return null;
+}
+
 export type PixKeyType = "cnpj" | "email" | "phone" | "random";
 
 export function pixKeyError(type: PixKeyType, value: string): string | null {

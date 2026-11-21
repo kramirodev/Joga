@@ -3,10 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   cnpjError,
   coordinateError,
+  cpfError,
   dateRangeError,
   emailError,
   formatCnpj,
+  formatCpf,
   isValidCnpj,
+  isValidCpf,
   moneyError,
   moneyInputFromCents,
   moneyToCents,
@@ -52,6 +55,16 @@ describe("validation", () => {
     expect(cnpjError("11222333000181")).toBeNull();
     expect(cnpjError("123")).toMatch(/14 dígitos/);
     expect(formatCnpj("11222333000181")).toBe("11.222.333/0001-81");
+  });
+
+  it("valida e formata CPF pelos dígitos verificadores", () => {
+    expect(isValidCpf("11144477735")).toBe(true);
+    expect(isValidCpf("111.444.777-35")).toBe(true);
+    expect(isValidCpf("11111111111")).toBe(false);
+    expect(isValidCpf("11144477736")).toBe(false);
+    expect(cpfError("11144477735")).toBeNull();
+    expect(cpfError("123")).toMatch(/11 dígitos/);
+    expect(formatCpf("11144477735")).toBe("111.444.777-35");
   });
 
   it("converte valores monetários em centavos", () => {

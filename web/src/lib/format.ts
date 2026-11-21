@@ -203,6 +203,20 @@ const SPACE_STATUS: Record<string, string> = {
   inactive: "Inativa",
 };
 
+const VERIFICATION_STATUS: Record<string, string> = {
+  pending: "Verificação pendente",
+  verified: "CNPJ verificado",
+  invalid: "CNPJ inválido",
+};
+
+const CNPJ_STATUS: Record<string, string> = {
+  ATIVA: "Ativa",
+  BAIXADA: "Baixada",
+  INAPTA: "Inapta",
+  SUSPENSA: "Suspensa",
+  NULA: "Nula",
+};
+
 const AUDIT_ACTION: Record<string, string> = {
   "organization.created": "Organização criada",
   "organization.updated": "Organização atualizada",
@@ -321,6 +335,15 @@ export function userStatusLabel(status: string): string {
 
 export function spaceStatusLabel(status: string): string {
   return SPACE_STATUS[status] ?? status;
+}
+
+export function verificationStatusLabel(status: string): string {
+  return VERIFICATION_STATUS[status] ?? status;
+}
+
+export function cnpjStatusLabel(status: string | null): string {
+  if (!status) return "Não consultado";
+  return CNPJ_STATUS[status.toUpperCase()] ?? status;
 }
 
 export function auditActionLabel(action: string): string {
@@ -507,6 +530,32 @@ export function formatError(error: unknown): string {
       return "Esse usuário não está ativo.";
     case "organization_not_found":
       return "Organização não encontrada ou fora do seu acesso.";
+    case "cnpj_already_registered":
+      return "Esse CNPJ já está vinculado a outra organização. Use outro cadastro.";
+    case "cnpj_change_not_allowed":
+      return "O CNPJ aprovado não pode ser trocado. Para alterar a empresa, crie uma nova organização.";
+    case "cnpj_invalid":
+      return "CNPJ inválido. Confira os 14 dígitos e tente novamente.";
+    case "cnpj_inactive":
+      return "Esse CNPJ não está ativo na Receita Federal. Regularize a situação da empresa antes de continuar.";
+    case "cnpj_cnae_incompatible":
+      return "A atividade principal do CNPJ não é compatível com esportes e locação de quadras. Confira o CNAE da empresa.";
+    case "cnpj_address_mismatch":
+      return "O endereço da quadra não corresponde ao município ou CEP do CNPJ aprovado. Ajuste o endereço ou regularize o cadastro.";
+    case "cnpj_owner_mismatch":
+      return "O CPF informado não corresponde a um responsável no QSA desse CNPJ. Confira o CPF e o nome cadastrado na sua conta.";
+    case "cnpj_lookup_unavailable":
+      return "Não foi possível consultar o CNPJ agora. Tente novamente em alguns instantes.";
+    case "cpf_invalid":
+      return "CPF inválido. Confira os 11 dígitos e tente novamente.";
+    case "cpf_already_registered":
+      return "Esse CPF já está vinculado a outra organização. Cada responsável pode ter um cadastro.";
+    case "cpf_unavailable":
+      return "A verificação do CPF está indisponível agora. Tente novamente em instantes.";
+    case "organization_not_verified":
+      return "O CNPJ desta organização ainda não foi verificado. Regularize o cadastro antes de cadastrar ou publicar quadras.";
+    case "organization_not_verifiable":
+      return "Esta organização não passa pela verificação de CNPJ.";
     case "venue_not_found":
       return "Estabelecimento não encontrado ou fora do seu acesso.";
     case "space_not_found":
