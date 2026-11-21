@@ -74,14 +74,14 @@ describe("AppHeader — moderação por capability", () => {
     renderHeader(["moderation.read"]);
     expect(screen.queryByRole("link", { name: "Usuários" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Esportes" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Quadras públicas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Quadras" })).not.toBeInTheDocument();
   });
 
   it("mostra a administração com platform.admin", () => {
     renderHeader(["platform.admin"]);
     expect(screen.getByRole("link", { name: "Usuários" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Esportes" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Quadras públicas" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Quadras" })).toBeInTheDocument();
   });
 
   it("troca a senha autenticada com senha atual e nova", async () => {

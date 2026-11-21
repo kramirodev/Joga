@@ -644,6 +644,66 @@ describe("cliente HTTP do painel", () => {
     expect(parsed.searchParams.get("to")).toBe("2026-11-30T23:59:59.999Z");
   });
 
+  it("lista quadras globais com busca, status, visibilidade e paginação", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        total: 0,
+        page: 2,
+        page_size: 20,
+        venues: [],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAdminVenues({
+      q: "tijuca",
+      status: "inactive",
+      is_public: false,
+      page: 2,
+      page_size: 20,
+    });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url, "http://joga.local");
+    expect(parsed.pathname).toBe("/api/v1/admin/venues");
+    expect(parsed.searchParams.get("q")).toBe("tijuca");
+    expect(parsed.searchParams.get("status")).toBe("inactive");
+    expect(parsed.searchParams.get("is_public")).toBe("false");
+    expect(parsed.searchParams.get("page")).toBe("2");
+    expect(parsed.searchParams.get("page_size")).toBe("20");
+  });
+
+  it("suspende e edita quadras por rotas administrativas com motivo", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: "venue-1", status: "inactive" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "venue-1", name: "Arena Revisada" }));
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthTokens({ accessToken: "access-1", csrfToken: "csrf-1" });
+
+    await api.suspendAdminVenue("venue-1", "Cadastro incorreto");
+    await api.updateAdminVenue("venue-1", {
+      name: "Arena Revisada",
+      is_public: false,
+      reason: "Correção cadastral",
+    });
+
+    const [suspendUrl, suspendInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(suspendUrl).toBe("/api/v1/admin/venues/venue-1/suspend");
+    expect(suspendInit.method).toBe("POST");
+    expect(JSON.parse(String(suspendInit.body))).toEqual({ reason: "Cadastro incorreto" });
+    expect((suspendInit.headers as Headers).get("X-CSRF-Token")).toBe("csrf-1");
+
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(patchUrl).toBe("/api/v1/admin/venues/venue-1");
+    expect(patchInit.method).toBe("PATCH");
+    expect(JSON.parse(String(patchInit.body))).toEqual({
+      name: "Arena Revisada",
+      is_public: false,
+      reason: "Correção cadastral",
+    });
+  });
+
   it("edita o expediente via PATCH no recurso existente", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

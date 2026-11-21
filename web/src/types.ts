@@ -643,6 +643,47 @@ export interface AdminPublicVenueListResponse {
   page_size: number;
 }
 
+/** Quadra de qualquer organização, como a administração da plataforma a enxerga. */
+export interface AdminVenue {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  organization_is_platform: boolean;
+  organization_status: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  address_line: string | null;
+  postal_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  is_public: boolean;
+  status: "active" | "inactive" | string;
+  spaces_count: number;
+  active_spaces_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminVenueListResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  venues: AdminVenue[];
+}
+
+export interface AdminVenueUpdatePayload {
+  name?: string;
+  city?: string;
+  state?: string;
+  address_line?: string;
+  postal_code?: string | null;
+  latitude?: number;
+  longitude?: number;
+  is_public?: boolean;
+  reason: string;
+}
+
 export interface AdminPublicVenueCreatePayload {
   name: string;
   city: string;
