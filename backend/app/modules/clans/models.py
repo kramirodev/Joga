@@ -26,6 +26,7 @@ CLAN_ROLES = ("owner", "admin", "member")
 MEMBER_STATUSES = ("active", "left", "removed")
 JOIN_POLICIES = ("approval", "open", "closed")
 REQUEST_STATUSES = ("pending", "approved", "rejected", "cancelled")
+INVITE_STATUSES = ("pending", "accepted", "declined", "expired")
 REPORT_STATUSES = ("OPEN", "KEEP_HIDDEN", "RESTORED", "DISMISSED")
 
 
@@ -142,6 +143,54 @@ class ClanJoinRequest(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
     )
+
+
+class ClanInvite(Base):
+    """Convite direto de um clã para um amigo aceito.
+
+    Só o dono ou um admin convida, e só para um amigo não bloqueado. O convite
+    tem prazo de sete dias; aceitar exige que o jogador não tenha clã ativo. O
+    índice único parcial impede dois convites pendentes do mesmo clã para a
+    mesma pessoa sem apagar o histórico de respostas.
+    """
+
+    __tablename__ = "clan_invites"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'declined', 'expired')",
+            name="status_valid",
+        ),
+        CheckConstraint("inviter_id <> invitee_id", name="distinct_users"),
+        Index("ix_clan_invites_invitee_status", "invitee_id", "status"),
+        Index("ix_clan_invites_clan_status", "clan_id", "status"),
+        Index(
+            "uq_clan_invites_pending",
+            "clan_id",
+            "invitee_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    clan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clans.id", ondelete="CASCADE"), nullable=False
+    )
+    inviter_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    invitee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ClanTrophyEvent(Base):

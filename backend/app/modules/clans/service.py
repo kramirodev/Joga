@@ -14,12 +14,14 @@ import re
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.clans.models import (
+    JOIN_POLICIES,
     Clan,
+    ClanInvite,
     ClanJoinRequest,
     ClanMember,
     ClanMessage,
@@ -29,9 +31,13 @@ from app.modules.clans.models import (
 )
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import ensure_utc, utcnow
+from app.modules.identity.models import User
+from app.modules.notifications.service import NotificationService
+from app.modules.social.service import SocialService
 
 MAX_MEMBERS = 30
 JOIN_COOLDOWN = timedelta(days=7)
+INVITE_TTL = timedelta(days=7)
 TROPHY_MIN_TENURE = timedelta(days=7)
 TROPHY_MEMBERS_COUNTED = 10
 TROPHY_POINTS = {"WIN": 50, "DRAW": 30, "LOSS": 20}
@@ -65,6 +71,10 @@ class ClanConflict(ClanError):
 
 class ClanForbidden(ClanError):
     """Ação não permitida para o papel do jogador."""
+
+
+class ClanValidation(ClanError):
+    """Valor de campo inválido em uma edição (responde 422)."""
 
 
 class ClanFull(ClanError):
@@ -235,6 +245,71 @@ def create_clan(
     return clan
 
 
+def update_clan(
+    session: Session,
+    actor_id: uuid.UUID,
+    clan_id: uuid.UUID,
+    *,
+    changes: dict[str, str | None],
+) -> Clan:
+    """Edita nome, descrição e política de entrada; a tag nunca muda.
+
+    ``changes`` contém somente os campos enviados pelo cliente. Cada alteração
+    efetiva é registrada em auditoria como ``clan.updated``. Campos ausentes ou
+    iguais ao valor atual não geram evento.
+    """
+
+    clan = get_clan(session, clan_id)
+    require_admin(session, clan_id, actor_id)
+    applied: dict[str, dict[str, str | None]] = {}
+
+    if "name" in changes:
+        clean_name = (changes["name"] or "").strip()
+        if not 3 <= len(clean_name) <= 40:
+            raise ClanValidation("name_invalid")
+        if clean_name != clan.name:
+            taken = session.scalars(
+                select(Clan.id).where(Clan.name == clean_name, Clan.id != clan.id)
+            ).first()
+            if taken is not None:
+                raise ClanConflict("name_taken")
+            applied["name"] = {"from": clan.name, "to": clean_name}
+            clan.name = clean_name
+
+    if "description" in changes:
+        raw_description = changes["description"]
+        clean_description = raw_description.strip() if raw_description else None
+        if clean_description is not None and len(clean_description) > 280:
+            raise ClanValidation("description_invalid")
+        if clean_description != clan.description:
+            applied["description"] = {"from": clan.description, "to": clean_description}
+            clan.description = clean_description
+
+    if "join_policy" in changes:
+        policy = changes["join_policy"]
+        if policy not in JOIN_POLICIES:
+            raise ClanValidation("join_policy_invalid")
+        if policy != clan.join_policy:
+            applied["join_policy"] = {"from": clan.join_policy, "to": policy}
+            clan.join_policy = policy
+
+    if applied:
+        try:
+            session.flush()
+        except IntegrityError as exc:
+            raise ClanConflict("name_taken") from exc
+        record_audit(
+            session,
+            actor_user_id=actor_id,
+            action="clan.updated",
+            resource_type="clan",
+            resource_id=clan.id,
+            details={"changes": applied},
+        )
+        session.flush()
+    return clan
+
+
 def request_join(
     session: Session,
     user_id: uuid.UUID,
@@ -370,6 +445,255 @@ def leave_clan(
     membership.left_at = moment
     session.flush()
     return membership
+
+
+def invite_to_clan(
+    session: Session,
+    actor_id: uuid.UUID,
+    clan_id: uuid.UUID,
+    invitee_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> ClanInvite:
+    """Convida um amigo aceito e não bloqueado para o clã.
+
+    Qualquer clã pendente do convidado em outro clã não impede o convite: a
+    exclusividade de clã ativo é verificada no aceite. A notificação ao
+    convidado usa a central existente (e a Outbox), sem criar evento novo.
+    """
+
+    moment = ensure_utc(now or utcnow())
+    clan = get_clan(session, clan_id)
+    require_admin(session, clan_id, actor_id)
+    if actor_id == invitee_id:
+        raise ClanConflict("cannot_invite_self")
+    if session.get(User, invitee_id) is None:
+        raise ClanNotFound
+
+    social = SocialService(session)
+    if social.is_blocked(actor_id, invitee_id):
+        raise ClanForbidden("blocked")
+    if not social.are_friends(actor_id, invitee_id):
+        raise ClanForbidden("not_friends")
+    if membership_of(session, clan.id, invitee_id) is not None:
+        raise ClanConflict("already_member")
+    if member_count(session, clan.id) >= MAX_MEMBERS:
+        raise ClanFull
+
+    session.execute(
+        update(ClanInvite)
+        .where(
+            ClanInvite.clan_id == clan.id,
+            ClanInvite.invitee_id == invitee_id,
+            ClanInvite.status == "pending",
+            ClanInvite.expires_at <= moment,
+        )
+        .values(status="expired", answered_at=moment)
+    )
+    existing = session.scalars(
+        select(ClanInvite.id).where(
+            ClanInvite.clan_id == clan.id,
+            ClanInvite.invitee_id == invitee_id,
+            ClanInvite.status == "pending",
+        )
+    ).first()
+    if existing is not None:
+        raise ClanConflict("already_invited")
+
+    invite = ClanInvite(
+        clan_id=clan.id,
+        inviter_id=actor_id,
+        invitee_id=invitee_id,
+        status="pending",
+        created_at=moment,
+        expires_at=moment + INVITE_TTL,
+    )
+    session.add(invite)
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        raise ClanConflict("already_invited") from exc
+
+    NotificationService(session).create(
+        user_id=invitee_id,
+        kind="clan_invite",
+        title="Convite de clã",
+        body=f"{clan.name} te convidou para entrar no clã.",
+        idempotency_key=f"clan_invite:{invite.id}",
+        data={
+            "invite_id": str(invite.id),
+            "clan_id": str(clan.id),
+            "clan_name": clan.name,
+            "clan_tag": clan.tag,
+            "inviter_id": str(actor_id),
+        },
+        now=moment,
+    )
+    return invite
+
+
+def list_pending_invites(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> list[ClanInvite]:
+    """Convites ainda válidos do próprio jogador, mais recentes primeiro."""
+
+    moment = ensure_utc(now or utcnow())
+    session.execute(
+        update(ClanInvite)
+        .where(
+            ClanInvite.invitee_id == user_id,
+            ClanInvite.status == "pending",
+            ClanInvite.expires_at <= moment,
+        )
+        .values(status="expired", answered_at=moment)
+    )
+    return list(
+        session.scalars(
+            select(ClanInvite)
+            .where(
+                ClanInvite.invitee_id == user_id,
+                ClanInvite.status == "pending",
+                ClanInvite.expires_at > moment,
+            )
+            .order_by(ClanInvite.created_at.desc(), ClanInvite.id)
+        )
+    )
+
+
+def _invite_for(
+    session: Session,
+    invite_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ClanInvite:
+    statement = select(ClanInvite).where(ClanInvite.id == invite_id)
+    if for_update:
+        statement = statement.with_for_update()
+    invite = session.scalars(statement).first()
+    if invite is None:
+        raise ClanNotFound
+    return invite
+
+
+def _expire(invite: ClanInvite, moment: datetime) -> None:
+    invite.status = "expired"
+    invite.answered_at = moment
+
+
+def accept_invite(
+    session: Session,
+    user_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> ClanInvite:
+    """Aceita o convite do próprio jogador e o torna membro ativo.
+
+    Exige convite pendente e não expirado, ausência de clã ativo e vaga no clã.
+    A carência de troca de clã é a mesma de ``request_join``. A ação é auditada.
+    """
+
+    moment = ensure_utc(now or utcnow())
+    invite = _invite_for(session, invite_id, for_update=True)
+    if invite.invitee_id != user_id:
+        raise ClanNotFound
+    if invite.status == "expired":
+        raise ClanConflict("invite_expired")
+    if invite.status != "pending":
+        raise ClanConflict("invite_not_pending")
+    if ensure_utc(invite.expires_at) <= moment:
+        # O status ``expired`` é materializado pela listagem/próximo convite;
+        # aqui só recusamos, sem gravar no meio de uma requisição que falha.
+        raise ClanConflict("invite_expired")
+
+    clan = get_clan(session, invite.clan_id)
+    if active_membership(session, user_id) is not None:
+        raise ClanConflict("already_in_clan")
+    _add_member(session, clan, user_id, moment)
+    invite.status = "accepted"
+    invite.answered_at = moment
+    record_audit(
+        session,
+        actor_user_id=user_id,
+        action="clan.invite_accepted",
+        resource_type="clan",
+        resource_id=clan.id,
+        details={
+            "invite_id": str(invite.id),
+            "inviter_id": str(invite.inviter_id),
+            "invitee_id": str(user_id),
+        },
+    )
+    session.flush()
+    return invite
+
+
+def decline_invite(
+    session: Session,
+    user_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> ClanInvite:
+    """Recusa o convite do próprio jogador. Convite expirado não é recusado."""
+
+    moment = ensure_utc(now or utcnow())
+    invite = _invite_for(session, invite_id, for_update=True)
+    if invite.invitee_id != user_id:
+        raise ClanNotFound
+    if invite.status == "expired":
+        raise ClanConflict("invite_expired")
+    if invite.status != "pending":
+        raise ClanConflict("invite_not_pending")
+    if ensure_utc(invite.expires_at) <= moment:
+        raise ClanConflict("invite_expired")
+    invite.status = "declined"
+    invite.answered_at = moment
+    session.flush()
+    return invite
+
+
+def cancel_invite(
+    session: Session,
+    actor_id: uuid.UUID,
+    clan_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> ClanInvite:
+    """Cancela um convite pendente do clã.
+
+    O status fechado do modelo não tem ``cancelled``; o cancelamento usa
+    ``expired`` com ``answered_at`` preenchido, e a auditoria guarda o motivo
+    (``cancelled_by_admin``). Assim o histórico não some e o índice único
+    parcial libera novo convite.
+    """
+
+    moment = ensure_utc(now or utcnow())
+    require_admin(session, clan_id, actor_id)
+    invite = _invite_for(session, invite_id, for_update=True)
+    if invite.clan_id != clan_id:
+        raise ClanNotFound
+    if invite.status != "pending":
+        raise ClanConflict("invite_not_pending")
+    _expire(invite, moment)
+    record_audit(
+        session,
+        actor_user_id=actor_id,
+        action="clan.invite_cancelled",
+        resource_type="clan",
+        resource_id=clan_id,
+        details={
+            "invite_id": str(invite.id),
+            "invitee_id": str(invite.invitee_id),
+            "reason": "cancelled_by_admin",
+        },
+    )
+    session.flush()
+    return invite
 
 
 def remove_member(

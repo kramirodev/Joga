@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,7 @@ from app.core.text import (
     escape_like,
 )
 from app.infrastructure.database.dependency import get_session
-from app.modules.clans.models import Clan, ClanJoinRequest, ClanMember, ClanReport
+from app.modules.clans.models import Clan, ClanInvite, ClanJoinRequest, ClanMember, ClanReport
 from app.modules.clans.service import (
     MAX_MEMBERS,
     ClanConflict,
@@ -29,14 +29,20 @@ from app.modules.clans.service import (
     ClanForbidden,
     ClanFull,
     ClanNotFound,
+    ClanValidation,
+    accept_invite,
     active_clan_for,
+    cancel_invite,
     clan_ranking,
     create_clan,
     decide_report,
     decide_request,
+    decline_invite,
     get_clan,
+    invite_to_clan,
     leave_clan,
     list_messages,
+    list_pending_invites,
     list_reports,
     member_count,
     membership_of,
@@ -49,6 +55,7 @@ from app.modules.clans.service import (
     set_role,
     transfer_ownership,
     trophy_total,
+    update_clan,
 )
 from app.modules.identity.clock import utcnow
 from app.modules.identity.sessions import AuthenticatedSession
@@ -72,6 +79,23 @@ class ClanSummaryView(BaseModel):
 
 class ClanListView(BaseModel):
     clans: list[ClanSummaryView]
+
+
+class ClanInviteView(BaseModel):
+    id: UUID
+    clan_id: UUID
+    clan_name: str
+    clan_tag: str
+    inviter_id: UUID
+    inviter_display_name: str | None
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    answered_at: datetime | None
+
+
+class ClanInviteListView(BaseModel):
+    invites: list[ClanInviteView]
 
 
 class ClanRankingEntry(BaseModel):
@@ -187,6 +211,22 @@ def _clan_view(
     )
 
 
+def _invite_view(session: Session, invite: ClanInvite) -> ClanInviteView:
+    clan = session.get(Clan, invite.clan_id)
+    return ClanInviteView(
+        id=invite.id,
+        clan_id=invite.clan_id,
+        clan_name=clan.name if clan is not None else "",
+        clan_tag=clan.tag if clan is not None else "",
+        inviter_id=invite.inviter_id,
+        inviter_display_name=_display_name(session, invite.inviter_id),
+        status=invite.status,
+        created_at=invite.created_at,
+        expires_at=invite.expires_at,
+        answered_at=invite.answered_at,
+    )
+
+
 def _request_view(session: Session, request: ClanJoinRequest) -> RequestView:
     return RequestView(
         id=request.id,
@@ -217,6 +257,11 @@ def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, ClanForbidden):
         code = exc.args[0] if exc.args else "forbidden"
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": code})
+    if isinstance(exc, ClanValidation):
+        code = exc.args[0] if exc.args else "invalid"
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": code}
+        )
     if isinstance(exc, ClanFull):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "clan_full"})
     if isinstance(exc, ClanCooldown):
@@ -234,6 +279,20 @@ class ClanCreateRequest(BaseModel):
     # O serviço normaliza e valida o miolo (2 a 7), aceitando "#" e espaços.
     tag: FreeText = Field(min_length=1, max_length=16)
     description: OptionalMultilineText = Field(default=None, max_length=280)
+
+
+class ClanUpdateRequest(BaseModel):
+    """Edição de clã. ``tag`` é proibida no corpo e responde 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: FreeText | None = Field(default=None, min_length=3, max_length=40)
+    description: OptionalMultilineText = Field(default=None, max_length=280)
+    join_policy: Literal["approval", "open", "closed"] | None = None
+
+
+class ClanInviteCreateRequest(BaseModel):
+    user_id: UUID
 
 
 class JoinRequestCreate(BaseModel):
@@ -280,6 +339,30 @@ def create(
             tag=payload.tag,
             description=payload.description,
         )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _clan_view(session, clan, current.user_id)
+
+
+@router.patch("/clans/{clan_id}", response_model=ClanSummaryView)
+def edit_clan(
+    clan_id: UUID,
+    payload: ClanUpdateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanSummaryView:
+    provided = payload.model_fields_set
+    changes: dict[str, str | None] = {}
+    if "name" in provided and payload.name is not None:
+        changes["name"] = payload.name
+    if "description" in provided:
+        changes["description"] = payload.description
+    if "join_policy" in provided and payload.join_policy is not None:
+        changes["join_policy"] = payload.join_policy
+    try:
+        clan = update_clan(session, current.user_id, clan_id, changes=changes)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
@@ -676,3 +759,80 @@ def decide_report_route(
         session.rollback()
         raise _handle(exc) from None
     return _report_view(report_row)
+
+
+@router.post(
+    "/clans/{clan_id}/invites",
+    response_model=ClanInviteView,
+    status_code=status.HTTP_201_CREATED,
+)
+def invite(
+    clan_id: UUID,
+    payload: ClanInviteCreateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanInviteView:
+    try:
+        invite_row = invite_to_clan(session, current.user_id, clan_id, payload.user_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _invite_view(session, invite_row)
+
+
+@router.get("/me/clan-invites", response_model=ClanInviteListView)
+def my_clan_invites(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanInviteListView:
+    invites = list_pending_invites(session, current.user_id)
+    session.commit()
+    return ClanInviteListView(invites=[_invite_view(session, item) for item in invites])
+
+
+@router.post("/clans/invites/{invite_id}/accept", response_model=ClanSummaryView)
+def accept_clan_invite(
+    invite_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanSummaryView:
+    try:
+        invite_row = accept_invite(session, current.user_id, invite_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    clan = get_clan(session, invite_row.clan_id)
+    return _clan_view(session, clan, current.user_id)
+
+
+@router.post("/clans/invites/{invite_id}/decline", response_model=ClanInviteView)
+def decline_clan_invite(
+    invite_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanInviteView:
+    try:
+        invite_row = decline_invite(session, current.user_id, invite_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _invite_view(session, invite_row)
+
+
+@router.delete("/clans/{clan_id}/invites/{invite_id}", response_model=ClanInviteView)
+def cancel_clan_invite(
+    clan_id: UUID,
+    invite_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> ClanInviteView:
+    try:
+        invite_row = cancel_invite(session, current.user_id, clan_id, invite_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _invite_view(session, invite_row)
