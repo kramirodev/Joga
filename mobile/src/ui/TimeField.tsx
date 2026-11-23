@@ -90,7 +90,7 @@ export function TimeField({
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
 
   const field = (
     <View style={[{ gap: 7 }, style]}>
@@ -118,12 +118,12 @@ export function TimeField({
         submitBehavior={returnKeyType === 'next' ? 'submit' : 'blurAndSubmit'}
         accessibilityLabel={accessibilityLabel ?? label}
         accessibilityHint="Digite a hora com dois dígitos e os minutos com dois dígitos."
-        style={error ? { borderColor: palette.lime } : undefined}
+        style={error ? { borderColor: dark ? palette.danger : palette.lime } : undefined}
       />
       {error ? (
         <Text
           accessibilityLiveRegion="polite"
-          style={{ fontSize: 12.5, lineHeight: 17, color: palette.lime }}
+          style={{ fontSize: 12.5, lineHeight: 17, color: dark ? palette.danger : palette.lime }}
         >
           {error}
         </Text>

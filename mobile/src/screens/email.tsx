@@ -112,7 +112,7 @@ function CodeInput({
   onChange: (value: string) => void;
   onComplete: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<ElementRef<typeof TextInput>>(null);
   return (
@@ -130,7 +130,7 @@ function CodeInput({
                 height: 56,
                 borderRadius: 12,
                 borderWidth: active ? 2 : 1.5,
-                borderColor: active ? palette.ink : palette.lineStrong,
+                borderColor: active ? (dark ? palette.focus : palette.ink) : palette.lineStrong,
                 backgroundColor: palette.surface,
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -234,7 +234,8 @@ function EmailEntry() {
   const { palette } = useTheme();
   const { auth, setAuth } = useApp();
   const [email, setEmail] = useState(auth.email);
-  const [accepted, setAccepted] = useState(true);
+  // Consentimento começa desmarcado: o app não aceita termos pelo jogador.
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<EmailErrorInfo | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState(0);
@@ -322,7 +323,7 @@ function EmailEntry() {
         Ler termos de uso e política de privacidade
       </TextBtn>
       {feedback ? (
-        <Notice tone="orange" icon="alert">
+        <Notice tone="red" icon="alert">
           {feedback.message}
         </Notice>
       ) : null}

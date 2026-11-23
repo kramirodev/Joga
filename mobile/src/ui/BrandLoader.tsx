@@ -5,7 +5,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { easing, loops, useReducedMotion } from './motion';
 
 const BRAND_BG = '#0F1214';
-const BRAND_GLOW = '#2A1214';
+const BRAND_DEEP = '#191A1E';
 
 /**
  * Loader de abertura. Fica sobre o mesmo `#0F1214` do splash nativo e usa o
@@ -14,6 +14,9 @@ const BRAND_GLOW = '#2A1214';
  * O gradiente é um cross-fade lento entre duas camadas de `LinearGradient`.
  * Apenas opacidade é animada; com redução de movimento (interna ou do sistema)
  * o fundo fica estático.
+ *
+ * A paleta do loader é neutra: sem vermelho vazado/glow de marca, separação
+ * feita por superfície chapada.
  */
 export function BrandLoader() {
   const reduceMotion = useReducedMotion();
@@ -51,8 +54,8 @@ export function BrandLoader() {
         <Defs>
           <LinearGradient id="brand-base" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0" stopColor={BRAND_BG} />
-            <Stop offset="0.58" stopColor="#171216" />
-            <Stop offset="1" stopColor={BRAND_GLOW} />
+            <Stop offset="0.58" stopColor="#141519" />
+            <Stop offset="1" stopColor={BRAND_DEEP} />
           </LinearGradient>
         </Defs>
         <Rect width="100%" height="100%" fill="url(#brand-base)" />
@@ -61,8 +64,8 @@ export function BrandLoader() {
         <Svg width="100%" height="100%" preserveAspectRatio="none">
           <Defs>
             <LinearGradient id="brand-glow" x1="1" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={BRAND_GLOW} />
-              <Stop offset="0.48" stopColor="#1F1216" />
+              <Stop offset="0" stopColor={BRAND_DEEP} />
+              <Stop offset="0.48" stopColor="#131418" />
               <Stop offset="1" stopColor={BRAND_BG} />
             </LinearGradient>
           </Defs>

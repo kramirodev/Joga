@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import { Platform, ScrollView, TextInput, View } from 'react-native';
 import * as Location from 'expo-location';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, ApiError } from '../api/client';
 import type { TermsVersion } from '../api/types';
@@ -112,102 +113,127 @@ function PhoneMethodUnavailable() {
 function Welcome() {
   const nav = useNav();
   const { setAuth } = useApp();
-  const { palette, contentBottomInset } = useTheme();
+  const { palette, dark } = useTheme();
+  // Sem tab bar neste fluxo. O Expo Go pode devolver 0 para a barra de 3
+  // botões; 34 dp é só o piso quando não há inset (nunca sobrepõe um inset
+  // real de gesto/3 botões). O CTA vive num footer fora do scroll para não
+  // nascer cortado atrás da barra do sistema.
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom || 34;
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: palette.bg }}
-      contentContainerStyle={{
-        paddingHorizontal: 16,
-        paddingBottom: 18 + contentBottomInset,
-        gap: 10,
-        flexGrow: 1,
-      }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={{ height: 10 }} />
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text
-          style={{
-            fontSize: 28,
-            lineHeight: 26,
-            fontWeight: '900',
-            letterSpacing: -1.7,
-            textTransform: 'uppercase',
-            color: palette.ink,
-          }}
-        >
-          JOGA <Text style={{ color: palette.lime }}>Y</Text> JOGA
-        </Text>
-        <Badge>ANDROID · iOS</Badge>
-      </View>
-      <View
-        style={{
-          backgroundColor: '#15171A',
-          borderWidth: 1.5,
-          borderColor: palette.line,
-          borderRadius: 20,
-          overflow: 'hidden',
+    <View style={{ flex: 1, backgroundColor: palette.bg }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: 18,
+          gap: 10,
+          flexGrow: 1,
         }}
+        showsVerticalScrollIndicator={false}
       >
-        <WelcomeCourt />
+        <View style={{ height: 10 }} />
         <View
-          style={{
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            borderTopWidth: 1,
-            borderTopColor: palette.lineOnInk,
-          }}
+          style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
         >
           <Text
             style={{
-              fontSize: 11,
-              lineHeight: 15,
-              fontWeight: '800',
-              letterSpacing: 1.4,
+              fontSize: 28,
+              lineHeight: 26,
+              fontWeight: '900',
+              letterSpacing: -1.7,
               textTransform: 'uppercase',
-              color: palette.softOnInk,
+              color: palette.ink,
             }}
           >
-            Hoje · 20:00 · Futebol 5x5
+            JOGA <Text style={{ color: palette.lime }}>Y</Text> JOGA
           </Text>
+          <Badge>ANDROID · iOS</Badge>
         </View>
-      </View>
-      <View style={{ paddingTop: 2 }}>
-        <Txt variant="label">Futebol e vôlei, quadra de verdade</Txt>
-        <Txt variant="h1xl" style={{ marginTop: 6, marginBottom: 6 }}>
-          Encontre sua{'\n'}próxima partida.
-        </Txt>
-        <Txt variant="lead">Jogue com pessoas do seu nível, no seu tempo e perto de você.</Txt>
-      </View>
-      <View style={{ gap: 9 }}>
-        {[
-          'Partidas casuais e ranqueadas com times equilibrados.',
-          'Horário, região e tipo de quadra que combinam com você.',
-          'Histórico, amigos e sua divisão sempre à mão.',
-        ].map((item) => (
-          <View key={item} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-            <View
+        <View
+          style={{
+            backgroundColor: '#15171A',
+            borderWidth: 1.5,
+            borderColor: palette.line,
+            borderRadius: 20,
+            overflow: 'hidden',
+          }}
+        >
+          <WelcomeCourt />
+          <View
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderTopWidth: 1,
+              borderTopColor: palette.lineOnInk,
+            }}
+          >
+            <Text
               style={{
-                width: 24,
-                height: 24,
-                borderRadius: 12,
-                marginTop: -1,
-                backgroundColor: palette.lime,
-                alignItems: 'center',
-                justifyContent: 'center',
+                fontSize: 11,
+                lineHeight: 15,
+                fontWeight: '800',
+                letterSpacing: 1.4,
+                textTransform: 'uppercase',
+                color: palette.softOnInk,
               }}
             >
-              <Text style={{ color: '#F1F3F0', fontSize: 15, fontWeight: '900', lineHeight: 18 }}>
-                ✓
-              </Text>
-            </View>
-            <Txt variant="tiny" style={{ flex: 1 }}>
-              {item}
-            </Txt>
+              Hoje · 20:00 · Futebol 5x5
+            </Text>
           </View>
-        ))}
-      </View>
-      <View style={{ gap: 9, marginTop: 2 }}>
+        </View>
+        <View style={{ paddingTop: 2 }}>
+          <Txt variant="label">Futebol e vôlei, quadra de verdade</Txt>
+          <Txt variant="h1xl" style={{ marginTop: 6, marginBottom: 6 }}>
+            Encontre sua{'\n'}próxima partida.
+          </Txt>
+          <Txt variant="lead">Jogue com pessoas do seu nível, no seu tempo e perto de você.</Txt>
+        </View>
+        <View style={{ gap: 9 }}>
+          {[
+            'Partidas casuais e ranqueadas com times equilibrados.',
+            'Horário, região e tipo de quadra que combinam com você.',
+            'Histórico, amigos e sua divisão sempre à mão.',
+          ].map((item) => (
+            <View key={item} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  marginTop: -1,
+                  backgroundColor: palette.lime,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    color: dark ? palette.brandInk : '#F1F3F0',
+                    fontSize: 15,
+                    fontWeight: '900',
+                    lineHeight: 18,
+                  }}
+                >
+                  ✓
+                </Text>
+              </View>
+              <Txt variant="tiny" style={{ flex: 1 }}>
+                {item}
+              </Txt>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      <View
+        style={{
+          paddingHorizontal: 16,
+          paddingTop: 10,
+          paddingBottom: 18 + bottomInset,
+          backgroundColor: palette.bg,
+          gap: 9,
+        }}
+      >
         <Btn
           tone="primary"
           icon="arrow"
@@ -238,11 +264,11 @@ function Welcome() {
             Criar conta com e-mail
           </TextBtn>
         ) : null}
+        <TextBtn muted go="login">
+          Entrar com passkey
+        </TextBtn>
       </View>
-      <TextBtn muted go="login">
-        Entrar com passkey
-      </TextBtn>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -614,7 +640,8 @@ function SignupPhone() {
   const { palette } = useTheme();
   const { auth, setAuth } = useApp();
   const [phone, setPhone] = useState('');
-  const [accepted, setAccepted] = useState(true);
+  // Consentimento começa desmarcado: o app não aceita termos pelo jogador.
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const request = async () => {
@@ -689,7 +716,7 @@ function SignupPhone() {
 function Otp() {
   const nav = useNav();
   const { auth, setAuth, setSession, loadProfile, session, signOut } = useApp();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const params = nav.params;
   const phoneChange = params.phoneChange === 1;
   const challengeParam = typeof params.challengeId === 'string' ? params.challengeId : null;
@@ -768,7 +795,7 @@ function Otp() {
                   height: 56,
                   borderRadius: 12,
                   borderWidth: active ? 2 : 1.5,
-                  borderColor: active ? palette.ink : palette.lineStrong,
+                  borderColor: active ? (dark ? palette.focus : palette.ink) : palette.lineStrong,
                   backgroundColor: palette.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1049,6 +1076,9 @@ function Terms() {
   const readOnly = nav.params.readOnly === 1;
   const [terms, setTerms] = useState<TermsVersion | null>(null);
   const [termsReady, setTermsReady] = useState(!readOnly);
+  // Aceite explícito: os dois consentimentos obrigatórios começam desmarcados.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   useEffect(() => {
     if (!readOnly) {
       return;
@@ -1148,11 +1178,16 @@ function Terms() {
         </Btn>
       ) : (
         <>
-          <Check checked>Li e aceito os Termos de uso.</Check>
-          <Check checked>Li a Política de privacidade e o tratamento de localização.</Check>
+          <Check checked={acceptedTerms} onChange={setAcceptedTerms}>
+            Li e aceito os Termos de uso.
+          </Check>
+          <Check checked={acceptedPrivacy} onChange={setAcceptedPrivacy}>
+            Li a Política de privacidade e o tratamento de localização.
+          </Check>
           <Check>Aceito receber notificações de prazos e partidas.</Check>
           <Btn
             tone="primary"
+            disabled={!acceptedTerms || !acceptedPrivacy}
             onPress={() => {
               setAuth({ purpose: 'registration' });
               nav.replace(authConfig.signupMethod === 'phone' ? 'signup-phone' : 'signup-email');

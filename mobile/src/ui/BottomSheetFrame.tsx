@@ -174,7 +174,7 @@ export function BottomSheetFrame({
               borderTopLeftRadius: 22,
               borderTopRightRadius: 22,
               borderTopWidth: 1.5,
-              borderColor: palette.lineStrong,
+              borderColor: palette.lineSubtle,
               opacity: reduceMotion ? progress : 1,
               transform: [
                 {
@@ -194,7 +194,7 @@ export function BottomSheetFrame({
                   width: 44,
                   height: 5,
                   borderRadius: 999,
-                  backgroundColor: palette.lineStrong,
+                  backgroundColor: palette.lineSubtle,
                   alignSelf: 'center',
                   marginTop: 10,
                   marginBottom: 10,

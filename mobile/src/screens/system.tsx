@@ -236,7 +236,7 @@ function Customization() {
                 borderRadius: 23,
                 backgroundColor: color,
                 borderWidth: index === 0 ? 2 : 1.5,
-                borderColor: index === 0 ? '#17191B' : palette.line,
+                borderColor: index === 0 ? palette.ink : palette.line,
               }}
             />
           ))}

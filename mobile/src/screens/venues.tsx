@@ -2125,7 +2125,7 @@ function ResultSelection({
   setSelected: (value: number) => void;
   second?: boolean;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const items = second
     ? [{ title: 'Time A' }, { title: 'Empate' }, { title: 'Time B' }]
     : [{ title: 'Time A venceu' }, { title: 'Empate' }, { title: 'Time B venceu' }];
@@ -2148,14 +2148,24 @@ function ResultSelection({
                 height: 20,
                 borderRadius: 10,
                 borderWidth: 2,
-                borderColor: selected === index ? palette.ink : palette.line,
-                backgroundColor: selected === index ? palette.ink : palette.surface,
+                borderColor:
+                  selected === index ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+                backgroundColor:
+                  selected === index ? (dark ? palette.brand : palette.ink) : palette.surface,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
               {selected === index ? (
-                <Text style={{ color: palette.onInk, fontSize: 12, fontWeight: '900' }}>✓</Text>
+                <Text
+                  style={{
+                    color: dark ? palette.brandInk : palette.onInk,
+                    fontSize: 12,
+                    fontWeight: '900',
+                  }}
+                >
+                  ✓
+                </Text>
               ) : null}
             </View>
           </Row>
@@ -2275,6 +2285,7 @@ function Dispute() {
   const { session, matches } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [understood, setUnderstood] = useState(false);
   const match = matches.find((item) => item.id === nav.params.matchId) ?? matches[0];
   const submit = async () => {
     if (busy) {
@@ -2314,8 +2325,10 @@ function Dispute() {
         <Txt variant="tiny">1 justificativa por participante</Txt>
         <Txt variant="tiny">{text.length} / 2.000</Txt>
       </Row>
-      <Check checked>Entendo que a divisão fica congelada até a decisão.</Check>
-      <Btn tone="primary" onPress={submit} disabled={busy}>
+      <Check checked={understood} onChange={setUnderstood}>
+        Entendo que a divisão fica congelada até a decisão.
+      </Check>
+      <Btn tone="primary" onPress={submit} disabled={busy || !understood}>
         {busy ? 'Enviando…' : 'Enviar disputa'}
       </Btn>
     </Page>

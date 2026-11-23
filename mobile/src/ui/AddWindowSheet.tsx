@@ -45,14 +45,14 @@ export function AddWindowSheet({
 
 /** Botões ficam no footer do frame: sempre acima do teclado e da barra do sistema. */
 function AddWindowFooter({ error, onSubmit }: { error: string | null; onSubmit: () => boolean }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const close = useSheetClose();
   return (
     <View style={{ gap: 10 }}>
       {error ? (
         <Text
           accessibilityLiveRegion="polite"
-          style={{ fontSize: 13, lineHeight: 18, color: palette.lime }}
+          style={{ fontSize: 13, lineHeight: 18, color: dark ? palette.danger : palette.lime }}
         >
           {error}
         </Text>
