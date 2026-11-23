@@ -6,11 +6,22 @@ export type Palette = {
   ink: string;
   inkSoft: string;
   muted: string;
+  subtle: string;
   line: string;
+  lineSubtle: string;
   lineStrong: string;
   lime: string;
   limeDeep: string;
   limeSoft: string;
+  /**
+   * Papel de marca. `lime` é o nome legado usado pelas telas; `brand` existe
+   * para o tema escuro falar a mesma língua da documentação e do teste de
+   * contraste. Os dois carregam o mesmo valor — não são um tema novo.
+   */
+  brand: string;
+  brandStrong: string;
+  brandInk: string;
+  focus: string;
   blue: string;
   blueSoft: string;
   green: string;
@@ -19,6 +30,10 @@ export type Palette = {
   orangeSoft: string;
   red: string;
   redSoft: string;
+  success: string;
+  warning: string;
+  danger: string;
+  info: string;
   onInk: string;
   softOnInk: string;
   lineOnInk: string;
@@ -37,11 +52,17 @@ export const light: Palette = {
   ink: '#17191B',
   inkSoft: '#62686E',
   muted: '#62686E',
+  subtle: '#A6ABB1',
   line: '#D5D9D6',
+  lineSubtle: '#D5D9D6',
   lineStrong: '#D5D9D6',
   lime: '#E53935',
   limeDeep: '#E53935',
   limeSoft: '#E7EAE7',
+  brand: '#E53935',
+  brandStrong: '#E53935',
+  brandInk: '#F1F3F0',
+  focus: '#E53935',
   blue: '#62686E',
   blueSoft: '#E7EAE7',
   green: '#62686E',
@@ -50,6 +71,10 @@ export const light: Palette = {
   orangeSoft: '#E7EAE7',
   red: '#62686E',
   redSoft: '#E7EAE7',
+  success: '#62686E',
+  warning: '#62686E',
+  danger: '#62686E',
+  info: '#62686E',
   onInk: '#F1F3F0',
   softOnInk: '#A6ABB1',
   lineOnInk: '#383D43',
@@ -61,34 +86,44 @@ export const light: Palette = {
 };
 
 export const dark: Palette = {
-  bg: '#15171A',
-  surface: '#1E2125',
-  surface2: '#292D32',
-  surface3: '#292D32',
-  ink: '#F1F3F0',
-  inkSoft: '#A6ABB1',
-  muted: '#A6ABB1',
-  line: '#383D43',
-  lineStrong: '#383D43',
-  lime: '#E53935',
-  limeDeep: '#E53935',
-  limeSoft: '#292D32',
-  blue: '#A6ABB1',
-  blueSoft: '#292D32',
-  green: '#A6ABB1',
-  greenSoft: '#292D32',
-  orange: '#E53935',
-  orangeSoft: '#292D32',
-  red: '#E53935',
-  redSoft: '#292D32',
-  onInk: '#F1F3F0',
-  softOnInk: '#A6ABB1',
-  lineOnInk: '#383D43',
-  heat1: '#1E2125',
-  heat2: '#292D32',
-  heat3: '#A6ABB1',
-  heat4: '#E53935',
-  progressTrack: '#383D43',
+  bg: '#0A0B0D',
+  surface: '#131417',
+  surface2: '#191A1E',
+  surface3: '#222327',
+  ink: '#F4F2EE',
+  inkSoft: '#8E8E8E',
+  muted: '#A6A6A6',
+  subtle: '#8E8E8E',
+  line: '#2A2B2F',
+  lineSubtle: '#414349',
+  lineStrong: '#6E7077',
+  lime: '#F03B3B',
+  limeDeep: '#FF5C5C',
+  limeSoft: '#222327',
+  brand: '#F03B3B',
+  brandStrong: '#FF5C5C',
+  brandInk: '#140404',
+  focus: '#FF5C5C',
+  blue: '#8EC8FF',
+  blueSoft: '#191A1E',
+  green: '#79D8BF',
+  greenSoft: '#191A1E',
+  orange: '#FFCF72',
+  orangeSoft: '#191A1E',
+  red: '#FF8F7F',
+  redSoft: '#191A1E',
+  success: '#79D8BF',
+  warning: '#FFCF72',
+  danger: '#FF8F7F',
+  info: '#8EC8FF',
+  onInk: '#F4F2EE',
+  softOnInk: '#A6A6A6',
+  lineOnInk: '#414349',
+  heat1: '#131417',
+  heat2: '#191A1E',
+  heat3: '#A6A6A6',
+  heat4: '#F03B3B',
+  progressTrack: '#222327',
 };
 
 export const space = {

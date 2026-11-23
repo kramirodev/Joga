@@ -249,7 +249,7 @@ function TabBar({
         style={{
           minHeight: 54,
           borderTopWidth: 1,
-          borderTopColor: palette.line,
+          borderTopColor: palette.lineSubtle,
           backgroundColor: palette.surface,
           flexDirection: 'row',
           gap: tabGap,
@@ -509,10 +509,13 @@ function Toast({
     >
       <View
         style={{
-          backgroundColor: dark ? palette.lime : palette.ink,
+          backgroundColor: dark ? palette.surface3 : palette.ink,
+          borderWidth: 1.5,
+          borderColor: dark ? palette.lineStrong : 'transparent',
           borderRadius: 10,
-          paddingHorizontal: 16,
-          paddingVertical: 11,
+          // padding + border somam o mesmo nos dois temas.
+          paddingHorizontal: 14.5,
+          paddingVertical: 9.5,
           maxWidth: '100%',
         }}
       >
@@ -521,7 +524,7 @@ function Toast({
           style={{
             fontSize: 13,
             fontWeight: '700',
-            color: palette.onInk,
+            color: dark ? palette.ink : palette.onInk,
             textAlign: 'center',
           }}
         >

@@ -135,7 +135,7 @@ function errorDetail(error: unknown): string {
 
 function Home() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const {
     profile,
     onboarding,
@@ -200,7 +200,13 @@ function Home() {
             justifyContent: 'center',
           }}
         >
-          <Text style={{ color: '#F1F3F0', fontSize: 10, fontWeight: '900' }}>
+          <Text
+            style={{
+              color: dark ? palette.brandInk : '#F1F3F0',
+              fontSize: 10,
+              fontWeight: '900',
+            }}
+          >
             {unreadNotifications > 9 ? '9+' : unreadNotifications}
           </Text>
         </View>
@@ -914,7 +920,7 @@ function LobbyChat() {
 
 function LobbyInvite() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const { friends, session, loadSocial } = useApp();
   const lobbyId = typeof nav.params.lobbyId === 'string' ? nav.params.lobbyId : null;
   const [selected, setSelected] = useState<string[]>([]);
@@ -990,13 +996,22 @@ function LobbyInvite() {
                   height: 22,
                   borderRadius: 3,
                   borderWidth: 2,
-                  borderColor: checked ? palette.ink : palette.lineStrong,
-                  backgroundColor: checked ? palette.ink : palette.surface,
+                  borderColor: checked ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+                  backgroundColor: checked ? (dark ? palette.brand : palette.ink) : palette.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                {checked ? <Text style={{ color: palette.onInk, fontSize: 13 }}>✓</Text> : null}
+                {checked ? (
+                  <Text
+                    style={{
+                      color: dark ? palette.brandInk : palette.onInk,
+                      fontSize: 13,
+                    }}
+                  >
+                    ✓
+                  </Text>
+                ) : null}
               </View>
             </ListRow>
           );

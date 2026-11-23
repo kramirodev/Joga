@@ -126,7 +126,7 @@ export function QueueIndicator({ compact = false }: { compact?: boolean }) {
             marginHorizontal: 10,
             marginBottom: 6,
             borderWidth: 1.5,
-            borderColor: palette.lineStrong,
+            borderColor: palette.lineSubtle,
             borderRadius: 14,
             backgroundColor: palette.surface,
             paddingHorizontal: 12,

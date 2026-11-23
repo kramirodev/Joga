@@ -176,15 +176,21 @@ export function Card({
   accessibilityLabel?: string;
 }>) {
   const { palette, dark } = useTheme();
+  // Contêiner estático usa `lineSubtle` (visível sem competir com interativo);
+  // card clicável usa `lineStrong`. No claro os três tokens têm o mesmo pixel.
+  const outline = onPress ? palette.lineStrong : palette.lineSubtle;
   const toneStyle: Record<CardTone, ViewStyle> = {
-    surface: { backgroundColor: palette.surface, borderColor: palette.line },
-    flat: { backgroundColor: palette.surface2, borderColor: palette.surface2 },
-    ink: { backgroundColor: dark ? palette.surface2 : palette.ink, borderColor: palette.line },
-    lime: { backgroundColor: palette.limeSoft, borderColor: palette.line },
-    blue: { backgroundColor: palette.blueSoft, borderColor: dark ? palette.line : '#D5D9D6' },
-    green: { backgroundColor: palette.greenSoft, borderColor: dark ? palette.line : '#D5D9D6' },
-    orange: { backgroundColor: palette.orangeSoft, borderColor: dark ? palette.line : '#D5D9D6' },
-    red: { backgroundColor: palette.redSoft, borderColor: dark ? palette.line : '#D5D9D6' },
+    surface: { backgroundColor: palette.surface, borderColor: outline },
+    flat: {
+      backgroundColor: palette.surface2,
+      borderColor: dark ? palette.lineSubtle : palette.surface2,
+    },
+    ink: { backgroundColor: dark ? palette.surface2 : palette.ink, borderColor: outline },
+    lime: { backgroundColor: palette.limeSoft, borderColor: outline },
+    blue: { backgroundColor: palette.blueSoft, borderColor: outline },
+    green: { backgroundColor: palette.greenSoft, borderColor: outline },
+    orange: { backgroundColor: palette.orangeSoft, borderColor: outline },
+    red: { backgroundColor: palette.redSoft, borderColor: outline },
   };
   const cardStyle = [
     {
@@ -192,10 +198,11 @@ export function Card({
       borderWidth: 1.5,
       padding,
       shadowColor: '#17191B',
-      shadowOpacity: 0.04,
+      // No escuro a separação é o contorno, não sombra/brilho.
+      shadowOpacity: dark ? 0 : 0.04,
       shadowRadius: 12,
       shadowOffset: { width: 0, height: 8 },
-      elevation: 1,
+      elevation: dark ? 0 : 1,
     },
     toneStyle[tone],
     tone === 'flat' ? { shadowOpacity: 0, elevation: 0 } : null,
@@ -228,20 +235,30 @@ type BadgeTone = 'default' | 'lime' | 'blue' | 'green' | 'orange' | 'red' | 'ink
 export function Badge({ children, tone = 'default' }: PropsWithChildren<{ tone?: BadgeTone }>) {
   const { palette, dark } = useTheme();
   let bg = palette.surface2;
-  let border = palette.line;
+  let border = dark ? palette.lineSubtle : palette.line;
   let color = palette.ink;
   if (tone === 'lime') {
     bg = dark ? palette.surface2 : palette.ink;
-    border = dark ? palette.line : palette.ink;
-    color = palette.lime;
+    border = dark ? palette.lineSubtle : palette.ink;
+    // Marca como texto pequeno sobre superfície escura exige `brandStrong`.
+    color = dark ? palette.brandStrong : palette.lime;
   } else if (tone === 'ink') {
     bg = dark ? palette.surface2 : palette.ink;
-    border = dark ? palette.line : palette.ink;
-    color = dark ? palette.lime : palette.onInk;
+    border = dark ? palette.lineSubtle : palette.ink;
+    color = dark ? palette.brandStrong : palette.onInk;
   } else if (tone !== 'default') {
     bg = palette.surface2;
-    border = dark ? palette.line : '#D5D9D6';
-    color = dark ? palette.onInk : palette.ink;
+    border = palette.lineSubtle;
+    // Semânticos têm papel próprio: não viram vermelho de marca.
+    color = dark
+      ? tone === 'blue'
+        ? palette.info
+        : tone === 'green'
+          ? palette.success
+          : tone === 'orange'
+            ? palette.warning
+            : palette.danger
+      : palette.ink;
   }
   return (
     <View
@@ -327,7 +344,7 @@ export function SystemNotice({ children }: PropsWithChildren) {
         alignItems: 'flex-start',
         gap: 8,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         borderRadius: 14,
         backgroundColor: palette.surface2,
         paddingHorizontal: 13,
@@ -351,7 +368,7 @@ export function Pill({ children, icon }: PropsWithChildren<{ icon?: IconName }>)
         alignItems: 'center',
         gap: 6,
         borderWidth: 1.5,
-        borderColor: palette.lineStrong,
+        borderColor: palette.lineSubtle,
         backgroundColor: palette.surface,
         borderRadius: 999,
         paddingHorizontal: 11,
@@ -374,7 +391,7 @@ export function Progress({ value, tone }: { value: number; tone?: string }) {
       style={{
         height: 14,
         borderWidth: 1.5,
-        borderColor: palette.lineStrong,
+        borderColor: palette.lineSubtle,
         borderRadius: 999,
         backgroundColor: palette.progressTrack,
         overflow: 'hidden',
@@ -386,7 +403,7 @@ export function Progress({ value, tone }: { value: number; tone?: string }) {
           width: `${clamped}%`,
           backgroundColor: palette.lime,
           borderRightWidth: clamped > 0 ? 1.5 : 0,
-          borderRightColor: palette.lineStrong,
+          borderRightColor: palette.line,
         }}
       />
     </View>
@@ -481,29 +498,35 @@ export function Btn({
       cardTone === 'orange' ||
       cardTone === 'red');
   const textColor =
-    tone === 'primary'
-      ? '#F1F3F0'
-      : tone === 'danger'
-        ? '#F1F3F0'
+    action.disabled && dark
+      ? palette.muted
+      : tone === 'primary' || tone === 'danger'
+        ? dark
+          ? palette.brandInk
+          : '#F1F3F0'
         : tone === 'ghost' || tone === 'soft'
           ? palette.ink
           : dark
-            ? '#15171A'
+            ? palette.bg
             : palette.onInk;
   let backgroundColor = palette.ink;
   let borderColor: string = palette.lineStrong;
   if (tone === 'primary') {
     backgroundColor = palette.lime;
+    borderColor = dark ? palette.lime : palette.lineStrong;
   } else if (tone === 'ghost') {
     backgroundColor = palette.surface2;
-    borderColor = ghostOutline ? palette.lime : 'transparent';
+    borderColor = dark ? palette.lineStrong : ghostOutline ? palette.lime : 'transparent';
   } else if (tone === 'soft') {
-    backgroundColor = palette.surface2;
-    borderColor = palette.surface3;
+    backgroundColor = dark ? palette.surface3 : palette.surface2;
+    borderColor = dark ? palette.lineStrong : palette.surface3;
   } else if (tone === 'danger') {
     backgroundColor = palette.red;
     borderColor = palette.red;
   }
+  // Desabilitado no escuro não usa opacidade (que apaga o texto): vira uma
+  // placa neutra com contorno, mantendo o texto legível e a geometria.
+  const disabledNeutral = !!action.disabled && dark;
   return (
     <Pressable
       disabled={action.disabled}
@@ -516,9 +539,9 @@ export function Btn({
         minHeight: largeTargets ? (small ? 54 : 60) : small ? 46 : 52,
         borderRadius: small ? 11 : 14,
         borderWidth: 1.5,
-        borderColor,
-        backgroundColor,
-        opacity: action.disabled ? 0.38 : pressed ? 0.92 : 1,
+        borderColor: disabledNeutral ? palette.lineStrong : borderColor,
+        backgroundColor: disabledNeutral ? palette.surface3 : backgroundColor,
+        opacity: action.disabled ? (dark ? 1 : 0.38) : pressed ? 0.92 : 1,
         transform: pressed && !action.disabled ? [{ scale: scale.button }] : [],
         paddingHorizontal: small ? 14 : 16,
         flexDirection: 'row',
@@ -625,7 +648,7 @@ export function IconBtn({
   if (ink) {
     bg = dark ? palette.lime : palette.ink;
     border = bg;
-    color = dark ? '#F1F3F0' : palette.onInk;
+    color = dark ? palette.brandInk : palette.onInk;
   }
   return (
     <Pressable
@@ -683,10 +706,10 @@ export function Chip({
   let color = palette.ink;
   if (on && tone === 'lime') {
     bg = palette.lime;
-    border = palette.ink;
-    color = palette.ink;
+    border = dark ? palette.lime : palette.ink;
+    color = dark ? palette.brandInk : palette.ink;
   } else if (on) {
-    bg = dark ? palette.surface2 : palette.ink;
+    bg = dark ? palette.surface3 : palette.ink;
     border = dark ? palette.lime : palette.ink;
     color = dark ? palette.ink : palette.onInk;
   }
@@ -809,7 +832,7 @@ export function Seg({ children, style }: PropsWithChildren<{ style?: StyleProp<V
           flexDirection: 'row',
           backgroundColor: palette.surface2,
           borderWidth: SEG_BORDER,
-          borderColor: palette.line,
+          borderColor: palette.lineStrong,
           borderRadius: 12,
           padding: SEG_PADDING,
           gap: SEG_GAP,
@@ -828,8 +851,9 @@ export function Seg({ children, style }: PropsWithChildren<{ style?: StyleProp<V
             left: SEG_BORDER + SEG_PADDING,
             width: itemWidth,
             borderRadius: 8,
-            backgroundColor: dark ? palette.line : palette.ink,
-            borderWidth: dark ? 1 : 0,
+            backgroundColor: dark ? palette.lime : palette.ink,
+            // Mesma largura nos dois temas: transparente no claro não pinta.
+            borderWidth: 1,
             borderColor: dark ? palette.lime : 'transparent',
             transform: [{ translateX: travel }],
           }}
@@ -877,7 +901,7 @@ export function SegBtn({
             fontSize: 13,
             lineHeight: 17,
             fontWeight: '800',
-            color: on ? (dark ? palette.ink : palette.onInk) : palette.muted,
+            color: on ? (dark ? palette.brandInk : palette.onInk) : palette.muted,
             textAlign: 'center',
           }}
         >
@@ -954,7 +978,7 @@ export function Input({
   inputRef,
   ...props
 }: TextInputProps & { inputRef?: Ref<TextInputInstance> }) {
-  const { palette, largeTargets, fontScale } = useTheme();
+  const { palette, dark, largeTargets, fontScale } = useTheme();
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
@@ -975,7 +999,7 @@ export function Input({
           width: '100%',
           minHeight: largeTargets ? 58 : 52,
           borderWidth: focused ? 2 : 1.5,
-          borderColor: focused ? palette.ink : palette.lineStrong,
+          borderColor: focused ? (dark ? palette.focus : palette.ink) : palette.lineStrong,
           borderRadius: 12,
           backgroundColor: palette.surface,
           paddingHorizontal: focused ? 13.5 : 14,
@@ -1094,7 +1118,7 @@ function SelectOptions({
   current: string;
   onSelect: (option: string) => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const close = useSheetClose();
   return (
     <View>
@@ -1120,7 +1144,7 @@ function SelectOptions({
             style={{
               fontSize: 15,
               fontWeight: option === current ? '800' : '500',
-              color: option === current ? palette.lime : palette.ink,
+              color: option === current ? (dark ? palette.brandStrong : palette.lime) : palette.ink,
             }}
           >
             {option}
@@ -1141,7 +1165,7 @@ export function Check({
   onChange?: (value: boolean) => void;
   disabled?: boolean;
 }>) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const [internal, setInternal] = useState(!!checked);
   const value = checked === undefined ? internal : checked;
   return (
@@ -1168,13 +1192,20 @@ export function Check({
           marginTop: 1,
           borderRadius: 3,
           borderWidth: 2,
-          borderColor: value ? palette.ink : palette.lineStrong,
-          backgroundColor: value ? palette.ink : palette.surface,
+          borderColor: value ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+          backgroundColor: value ? (dark ? palette.brand : palette.ink) : palette.surface,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        {value ? <Icon name="check" size={14} color={palette.onInk} strokeWidth={2.8} /> : null}
+        {value ? (
+          <Icon
+            name="check"
+            size={14}
+            color={dark ? palette.brandInk : palette.onInk}
+            strokeWidth={2.8}
+          />
+        ) : null}
       </View>
       <Text style={{ flex: 1, fontSize: 13.5, lineHeight: 20, color: palette.ink }}>
         {children}
@@ -1190,7 +1221,7 @@ export function Toggle({
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   return (
     <Pressable
       onPress={() => onChange(!checked)}
@@ -1213,13 +1244,20 @@ export function Toggle({
           height: 22,
           borderRadius: 3,
           borderWidth: 2,
-          borderColor: checked ? palette.ink : palette.lineStrong,
-          backgroundColor: checked ? palette.ink : palette.surface,
+          borderColor: checked ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+          backgroundColor: checked ? (dark ? palette.brand : palette.ink) : palette.surface,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        {checked ? <Icon name="check" size={14} color={palette.onInk} strokeWidth={2.8} /> : null}
+        {checked ? (
+          <Icon
+            name="check"
+            size={14}
+            color={dark ? palette.brandInk : palette.onInk}
+            strokeWidth={2.8}
+          />
+        ) : null}
       </View>
     </Pressable>
   );
@@ -1271,12 +1309,32 @@ export function Notice({
   const { palette, dark } = useTheme();
   let bg = palette.surface2;
   let color = palette.inkSoft;
-  if (tone === 'lime') {
+  let borderColor = dark ? palette.lineSubtle : palette.line;
+  if (dark) {
+    // No escuro o `tone` deixa de ser decorativo: erro/alerta/sucesso/informação
+    // ganham cor + contorno + ícone, sem depender só de cor.
+    if (tone === 'lime') {
+      bg = palette.limeSoft;
+      borderColor = palette.brand;
+      color = palette.ink;
+    } else if (tone) {
+      bg = palette.surface2;
+      borderColor =
+        tone === 'blue'
+          ? palette.info
+          : tone === 'green'
+            ? palette.success
+            : tone === 'orange'
+              ? palette.warning
+              : palette.danger;
+      color = borderColor;
+    }
+  } else if (tone === 'lime') {
     bg = palette.limeSoft;
-    color = dark ? palette.inkSoft : palette.ink;
+    color = palette.ink;
   } else if (tone) {
     bg = palette.surface2;
-    color = dark ? palette.onInk : palette.ink;
+    color = palette.ink;
   }
   return (
     <View
@@ -1285,7 +1343,7 @@ export function Notice({
         alignItems: 'flex-start',
         gap: 10,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor,
         borderRadius: 14,
         backgroundColor: bg,
         paddingHorizontal: 13,
@@ -1315,7 +1373,7 @@ export function TimerCard({
 }) {
   const { palette } = useTheme();
   let bg = palette.surface;
-  let border = palette.line;
+  let border = palette.lineSubtle;
   if (tone === 'on') {
     bg = palette.limeSoft;
     border = palette.lineStrong;
@@ -1422,7 +1480,7 @@ export function StateScreen({
             borderRadius: 36,
             backgroundColor: palette.surface2,
             borderWidth: 1.5,
-            borderColor: palette.line,
+            borderColor: palette.lineSubtle,
             alignItems: 'center',
             justifyContent: 'center',
             transform: [{ scale: iconScale }],
@@ -1462,7 +1520,7 @@ export function EmptyState({
             borderRadius: 28,
             backgroundColor: palette.surface2,
             borderWidth: 1.5,
-            borderColor: palette.line,
+            borderColor: palette.lineSubtle,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -1570,7 +1628,7 @@ export function LoadingState({
         height,
         width,
         borderRadius: radius,
-        backgroundColor: dark ? palette.line : palette.lineOnInk,
+        backgroundColor: dark ? palette.surface3 : palette.lineOnInk,
       }}
     />
   );
@@ -1591,7 +1649,7 @@ export function LoadingState({
       style={{
         borderRadius: 18,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         backgroundColor: palette.surface,
         padding: 16,
         minHeight,
@@ -1608,7 +1666,7 @@ export function LoadingState({
         height,
         borderRadius: 18,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         backgroundColor: dark ? palette.surface2 : palette.ink,
         padding: 16,
         justifyContent: 'space-between',
@@ -1631,7 +1689,7 @@ export function LoadingState({
       style={{
         borderRadius: 18,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         backgroundColor: palette.surface,
         overflow: 'hidden',
       }}
@@ -1670,7 +1728,7 @@ export function LoadingState({
             height,
             borderRadius: 18,
             borderWidth: 1.5,
-            borderColor: palette.line,
+            borderColor: palette.lineSubtle,
             backgroundColor: palette.surface,
             padding: 16,
             gap: 10,
@@ -1707,7 +1765,7 @@ export function LoadingState({
               height: 54,
               borderRadius: 10,
               borderWidth: 1.5,
-              borderColor: palette.line,
+              borderColor: palette.lineSubtle,
               backgroundColor: palette.surface,
             }}
           />
@@ -1868,7 +1926,7 @@ export function LoadingState({
                       height: 54,
                       borderRadius: 10,
                       borderWidth: 1.5,
-                      borderColor: palette.line,
+                      borderColor: palette.lineSubtle,
                       backgroundColor: palette.surface2,
                     }}
                   />
@@ -2034,7 +2092,7 @@ export function CardList({ children }: PropsWithChildren) {
       style={{
         backgroundColor: palette.surface,
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         borderRadius: space.radius,
         overflow: 'hidden',
       }}
@@ -2128,7 +2186,7 @@ export function TeamCard({
     <View
       style={{
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         borderRadius: 14,
         padding: 11,
         backgroundColor: palette.surface,
@@ -2472,7 +2530,7 @@ export function Photo({
         borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1.5,
-        borderColor: palette.line,
+        borderColor: palette.lineSubtle,
         backgroundColor: palette.surface2,
       }}
     >

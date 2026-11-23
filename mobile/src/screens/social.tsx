@@ -372,7 +372,7 @@ function AddFriend() {
 
 function ClanProfile() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const { clan, clanMembers, clanMessages, loadClan } = useApp();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -480,7 +480,7 @@ function ClanProfile() {
               justifyContent: 'center',
             }}
           >
-            <Icon name="clan" size={26} color="#F1F3F0" />
+            <Icon name="clan" size={26} color={dark ? palette.brandInk : '#F1F3F0'} />
           </View>
           <View style={{ flex: 1 }}>
             <Txt variant="display" color="onInk" style={{ fontSize: 28 }}>
@@ -1767,7 +1767,7 @@ function ClanPolicyOption({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   return (
     <Pressable
       accessibilityRole="radio"
@@ -1801,7 +1801,9 @@ function ClanPolicyOption({
           justifyContent: 'center',
         }}
       >
-        {selected ? <Icon name="check" size={14} color={palette.ink} /> : null}
+        {selected ? (
+          <Icon name="check" size={14} color={dark ? palette.brandInk : palette.ink} />
+        ) : null}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, lineHeight: 18, fontWeight: '800', color: palette.ink }}>
@@ -2318,7 +2320,7 @@ function ClanReportFooter({
 
 function ClanChat() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const { clan, clanMessages, session, loadClanMessages, loadClan, visualCatalog, loadVisual } =
     useApp();
   const clanId = clan?.id ?? null;
@@ -2745,13 +2747,15 @@ function ClanChat() {
                 height: 20,
                 borderRadius: 5,
                 borderWidth: 2,
-                borderColor: isSelected ? palette.ink : palette.line,
-                backgroundColor: isSelected ? palette.ink : 'transparent',
+                borderColor: isSelected ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+                backgroundColor: isSelected ? (dark ? palette.brand : palette.ink) : 'transparent',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              {isSelected ? <Icon name="check" size={12} color={palette.onInk} /> : null}
+              {isSelected ? (
+                <Icon name="check" size={12} color={dark ? palette.brandInk : palette.onInk} />
+              ) : null}
             </View>
           ) : null}
           <IdentityBadge size={24} identity={identityFromSeed(item.senderId)} palette={palette} />
@@ -4046,7 +4050,7 @@ function ReportProfile() {
 }
 
 function ReportMessage() {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const nav = useNav();
   const { session, matches } = useApp();
   const lobbyId =
@@ -4199,14 +4203,22 @@ function ReportMessage() {
                   height: 22,
                   borderRadius: 3,
                   borderWidth: 2,
-                  borderColor: checked ? palette.ink : palette.lineStrong,
-                  backgroundColor: checked ? palette.ink : palette.surface,
+                  borderColor: checked ? (dark ? palette.brand : palette.ink) : palette.lineStrong,
+                  backgroundColor: checked ? (dark ? palette.brand : palette.ink) : palette.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 {checked ? (
-                  <Text style={{ color: palette.onInk, fontSize: 12, fontWeight: '900' }}>✓</Text>
+                  <Text
+                    style={{
+                      color: dark ? palette.brandInk : palette.onInk,
+                      fontSize: 12,
+                      fontWeight: '900',
+                    }}
+                  >
+                    ✓
+                  </Text>
                 ) : null}
               </View>
               <View style={{ flex: 1 }}>

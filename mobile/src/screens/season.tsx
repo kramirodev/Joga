@@ -273,7 +273,7 @@ function Node({
   track: string;
   onPress: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -299,7 +299,7 @@ function Node({
         style={{
           fontSize: 12,
           fontWeight: '900',
-          color: current ? '#F1F3F0' : palette.ink,
+          color: current ? (dark ? palette.brandInk : '#F1F3F0') : palette.ink,
           fontVariant: ['tabular-nums'],
         }}
       >
@@ -314,7 +314,7 @@ function Node({
           fontSize: 9,
           fontWeight: '800',
           textTransform: 'uppercase',
-          color: current ? '#F1F3F0' : palette.muted,
+          color: current ? (dark ? palette.brandInk : '#F1F3F0') : palette.muted,
         }}
       >
         {milestone ? 'item' : done ? 'ok' : 'XP'}
@@ -328,7 +328,7 @@ function Node({
           style={{
             fontSize: 9,
             fontWeight: '800',
-            color: current ? '#17191B' : palette.limeDeep,
+            color: current ? (dark ? palette.brandInk : '#17191B') : palette.limeDeep,
           }}
         >
           {item === 30 ? 'insígnia' : track === 'pass' ? 'passe' : 'grátis'}
@@ -340,7 +340,7 @@ function Node({
 
 function SeasonTrack() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, dark } = useTheme();
   const { track, xp, level, tier, percent, loaded, failed, retry } = useSeasonData();
   const levels = useMemo(() => {
     if (track?.levels.length) {
@@ -486,7 +486,15 @@ function SeasonTrack() {
             >
               <Text
                 maxFontSizeMultiplier={1.3}
-                style={{ fontSize: 12, fontWeight: '900', color: palette.onInk }}
+                style={{
+                  fontSize: 12,
+                  fontWeight: '900',
+                  color: dark
+                    ? item.track === 'pass'
+                      ? palette.brandInk
+                      : palette.bg
+                    : palette.onInk,
+                }}
               >
                 {item.level}
               </Text>
