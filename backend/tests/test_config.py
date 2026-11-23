@@ -230,3 +230,29 @@ def test_database_check_runs_trivial_query() -> None:
 
     database.check()
     database.dispose()
+
+
+def test_push_defaults_use_expo_and_optional_token() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.expo_push_url == "https://exp.host/--/api/v2/push/send"
+    assert settings.expo_access_token.get_secret_value() == ""
+    assert settings.expo_access_token_value is None
+    assert settings.push_timeout_seconds == 5
+    assert settings.notification_dispatch_interval_seconds == 5
+
+
+def test_expo_push_url_requires_https() -> None:
+    with pytest.raises(ValidationError, match="JOGA_EXPO_PUSH_URL"):
+        Settings(_env_file=None, expo_push_url="http://exp.host/--/api/v2/push/send")
+
+
+def test_blank_expo_push_url_disables_push_without_breaking_boot() -> None:
+    settings = Settings(_env_file=None, expo_push_url="")
+
+    assert settings.expo_push_url is None
+
+
+def test_notification_dispatch_interval_has_minimum() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, notification_dispatch_interval_seconds=0)

@@ -93,6 +93,10 @@ def hermetic_test_settings() -> Iterator[None]:
         # A compra fica desligada em produção por padrão; os testes existentes
         # que exercitam o checkout habilitam a flag explicitamente no fixture.
         "JOGA_TICKET_PURCHASE_ENABLED": "true",
+        # Push nunca faz rede real nos testes; o sender é injetado.
+        "JOGA_EXPO_PUSH_URL": "https://exp.host/--/api/v2/push/send",
+        "JOGA_EXPO_ACCESS_TOKEN": "",
+        "JOGA_PUSH_WEBHOOK_URL": "",
     }
     previous = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)

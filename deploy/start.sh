@@ -28,4 +28,7 @@ done
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 \
 	--proxy-headers --forwarded-allow-ips 127.0.0.1 &
 
+# Worker de notificações (Outbox -> Expo Push), processo separado da API.
+python -m workers.notification_dispatch &
+
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
