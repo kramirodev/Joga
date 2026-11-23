@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.modules.social.service import (
     AlreadyFriends,
     BlockedRelationship,
     CannotTargetSelf,
+    FriendRequestEntry,
     FriendshipNotFound,
     IncomingRequestExists,
     InviteAlreadyExists,
@@ -57,6 +58,26 @@ class FriendshipView(BaseModel):
     user_high_id: UUID
     requested_by: UUID
     status: str
+    created_at: datetime
+    responded_at: datetime | None
+
+
+class FriendRequestView(BaseModel):
+    id: UUID
+    counterpart_id: UUID
+    counterpart_name: str | None
+    direction: Literal["incoming", "outgoing"]
+    status: str
+    created_at: datetime
+    responded_at: datetime | None
+
+
+class FriendRequestsResponse(BaseModel):
+    requests: list[FriendRequestView]
+
+
+class BlocksResponse(BaseModel):
+    blocks: list[FriendView]
 
 
 class BlockRequest(BaseModel):
@@ -98,13 +119,21 @@ def _error(code: str, status_code: int) -> HTTPException:
 
 
 def _handle(exc: Exception) -> HTTPException:
+    if isinstance(exc, IncomingRequestExists):
+        # O app precisa do id para aceitar o pedido que já existe na direção oposta.
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "incoming_friend_request",
+                "request_id": str(exc.friendship_id),
+            },
+        )
     mapping = {
         UserNotFound: ("user_not_found", status.HTTP_404_NOT_FOUND),
         CannotTargetSelf: ("cannot_target_self", status.HTTP_422_UNPROCESSABLE_CONTENT),
         BlockedRelationship: ("blocked_relationship", status.HTTP_409_CONFLICT),
         AlreadyFriends: ("already_friends", status.HTTP_409_CONFLICT),
         RequestAlreadyExists: ("friend_request_exists", status.HTTP_409_CONFLICT),
-        IncomingRequestExists: ("incoming_friend_request", status.HTTP_409_CONFLICT),
         FriendshipNotFound: ("friendship_not_found", status.HTTP_404_NOT_FOUND),
         InviteNotFound: ("invite_not_found", status.HTTP_404_NOT_FOUND),
         InviteAlreadyExists: ("invite_already_exists", status.HTTP_409_CONFLICT),
@@ -133,6 +162,20 @@ def _friendship_view(row: Friendship) -> FriendshipView:
         user_high_id=row.user_high_id,
         requested_by=row.requested_by,
         status=row.status,
+        created_at=row.created_at,
+        responded_at=row.responded_at,
+    )
+
+
+def _friend_request_view(entry: FriendRequestEntry) -> FriendRequestView:
+    return FriendRequestView(
+        id=entry.id,
+        counterpart_id=entry.counterpart_id,
+        counterpart_name=entry.counterpart_name,
+        direction=entry.direction,
+        status=entry.status,
+        created_at=entry.created_at,
+        responded_at=entry.responded_at,
     )
 
 
@@ -160,6 +203,21 @@ def list_friends(
     )
 
 
+@router.get("/friends/requests", response_model=FriendRequestsResponse)
+def list_friend_requests(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    direction: Annotated[Literal["incoming", "outgoing", "all"], Query()] = "incoming",
+    request_status: Annotated[Literal["pending", "history"], Query(alias="status")] = "pending",
+) -> FriendRequestsResponse:
+    rows = SocialService(session).list_friend_requests(
+        current.user_id,
+        direction=direction,
+        status=request_status,
+    )
+    return FriendRequestsResponse(requests=[_friend_request_view(row) for row in rows])
+
+
 @router.post(
     "/friends/requests",
     response_model=FriendshipView,
@@ -170,6 +228,8 @@ def request_friend(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
 ) -> FriendshipView:
+    # Reenvio idempotente devolve 201 com a mesma linha: o recurso pedido existe
+    # e o corpo completo evita um GET adicional no app.
     try:
         row = SocialService(session).send_friend_request(current.user_id, payload.user_id)
         session.commit()
@@ -194,6 +254,37 @@ def accept_friend(
     return _friendship_view(row)
 
 
+@router.post("/friends/requests/{request_id}/decline", response_model=FriendshipView)
+def decline_friend(
+    request_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> FriendshipView:
+    try:
+        row = SocialService(session).decline_friend_request(request_id, current.user_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _friendship_view(row)
+
+
+@router.delete("/friends/requests/{request_id}", response_model=FriendshipView)
+def cancel_friend_request(
+    request_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> FriendshipView:
+    # 200 com o corpo final (CANCELLED + responded_at) evita refetch no app.
+    try:
+        row = SocialService(session).cancel_friend_request(request_id, current.user_id)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _friendship_view(row)
+
+
 @router.delete("/friends/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_friend(
     user_id: UUID,
@@ -206,6 +297,17 @@ def remove_friend(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
+
+
+@router.get("/blocks", response_model=BlocksResponse)
+def list_blocks(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> BlocksResponse:
+    rows = SocialService(session).list_blocks(current.user_id)
+    return BlocksResponse(
+        blocks=[FriendView(user_id=user_id, display_name=name) for user_id, name in rows]
+    )
 
 
 @router.post("/blocks", status_code=status.HTTP_201_CREATED)

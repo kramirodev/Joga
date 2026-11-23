@@ -31,7 +31,7 @@ O projeto ainda não tem Redis configurado. O MVP roda um processo de API, mas a
 
 ### Amigos, bloqueios e convites
 
-11. Amizade usa par único ordenado, status `PENDING`/`ACCEPTED`/`REMOVED` e solicitante registrado.
+11. Amizade usa par único ordenado, status `PENDING`/`ACCEPTED`/`DECLINED`/`CANCELLED`/`REMOVED` e solicitante registrado (ciclo completo no ADR 0069).
 12. Bloqueio é único por par e impede amizade, convite e entrega de eventos sociais.
 13. Convite de lobby só pode ser enviado para amigo aceito, sem bloqueio, com limite por hora e sem duplicidade pendente.
 14. Convite não garante vaga; aceite também respeita estado e capacidade do lobby.
