@@ -5,12 +5,14 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from re import fullmatch
 from typing import Literal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.text import escape_like
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
@@ -25,6 +27,12 @@ INVITE_HOURLY_LIMIT = 20
 FRIEND_REQUEST_HOURLY_LIMIT = 20
 FRIEND_REQUEST_DIRECTIONS = ("incoming", "outgoing", "all")
 FRIEND_REQUEST_FILTERS = ("pending", "history")
+PLAYER_SEARCH_HOURLY_LIMIT = 60
+PLAYER_SEARCH_MAX_RESULTS = 50
+PLAYER_SEARCH_MIN_QUERY = 3
+PLAYER_SEARCH_MAX_QUERY = 40
+
+PlayerRelation = Literal["friend", "incoming_request", "outgoing_request", "none"]
 
 
 class SocialError(Exception):
@@ -85,6 +93,20 @@ class LobbyUnavailable(SocialError):
 
 class LobbyFull(SocialError):
     pass
+
+
+class InvalidPlayerSearch(SocialError):
+    """Consulta de jogador vazia, curta demais ou com limite inválido."""
+
+
+@dataclass(frozen=True)
+class PlayerSearchEntry:
+    """Resultado mínimo da busca pública de jogador (sem PII sensível)."""
+
+    user_id: uuid.UUID
+    display_name: str | None
+    tag: str
+    relation: PlayerRelation
 
 
 @dataclass(frozen=True)
@@ -167,6 +189,82 @@ class SocialService:
             profile = self._session.get(UserProfile, row.blocked_id)
             result.append((row.blocked_id, profile.display_name if profile else None))
         return result
+
+    def search_players(
+        self,
+        user_id: uuid.UUID,
+        query: str,
+        *,
+        limit: int = 20,
+        now: datetime | None = None,
+    ) -> list[PlayerSearchEntry]:
+        """Busca por nome parcial ou tag exata, sem vazar PII.
+
+        Consultas com ``#`` (``nome#TAG`` ou ``#TAG``) casam a tag exata;
+        uma consulta que seja apenas 8/10/12 hexadecimais também é tag. As
+        demais buscam ``display_name`` com ``ILIKE`` escapado. Bloqueios em
+        qualquer direção, o próprio usuário e contas não ativas ficam fora do
+        resultado.
+        """
+
+        term = " ".join(query.split())
+        if len(term) < PLAYER_SEARCH_MIN_QUERY or len(term) > PLAYER_SEARCH_MAX_QUERY:
+            raise InvalidPlayerSearch("consulta deve ter entre 3 e 40 caracteres")
+        if limit < 1 or limit > PLAYER_SEARCH_MAX_RESULTS:
+            raise InvalidPlayerSearch("limite de resultados inválido")
+
+        moment = ensure_utc(now or utcnow())
+        enforce_rate_limit(
+            self._session,
+            scope="user-search",
+            key=str(user_id),
+            limit=PLAYER_SEARCH_HOURLY_LIMIT,
+            window_seconds=3600,
+            now=moment,
+        )
+
+        blocked_either_direction = exists().where(
+            or_(
+                (UserBlock.blocker_id == user_id) & (UserBlock.blocked_id == User.id),
+                (UserBlock.blocker_id == User.id) & (UserBlock.blocked_id == user_id),
+            )
+        )
+        statement = (
+            select(User.id, User.tag, UserProfile.display_name)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(
+                User.status == "active",
+                User.id != user_id,
+                ~blocked_either_direction,
+            )
+        )
+
+        if "#" in term:
+            tag = term.rsplit("#", 1)[1].strip()
+            if not tag:
+                raise InvalidPlayerSearch("tag vazia na consulta")
+            statement = statement.where(User.tag == f"#{tag.upper()}")
+        elif fullmatch(r"[0-9A-Fa-f]{8}(?:[0-9A-Fa-f]{2}){0,2}", term):
+            statement = statement.where(User.tag == f"#{term.upper()}")
+        else:
+            # Nomes são canônicos em maiúsculas; elevar o termo em Python também
+            # mantém a busca correta no SQLite dos testes, cujo lower/upper é ASCII.
+            pattern = f"%{escape_like(term.upper())}%"
+            statement = statement.where(UserProfile.display_name.ilike(pattern, escape="\\"))
+
+        rows = self._session.execute(
+            statement.order_by(UserProfile.display_name.asc(), User.id.asc()).limit(limit)
+        ).all()
+        relations = self._relations_for(user_id, [row.id for row in rows])
+        return [
+            PlayerSearchEntry(
+                user_id=row.id,
+                display_name=row.display_name,
+                tag=row.tag,
+                relation=relations.get(row.id, "none"),
+            )
+            for row in rows
+        ]
 
     def list_friend_requests(
         self,
@@ -604,6 +702,49 @@ class SocialService:
         )
 
     # Internos ----------------------------------------------------------
+
+    def _relations_for(
+        self, actor_id: uuid.UUID, counterpart_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, PlayerRelation]:
+        """Relação do ator com cada resultado, em uma única consulta."""
+
+        if not counterpart_ids:
+            return {}
+        rows = self._session.execute(
+            select(
+                Friendship.user_low_id,
+                Friendship.user_high_id,
+                Friendship.requested_by,
+                Friendship.status,
+            ).where(
+                Friendship.status.in_(("ACCEPTED", "PENDING")),
+                or_(
+                    (Friendship.user_low_id == actor_id)
+                    & Friendship.user_high_id.in_(counterpart_ids),
+                    (Friendship.user_high_id == actor_id)
+                    & Friendship.user_low_id.in_(counterpart_ids),
+                ),
+            )
+        ).all()
+        priority: dict[PlayerRelation, int] = {
+            "none": 0,
+            "incoming_request": 1,
+            "outgoing_request": 1,
+            "friend": 2,
+        }
+        relations: dict[uuid.UUID, PlayerRelation] = {}
+        for low, high, requested_by, status in rows:
+            other = high if low == actor_id else low
+            if status == "ACCEPTED":
+                relation: PlayerRelation = "friend"
+            elif requested_by == actor_id:
+                relation = "outgoing_request"
+            else:
+                relation = "incoming_request"
+            current = relations.get(other, "none")
+            if priority[relation] > priority[current]:
+                relations[other] = relation
+        return relations
 
     def _find_friendship(
         self,

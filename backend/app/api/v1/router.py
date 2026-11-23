@@ -32,6 +32,7 @@ from app.api.v1.social import router as social_router
 from app.api.v1.stats import router as stats_router
 from app.api.v1.substitutions import router as substitutions_router
 from app.api.v1.tickets import router as tickets_router
+from app.api.v1.users import router as users_router
 from app.api.v1.venues import router as venues_router
 from app.api.v1.web_auth import router as web_auth_router
 from app.api.v1.ws import router as ws_router
@@ -44,6 +45,7 @@ api_router.include_router(email_auth_router)
 api_router.include_router(legal_router)
 api_router.include_router(catalog_router)
 api_router.include_router(profile_router)
+api_router.include_router(users_router)
 api_router.include_router(admin_router)
 api_router.include_router(admin_venues_router)
 api_router.include_router(matchmaking_router)

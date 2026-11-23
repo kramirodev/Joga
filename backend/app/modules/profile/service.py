@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.types import UserDefinedType
 
 from app.core.config import Settings
+from app.core.text import normalize_display_name
 from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import utcnow
+from app.modules.identity.models import User
 from app.modules.profile.cep import CepResolver
 from app.modules.profile.cpf import (
     CpfAlreadyRegistered,
@@ -74,6 +76,7 @@ class Geography(UserDefinedType[Any]):
 class ProfileSnapshot:
     user_id: uuid.UUID
     display_name: str | None
+    tag: str
     bio: str | None
     sports: list[UserSportProfile]
     availability: list[Availability]
@@ -151,6 +154,7 @@ class ProfileService:
 
     def get_profile(self, user_id: uuid.UUID) -> ProfileSnapshot:
         profile = self._session.get(UserProfile, user_id)
+        user = self._session.get(User, user_id)
         sports = list(
             self._session.scalars(
                 select(UserSportProfile)
@@ -169,6 +173,7 @@ class ProfileService:
         return ProfileSnapshot(
             user_id=user_id,
             display_name=profile.display_name if profile else None,
+            tag=user.tag if user else "",
             bio=profile.bio if profile else None,
             sports=sports,
             availability=availability,
@@ -186,7 +191,7 @@ class ProfileService:
         if profile is None:
             profile = UserProfile(user_id=user_id)
             self._session.add(profile)
-        profile.display_name = _clean_optional(display_name)
+        profile.display_name = normalize_display_name(display_name)
         profile.bio = _clean_optional(bio)
         self._session.flush()
         return self.get_profile(user_id)

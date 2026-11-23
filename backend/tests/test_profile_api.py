@@ -137,8 +137,10 @@ def test_update_profile_and_sports(api: TestClient, db_session: Session) -> None
         json={"display_name": "  Ana  ", "bio": "Jogo futebol"},
     )
     assert updated.status_code == 200
-    assert updated.json()["display_name"] == "Ana"
+    assert updated.json()["display_name"] == "ANA"
     assert updated.json()["bio"] == "Jogo futebol"
+    assert updated.json()["tag"].startswith("#")
+    assert len(updated.json()["tag"]) == 9
 
     sports = api.put(
         "/api/v1/me/sports",
