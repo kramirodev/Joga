@@ -116,6 +116,12 @@ class ClanJoinRequest(Base):
         ),
         Index("ix_clan_join_requests_clan_status", "clan_id", "status"),
         Index(
+            "ix_clan_join_requests_user_status_created",
+            "user_id",
+            "status",
+            "created_at",
+        ),
+        Index(
             "uq_clan_join_requests_pending",
             "clan_id",
             "user_id",
@@ -136,6 +142,9 @@ class ClanJoinRequest(Base):
         String(12), nullable=False, default="pending", server_default=text("'pending'")
     )
     message: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Nota do admin na decisão. Separada de ``message`` para não apagar o texto
+    # escrito por quem pediu entrada.
+    decision_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

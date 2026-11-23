@@ -10,7 +10,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
-from app.modules.clans.models import Clan, ClanInvite, ClanMember, ClanTrophyEvent
+from app.modules.clans import service as clans_service
+from app.modules.clans.models import (
+    Clan,
+    ClanInvite,
+    ClanJoinRequest,
+    ClanMember,
+    ClanTrophyEvent,
+)
 from app.modules.clans.service import (
     clan_ranking,
     create_clan,
@@ -995,3 +1002,392 @@ def test_invitee_only_sees_own_invites(client: TestClient, db_session: Session) 
         f"/api/v1/clans/invites/{first_invite['id']}/accept", headers=bearer(third_token)
     )
     assert foreign_accept.status_code == 404, foreign_accept.text
+
+
+# Pedidos de entrada: ciclo completo --------------------------------------
+
+
+def join_api(api: TestClient, clan_id: str, token: str, message: str | None = None) -> object:
+    payload = {} if message is None else {"message": message}
+    return api.post(f"/api/v1/clans/{clan_id}/join", headers=bearer(token), json=payload)
+
+
+def test_repeated_join_returns_same_request_without_duplicate_notification(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    requester_id, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+
+    first = join_api(api, clan["id"], requester_token, "quero entrar")
+    assert first.status_code == 200, first.text
+    request_id = first.json()["request"]["id"]
+
+    again = join_api(api, clan["id"], requester_token, "texto novo")
+    assert again.status_code == 200, again.text
+    assert again.json()["request"]["id"] == request_id
+    # O replay não sobrescreve a mensagem original.
+    assert again.json()["request"]["message"] == "quero entrar"
+
+    stored = (
+        db_session.query(ClanJoinRequest)
+        .filter_by(clan_id=uuid.UUID(clan["id"]), user_id=requester_id)
+        .all()
+    )
+    assert len(stored) == 1
+    assert str(stored[0].id) == request_id
+
+    notifications = (
+        db_session.query(Notification).filter_by(user_id=owner_id, kind="clan_join_request").all()
+    )
+    assert len(notifications) == 1
+    assert notifications[0].data["request_id"] == request_id
+    assert notifications[0].data["clan_id"] == clan["id"]
+
+
+def test_join_race_recovers_the_pending_row_instead_of_500(
+    client: TestClient, db_session: Session, monkeypatch
+) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token, "primeiro").json()["request"]["id"]
+
+    original = clans_service._pending_request
+    calls: list[dict] = []
+
+    def miss_once(*args: object, **kwargs: object) -> object:
+        calls.append(kwargs)
+        if len(calls) == 1:
+            # Simula a leitura que não vê a linha concorrente antes do INSERT.
+            return None
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(clans_service, "_pending_request", miss_once)
+    recovered = join_api(api, clan["id"], requester_token, "corrida")
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["request"]["id"] == request_id
+    assert recovered.json()["request"]["message"] == "primeiro"
+    assert len(calls) == 2
+    assert db_session.query(ClanJoinRequest).filter_by(clan_id=uuid.UUID(clan["id"])).count() == 1
+    # A recuperação da corrida não repete a notificação do pedido.
+    assert db_session.query(Notification).filter_by(kind="clan_join_request").count() == 1
+
+
+def test_my_request_appears_in_clan_detail_and_list(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    _, outsider_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token).json()["request"]["id"]
+
+    detail = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(requester_token)).json()
+    assert detail["my_request"]["id"] == request_id
+    assert detail["my_request"]["status"] == "pending"
+    assert detail["my_request"]["decision_note"] is None
+
+    listed = api.get("/api/v1/clans", headers=bearer(requester_token)).json()["clans"]
+    mine = next(item for item in listed if item["id"] == clan["id"])
+    assert mine["my_request"]["id"] == request_id
+
+    owner_view = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(owner_token)).json()
+    assert owner_view["my_request"] is None
+    outsider_list = api.get("/api/v1/clans", headers=bearer(outsider_token)).json()["clans"]
+    assert next(item for item in outsider_list if item["id"] == clan["id"])["my_request"] is None
+
+
+def test_my_clan_requests_pending_and_history(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    _, outsider_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token, "quero entrar").json()["request"]["id"]
+
+    pending = api.get("/api/v1/me/clan-requests", headers=bearer(requester_token))
+    assert pending.status_code == 200, pending.text
+    items = pending.json()["requests"]
+    assert [item["id"] for item in items] == [request_id]
+    assert items[0]["clan_id"] == clan["id"]
+    assert items[0]["clan_name"] == "Tijuca FC"
+    assert items[0]["clan_tag"] == "#TFC"
+    assert items[0]["status"] == "pending"
+    assert items[0]["message"] == "quero entrar"
+    assert items[0]["decision_note"] is None
+    assert items[0]["decided_at"] is None
+
+    history = api.get(
+        "/api/v1/me/clan-requests", headers=bearer(requester_token), params={"status": "history"}
+    ).json()["requests"]
+    assert history == []
+
+    outsider = api.get("/api/v1/me/clan-requests", headers=bearer(outsider_token)).json()
+    assert outsider["requests"] == []
+
+    decided = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(owner_token),
+        json={"approve": True, "note": "bem-vindo"},
+    )
+    assert decided.status_code == 200, decided.text
+
+    assert (
+        api.get("/api/v1/me/clan-requests", headers=bearer(requester_token)).json()["requests"]
+        == []
+    )
+    history = api.get(
+        "/api/v1/me/clan-requests", headers=bearer(requester_token), params={"status": "history"}
+    ).json()["requests"]
+    assert [item["id"] for item in history] == [request_id]
+    assert history[0]["status"] == "approved"
+    assert history[0]["decision_note"] == "bem-vindo"
+    assert history[0]["decided_at"] is not None
+
+    invalid = api.get(
+        "/api/v1/me/clan-requests", headers=bearer(requester_token), params={"status": "all"}
+    )
+    assert invalid.status_code == 422
+
+
+def test_admin_lists_decides_and_note_keeps_the_player_message(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token, "quero entrar").json()["request"]["id"]
+
+    listed = api.get(f"/api/v1/clans/{clan['id']}/requests", headers=bearer(owner_token))
+    assert listed.status_code == 200, listed.text
+    item = listed.json()["requests"][0]
+    assert item["message"] == "quero entrar"
+    assert item["decision_note"] is None
+    assert item["decided_at"] is None
+    assert item["decided_by"] is None
+
+    decided = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(owner_token),
+        json={"approve": True, "note": "bem-vindo"},
+    )
+    assert decided.status_code == 200, decided.text
+    body = decided.json()
+    assert body["status"] == "approved"
+    assert body["message"] == "quero entrar"
+    assert body["decision_note"] == "bem-vindo"
+    assert body["decided_by"] == str(owner_id)
+    assert body["decided_at"] is not None
+
+    stored = db_session.get(ClanJoinRequest, uuid.UUID(request_id))
+    assert stored is not None
+    assert stored.message == "quero entrar"
+    assert stored.decision_note == "bem-vindo"
+
+    pending = api.get(f"/api/v1/clans/{clan['id']}/requests", headers=bearer(owner_token)).json()
+    assert pending["requests"] == []
+    history = api.get(
+        f"/api/v1/clans/{clan['id']}/requests",
+        headers=bearer(owner_token),
+        params={"status": "history"},
+    ).json()["requests"]
+    assert [row["id"] for row in history] == [request_id]
+    assert history[0]["status"] == "approved"
+
+
+def test_second_decision_is_a_conflict(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token).json()["request"]["id"]
+
+    first = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(owner_token),
+        json={"approve": False, "note": "sem vaga"},
+    )
+    assert first.status_code == 200, first.text
+
+    again = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(owner_token),
+        json={"approve": True},
+    )
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"]["code"] == "request_not_pending"
+
+
+def test_only_the_author_cancels_a_pending_request(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    requester_id, requester_token = make_player(db_session)
+    _, outsider_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token).json()["request"]["id"]
+    url = f"/api/v1/clans/{clan['id']}/requests/{request_id}"
+
+    outsider = api.delete(url, headers=bearer(outsider_token))
+    assert outsider.status_code == 404, outsider.text
+    owner = api.delete(url, headers=bearer(owner_token))
+    assert owner.status_code == 404, owner.text
+
+    cancelled = api.delete(url, headers=bearer(requester_token))
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["decided_by"] == str(requester_id)
+    assert cancelled.json()["decided_at"] is not None
+    assert cancelled.json()["message"] is None
+
+    again = api.delete(url, headers=bearer(requester_token))
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"]["code"] == "request_not_pending"
+
+    detail = api.get(f"/api/v1/clans/{clan['id']}", headers=bearer(requester_token)).json()
+    assert detail["my_request"]["status"] == "cancelled"
+    assert owner_id != requester_id
+
+
+def test_common_member_cannot_list_or_decide_requests(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    _, member_token = make_player(db_session)
+    _, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, member_token)
+    request_id = join_api(api, clan["id"], requester_token).json()["request"]["id"]
+
+    listed = api.get(f"/api/v1/clans/{clan['id']}/requests", headers=bearer(member_token))
+    assert listed.status_code == 403, listed.text
+    assert listed.json()["detail"]["code"] == "admin_required"
+
+    decided = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(member_token),
+        json={"approve": True},
+    )
+    assert decided.status_code == 403, decided.text
+    assert decided.json()["detail"]["code"] == "admin_required"
+
+
+def test_join_notifies_owner_and_admins_and_decision_notifies_requester(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    admin_id, admin_token = make_player(db_session)
+    requester_id, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    _join_approved(api, clan["id"], owner_token, admin_token)
+    promote_admin(api, clan["id"], owner_token, admin_id)
+
+    request_id = join_api(api, clan["id"], requester_token, "entrar").json()["request"]["id"]
+
+    for user_id in (owner_id, admin_id):
+        notifications = [
+            row
+            for row in db_session.query(Notification)
+            .filter_by(user_id=user_id, kind="clan_join_request")
+            .all()
+            if row.data["request_id"] == request_id
+        ]
+        assert len(notifications) == 1
+        assert notifications[0].data == {"clan_id": clan["id"], "request_id": request_id}
+    assert (
+        db_session.query(Notification)
+        .filter_by(user_id=requester_id, kind="clan_join_request")
+        .count()
+        == 0
+    )
+
+    decided = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(admin_token),
+        json={"approve": True, "note": "bem-vindo"},
+    )
+    assert decided.status_code == 200, decided.text
+
+    approved = (
+        db_session.query(Notification)
+        .filter_by(user_id=requester_id, kind="clan_join_approved")
+        .all()
+    )
+    assert len(approved) == 1
+    assert approved[0].data["request_id"] == request_id
+    assert approved[0].data["decision_note"] == "bem-vindo"
+    assert (
+        db_session.query(Notification)
+        .filter_by(user_id=owner_id, kind="clan_join_approved")
+        .count()
+        == 0
+    )
+
+
+def test_rejected_decision_notifies_requester(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    _, owner_token = make_player(db_session)
+    requester_id, requester_token = make_player(db_session)
+    clan = create_clan_api(api, owner_token)
+    request_id = join_api(api, clan["id"], requester_token).json()["request"]["id"]
+
+    rejected = api.post(
+        f"/api/v1/clans/{clan['id']}/requests/{request_id}/decide",
+        headers=bearer(owner_token),
+        json={"approve": False, "note": "sem vaga"},
+    )
+    assert rejected.status_code == 200, rejected.text
+
+    notifications = (
+        db_session.query(Notification)
+        .filter_by(user_id=requester_id, kind="clan_join_rejected")
+        .all()
+    )
+    assert len(notifications) == 1
+    assert notifications[0].data["decision_note"] == "sem vaga"
+
+
+def test_invite_answer_notifies_the_inviter(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    accepting_id, accepting_token = make_player(db_session)
+    declining_id, declining_token = make_player(db_session)
+    make_friends(db_session, owner_id, accepting_id)
+    make_friends(db_session, owner_id, declining_id)
+    clan = create_clan_api(api, owner_token)
+    accepted_invite = invite_api(api, clan["id"], owner_token, accepting_id).json()
+    declined_invite = invite_api(api, clan["id"], owner_token, declining_id).json()
+
+    accepted = api.post(
+        f"/api/v1/clans/invites/{accepted_invite['id']}/accept",
+        headers=bearer(accepting_token),
+    )
+    assert accepted.status_code == 200, accepted.text
+    declined = api.post(
+        f"/api/v1/clans/invites/{declined_invite['id']}/decline",
+        headers=bearer(declining_token),
+    )
+    assert declined.status_code == 200, declined.text
+
+    accepted_notes = (
+        db_session.query(Notification)
+        .filter_by(user_id=owner_id, kind="clan_invite_accepted")
+        .all()
+    )
+    assert len(accepted_notes) == 1
+    assert accepted_notes[0].data["invite_id"] == accepted_invite["id"]
+    assert accepted_notes[0].data["invitee_id"] == str(accepting_id)
+
+    declined_notes = (
+        db_session.query(Notification)
+        .filter_by(user_id=owner_id, kind="clan_invite_declined")
+        .all()
+    )
+    assert len(declined_notes) == 1
+    assert declined_notes[0].data["invite_id"] == declined_invite["id"]
