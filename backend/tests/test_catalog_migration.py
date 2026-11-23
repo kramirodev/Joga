@@ -7,6 +7,7 @@ PostGIS. Usa um schema isolado para não tocar nas tabelas do desenvolvedor.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
@@ -24,7 +26,8 @@ from app.main import create_app
 TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "catalog_migration_test"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "b7c8d9e0f1a2"
+HEAD_REVISION = "c8d9e0f1a2b3"
+CATEGORY_PREVIOUS_REVISION = "b7c8d9e0f1a2"
 PRE_REPAIR_REVISION = "b1c2d3e4f5a6"
 LEGACY_REVISION = "a0b1c2d3e4f5"
 
@@ -376,6 +379,107 @@ def test_repair_migration_heals_legacy_database(
             text("SELECT count(*) FROM visual_catalog_items WHERE key = 'accent-roxo'")
         )
         == 1
+    )
+    command.check(config)
+    connection.commit()
+
+
+CATEGORY_BACKFILL = {
+    "futebol": "collective",
+    "futsal": "collective",
+    "basquete": "collective",
+    "handebol": "collective",
+    "volei": "collective",
+    "tenis": "racket",
+    "padel": "racket",
+    "squash": "racket",
+    "badminton": "racket",
+    "beach-tennis": "racket",
+    "corrida": "individual",
+    "natacao": "individual",
+    "ciclismo": "individual",
+    "artes-marciais": "individual",
+    "futevolei": "beach",
+    "volei-de-areia": "beach",
+}
+CATEGORY_DEFAULT_SLUG = "modalidade-nova"
+
+
+def test_sport_category_migration_backfills_by_slug_and_reverts(
+    alembic_env: tuple[Config, Connection],
+) -> None:
+    config, connection = alembic_env
+    command.upgrade(config, CATEGORY_PREVIOUS_REVISION)
+    connection.commit()
+
+    assert not _has_column(connection, "sports", "category")
+    for index, slug in enumerate((*CATEGORY_BACKFILL, CATEGORY_DEFAULT_SLUG)):
+        connection.execute(
+            text(
+                "INSERT INTO sports (id, slug, name, icon_key, sort_order, active) "
+                "VALUES (:id, :slug, :name, 'icon-app-escudo', :sort_order, false) "
+                "ON CONFLICT (slug) DO NOTHING"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "slug": slug,
+                "name": slug.replace("-", " ").title(),
+                "sort_order": index,
+            },
+        )
+    connection.commit()
+
+    command.upgrade(config, "head")
+    connection.commit()
+
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
+    assert _has_column(connection, "sports", "category")
+    assert _has_constraint(connection, "sports", "ck_sports_category_valid")
+    column = connection.execute(
+        text(
+            "SELECT is_nullable, column_default, character_maximum_length "
+            "FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = 'sports' "
+            "AND column_name = 'category'"
+        ),
+        {"schema": SCHEMA},
+    ).one()
+    assert column.is_nullable == "NO"
+    assert "collective" in str(column.column_default)
+    assert column.character_maximum_length == 20
+
+    for slug, expected in CATEGORY_BACKFILL.items():
+        actual = connection.scalar(
+            text("SELECT category FROM sports WHERE slug = :slug"), {"slug": slug}
+        )
+        assert actual == expected, slug
+    assert (
+        connection.scalar(
+            text("SELECT category FROM sports WHERE slug = :slug"),
+            {"slug": CATEGORY_DEFAULT_SLUG},
+        )
+        == "collective"
+    )
+
+    with pytest.raises(IntegrityError):
+        with connection.begin_nested():
+            connection.execute(text("UPDATE sports SET category = 'mixed' WHERE slug = 'futebol'"))
+    connection.commit()
+
+    command.check(config)
+    connection.commit()
+
+    command.downgrade(config, CATEGORY_PREVIOUS_REVISION)
+    connection.commit()
+    assert not _has_column(connection, "sports", "category")
+    assert not _has_constraint(connection, "sports", "ck_sports_category_valid")
+
+    command.upgrade(config, "head")
+    connection.commit()
+    assert _has_column(connection, "sports", "category")
+    assert connection.scalar(text("SELECT category FROM sports WHERE slug = 'tenis'")) == "racket"
+    assert (
+        connection.scalar(text("SELECT category FROM sports WHERE slug = 'futevolei'")) == "beach"
     )
     command.check(config)
     connection.commit()

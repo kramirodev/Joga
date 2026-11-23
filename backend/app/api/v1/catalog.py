@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,8 @@ from app.modules.visual.service import (
 )
 
 router = APIRouter(tags=["catalog"])
+
+SportCategory = Literal["collective", "individual", "racket", "beach"]
 
 
 class VisualItemView(BaseModel):
@@ -80,6 +82,7 @@ class SportView(BaseModel):
     id: UUID
     slug: str
     name: str
+    category: SportCategory
     icon_key: str
     sort_order: int
     active: bool
@@ -137,6 +140,7 @@ def _sport_view(sport: Sport, formats: list[SportFormat]) -> SportView:
         id=sport.id,
         slug=sport.slug,
         name=sport.name,
+        category=cast(SportCategory, sport.category),
         icon_key=sport.icon_key,
         sort_order=sport.sort_order,
         active=sport.active,
@@ -207,9 +211,23 @@ def replace_my_visual_identity(
 @router.get("/catalog/sports", response_model=PublicSportsCatalogResponse)
 def read_public_sports_catalog(
     session: Annotated[Session, Depends(get_session)],
+    q: Annotated[str | None, Query(min_length=2, max_length=40)] = None,
+    category: Annotated[SportCategory | None, Query()] = None,
 ) -> PublicSportsCatalogResponse:
-    """Somente esportes ativos com ao menos um formato ativo."""
+    """Somente esportes ativos com ao menos um formato ativo.
 
+    ``q`` busca em nome e slug, sem curingas implícitos; ``category`` filtra
+    pelo tipo fechado do esporte.
+    """
+
+    if q is not None and len(q.strip()) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_query"},
+        )
     return PublicSportsCatalogResponse(
-        sports=[_sport_view(sport, formats) for sport, formats in list_public_catalog(session)]
+        sports=[
+            _sport_view(sport, formats)
+            for sport, formats in list_public_catalog(session, q=q, category=category)
+        ]
     )

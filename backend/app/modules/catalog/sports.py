@@ -10,16 +10,17 @@ import re
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.text import escape_like
 from app.modules.bookings.models import Booking
 from app.modules.clans.models import ClanTrophyEvent, ClanTrophySnapshot
 from app.modules.matches.models import Match
 from app.modules.matchmaking.models import Lobby, QueueEntry
 from app.modules.pricing.suggest import pricing_configured
-from app.modules.profile.models import Sport, SportFormat
+from app.modules.profile.models import SPORT_CATEGORIES, Sport, SportFormat
 from app.modules.ratings.models import RatingAccount, RatingEvent
 from app.modules.visual.models import VisualCatalogItem
 
@@ -150,12 +151,15 @@ def create_sport(
     icon_key: str,
     sort_order: int,
     formats: list[FormatInput],
+    category: str = "collective",
 ) -> Sport:
     """Cria esporte e formatos na mesma transação; nasce inativo."""
 
     normalized = _normalize_slug(slug)
     clean_name = name.strip()
     if not clean_name or len(clean_name) > 80 or sort_order < 0:
+        raise InvalidSport
+    if category not in SPORT_CATEGORIES:
         raise InvalidSport
     if not formats:
         raise InvalidSport
@@ -166,6 +170,7 @@ def create_sport(
     sport = Sport(
         slug=normalized,
         name=clean_name,
+        category=category,
         icon_key=resolved_icon,
         sort_order=sort_order,
         active=False,
@@ -376,6 +381,7 @@ def update_sport(
     name: str | None = None,
     icon_key: str | None = None,
     sort_order: int | None = None,
+    category: str | None = None,
 ) -> Sport:
     sport = get_sport(session, slug)
     if name is not None:
@@ -389,6 +395,10 @@ def update_sport(
         if sort_order < 0:
             raise InvalidSport
         sport.sort_order = sort_order
+    if category is not None:
+        if category not in SPORT_CATEGORIES:
+            raise InvalidSport
+        sport.category = category
     session.flush()
     return sport
 
@@ -439,16 +449,44 @@ def deactivate_sport(session: Session, slug: str) -> Sport:
     return sport
 
 
-def list_public_catalog(session: Session) -> list[tuple[Sport, list[SportFormat]]]:
-    sports = session.scalars(
-        select(Sport).where(Sport.active.is_(True)).order_by(Sport.sort_order, Sport.slug)
+def list_public_catalog(
+    session: Session,
+    *,
+    q: str | None = None,
+    category: str | None = None,
+) -> list[tuple[Sport, list[SportFormat]]]:
+    """Catálogo público com busca/filtro; carrega formatos em uma única consulta."""
+
+    if category is not None and category not in SPORT_CATEGORIES:
+        raise InvalidSport
+    statement = select(Sport).where(Sport.active.is_(True))
+    if category is not None:
+        statement = statement.where(Sport.category == category)
+    if q is not None:
+        term = q.strip()
+        if term:
+            pattern = f"%{escape_like(term)}%"
+            statement = statement.where(
+                or_(
+                    Sport.name.ilike(pattern, escape="\\"),
+                    Sport.slug.ilike(pattern, escape="\\"),
+                )
+            )
+    sports = list(session.scalars(statement.order_by(Sport.sort_order, Sport.slug)).all())
+    if not sports:
+        return []
+    formats = session.scalars(
+        select(SportFormat)
+        .where(
+            SportFormat.sport_id.in_([sport.id for sport in sports]),
+            SportFormat.active.is_(True),
+        )
+        .order_by(SportFormat.sport_id, SportFormat.slug)
     ).all()
-    catalog: list[tuple[Sport, list[SportFormat]]] = []
-    for sport in sports:
-        formats = active_formats(session, sport.id)
-        if formats:
-            catalog.append((sport, formats))
-    return catalog
+    grouped: dict[uuid.UUID, list[SportFormat]] = {}
+    for item in formats:
+        grouped.setdefault(item.sport_id, []).append(item)
+    return [(sport, grouped[sport.id]) for sport in sports if sport.id in grouped]
 
 
 def list_admin_catalog(session: Session) -> list[tuple[Sport, list[SportFormat]]]:
