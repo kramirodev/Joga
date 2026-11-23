@@ -42,6 +42,9 @@ TROPHY_MIN_TENURE = timedelta(days=7)
 TROPHY_MEMBERS_COUNTED = 10
 TROPHY_POINTS = {"WIN": 50, "DRAW": 30, "LOSS": 20}
 CLAN_TAG_CORE_PATTERN = re.compile(r"[A-Z0-9]{2,7}")
+# ``pending`` mostra só o que espera decisão; ``history`` mostra o que já foi
+# aprovado, recusado ou cancelado, do mais recente para o mais antigo.
+REQUEST_FILTERS = ("pending", "history")
 
 
 def normalize_clan_tag(tag: str) -> str:
@@ -181,6 +184,24 @@ def require_owner(
     return membership
 
 
+def admin_member_ids(
+    session: Session,
+    clan_id: uuid.UUID,
+    *,
+    exclude_user_id: uuid.UUID | None = None,
+) -> list[uuid.UUID]:
+    """Donos e admins ativos do clã, destinatários das notificações de pedido."""
+
+    statement = select(ClanMember.user_id).where(
+        ClanMember.clan_id == clan_id,
+        ClanMember.status == "active",
+        ClanMember.role.in_(("owner", "admin")),
+    )
+    if exclude_user_id is not None:
+        statement = statement.where(ClanMember.user_id != exclude_user_id)
+    return list(session.scalars(statement))
+
+
 def cooldown_until(session: Session, user_id: uuid.UUID) -> datetime | None:
     last_left = session.scalar(
         select(func.max(ClanMember.left_at)).where(
@@ -310,6 +331,73 @@ def update_clan(
     return clan
 
 
+def _pending_request(
+    session: Session,
+    clan_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ClanJoinRequest | None:
+    statement = select(ClanJoinRequest).where(
+        ClanJoinRequest.clan_id == clan_id,
+        ClanJoinRequest.user_id == user_id,
+        ClanJoinRequest.status == "pending",
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalars(statement).first()
+
+
+def _notify_join_request(
+    session: Session,
+    clan: Clan,
+    request: ClanJoinRequest,
+    moment: datetime,
+) -> None:
+    """Avisa donos e admins ativos, uma única vez por pedido e destinatário."""
+
+    service = NotificationService(session)
+    for admin_id in admin_member_ids(session, clan.id, exclude_user_id=request.user_id):
+        service.create(
+            user_id=admin_id,
+            kind="clan_join_request",
+            title="Novo pedido no clã",
+            body=f"{clan.name} tem um novo pedido de entrada.",
+            idempotency_key=f"clan_join_request:{admin_id}:{request.id}",
+            data={"clan_id": str(clan.id), "request_id": str(request.id)},
+            now=moment,
+        )
+
+
+def _notify_join_decision(
+    session: Session,
+    clan: Clan,
+    request: ClanJoinRequest,
+    moment: datetime,
+) -> None:
+    approved = request.status == "approved"
+    kind = "clan_join_approved" if approved else "clan_join_rejected"
+    title = "Pedido de entrada aprovado" if approved else "Pedido de entrada recusado"
+    body = (
+        f"Você entrou em {clan.name}."
+        if approved
+        else f"Seu pedido para entrar em {clan.name} foi recusado."
+    )
+    data = {"clan_id": str(clan.id), "request_id": str(request.id)}
+    if request.decision_note:
+        data["decision_note"] = request.decision_note
+    # A chave carrega o destinatário: a busca de idempotência é global.
+    NotificationService(session).create(
+        user_id=request.user_id,
+        kind=kind,
+        title=title,
+        body=body,
+        idempotency_key=f"{kind}:{request.user_id}:{request.id}",
+        data=data,
+        now=moment,
+    )
+
+
 def request_join(
     session: Session,
     user_id: uuid.UUID,
@@ -333,23 +421,30 @@ def request_join(
         _add_member(session, clan, user_id, moment)
         return None
 
-    existing = session.scalars(
-        select(ClanJoinRequest).where(
-            ClanJoinRequest.clan_id == clan.id,
-            ClanJoinRequest.user_id == user_id,
-            ClanJoinRequest.status == "pending",
-        )
-    ).first()
+    existing = _pending_request(session, clan.id, user_id)
     if existing is not None:
+        # Reenvio idempotente: mesma linha e mesma notificação, sem duplicata.
         return existing
+
     request = ClanJoinRequest(
         clan_id=clan.id,
         user_id=user_id,
         message=message.strip()[:200] if message else None,
         status="pending",
     )
-    session.add(request)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(request)
+            session.flush()
+    except IntegrityError:
+        # Outra requisição inseriu o mesmo pedido pendente entre a leitura e o
+        # INSERT. O índice único parcial garante uma linha só: devolve a que
+        # venceu, sem 500 e sem notificar de novo.
+        existing = _pending_request(session, clan.id, user_id, for_update=True)
+        if existing is None:
+            raise ClanConflict("request_conflict") from None
+        return existing
+    _notify_join_request(session, clan, request, moment)
     return request
 
 
@@ -413,7 +508,9 @@ def decide_request(
     if request is None:
         raise ClanNotFound
     if request.status != "pending":
-        return request
+        # Duas decisões concorrentes não podem virar 200 silencioso: quem perdeu
+        # a corrida recebe conflito e relê o estado final.
+        raise ClanConflict("request_not_pending")
 
     if approve:
         if active_membership(session, request.user_id) is not None:
@@ -424,10 +521,130 @@ def decide_request(
         request.status = "rejected"
     request.decided_by = actor_id
     request.decided_at = moment
-    if note:
-        request.message = request.message or note.strip()[:200]
+    # A nota do admin não sobrescreve a mensagem escrita pelo solicitante.
+    request.decision_note = note.strip()[:200] if note else None
+    session.flush()
+    _notify_join_decision(session, _clan, request, moment)
+    return request
+
+
+def cancel_join_request(
+    session: Session,
+    clan_id: uuid.UUID,
+    request_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> ClanJoinRequest:
+    """Cancela o próprio pedido pendente.
+
+    Terceiros recebem 404 (não revelamos pedidos alheios); o autor só cancela
+    enquanto ``pending``. O instante e o autor do cancelamento ficam em
+    ``decided_at``/``decided_by`` para a linha continuar auditável.
+    """
+
+    moment = now or utcnow()
+    request = session.scalars(
+        select(ClanJoinRequest)
+        .where(
+            ClanJoinRequest.id == request_id,
+            ClanJoinRequest.clan_id == clan_id,
+        )
+        .with_for_update()
+    ).first()
+    if request is None or request.user_id != user_id:
+        raise ClanNotFound
+    if request.status != "pending":
+        raise ClanConflict("request_not_pending")
+    request.status = "cancelled"
+    request.decided_by = user_id
+    request.decided_at = moment
     session.flush()
     return request
+
+
+def list_join_requests(
+    session: Session,
+    clan_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    *,
+    status: str = "pending",
+) -> list[ClanJoinRequest]:
+    """Pedidos do clã para dono/admin; ``history`` traz os já decididos."""
+
+    if status not in REQUEST_FILTERS:
+        raise ClanValidation("status_invalid")
+    require_admin(session, clan_id, actor_id)
+    statement = select(ClanJoinRequest).where(ClanJoinRequest.clan_id == clan_id)
+    if status == "pending":
+        statement = statement.where(ClanJoinRequest.status == "pending").order_by(
+            ClanJoinRequest.created_at.asc()
+        )
+    else:
+        statement = statement.where(ClanJoinRequest.status != "pending").order_by(
+            ClanJoinRequest.created_at.desc(), ClanJoinRequest.id.desc()
+        )
+    return list(session.scalars(statement))
+
+
+def list_my_requests(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    status: str = "pending",
+) -> list[tuple[ClanJoinRequest, Clan]]:
+    """Pedidos do próprio jogador, com o clã de destino, mais recentes antes."""
+
+    if status not in REQUEST_FILTERS:
+        raise ClanValidation("status_invalid")
+    statement = (
+        select(ClanJoinRequest, Clan)
+        .join(Clan, Clan.id == ClanJoinRequest.clan_id)
+        .where(ClanJoinRequest.user_id == user_id)
+    )
+    if status == "pending":
+        statement = statement.where(ClanJoinRequest.status == "pending")
+    else:
+        statement = statement.where(ClanJoinRequest.status != "pending")
+    rows = session.execute(
+        statement.order_by(ClanJoinRequest.created_at.desc(), ClanJoinRequest.id.desc())
+    ).all()
+    return [(request, clan) for request, clan in rows]
+
+
+def latest_request_for(
+    session: Session,
+    clan_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> ClanJoinRequest | None:
+    return latest_requests_for_clans(session, user_id, [clan_id]).get(clan_id)
+
+
+def latest_requests_for_clans(
+    session: Session,
+    user_id: uuid.UUID,
+    clan_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, ClanJoinRequest]:
+    """Último pedido do jogador em cada clã, em uma única consulta.
+
+    A lista de clãs usa este lote para expor ``my_request`` sem N+1.
+    """
+
+    unique_ids = list(dict.fromkeys(clan_ids))
+    if not unique_ids:
+        return {}
+    rows = session.scalars(
+        select(ClanJoinRequest)
+        .where(
+            ClanJoinRequest.user_id == user_id,
+            ClanJoinRequest.clan_id.in_(unique_ids),
+        )
+        .order_by(ClanJoinRequest.created_at.desc(), ClanJoinRequest.id.desc())
+    )
+    latest: dict[uuid.UUID, ClanJoinRequest] = {}
+    for row in rows:
+        latest.setdefault(row.clan_id, row)
+    return latest
 
 
 def leave_clan(
@@ -583,6 +800,34 @@ def _expire(invite: ClanInvite, moment: datetime) -> None:
     invite.answered_at = moment
 
 
+def _notify_invite_answer(
+    session: Session,
+    invite: ClanInvite,
+    clan: Clan | None,
+    *,
+    kind: str,
+    title: str,
+    body: str,
+    moment: datetime,
+) -> None:
+    """Avisa quem convidou sobre o aceite ou a recusa."""
+
+    NotificationService(session).create(
+        user_id=invite.inviter_id,
+        kind=kind,
+        title=title,
+        body=body,
+        idempotency_key=f"{kind}:{invite.inviter_id}:{invite.id}",
+        data={
+            "invite_id": str(invite.id),
+            "clan_id": str(invite.clan_id),
+            "clan_name": clan.name if clan is not None else None,
+            "invitee_id": str(invite.invitee_id),
+        },
+        now=moment,
+    )
+
+
 def accept_invite(
     session: Session,
     user_id: uuid.UUID,
@@ -628,6 +873,15 @@ def accept_invite(
         },
     )
     session.flush()
+    _notify_invite_answer(
+        session,
+        invite,
+        clan,
+        kind="clan_invite_accepted",
+        title="Convite de clã aceito",
+        body=f"Seu convite para {clan.name} foi aceito.",
+        moment=moment,
+    )
     return invite
 
 
@@ -653,6 +907,17 @@ def decline_invite(
     invite.status = "declined"
     invite.answered_at = moment
     session.flush()
+    clan = session.get(Clan, invite.clan_id)
+    clan_name = clan.name if clan is not None else "o clã"
+    _notify_invite_answer(
+        session,
+        invite,
+        clan,
+        kind="clan_invite_declined",
+        title="Convite de clã recusado",
+        body=f"Seu convite para {clan_name} foi recusado.",
+        moment=moment,
+    )
     return invite
 
 

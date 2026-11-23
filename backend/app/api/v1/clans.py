@@ -33,6 +33,7 @@ from app.modules.clans.service import (
     accept_invite,
     active_clan_for,
     cancel_invite,
+    cancel_join_request,
     clan_ranking,
     create_clan,
     decide_report,
@@ -40,8 +41,12 @@ from app.modules.clans.service import (
     decline_invite,
     get_clan,
     invite_to_clan,
+    latest_request_for,
+    latest_requests_for_clans,
     leave_clan,
+    list_join_requests,
     list_messages,
+    list_my_requests,
     list_pending_invites,
     list_reports,
     member_count,
@@ -49,7 +54,6 @@ from app.modules.clans.service import (
     remove_member,
     report_message,
     request_join,
-    require_admin,
     require_member,
     send_message,
     set_role,
@@ -64,6 +68,15 @@ from app.modules.season.service import SeasonNotFound, active_season
 router = APIRouter(tags=["clans"])
 
 
+class MyRequestSummaryView(BaseModel):
+    """Resumo embutido no clã para o app não refazer a consulta do pedido."""
+
+    id: UUID
+    status: str
+    created_at: datetime
+    decision_note: str | None
+
+
 class ClanSummaryView(BaseModel):
     id: UUID
     name: str
@@ -75,6 +88,7 @@ class ClanSummaryView(BaseModel):
     trophies: int
     my_role: str | None
     is_member: bool
+    my_request: MyRequestSummaryView | None = None
 
 
 class ClanListView(BaseModel):
@@ -130,10 +144,31 @@ class RequestView(BaseModel):
     status: str
     message: str | None
     created_at: datetime
+    decided_at: datetime | None = None
+    decided_by: UUID | None = None
+    decision_note: str | None = None
 
 
 class RequestListView(BaseModel):
     requests: list[RequestView]
+
+
+class MyRequestView(BaseModel):
+    """Pedido do próprio jogador, com o clã de destino."""
+
+    id: UUID
+    clan_id: UUID
+    clan_name: str
+    clan_tag: str
+    status: str
+    message: str | None
+    decision_note: str | None
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class MyRequestListView(BaseModel):
+    requests: list[MyRequestView]
 
 
 class JoinResultView(BaseModel):
@@ -183,12 +218,38 @@ def _display_name(session: Session, user_id: UUID) -> str | None:
     return session.scalar(select(UserProfile.display_name).where(UserProfile.user_id == user_id))
 
 
+def _my_request_summary(request: ClanJoinRequest | None) -> MyRequestSummaryView | None:
+    if request is None:
+        return None
+    return MyRequestSummaryView(
+        id=request.id,
+        status=request.status,
+        created_at=request.created_at,
+        decision_note=request.decision_note,
+    )
+
+
+def _my_request_view(request: ClanJoinRequest, clan: Clan) -> MyRequestView:
+    return MyRequestView(
+        id=request.id,
+        clan_id=clan.id,
+        clan_name=clan.name,
+        clan_tag=clan.tag,
+        status=request.status,
+        message=request.message,
+        decision_note=request.decision_note,
+        created_at=request.created_at,
+        decided_at=request.decided_at,
+    )
+
+
 def _clan_view(
     session: Session,
     clan: Clan,
     user_id: UUID,
     *,
     format_id: UUID | None = None,
+    my_request: ClanJoinRequest | None = None,
 ) -> ClanSummaryView:
     season_id, _ = _season(session)
     membership = membership_of(session, clan.id, user_id)
@@ -208,6 +269,7 @@ def _clan_view(
         ),
         my_role=membership.role if membership else None,
         is_member=membership is not None,
+        my_request=_my_request_summary(my_request),
     )
 
 
@@ -235,6 +297,9 @@ def _request_view(session: Session, request: ClanJoinRequest) -> RequestView:
         status=request.status,
         message=request.message,
         created_at=request.created_at,
+        decided_at=request.decided_at,
+        decided_by=request.decided_by,
+        decision_note=request.decision_note,
     )
 
 
@@ -410,7 +475,23 @@ def list_clans(
         else:
             statement = statement.where(member_total >= MAX_MEMBERS)
     clans = session.scalars(statement.order_by(Clan.name.asc()).limit(limit)).all()
-    return ClanListView(clans=[_clan_view(session, clan, current.user_id) for clan in clans])
+    # Uma consulta por página resolve ``my_request`` de todos os clãs, sem N+1.
+    my_requests = latest_requests_for_clans(
+        session,
+        current.user_id,
+        [clan.id for clan in clans],
+    )
+    return ClanListView(
+        clans=[
+            _clan_view(
+                session,
+                clan,
+                current.user_id,
+                my_request=my_requests.get(clan.id),
+            )
+            for clan in clans
+        ]
+    )
 
 
 @router.get("/clans/ranking", response_model=ClanRankingView)
@@ -446,7 +527,25 @@ def my_clan(
     clan = active_clan_for(session, current.user_id)
     if clan is None:
         return None
-    return _clan_view(session, clan, current.user_id)
+    return _clan_view(
+        session,
+        clan,
+        current.user_id,
+        my_request=latest_request_for(session, clan.id, current.user_id),
+    )
+
+
+@router.get("/me/clan-requests", response_model=MyRequestListView)
+def my_clan_requests(
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    request_status: Annotated[Literal["pending", "history"], Query(alias="status")] = "pending",
+) -> MyRequestListView:
+    try:
+        rows = list_my_requests(session, current.user_id, status=request_status)
+    except Exception as exc:  # noqa: BLE001
+        raise _handle(exc) from None
+    return MyRequestListView(requests=[_my_request_view(request, clan) for request, clan in rows])
 
 
 @router.get("/clans/{clan_id}", response_model=ClanSummaryView)
@@ -460,7 +559,13 @@ def read_clan(
         clan = get_clan(session, clan_id)
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
-    return _clan_view(session, clan, current.user_id, format_id=format_id)
+    return _clan_view(
+        session,
+        clan,
+        current.user_id,
+        format_id=format_id,
+        my_request=latest_request_for(session, clan.id, current.user_id),
+    )
 
 
 @router.post("/clans/{clan_id}/join", response_model=JoinResultView)
@@ -491,19 +596,17 @@ def read_requests(
     clan_id: UUID,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    request_status: Annotated[Literal["pending", "history"], Query(alias="status")] = "pending",
 ) -> RequestListView:
     try:
-        require_admin(session, clan_id, current.user_id)
+        requests = list_join_requests(
+            session,
+            clan_id,
+            current.user_id,
+            status=request_status,
+        )
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
-    requests = session.scalars(
-        select(ClanJoinRequest)
-        .where(
-            ClanJoinRequest.clan_id == clan_id,
-            ClanJoinRequest.status == "pending",
-        )
-        .order_by(ClanJoinRequest.created_at.asc())
-    ).all()
     return RequestListView(requests=[_request_view(session, item) for item in requests])
 
 
@@ -527,6 +630,22 @@ def decide(
             approve=payload.approve,
             note=payload.note,
         )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    return _request_view(session, request)
+
+
+@router.delete("/clans/{clan_id}/requests/{request_id}", response_model=RequestView)
+def cancel_request(
+    clan_id: UUID,
+    request_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> RequestView:
+    try:
+        request = cancel_join_request(session, clan_id, request_id, current.user_id)
         session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
