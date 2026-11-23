@@ -640,7 +640,7 @@ export function ModerationPage() {
                 <div className="booking-card__actions">
                   <button
                     type="button"
-                    className="button button--small button--primary"
+                    className="button button--small button--ghost"
                     onClick={() => openAppeal(appeal, "ACCEPTED")}
                   >
                     Aceitar recurso

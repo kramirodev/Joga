@@ -775,7 +775,7 @@ export function AdminSportsPage() {
                   ) : (
                     <button
                       type="button"
-                      className="button button--small button--primary"
+                      className="button button--small button--ghost"
                       onClick={() => openStatus(sport, "activate")}
                     >
                       Publicar

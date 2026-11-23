@@ -126,7 +126,7 @@ export function OrganizationsPage() {
               action={
                 <button
                   type="button"
-                  className="button button--primary"
+                  className="button button--ghost"
                   onClick={() => document.getElementById("org-name")?.focus()}
                 >
                   <PlusIcon size={16} />
