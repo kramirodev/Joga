@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
 from app.modules.matchmaking.models import LobbyParticipant
 from app.modules.profile.models import UserSportProfile
+from app.modules.social import service as social_service
+from app.modules.social.models import Friendship
 from tests.helpers_results import build_match, make_token, make_user
 
 
@@ -67,6 +70,235 @@ def test_friend_request_flow(client: TestClient, db_session: Session) -> None:
 
     removed = api.delete(f"/api/v1/friends/{second}", headers=bearer(first_token))
     assert removed.status_code == 204
+
+
+def test_friend_request_listing_and_decline(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    first = make_user(db_session)
+    second = make_user(db_session)
+    outsider = make_user(db_session)
+    first_token = make_token(db_session, first)
+    second_token = make_token(db_session, second)
+    outsider_token = make_token(db_session, outsider)
+
+    created = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(second)},
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+    assert created.json()["status"] == "PENDING"
+    assert created.json()["responded_at"] is None
+
+    incoming = api.get("/api/v1/friends/requests", headers=bearer(second_token))
+    assert incoming.status_code == 200, incoming.text
+    assert [item["id"] for item in incoming.json()["requests"]] == [request_id]
+    entry = incoming.json()["requests"][0]
+    assert entry["counterpart_id"] == str(first)
+    assert entry["counterpart_name"] is None
+    assert entry["direction"] == "incoming"
+    assert entry["status"] == "PENDING"
+    assert entry["responded_at"] is None
+
+    outgoing = api.get(
+        "/api/v1/friends/requests?direction=outgoing",
+        headers=bearer(first_token),
+    )
+    assert outgoing.status_code == 200, outgoing.text
+    assert [item["id"] for item in outgoing.json()["requests"]] == [request_id]
+    assert outgoing.json()["requests"][0]["direction"] == "outgoing"
+
+    empty = api.get(
+        "/api/v1/friends/requests?direction=incoming",
+        headers=bearer(first_token),
+    )
+    assert empty.status_code == 200
+    assert empty.json()["requests"] == []
+
+    invalid = api.get(
+        "/api/v1/friends/requests?direction=sideways",
+        headers=bearer(second_token),
+    )
+    assert invalid.status_code == 422
+
+    author_decline = api.post(
+        f"/api/v1/friends/requests/{request_id}/decline",
+        headers=bearer(first_token),
+    )
+    assert author_decline.status_code == 404
+    outsider_decline = api.post(
+        f"/api/v1/friends/requests/{request_id}/decline",
+        headers=bearer(outsider_token),
+    )
+    assert outsider_decline.status_code == 404
+
+    declined = api.post(
+        f"/api/v1/friends/requests/{request_id}/decline",
+        headers=bearer(second_token),
+    )
+    assert declined.status_code == 200, declined.text
+    assert declined.json()["status"] == "DECLINED"
+    assert declined.json()["responded_at"] is not None
+
+    accepted_after_decline = api.post(
+        f"/api/v1/friends/requests/{request_id}/accept",
+        headers=bearer(second_token),
+    )
+    assert accepted_after_decline.status_code == 404
+
+    history = api.get(
+        "/api/v1/friends/requests?direction=incoming&status=history",
+        headers=bearer(second_token),
+    )
+    assert history.status_code == 200, history.text
+    assert [item["status"] for item in history.json()["requests"]] == ["DECLINED"]
+
+
+def test_cancel_friend_request_only_author(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    first = make_user(db_session)
+    second = make_user(db_session)
+    first_token = make_token(db_session, first)
+    second_token = make_token(db_session, second)
+
+    created = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(second)},
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    recipient_cancel = api.delete(
+        f"/api/v1/friends/requests/{request_id}",
+        headers=bearer(second_token),
+    )
+    assert recipient_cancel.status_code == 404
+
+    cancelled = api.delete(
+        f"/api/v1/friends/requests/{request_id}",
+        headers=bearer(first_token),
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "CANCELLED"
+    assert cancelled.json()["responded_at"] is not None
+
+    history = api.get(
+        "/api/v1/friends/requests?direction=outgoing&status=history",
+        headers=bearer(first_token),
+    )
+    assert history.status_code == 200, history.text
+    assert [item["status"] for item in history.json()["requests"]] == ["CANCELLED"]
+
+    # A rota nova não pode ser capturada por DELETE /friends/{user_id}.
+    friends = api.get("/api/v1/friends", headers=bearer(first_token))
+    assert friends.status_code == 200
+    assert friends.json()["friends"] == []
+
+
+def test_friend_request_idempotent_and_incoming_conflict(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    first = make_user(db_session)
+    second = make_user(db_session)
+    first_token = make_token(db_session, first)
+    second_token = make_token(db_session, second)
+
+    created = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(second)},
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+
+    replay = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(second)},
+    )
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == request_id
+    assert db_session.scalar(select(func.count()).select_from(Friendship)) == 1
+
+    conflict = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(second_token),
+        json={"user_id": str(first)},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json() == {
+        "detail": {
+            "code": "incoming_friend_request",
+            "request_id": request_id,
+        }
+    }
+
+
+def test_friend_request_rate_limit_returns_429(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = api_client(client, db_session)
+    first = make_user(db_session)
+    second = make_user(db_session)
+    third = make_user(db_session)
+    first_token = make_token(db_session, first)
+    monkeypatch.setattr(social_service, "FRIEND_REQUEST_HOURLY_LIMIT", 1)
+
+    created = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(second)},
+    )
+    assert created.status_code == 201, created.text
+
+    limited = api.post(
+        "/api/v1/friends/requests",
+        headers=bearer(first_token),
+        json={"user_id": str(third)},
+    )
+    assert limited.status_code == 429
+    assert limited.json() == {"detail": {"code": "rate_limited"}}
+    assert int(limited.headers["Retry-After"]) >= 1
+
+
+def test_blocks_listing(client: TestClient, db_session: Session) -> None:
+    api = api_client(client, db_session)
+    first = make_user(db_session)
+    second = make_user(db_session)
+    third = make_user(db_session)
+    first_token = make_token(db_session, first)
+    second_token = make_token(db_session, second)
+
+    for blocked in (second, third):
+        response = api.post(
+            "/api/v1/blocks",
+            headers=bearer(first_token),
+            json={"user_id": str(blocked)},
+        )
+        assert response.status_code == 201, response.text
+
+    listing = api.get("/api/v1/blocks", headers=bearer(first_token))
+    assert listing.status_code == 200, listing.text
+    assert {item["user_id"] for item in listing.json()["blocks"]} == {
+        str(second),
+        str(third),
+    }
+
+    other_listing = api.get("/api/v1/blocks", headers=bearer(second_token))
+    assert other_listing.status_code == 200
+    assert other_listing.json()["blocks"] == []
 
 
 def test_block_prevents_friend_request(client: TestClient, db_session: Session) -> None:
@@ -153,4 +385,6 @@ def test_push_token_register_and_revoke(client: TestClient, db_session: Session)
 
 def test_social_requires_authentication(client: TestClient) -> None:
     assert client.get("/api/v1/friends").status_code == 401
+    assert client.get("/api/v1/friends/requests").status_code == 401
+    assert client.get("/api/v1/blocks").status_code == 401
     assert client.get("/api/v1/lobby-invites").status_code == 401

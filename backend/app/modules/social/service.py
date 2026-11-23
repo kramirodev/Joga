@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import User
 from app.modules.matchmaking.models import Lobby, LobbyParticipant
+from app.modules.notifications.service import NotificationService
 from app.modules.outbox.service import OutboxService
 from app.modules.profile.models import UserProfile, UserSportProfile
 from app.modules.ratelimit.service import enforce as enforce_rate_limit
@@ -18,6 +22,9 @@ from app.modules.social.models import Friendship, LobbyInvite, UserBlock
 
 INVITE_TTL = timedelta(hours=24)
 INVITE_HOURLY_LIMIT = 20
+FRIEND_REQUEST_HOURLY_LIMIT = 20
+FRIEND_REQUEST_DIRECTIONS = ("incoming", "outgoing", "all")
+FRIEND_REQUEST_FILTERS = ("pending", "history")
 
 
 class SocialError(Exception):
@@ -45,7 +52,11 @@ class RequestAlreadyExists(SocialError):
 
 
 class IncomingRequestExists(SocialError):
-    pass
+    """Pedido pendente na direção oposta; o id permite aceitar direto."""
+
+    def __init__(self, message: str, friendship_id: uuid.UUID) -> None:
+        super().__init__(message)
+        self.friendship_id = friendship_id
 
 
 class FriendshipNotFound(SocialError):
@@ -74,6 +85,19 @@ class LobbyUnavailable(SocialError):
 
 class LobbyFull(SocialError):
     pass
+
+
+@dataclass(frozen=True)
+class FriendRequestEntry:
+    """Pedido de amizade na visão de um dos participantes."""
+
+    id: uuid.UUID
+    counterpart_id: uuid.UUID
+    counterpart_name: str | None
+    direction: Literal["incoming", "outgoing"]
+    status: str
+    created_at: datetime
+    responded_at: datetime | None
 
 
 def ordered_pair(first: uuid.UUID, second: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
@@ -130,6 +154,69 @@ class SocialService:
         result.sort(key=lambda item: str(item[0]))
         return result
 
+    def list_blocks(self, user_id: uuid.UUID) -> list[tuple[uuid.UUID, str | None]]:
+        rows = list(
+            self._session.scalars(
+                select(UserBlock)
+                .where(UserBlock.blocker_id == user_id)
+                .order_by(UserBlock.created_at.desc(), UserBlock.id.desc())
+            )
+        )
+        result: list[tuple[uuid.UUID, str | None]] = []
+        for row in rows:
+            profile = self._session.get(UserProfile, row.blocked_id)
+            result.append((row.blocked_id, profile.display_name if profile else None))
+        return result
+
+    def list_friend_requests(
+        self,
+        user_id: uuid.UUID,
+        *,
+        direction: Literal["incoming", "outgoing", "all"] = "incoming",
+        status: Literal["pending", "history"] = "pending",
+    ) -> list[FriendRequestEntry]:
+        if direction not in FRIEND_REQUEST_DIRECTIONS:
+            raise ValueError("direção de pedidos inválida")
+        if status not in FRIEND_REQUEST_FILTERS:
+            raise ValueError("filtro de pedidos inválido")
+
+        statement = select(Friendship).where(
+            or_(
+                Friendship.user_low_id == user_id,
+                Friendship.user_high_id == user_id,
+            )
+        )
+        if direction == "incoming":
+            statement = statement.where(Friendship.requested_by != user_id)
+        elif direction == "outgoing":
+            statement = statement.where(Friendship.requested_by == user_id)
+        if status == "pending":
+            statement = statement.where(Friendship.status == "PENDING")
+        else:
+            statement = statement.where(Friendship.status != "PENDING")
+
+        rows = list(
+            self._session.scalars(
+                statement.order_by(Friendship.created_at.desc(), Friendship.id.desc())
+            )
+        )
+        result: list[FriendRequestEntry] = []
+        for row in rows:
+            counterpart = row.user_high_id if row.user_low_id == user_id else row.user_low_id
+            profile = self._session.get(UserProfile, counterpart)
+            result.append(
+                FriendRequestEntry(
+                    id=row.id,
+                    counterpart_id=counterpart,
+                    counterpart_name=profile.display_name if profile else None,
+                    direction="outgoing" if row.requested_by == user_id else "incoming",
+                    status=row.status,
+                    created_at=row.created_at,
+                    responded_at=row.responded_at,
+                )
+            )
+        return result
+
     def send_friend_request(
         self,
         actor_id: uuid.UUID,
@@ -145,36 +232,27 @@ class SocialService:
             raise BlockedRelationship("relação bloqueada")
 
         low, high = ordered_pair(actor_id, target_id)
-        existing = self._session.scalar(
-            select(Friendship).where(
-                Friendship.user_low_id == low,
-                Friendship.user_high_id == high,
-            )
-        )
         moment = ensure_utc(now or utcnow())
+        existing = self._find_friendship(low, high, for_update=True)
         if existing is not None:
-            if existing.status == "ACCEPTED":
-                raise AlreadyFriends("já são amigos")
-            if existing.status == "PENDING":
-                if existing.requested_by == actor_id:
-                    raise RequestAlreadyExists("solicitação já enviada")
-                raise IncomingRequestExists("existe solicitação pendente do outro usuário")
-            existing.status = "PENDING"
-            existing.requested_by = actor_id
-            existing.updated_at = moment
-            self._session.flush()
-            return existing
+            return self._resume_friend_request(existing, actor_id, target_id, moment)
 
-        friendship = Friendship(
-            user_low_id=low,
-            user_high_id=high,
-            requested_by=actor_id,
-            status="PENDING",
-            created_at=moment,
-            updated_at=moment,
-        )
-        self._session.add(friendship)
-        self._session.flush()
+        self._enforce_friend_request_limit(actor_id, moment)
+        try:
+            friendship = self._insert_friendship(low, high, actor_id, moment)
+        except IntegrityError:
+            # Outra requisição criou o mesmo par entre a leitura e o INSERT.
+            existing = self._find_friendship(low, high, for_update=True)
+            if existing is None:
+                raise
+            return self._resume_friend_request(
+                existing,
+                actor_id,
+                target_id,
+                moment,
+                enforce_limit=False,
+            )
+        self._notify_friend_request(friendship, actor_id, target_id, moment)
         return friendship
 
     def accept_friend_request(
@@ -184,7 +262,7 @@ class SocialService:
         *,
         now: datetime | None = None,
     ) -> Friendship:
-        friendship = self._session.get(Friendship, request_id)
+        friendship = self._session.get(Friendship, request_id, with_for_update=True)
         if (
             friendship is None
             or friendship.status != "PENDING"
@@ -194,9 +272,84 @@ class SocialService:
             raise FriendshipNotFound("solicitação não encontrada")
         if self.is_blocked(friendship.user_low_id, friendship.user_high_id):
             raise BlockedRelationship("relação bloqueada")
+        moment = ensure_utc(now or utcnow())
         friendship.status = "ACCEPTED"
-        friendship.updated_at = ensure_utc(now or utcnow())
+        friendship.responded_at = moment
+        friendship.updated_at = moment
         self._session.flush()
+        self._notify(
+            user_id=friendship.requested_by,
+            kind="friend_accepted",
+            title="Pedido de amizade aceito",
+            body="Seu pedido de amizade foi aceito.",
+            friendship=friendship,
+            counterpart_id=user_id,
+            moment=moment,
+        )
+        return friendship
+
+    def decline_friend_request(
+        self,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        now: datetime | None = None,
+    ) -> Friendship:
+        friendship = self._session.get(Friendship, request_id, with_for_update=True)
+        if (
+            friendship is None
+            or friendship.status != "PENDING"
+            or user_id not in (friendship.user_low_id, friendship.user_high_id)
+            or friendship.requested_by == user_id
+        ):
+            raise FriendshipNotFound("solicitação não encontrada")
+        moment = ensure_utc(now or utcnow())
+        friendship.status = "DECLINED"
+        friendship.responded_at = moment
+        friendship.updated_at = moment
+        self._session.flush()
+        self._notify(
+            user_id=friendship.requested_by,
+            kind="friend_declined",
+            title="Pedido de amizade recusado",
+            body="Seu pedido de amizade foi recusado.",
+            friendship=friendship,
+            counterpart_id=user_id,
+            moment=moment,
+        )
+        return friendship
+
+    def cancel_friend_request(
+        self,
+        request_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        now: datetime | None = None,
+    ) -> Friendship:
+        friendship = self._session.get(Friendship, request_id, with_for_update=True)
+        if (
+            friendship is None
+            or friendship.status != "PENDING"
+            or user_id not in (friendship.user_low_id, friendship.user_high_id)
+            or friendship.requested_by != user_id
+        ):
+            raise FriendshipNotFound("solicitação não encontrada")
+        moment = ensure_utc(now or utcnow())
+        friendship.status = "CANCELLED"
+        friendship.responded_at = moment
+        friendship.updated_at = moment
+        self._session.flush()
+        self._notify(
+            user_id=friendship.user_low_id
+            if friendship.user_high_id == user_id
+            else friendship.user_high_id,
+            kind="friend_cancelled",
+            title="Pedido de amizade cancelado",
+            body="Um pedido de amizade enviado a você foi cancelado.",
+            friendship=friendship,
+            counterpart_id=user_id,
+            moment=moment,
+        )
         return friendship
 
     def remove_friend(
@@ -451,6 +604,126 @@ class SocialService:
         )
 
     # Internos ----------------------------------------------------------
+
+    def _find_friendship(
+        self,
+        low: uuid.UUID,
+        high: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> Friendship | None:
+        statement = select(Friendship).where(
+            Friendship.user_low_id == low,
+            Friendship.user_high_id == high,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def _insert_friendship(
+        self,
+        low: uuid.UUID,
+        high: uuid.UUID,
+        actor_id: uuid.UUID,
+        moment: datetime,
+    ) -> Friendship:
+        friendship = Friendship(
+            user_low_id=low,
+            user_high_id=high,
+            requested_by=actor_id,
+            status="PENDING",
+            created_at=moment,
+            updated_at=moment,
+        )
+        with self._session.begin_nested():
+            self._session.add(friendship)
+            self._session.flush()
+        return friendship
+
+    def _resume_friend_request(
+        self,
+        friendship: Friendship,
+        actor_id: uuid.UUID,
+        target_id: uuid.UUID,
+        moment: datetime,
+        *,
+        enforce_limit: bool = True,
+    ) -> Friendship:
+        if friendship.status == "ACCEPTED":
+            raise AlreadyFriends("já são amigos")
+        if friendship.status == "PENDING":
+            if friendship.requested_by == actor_id:
+                # Reenvio do mesmo autor é idempotente: mesma linha, sem notificação nova.
+                return friendship
+            raise IncomingRequestExists(
+                "existe solicitação pendente do outro usuário",
+                friendship.id,
+            )
+
+        if enforce_limit:
+            self._enforce_friend_request_limit(actor_id, moment)
+        friendship.status = "PENDING"
+        friendship.requested_by = actor_id
+        # O pedido reaberto passa a valer como novo para listagem e ordenação.
+        friendship.created_at = moment
+        friendship.updated_at = moment
+        friendship.responded_at = None
+        self._session.flush()
+        self._notify_friend_request(friendship, actor_id, target_id, moment)
+        return friendship
+
+    def _enforce_friend_request_limit(self, actor_id: uuid.UUID, moment: datetime) -> None:
+        enforce_rate_limit(
+            self._session,
+            scope="friend-request",
+            key=str(actor_id),
+            limit=FRIEND_REQUEST_HOURLY_LIMIT,
+            window_seconds=3600,
+            now=moment,
+        )
+
+    def _notify_friend_request(
+        self,
+        friendship: Friendship,
+        actor_id: uuid.UUID,
+        target_id: uuid.UUID,
+        moment: datetime,
+    ) -> None:
+        self._notify(
+            user_id=target_id,
+            kind="friend_request_received",
+            title="Novo pedido de amizade",
+            body="Você recebeu um pedido de amizade.",
+            friendship=friendship,
+            counterpart_id=actor_id,
+            moment=moment,
+        )
+
+    def _notify(
+        self,
+        *,
+        user_id: uuid.UUID,
+        kind: str,
+        title: str,
+        body: str,
+        friendship: Friendship,
+        counterpart_id: uuid.UUID,
+        moment: datetime,
+    ) -> None:
+        # A chave carrega o destinatário: NotificationService.create procura a
+        # chave globalmente e não pode engolir a notificação de outro usuário.
+        NotificationService(self._session).create(
+            user_id=user_id,
+            kind=kind,
+            title=title,
+            body=body,
+            idempotency_key=f"{kind}:{user_id}:{friendship.id}:{moment.isoformat()}",
+            data={
+                "friendship_id": str(friendship.id),
+                "counterpart_id": str(counterpart_id),
+            },
+            now=moment,
+        )
 
     def _is_participant(self, lobby_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         return (

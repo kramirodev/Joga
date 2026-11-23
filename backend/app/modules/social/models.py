@@ -14,13 +14,14 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
 
-FRIENDSHIP_STATUSES = ("PENDING", "ACCEPTED", "REMOVED")
+FRIENDSHIP_STATUSES = ("PENDING", "ACCEPTED", "REMOVED", "DECLINED", "CANCELLED")
 INVITE_STATUSES = ("PENDING", "ACCEPTED", "DECLINED", "EXPIRED", "CANCELLED")
 
 
@@ -32,11 +33,30 @@ class Friendship(Base):
         UniqueConstraint("user_low_id", "user_high_id", name="uq_friendship_pair"),
         CheckConstraint("user_low_id <> user_high_id", name="distinct_users"),
         CheckConstraint(
-            "status IN ('PENDING', 'ACCEPTED', 'REMOVED')",
+            "status IN ('PENDING', 'ACCEPTED', 'REMOVED', 'DECLINED', 'CANCELLED')",
             name="status_valid",
+        ),
+        CheckConstraint(
+            "requested_by IN (user_low_id, user_high_id)",
+            name="requested_by_participant",
         ),
         Index("ix_friendship_high_status", "user_high_id", "status"),
         Index("ix_friendship_low_status", "user_low_id", "status"),
+        Index("ix_friendship_requested_by_status", "requested_by", "status"),
+        Index(
+            "ix_friendship_low_pending_created",
+            "user_low_id",
+            "created_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
+        Index(
+            "ix_friendship_high_pending_created",
+            "user_high_id",
+            "created_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -60,6 +80,7 @@ class Friendship(Base):
         onupdate=utcnow,
         server_default=func.now(),
     )
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserBlock(Base):

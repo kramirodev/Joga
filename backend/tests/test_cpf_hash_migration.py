@@ -122,7 +122,7 @@ def test_backfill_upgrade_downgrade_and_upgrade(
     assert "UNIQUE" in index_def
     assert "cpf_hash IS NOT NULL" in index_def
 
-    command.downgrade(config, "-1")
+    command.downgrade(config, PREVIOUS_REVISION)
     connection.commit()
     assert not _has_column(connection, "user_profiles", "cpf_hash")
     assert (
