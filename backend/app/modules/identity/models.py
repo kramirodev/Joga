@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
 from app.modules.identity.clock import utcnow
+from app.modules.identity.tags import default_user_tag
 
 USER_STATUSES = ("pending", "active", "suspended", "deleted")
 CHALLENGE_PURPOSES = (
@@ -53,9 +54,13 @@ class User(Base):
             "status IN ('pending', 'active', 'suspended', 'deleted')",
             name="status_valid",
         ),
+        Index("uq_users_tag", "tag", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # Identificador público curto: '#' + 8/10/12 hex maiúsculos derivados do
+    # UUID. É único e nunca substitui autorização (ADR de identidade do jogador).
+    tag: Mapped[str] = mapped_column(String(13), nullable=False, default=default_user_tag)
     # Legado do pagador: sem unique, sem normalização e sem autoridade de
     # login. A credencial de e-mail vive em ``user_emails`` (ADR 0050).
     email: Mapped[str | None] = mapped_column(String(254), nullable=True)

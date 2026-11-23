@@ -94,6 +94,7 @@ class RegionResponse(BaseModel):
 class ProfileResponse(BaseModel):
     user_id: UUID
     display_name: str | None
+    tag: str
     bio: str | None
     sports: list[UserSportResponse]
     availability: list[AvailabilityResponse]
@@ -210,6 +211,7 @@ def _profile_response(session: Session, snapshot: ProfileSnapshot) -> ProfileRes
     return ProfileResponse(
         user_id=snapshot.user_id,
         display_name=snapshot.display_name,
+        tag=snapshot.tag,
         bio=snapshot.bio,
         sports=sports,
         availability=[

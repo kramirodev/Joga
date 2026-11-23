@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.text import CONTROL_PATTERN
+from app.core.text import CONTROL_PATTERN, normalize_display_name
 from app.modules.email.addresses import hash_email, normalize_email
 from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryService
 from app.modules.email.models import UserEmail
@@ -27,6 +27,7 @@ from app.modules.identity.email_challenges import (
 from app.modules.identity.models import PhoneChallenge, User, UserPassword
 from app.modules.identity.otp import ChallengePurpose
 from app.modules.identity.passwords import PasswordService
+from app.modules.identity.tags import next_available_tag
 from app.modules.profile.models import UserProfile
 
 
@@ -123,7 +124,12 @@ class EmailAccountService:
         if existing is not None:
             raise EmailAlreadyRegistered("e-mail já cadastrado")
 
-        user = User(status="active")
+        user_id = uuid.uuid4()
+        user = User(
+            id=user_id,
+            status="active",
+            tag=next_available_tag(self._session, user_id),
+        )
         self._session.add(user)
         self._session.flush()
 
@@ -512,8 +518,8 @@ class EmailAccountService:
 def _clean_display_name(value: str | None) -> str | None:
     if value is None:
         return None
-    cleaned = CONTROL_PATTERN.sub(" ", value).strip()
-    return cleaned[:60] or None
+    sanitized = CONTROL_PATTERN.sub(" ", value)
+    return normalize_display_name(sanitized)
 
 
 def _format_moment(moment: datetime) -> str:

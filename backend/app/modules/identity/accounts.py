@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import PhoneChallenge, User, UserPhone
 from app.modules.identity.otp import ChallengePurpose
+from app.modules.identity.tags import next_available_tag
 
 
 class AccountError(Exception):
@@ -64,7 +65,12 @@ class AccountService:
         if existing is not None:
             raise PhoneAlreadyRegistered("telefone já cadastrado")
 
-        user = User(status="active")
+        user_id = uuid.uuid4()
+        user = User(
+            id=user_id,
+            status="active",
+            tag=next_available_tag(self._session, user_id),
+        )
         self._session.add(user)
         self._session.flush()
 

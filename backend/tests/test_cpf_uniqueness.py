@@ -103,7 +103,7 @@ def test_null_cpf_does_not_collide(
     hashes = list(
         db_session.scalars(
             select(UserProfile.cpf_hash).where(
-                UserProfile.display_name.in_(["Ana", "Bia"]),
+                UserProfile.display_name.in_(["ANA", "BIA"]),
             )
         )
     )

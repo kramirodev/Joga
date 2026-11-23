@@ -153,7 +153,7 @@ def test_profile_rejects_unsafe_text_and_keeps_unicode(
         json={"display_name": "João 🎾", "bio": "Amo vôlei de areia 🏐\nSempre"},
     )
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["display_name"] == "João 🎾"
+    assert accepted.json()["display_name"] == "JOÃO 🎾"
     assert accepted.json()["bio"] == "Amo vôlei de areia 🏐\nSempre"
 
 

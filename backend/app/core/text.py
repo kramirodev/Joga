@@ -34,6 +34,8 @@ INVISIBLE_PATTERN = re.compile(
 )
 
 LIKE_ESCAPE = "\\"
+DISPLAY_NAME_MAX_LENGTH = 60
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class UnsafeText(ValueError):
@@ -88,6 +90,24 @@ def escape_like(value: str) -> str:
     return value.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", "\\%").replace("_", "\\_")
 
 
+def normalize_display_name(value: str | None) -> str | None:
+    """Forma canônica do nome do jogador: ``strip``, espaços colapsados, upper.
+
+    Acentos, emoji e o restante do Unicode são preservados. O resultado é
+    limitado ao tamanho da coluna; nomes vazios ou só com espaços viram
+    ``None``. A mesma regra é aplicada pela migração que canoniza nomes
+    já persistidos.
+    """
+
+    if value is None:
+        return None
+    cleaned = WHITESPACE_PATTERN.sub(" ", value.strip())
+    if not cleaned:
+        return None
+    canonical = cleaned.upper()[:DISPLAY_NAME_MAX_LENGTH].rstrip()
+    return canonical or None
+
+
 FreeText = Annotated[str, AfterValidator(reject_control_characters)]
 OptionalFreeText = Annotated[str | None, AfterValidator(reject_control_characters)]
 MultilineText = Annotated[
@@ -106,9 +126,11 @@ OptionalDisplayName = Annotated[str | None, AfterValidator(reject_display_name)]
 
 __all__ = [
     "CONTROL_PATTERN",
+    "DISPLAY_NAME_MAX_LENGTH",
     "INVISIBLE_PATTERN",
     "LIKE_ESCAPE",
     "MULTILINE_CONTROL_PATTERN",
+    "WHITESPACE_PATTERN",
     "DisplayName",
     "FreeText",
     "MultilineText",
@@ -117,6 +139,7 @@ __all__ = [
     "OptionalMultilineText",
     "UnsafeText",
     "escape_like",
+    "normalize_display_name",
     "normalize_newlines",
     "reject_control_characters",
     "reject_display_name",

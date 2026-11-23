@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.text import escape_like
+from app.core.text import escape_like, normalize_display_name
 from app.modules.email.addresses import normalize_email
 from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryService
 from app.modules.email.models import UserEmail
@@ -26,6 +26,7 @@ from app.modules.identity.models import AuditLog, User, UserPassword
 from app.modules.identity.otp import ChallengePurpose
 from app.modules.identity.passwords import PasswordService
 from app.modules.identity.sessions import SessionService
+from app.modules.identity.tags import next_available_tag
 from app.modules.profile.cpf import mask_cpf
 from app.modules.profile.models import UserProfile
 
@@ -190,9 +191,14 @@ def create_user(
     passwords.validate(password, normalized)
     if _active_email(session, normalized) is not None:
         raise AdminEmailConflict
-    clean_name = (display_name or "").strip()[:60] or None
+    clean_name = normalize_display_name(display_name)
 
-    user = User(status="active")
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        status="active",
+        tag=next_available_tag(session, user_id),
+    )
     session.add(user)
     try:
         session.flush()
