@@ -763,7 +763,7 @@ export function SpacesPanel({
               action={
                 <button
                   type="button"
-                  className="button button--primary"
+                  className="button button--ghost"
                   onClick={() => document.getElementById("space-name")?.focus()}
                 >
                   <PlusIcon size={16} />

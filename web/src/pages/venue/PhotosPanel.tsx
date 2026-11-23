@@ -397,7 +397,7 @@ export function PhotosPanel({
               photos.length === 0 ? (
                 <button
                   type="button"
-                  className="button button--primary"
+                  className="button button--ghost"
                   onClick={() => document.getElementById("photo-file")?.focus()}
                 >
                   <PlusIcon size={16} />
@@ -431,7 +431,7 @@ export function PhotosPanel({
                       <>
                         <button
                           type="button"
-                          className="button button--small button--primary"
+                          className="button button--small button--ghost"
                           disabled={reviewMutation.isPending}
                           onClick={() => approve(photo)}
                         >

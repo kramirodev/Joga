@@ -439,11 +439,7 @@ export function AdminUsersPage() {
             ))}
           </SelectField>
           <div className="filters-form__actions">
-            <button
-              type="submit"
-              className="button button--primary"
-              disabled={usersQuery.isFetching}
-            >
+            <button type="submit" className="button" disabled={usersQuery.isFetching}>
               <SearchIcon size={16} />
               Buscar
             </button>

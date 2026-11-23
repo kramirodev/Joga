@@ -539,7 +539,7 @@ export function AdminVenuesPage() {
                           ) : (
                             <button
                               type="button"
-                              className="button button--small button--primary"
+                              className="button button--small button--ghost"
                               onClick={() => openStatus(venue, "reactivate")}
                               disabled={statusMutation.isPending}
                               aria-label={`Reativar ${venue.name}`}
@@ -556,7 +556,7 @@ export function AdminVenuesPage() {
                             Editar
                           </button>
                           <Link
-                            className="button button--small button--primary"
+                            className="button button--small"
                             to={`/admin/venues/${venue.id}`}
                             aria-label={`Gerenciar espaços e agenda de ${venue.name}`}
                           >

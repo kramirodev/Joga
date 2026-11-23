@@ -360,7 +360,7 @@ export function VenuesPanel({
             action={
               <button
                 type="button"
-                className="button button--primary"
+                className="button button--ghost"
                 onClick={() => document.getElementById("venue-name")?.focus()}
                 disabled={!verified}
               >
@@ -414,7 +414,7 @@ export function VenuesPanel({
                     Editar
                   </button>
                   <Link
-                    className="button button--small button--primary"
+                    className="button button--small"
                     to={`/organizations/${organization.id}/venues/${venue.id}`}
                   >
                     Quadras e agenda

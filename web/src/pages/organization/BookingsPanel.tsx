@@ -695,7 +695,7 @@ export function BookingsPanel({
                       <>
                         <button
                           type="button"
-                          className="button button--small button--primary"
+                          className="button button--small button--ghost"
                           onClick={() => openDialog("accept", booking)}
                         >
                           Aceitar solicitação
@@ -712,7 +712,7 @@ export function BookingsPanel({
                     {booking.status === "CONFIRMED" ? (
                       <button
                         type="button"
-                        className="button button--small button--primary"
+                        className="button button--small button--ghost"
                         onClick={() => openDialog("complete", booking)}
                       >
                         Concluir reserva
