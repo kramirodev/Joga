@@ -6,6 +6,7 @@ from app.api.v1.admin import router as admin_router
 from app.api.v1.admin_venues import router as admin_venues_router
 from app.api.v1.app_config import router as app_config_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.avatar import router as avatar_router
 from app.api.v1.bookings import router as bookings_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.chat import router as chat_router
@@ -41,6 +42,7 @@ api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(app_config_router)
 api_router.include_router(auth_router)
+api_router.include_router(avatar_router)
 api_router.include_router(email_auth_router)
 api_router.include_router(legal_router)
 api_router.include_router(catalog_router)

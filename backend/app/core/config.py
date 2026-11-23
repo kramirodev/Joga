@@ -287,6 +287,12 @@ class Settings(BaseSettings):
     # Limite de POSTs de resultado por usuário em uma janela de 60 segundos.
     results_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
 
+    # Importação temporária da foto do próprio perfil do Instagram (Onda 1.7).
+    # ``off`` é o padrão e não faz nenhuma chamada de rede. ``scrape`` só é aceito
+    # em local/teste/demo e será removido quando a API oficial da Meta entrar.
+    # ``api`` fica reservado para a integração oficial (sem cliente nesta rodada).
+    instagram_import_mode: str = Field(default="off", pattern="^(off|scrape|api)$")
+
     @property
     def review_operator_ids(self) -> frozenset[str]:
         return frozenset(item.strip() for item in self.review_operators.split(",") if item.strip())
@@ -450,6 +456,20 @@ class Settings(BaseSettings):
         for name, (value, default) in secrets.items():
             if value == default:
                 raise ValueError(f"{name} deve ser definido fora do ambiente local")
+
+    @model_validator(mode="after")
+    def validate_instagram_import_mode(self) -> Self:
+        """Recusa scraping fora do beta local/demo (Onda 1.7).
+
+        O caminho de scraping é temporário e não pode subir em ambiente
+        compartilhado por acidente: a flag precisa ser explícita e o ambiente
+        precisa ser local/teste ou demo.
+        """
+        if self.instagram_import_mode == "scrape" and not (
+            is_local(self.environment) or is_demo(self.environment)
+        ):
+            raise ValueError("JOGA_INSTAGRAM_IMPORT_MODE=scrape exige ambiente local ou demo")
+        return self
 
     @model_validator(mode="after")
     def validate_web_cookie_secure(self) -> Self:

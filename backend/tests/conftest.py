@@ -22,6 +22,7 @@ from app.infrastructure.database.dependency import (
     get_session_factory,
 )
 from app.main import create_app
+from app.modules.avatar import models as avatar_models  # noqa: F401
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.clans import models as clans_models  # noqa: F401

@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
 from app.infrastructure.database.base import Base
+from app.modules.avatar import models as avatar_models  # noqa: F401
 from app.modules.bookings import models as bookings_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.clans import models as clans_models  # noqa: F401
