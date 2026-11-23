@@ -140,7 +140,7 @@ def test_moderation_channel_is_hidden_from_player_surface(
     assert service.list_for_user(user_id, channel="moderation")[0].id == internal_notification.id
 
     sender = RecordingPushSender()
-    assert dispatch_notifications(db_session, sender) == 1
+    assert dispatch_notifications(db_session, sender).delivered == 1
     assert [item["body"] for item in sender.sent] == ["Visível no app"]
     internal_event = db_session.scalar(
         select(OutboxEvent).where(
@@ -170,7 +170,7 @@ def test_dispatcher_sends_push_and_marks_outbox(db_session: Session) -> None:
     db_session.flush()
     sender = RecordingPushSender()
 
-    assert dispatch_notifications(db_session, sender) == 1
+    assert dispatch_notifications(db_session, sender).delivered == 1
     assert len(sender.sent) == 1
     assert sender.sent[0]["token"] == "device-token"
     event = db_session.scalar(

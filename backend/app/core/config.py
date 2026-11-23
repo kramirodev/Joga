@@ -254,10 +254,19 @@ class Settings(BaseSettings):
     cpf_key_id: str | None = Field(default=None, max_length=20)
     cpf_previous_keys: dict[str, SecretStr] = Field(default_factory=dict)
 
-    # Push: transporte externo. O webhook é um adaptador operacional; a
-    # central de notificações continua sendo a fonte de verdade.
+    # Push: transporte externo. A central de notificações continua sendo a
+    # fonte de verdade. O webhook é uma ponte operacional legada; o caminho
+    # normal é o Expo Push Service (Onda 1.8). URL vazia desliga o envio e o
+    # worker não finge entrega.
     push_webhook_url: str | None = Field(default=None, max_length=500)
     push_timeout_seconds: int = Field(default=5, ge=1, le=30)
+    expo_push_url: str | None = Field(
+        default="https://exp.host/--/api/v2/push/send", max_length=500
+    )
+    # Access token do EAS/Expo (enhanced security). Opcional; nunca tem valor
+    # padrão e nunca é registrado em log.
+    expo_access_token: SecretStr = SecretStr("")
+    notification_dispatch_interval_seconds: int = Field(default=5, ge=1, le=300)
 
     # Liberação ao estabelecimento: no horário da partida (ADR 0039). O atraso
     # opcional existe apenas para operação; o padrão é zero.
@@ -317,6 +326,12 @@ class Settings(BaseSettings):
         return None
 
     @property
+    def expo_access_token_value(self) -> str | None:
+        """Access token do Expo já normalizado; ``None`` quando desligado."""
+        value = self.expo_access_token.get_secret_value().strip()
+        return value or None
+
+    @property
     def trusted_host_list(self) -> list[str]:
         """Allowlist efetiva do header Host, sem duplicatas e em minúsculas."""
         hosts = list(DEFAULT_TRUSTED_HOSTS)
@@ -360,6 +375,25 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("expo_push_url", mode="before")
+    @classmethod
+    def blank_expo_push_url_is_disabled(cls, value: object) -> object:
+        """Permite ``JOGA_EXPO_PUSH_URL=`` para desligar o push sem quebrar o boot."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("expo_push_url")
+    @classmethod
+    def validate_expo_push_url(cls, value: str | None) -> str | None:
+        """O endpoint de push carrega título/corpo; só pode trafegar em HTTPS."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped.startswith("https://"):
+            raise ValueError("JOGA_EXPO_PUSH_URL deve usar https")
+        return stripped
 
     @field_validator("trusted_hosts", "render_external_hostname")
     @classmethod

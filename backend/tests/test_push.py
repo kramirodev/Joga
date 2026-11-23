@@ -52,5 +52,6 @@ def test_sender_receives_active_tokens_only(db_session: Session) -> None:
         data={"lobby_id": "x"},
     )
 
-    assert sent == 1
+    assert len(sent) == 1
+    assert sent[0].ok is True
     assert sender.sent[0]["token"] == "active"
