@@ -30,17 +30,32 @@ LEVELS = ("beginner", "intermediate", "advanced")
 COURT_PREFERENCES = ("PUBLIC_ONLY", "PRIVATE_ONLY", "ANY")
 REGION_SOURCES = ("gps", "cep")
 VENUE_KINDS = ("public", "private")
+# Uma modalidade tem um único tipo nesta rodada; esportes híbridos usam o tipo
+# mais específico (ex.: beach tennis como ``racket``).
+SPORT_CATEGORIES = ("collective", "individual", "racket", "beach")
 
 
 class Sport(Base):
     """Modalidade esportiva do catálogo administrável."""
 
     __tablename__ = "sports"
-    __table_args__ = (CheckConstraint("sort_order >= 0", name="sort_order_non_negative"),)
+    __table_args__ = (
+        CheckConstraint("sort_order >= 0", name="sort_order_non_negative"),
+        CheckConstraint(
+            "category IN ('collective', 'individual', 'racket', 'beach')",
+            name="category_valid",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="collective",
+        server_default=text("'collective'"),
+    )
     icon_key: Mapped[str] = mapped_column(
         String(64),
         nullable=False,

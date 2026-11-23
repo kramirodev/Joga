@@ -7,7 +7,7 @@ auditoria append-only. O painel não altera MMR, ledger, tickets ou resultado.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.admin_guards import require_platform_admin
 from app.api.v1.admin_reason import clean_reason
 from app.api.v1.auth import get_session_service
-from app.api.v1.catalog import SportFormatView
+from app.api.v1.catalog import SportCategory, SportFormatView
 from app.api.v1.email_auth import (
     get_email_challenge_service,
     get_email_delivery_service,
@@ -133,6 +133,7 @@ def _admin_sport_view(session: Session, sport: Sport, formats: list[SportFormat]
         id=sport.id,
         slug=sport.slug,
         name=sport.name,
+        category=cast(SportCategory, sport.category),
         icon_key=sport.icon_key,
         sort_order=sport.sort_order,
         active=sport.active,
@@ -223,6 +224,7 @@ class SportFormatInput(BaseModel):
 class SportCreateRequest(BaseModel):
     slug: FreeText = Field(min_length=2, max_length=40)
     name: FreeText = Field(min_length=2, max_length=80)
+    category: SportCategory = "collective"
     icon_key: FreeText = Field(min_length=2, max_length=64)
     sort_order: int = Field(default=0, ge=0)
     formats: list[SportFormatInput] = Field(min_length=1, max_length=10)
@@ -231,6 +233,7 @@ class SportCreateRequest(BaseModel):
 
 class SportUpdateRequest(BaseModel):
     name: OptionalFreeText = Field(default=None, min_length=2, max_length=80)
+    category: SportCategory | None = None
     icon_key: OptionalFreeText = Field(default=None, min_length=2, max_length=64)
     sort_order: int | None = Field(default=None, ge=0)
     reason: FreeText = Field(min_length=1, max_length=500)
@@ -246,6 +249,7 @@ class AdminSportView(BaseModel):
     id: UUID
     slug: str
     name: str
+    category: SportCategory
     icon_key: str
     sort_order: int
     active: bool
@@ -389,6 +393,7 @@ def create_admin_sport(
             session,
             slug=payload.slug,
             name=payload.name,
+            category=payload.category,
             icon_key=payload.icon_key,
             sort_order=payload.sort_order,
             formats=[
@@ -413,7 +418,7 @@ def create_admin_sport(
             resource_type="sport",
             resource_id=sport.id,
             reason=clean_reason(payload.reason),
-            details={"slug": sport.slug, "active": False},
+            details={"slug": sport.slug, "active": False, "category": sport.category},
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001
@@ -436,6 +441,7 @@ def update_admin_sport(
             name=payload.name,
             icon_key=payload.icon_key,
             sort_order=payload.sort_order,
+            category=payload.category,
         )
         formats = all_formats(session, sport.id)
         record_audit(
@@ -445,7 +451,7 @@ def update_admin_sport(
             resource_type="sport",
             resource_id=sport.id,
             reason=clean_reason(payload.reason),
-            details={"slug": sport.slug},
+            details={"slug": sport.slug, "category": sport.category},
         )
         session.commit()
     except Exception as exc:  # noqa: BLE001

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.models import AuditLog
 from app.modules.organizations.models import Organization, OrganizationMembership
 from app.modules.pricing.models import PricingBand, PricingBandTicket
 from app.modules.profile.models import Sport, SportFormat
@@ -365,3 +366,83 @@ def test_inactive_sport_and_format_never_reach_public_catalog(
 
     catalog = api.get("/api/v1/catalog/sports").json()["sports"]
     assert all(item["slug"] != "futevolei" for item in catalog)
+
+
+def test_sport_category_defaults_to_collective_and_can_be_changed(
+    client: TestClient, db_session: Session
+) -> None:
+    headers, admin_id = admin_headers(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+
+    created = api.post("/api/v1/admin/sports", headers=headers, json=sport_payload("futsal"))
+    assert created.status_code == 201, created.text
+    assert created.json()["category"] == "collective"
+
+    stored = db_session.scalar(select(Sport).where(Sport.slug == "futsal"))
+    assert stored is not None and stored.category == "collective"
+
+    updated = api.patch(
+        "/api/v1/admin/sports/futsal",
+        headers=headers,
+        json={"category": "racket", "reason": "reclassificacao do catalogo"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["category"] == "racket"
+    assert stored.category == "racket"
+
+    listed = api.get("/api/v1/admin/sports", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["sports"][0]["category"] == "racket"
+
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.action == "admin.sport.update")
+        .order_by(AuditLog.created_at.desc())
+    )
+    assert audit is not None
+    assert audit.details is not None
+    assert audit.details["category"] == "racket"
+
+
+def test_sport_category_accepts_explicit_value_on_create(
+    client: TestClient, db_session: Session
+) -> None:
+    headers, admin_id = admin_headers(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+
+    payload = {**sport_payload("corrida"), "category": "individual"}
+    created = api.post("/api/v1/admin/sports", headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["category"] == "individual"
+
+    audit = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.action == "admin.sport.create")
+        .order_by(AuditLog.created_at.desc())
+    )
+    assert audit is not None
+    assert audit.details is not None
+    assert audit.details["category"] == "individual"
+
+
+def test_sport_category_rejects_unknown_values(client: TestClient, db_session: Session) -> None:
+    headers, admin_id = admin_headers(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+
+    invalid_create = api.post(
+        "/api/v1/admin/sports",
+        headers=headers,
+        json={**sport_payload("futsal"), "category": "mixed"},
+    )
+    assert invalid_create.status_code == 422
+
+    api.post("/api/v1/admin/sports", headers=headers, json=sport_payload("futsal"))
+    invalid_update = api.patch(
+        "/api/v1/admin/sports/futsal",
+        headers=headers,
+        json={"category": "mixed", "reason": "valor invalido"},
+    )
+    assert invalid_update.status_code == 422
+
+    stored = db_session.scalar(select(Sport).where(Sport.slug == "futsal"))
+    assert stored is not None and stored.category == "collective"
