@@ -23,6 +23,11 @@ while ! python -m alembic upgrade head; do
 done
 
 # A API escuta apenas em loopback; quem expoe a porta publica e o Caddy.
+# O Caddy resolve o IP real do cliente pelo CF-Connecting-IP (definido pelo
+# Cloudflare), reescreve X-Forwarded-For com um unico IP e remove
+# CF-Connecting-IP/True-Client-IP antes de chamar o uvicorn. O uvicorn confia
+# apenas em 127.0.0.1 (--forwarded-allow-ips). Nao use o primeiro valor de
+# X-Forwarded-For recebido do cliente: ele pode ser forjado.
 # --proxy-headers: confia em X-Forwarded-Proto vindo do Caddy no mesmo container.
 # Sem isso o uvicorn gera URLs absolutas em http:// atras da borda HTTPS.
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 \

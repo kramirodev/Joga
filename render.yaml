@@ -8,6 +8,10 @@
 # O host publico e <nome-do-servico>.onrender.com. Se o Render atribuir outro
 # nome porque "joga-demo" ja existe, ajuste JOGA_WEBAUTHN_ORIGIN_WEB depois da
 # criacao (JOGA_WEBAUTHN_RP_ID se auto-referencia por RENDER_EXTERNAL_HOSTNAME).
+#
+# Este blueprint nao governa o servico em execucao: a fonte da verdade e o
+# dashboard do Render. O perfil esperado do ambiente e `demo`
+# (JOGA_ENVIRONMENT=demo). Deploys sao manuais, por isso autoDeploy: false.
 
 services:
   - type: web
@@ -17,10 +21,10 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/v1/health/ready
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: JOGA_ENVIRONMENT
-        value: development
+        value: demo
       - key: JOGA_DATABASE_URL
         sync: false
       - key: JOGA_PHONE_HASH_SECRET
