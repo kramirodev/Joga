@@ -9,7 +9,7 @@ remota está DISPATCHED e as entregas `password_reset`/`security_alert` estão
 0053): documentação interativa desabilitada, webhook do Mercado Pago desligado e
 compra de tickets bloqueada (seção 5.1).
 
-**Data:** 2026-11-20 (última atualização)
+**Data:** 2026-11-24 (última atualização)
 
 ## 1. O que é e o que não é
 
@@ -35,6 +35,14 @@ domínios diferentes **quebram o login**.
 
 Não adicionar CORS.
 
+A correção em revisão faz o Caddy resolver o IP real atrás do
+Cloudflare/Render com `trusted_proxies static private_ranges`,
+`trusted_proxies_strict` e `client_ip_headers CF-Connecting-IP`; para o uvicorn
+ele envia `X-Forwarded-For: {client_ip}` e remove
+`CF-Connecting-IP`/`True-Client-IP`. O uvicorn continua confiando apenas em
+`127.0.0.1`. Sem esse bloco, todos os clientes compartilhavam o balde de rate
+limit. Reteste em `docs/RUNBOOK.md` §10.3.
+
 ### Roteamento no Caddy
 
 | Caminho | Destino | Basic auth |
@@ -51,7 +59,7 @@ Não adicionar CORS.
 | `deploy/Caddyfile` | **Pronto** | `handle /api/*` sem basic auth; SPA com `basic_auth`; `try_files` |
 | `deploy/start.sh` | **Pronto** | `alembic upgrade head` com 3 tentativas; uvicorn em loopback; `exec caddy run` |
 | `.dockerignore` | **Pronto** | Exclui `.git`, `node_modules`, `.venv`, `__pycache__`, `web/dist`, `mobile`, `telas`, `backend/var`, `.env*`, `dist` |
-| `render.yaml` | **Pronto** | Web service Docker, `plan: free`, health check `/api/v1/health/ready` |
+| `render.yaml` | **Pronto** | Web service Docker, `plan: free`, `JOGA_ENVIRONMENT=demo`, `autoDeploy: false` como política desejada, health check `/api/v1/health/ready`; o dashboard é a fonte e o serviço atual ainda está `autoDeploy=yes` (seção 5.1) |
 | `backend/scripts/seed_demo.py` | **Pronto** | Idempotente; usa `pricing.service`, `EmailAccountService`, `OrganizationService` e `VenueService` |
 | `.github/workflows/email-worker.yml` | **Já existia** | `development` + `simulator`; roda no branch padrão |
 | `.github/workflows/email-cleanup.yml` | **Já existia** | Limpeza diária |
@@ -71,14 +79,42 @@ Não adicionar CORS.
 - **Pegue** `Settings → Database → Connection string`. Use o **Session pooler**
   (porta 5432, host `aws-0-<região>.pooler.supabase.com`, usuário
   `postgres.<ref>`).
-- **Não use** as chaves `anon` e `service_role` de `Settings → API`. O JOGA fala
-  Postgres direto.
+- **Não use** as chaves `anon` e `service_role` de `Settings → API` e **não
+  habilite a Data API** para o app. Nenhum componente — mobile, painel, workers
+  ou scripts — envia `anon key` ou `service_role key`. O JOGA fala Postgres
+  direto pelo Session pooler, com o papel `postgres` (`BYPASSRLS`).
 - **Não use** o Transaction pooler (6543) para migração.
 - Habilite a extensão antes das migrações:
 
 ```sql
 create extension if not exists postgis;
 ```
+
+### Data API, Storage e Auth do Supabase
+
+O JOGA **não usa** a Data API/PostgREST, o Storage nem o Auth do Supabase. Eles
+podem ser desligados no dashboard sem afetar o app; a recomendação é desligar e
+registrar a data/responsável. A chave `anon` é pública por desenho e não é
+segredo: esconder a chave não é controle de segurança.
+
+A migração em revisão da ADR 0075 endurece o schema `public`: RLS habilitada sem
+policies nas tabelas do app, `USAGE`/`CREATE` revogados de `PUBLIC`, `anon` e
+`authenticated`, `ALL` revogado em tabelas/views/sequences/funções do app,
+`security_invoker` nas views e default privileges revogadas. O app continua
+funcionando porque o papel `postgres` tem `BYPASSRLS`; `service_role` fica
+intacta e não é usada.
+
+Consequências operacionais:
+
+- não reconceder `anon`/`authenticated` nem criar policy `USING (true)` para
+  "resolver" erro; isso reabre a exposição e exige ADR;
+- `spatial_ref_sys` pertence ao PostGIS (`supabase_admin`) e não é alterada; ela
+  fica inalcançável por `anon`/`authenticated` porque o schema não tem mais
+  `USAGE`;
+- se a Data API for religada por engano, o schema fechado ainda bloqueia o
+  acesso, mas o estado correto é desligada;
+- o alerta `rls_disabled_in_public` do Security Advisor deve sumir depois da
+  migração; se continuar, confira se o objeto apontado é de extensão.
 
 ### Por que Session pooler e não conexão direta
 
@@ -367,14 +403,21 @@ O rollback reabre a documentação interativa e o webhook sem assinatura, e
 devolve a simulação de pagamento sem as guardas do modo demo. Use apenas como
 emergência, registre o motivo e reverta assim que possível.
 
-### `render.yaml` está defasado
+### `render.yaml` e o dashboard (SEC-004)
 
-O blueprint versionado ainda declara `JOGA_ENVIRONMENT=development` e não contém
-`JOGA_TICKET_PURCHASE_ENABLED` nem `JOGA_PLATFORM_ADMINS`; o serviço em execução
-foi alterado pelo dashboard/API. **Não edite o `render.yaml` sem ordem
-explícita.** Se o Blueprint for sincronizado ou o serviço recriado a partir dele,
-atualize essas três entradas antes — do contrário o demo volta para
-`development` e reabre docs e webhook.
+O blueprint agora declara `JOGA_ENVIRONMENT=demo` e `autoDeploy: false` como
+política desejada. Ele **não governa** o serviço em execução: a fonte da verdade
+é o dashboard/API do Render. O serviço atual **ainda está com `autoDeploy=yes`**
+(confirmado via API em 2026-11-24), embora o handoff preveja deploy manual; os
+dois estão divergentes e o alinhamento precisa ser confirmado no dashboard. O
+arquivo também não replica todas as variáveis aplicadas no serviço (por exemplo
+`JOGA_TICKET_PURCHASE_ENABLED` e `JOGA_PLATFORM_ADMINS`).
+
+Se o Blueprint for sincronizado ou o serviço recriado a partir dele, confira
+essas entradas antes — do contrário o demo sobe com um perfil incompleto e pode
+falhar no boot ou ficar sem operador administrativo. Mudanças no `render.yaml`
+passam por commit e revisão; não sincronize o Blueprint apenas para "alinhar"
+sem essa conferência.
 
 ## 6. Banco: migração e cuidados
 
@@ -455,14 +498,16 @@ O web service foi criado pela API do Render, somente para o demo:
 | Health check | `/api/v1/health/ready` |
 | Variáveis | 34, com `JOGA_ENVIRONMENT` agora `demo`; somam-se `JOGA_TICKET_PURCHASE_ENABLED=false` e `JOGA_PLATFORM_ADMINS` (seção 5.1); valores secretos só no Render |
 | Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API); `6a89c79` **live** em 2026-11-20, já em `JOGA_ENVIRONMENT=demo` |
+| Auto-deploy | **`yes`** no serviço atual (API do Render, 2026-11-24); o `render.yaml` declara `autoDeploy: false` como política desejada — alinhar/confirmar |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
 O build Docker foi executado pelo Render a partir do HEAD; o container subiu, as
 migrações rodaram no boot e o health check ficou 200. O
 `Dockerfile`/`deploy/start.sh` não foram testados localmente porque Docker não
-está instalado neste host, mas o build remoto validou o caminho. O auto-deploy
-não disparou nos primeiros minutos após o push; o deploy do HEAD foi disparado
-pela API do Render.
+está instalado neste host, mas o build remoto validou o caminho. Na criação, o
+auto-deploy não disparou nos primeiros minutos após o push e o deploy do HEAD foi
+disparado pela API; hoje o serviço segue com `autoDeploy=yes`, apesar da política
+manual declarada no arquivo.
 
 **Basic auth do painel:** usuário `demo`; a senha está em
 `DEMO_BASIC_AUTH_PASSWORD` no `.env.deploy` (arquivo ignorado pelo Git). O hash
@@ -571,6 +616,46 @@ headers de segurança na borda (`Strict-Transport-Security`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
 `Cache-Control: no-store`). Comandos e tabela completa na seção 5.1.
 
+### Reteste do endurecimento: Supabase e IP real (2026-11-24)
+
+**Auditoria do schema.** Com a URL do Session pooler na sessão (nunca no Git):
+
+```powershell
+Set-Location C:\prog\joga\backend
+$env:JOGA_DATABASE_URL = "postgresql+psycopg://postgres.<ref>:<senha>@aws-1-<região>.pooler.supabase.com:5432/postgres?sslmode=require"
+.venv\Scripts\python.exe -m scripts.audit_db_security
+Remove-Item Env:JOGA_DATABASE_URL
+```
+
+Critério de aceite: exit 0 com `violations` e `warnings` vazios; 0 tabelas do app
+sem RLS; `anon`/`authenticated` sem `USAGE`/`CREATE` em `public`; 0 grants
+diretos em tabelas/views do app; 0 views sem `security_invoker`; nenhuma default
+privilege para esses papéis. O script cobre RLS, `USAGE` do schema,
+tabelas/views, sequences, funções/procedures e default privileges; as consultas
+de `docs/RUNBOOK.md` §10.1 ficam como conferência manual complementar. Depois,
+confirmar
+`GET /api/v1/health/ready` 200, login do jogador, catálogo, login do painel e uma
+entrega da Outbox. A regressão automatizada equivalente é
+`backend/tests/test_db_security_hardening.py` (com `JOGA_TEST_DATABASE_URL`).
+
+**IP real.** Dois clientes em redes/IPs públicos distintos (por exemplo, Wi-Fi e
+dados móveis). Anotar o IP público de cada um. No cliente A, repetir o login com
+senha errada, com um e-mail diferente por tentativa, até o limite por IP
+(`JOGA_EMAIL_LOGIN_MAX_PER_IP`, padrão 30 em 15 min) e confirmar `429`. No
+cliente B, com um e-mail que não foi usado em A, uma tentativa deve continuar em
+`401`, não em `429`: os baldes são independentes. Depois, no cliente B, a
+tentativa que deve ser bloqueada envia `X-Forwarded-For: 203.0.113.10`,
+`CF-Connecting-IP: 203.0.113.10` e `True-Client-IP: 203.0.113.10` (faixa de
+documentação); o correto é continuar `429` no IP real de B, não abrir um balde
+novo. Se os dois clientes caírem no mesmo balde, o peer não está sendo
+reconhecido como privado: não ampliar `trusted_proxies`; conferir o ingresso
+pelo Cloudflare e a rede do Render. Com uma só rede, o mínimo é confirmar que o
+balde acompanha o IP do cliente (não o da borda) e que cabeçalhos forjados não o
+alteram; a independência entre baldes exige duas redes/clientes reais.
+
+Registrar a saída da auditoria e o resultado do teste de IP no PR, sem URL com
+senha, IP real ou PII. Procedimento completo em `docs/RUNBOOK.md` §10.
+
 ### Executado localmente (API + Postgres local, sem Caddy)
 
 | Verificação | Resultado |
@@ -629,9 +714,13 @@ loja. **Serve apenas para demo por sideload; nunca para publicação.**
 
 A correção fica fora do escopo desta fase. Registro completo, limite e gatilhos
 de revisão em `docs/THREAT_MODEL.md` ("Riscos aceitos da auditoria de
-2026-11-20", item A). Antes de qualquer publicação em loja: gerar chave de
-release com custódia fora do repositório, assinar com ela e reemitir o
-`assetlinks.json`.
+2026-11-20", item A). O gatilho "inclusão de usuários reais" **já foi
+disparado** (SEC-001, aceito pelo dono), então o aceite vale apenas para o demo
+privado por sideload. Antes de qualquer distribuição: gerar chave de release com
+custódia fora do repositório, fixar o `package` definitivo (hoje
+`com.anonymous.joga`), assinar com a chave de release e reemitir o
+`assetlinks.json` com a impressão digital dela. Não corrigir o arquivo com o
+certificado de debug.
 
 ## 12. Limitações do free tier
 

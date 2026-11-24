@@ -1068,3 +1068,190 @@ Estado versionado no GitHub: `main` contém as Fases 0–6 (backend + docs). Nad
 **Não está no Git** (precisa existir na máquina nova): `.env`, `backend/.venv`, `mobile/node_modules`, `mobile/android` e `mobile/ios` (gerados por prebuild), `android/local.properties`, o APK de debug e a pasta `.tools/` com Node/JDK/SDK.
 
 **Troca de celular**: confira a ABI (`adb shell getprop ro.product.cpu.abilist`), gere o APK para ela, autorize a depuração USB, faça `adb reverse` das portas 8000 e 8081 e entre novamente (a sessão anterior fica no aparelho antigo). Passkeys são por aparelho; cadastre uma nova no aparelho novo.
+
+## 10. Segurança do demo: Supabase e IP real
+
+Procedimentos de incidente e reteste do ambiente de demonstração. A decisão de
+schema está na ADR 0075; os comandos de deploy e o smoke estão em
+`docs/DEPLOY_DEMO.md` §4 e §11.
+
+### 10.1 Alerta do Supabase (`rls_disabled_in_public`) ou grant inesperado
+
+**Disparo:** Security Advisor aponta RLS ausente; auditoria encontra grant novo
+para `anon`/`authenticated`; alguém sugere "liberar" a Data API.
+
+**Não faça:** reconceder `USAGE`/`CREATE` ou DML a `anon`/`authenticated`, criar
+policy `USING (true)`, desabilitar RLS, mexer em `spatial_ref_sys`/
+`supabase_admin` ou aplicar SQL manual como correção permanente. Nada disso é
+rollback: reabre a exposição.
+
+1. Congele mudanças de schema e anote horário, responsável e commit aplicado.
+2. Rode a auditoria read-only com a URL do Session pooler (fora do Git):
+
+   ```powershell
+   Set-Location C:\prog\joga\backend
+   $env:JOGA_DATABASE_URL = "postgresql+psycopg://postgres.<ref>:<senha>@aws-1-<região>.pooler.supabase.com:5432/postgres?sslmode=require"
+   .venv\Scripts\python.exe -m scripts.audit_db_security
+   Remove-Item Env:JOGA_DATABASE_URL
+   ```
+
+   O esperado é exit 0 com `violations` e `warnings` vazios (exit 1 indica
+   violação; 2, erro de conexão). O script é read-only, abre transação
+   `READ ONLY` e não imprime a URL. Se ele não existir no commit aplicado, use
+   as consultas abaixo e registre a saída.
+3. Confira `USAGE`/`CREATE` do schema (esperado `false` nos dois):
+
+   ```sql
+   SELECT r.rolname,
+          has_schema_privilege(r.rolname, 'public', 'USAGE')  AS usage,
+          has_schema_privilege(r.rolname, 'public', 'CREATE') AS create
+   FROM (VALUES ('anon'), ('authenticated')) AS r(rolname);
+   ```
+
+4. Confira RLS nas tabelas do app (esperado `relrowsecurity = true` em todas):
+
+   ```sql
+   SELECT c.relname, c.relrowsecurity
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind IN ('r', 'p')
+     AND pg_get_userbyid(c.relowner) = current_user
+   ORDER BY c.relrowsecurity, c.relname;
+   ```
+
+5. Confira grants diretos e views (esperado 0 linhas nos dois):
+
+   ```sql
+   SELECT c.relname, a.grantee::regrole AS grantee, a.privilege_type
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+   WHERE n.nspname = 'public'
+     AND c.relkind IN ('r', 'p', 'v', 'S')
+     AND a.grantee IN ('anon'::regrole, 'authenticated'::regrole);
+
+   SELECT c.relname
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind = 'v'
+     AND coalesce(array_to_string(c.reloptions, ','), '') NOT LIKE '%security_invoker=%';
+   ```
+
+   O script cobre RLS, `USAGE` do schema, tabelas/views, sequences,
+   funções/procedures e default privileges. As consultas abaixo ficam como
+   conferência manual complementar (esperado 0 linhas; as default privileges são
+   as do papel owner — as de `supabase_admin` não são alteráveis e ficam
+   contidas pela falta de `USAGE`):
+
+   ```sql
+   SELECT pg_get_userbyid(d.defaclrole) AS owner,
+          d.defaclobjtype AS tipo,
+          a.grantee::regrole AS grantee,
+          a.privilege_type
+   FROM pg_default_acl d
+   CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
+   WHERE (d.defaclnamespace = 0 OR d.defaclnamespace = 'public'::regnamespace)
+     AND pg_get_userbyid(d.defaclrole) = current_user
+     AND a.grantee IN ('anon'::regrole, 'authenticated'::regrole);
+
+   SELECT c.relname AS objeto, 'sequence' AS tipo
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind = 'S'
+     AND pg_get_userbyid(c.relowner) = current_user
+     AND (has_sequence_privilege('anon', c.oid, 'USAGE')
+       OR has_sequence_privilege('anon', c.oid, 'UPDATE')
+       OR has_sequence_privilege('authenticated', c.oid, 'USAGE')
+       OR has_sequence_privilege('authenticated', c.oid, 'UPDATE'))
+   UNION ALL
+   SELECT p.proname, 'function'
+   FROM pg_proc p
+   JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prokind IN ('f', 'p')
+     AND pg_get_userbyid(p.proowner) = current_user
+     AND NOT EXISTS (
+         SELECT 1 FROM pg_depend d
+         WHERE d.classid = 'pg_proc'::regclass
+           AND d.objid = p.oid
+           AND d.deptype = 'e')
+     AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+   ```
+
+6. Se houver divergência, corrija **por migração** (nunca pelo SQL Editor como
+   estado final), reaplique e repita a auditoria. Mudança de grant exige ADR,
+   policy explícita e teste negativo. A regressão automatizada do núcleo é
+   `backend/tests/test_db_security_hardening.py` (exige
+   `JOGA_TEST_DATABASE_URL`).
+7. Faça o smoke: `GET /api/v1/health/ready` 200, login do jogador, catálogo,
+   login do painel e uma entrega da Outbox.
+8. Recarregue o Security Advisor. Se o alerta persistir, verifique se o objeto
+   apontado pertence a `supabase_admin`/extensão, não ao app.
+9. Registre a saída sem URL com senha, IP real ou PII; anexe ao PR/incidente.
+
+### 10.2 Rotação da senha do banco
+
+Use quando houver suspeita de vazamento, troca de responsável ou encerramento do
+demo. Exige autorização e janela curta de indisponibilidade.
+
+1. No Supabase, `Settings → Database → Reset database password`. Não copie a
+   senha para ticket, chat ou log.
+2. Atualize `JOGA_DATABASE_URL` no dashboard do Render (secret) **e** o secret
+   `JOGA_DATABASE_URL` do GitHub Actions (worker de e-mail).
+3. Dispare um deploy/reinício no Render — mudar a variável sozinha não reinicia o
+   serviço — e, se o workflow estiver ativo, rode-o manualmente para validar.
+4. Valide: `GET /api/v1/health/ready` 200, login do jogador, login do painel e
+   uma drenagem da Outbox. Se o boot falhar, confira a URL (Session pooler,
+   `postgresql+psycopg://`, `?sslmode=require`).
+5. Confirme que a credencial antiga não autentica mais. Se a rotação foi por
+   vazamento, revise acessos e registre o incidente; não reutilize a senha.
+6. Atualize a documentação operacional apenas com o procedimento, nunca com o
+   valor.
+
+### 10.3 Reteste de IP real atrás de Render + Cloudflare
+
+Objetivo: provar que dois clientes com IPs distintos têm baldes de rate limit
+distintos e que `X-Forwarded-For`/`CF-Connecting-IP`/`True-Client-IP` forjados
+não mudam a chave.
+
+Se só houver uma rede disponível, o reteste mínimo é: (a) confirmar que o balde
+do IP real corresponde ao IP do cliente, e não ao IP da borda; (b) confirmar que
+os cabeçalhos forjados não mudam o balde. A prova de dois IPs distintos exige
+duas redes/clientes reais — com uma só, não é possível demonstrar independência
+entre baldes.
+
+1. Use dois clientes em redes públicas diferentes (Wi-Fi e dados móveis) e anote
+   o IP público de cada um.
+2. No cliente A, faça login com senha errada até o limite por IP
+   (`JOGA_EMAIL_LOGIN_MAX_PER_IP`, padrão 30 em 15 min) e confirme `429`. Use um
+   e-mail diferente por tentativa: o limite por endereço é 10/15 min e não pode
+   ser o que dispara primeiro.
+3. No cliente B, use um e-mail que não foi usado em A. Uma tentativa deve
+   responder `401` (ou `404` de conta), **não** `429`. Baldes iguais indicam que
+   o IP real não está sendo resolvido.
+4. No cliente B, ao se aproximar do limite, envie a tentativa que deve ser
+   bloqueada com cabeçalhos forjados: `X-Forwarded-For: 203.0.113.10`,
+   `CF-Connecting-IP: 203.0.113.10` e `True-Client-IP: 203.0.113.10` (faixa de
+   documentação). Se o valor forjado fosse aceito, a resposta seria `401` em um
+   balde novo; o correto é `429` no balde do IP real de B.
+5. Confira a configuração aplicada em `deploy/Caddyfile`: `trusted_proxies
+   static private_ranges`, `trusted_proxies_strict`, `client_ip_headers
+   CF-Connecting-IP`, `header_up X-Forwarded-For {client_ip}` e remoção de
+   `CF-Connecting-IP`/`True-Client-IP`. O uvicorn deve continuar com
+   `--forwarded-allow-ips 127.0.0.1`.
+
+**Se o peer não for privado** (os dois clientes caem no mesmo balde e o header
+forjado não muda nada): não amplie `trusted_proxies` para faixas públicas e não
+confie no `X-Forwarded-For` de entrada. Verifique se o tráfego passa pelo
+Cloudflare (proxy laranja) e se o host do Render não está acessível fora dele.
+Se o header forjado **mudar** o balde, o Caddy aceitou um `CF-Connecting-IP`
+enviado pelo cliente: trate como ingresso direto ao Render e restrinja/desabilite
+esse caminho. Até a correção, o rate limit por IP é best-effort e deve ser
+registrado como risco residual.
+
+**Limpeza:** o teste consome janelas de rate limit; use contas/endereços de
+teste, não contas de jogadores, e não deixe os limites estourados no demo.
