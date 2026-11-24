@@ -1,7 +1,7 @@
 # Threat model — núcleo esportivo, reservas, pagamentos e painel de gestão
 
-**Data:** 2026-11-16
-**Escopo:** identidade, perfil/descoberta, fila/matchmaking, partidas, resultados/disputas, rating, chat/social, Outbox, organizações, painel web, quadras, agenda, reservas, pagamentos, crédito, ledger, moderação, clãs e custódia B→C, no backend, app mobile e painel.
+**Data:** 2026-11-24 (última atualização)
+**Escopo:** identidade, perfil/descoberta, fila/matchmaking, partidas, resultados/disputas, rating, chat/social, Outbox, organizações, painel web, quadras, agenda, reservas, pagamentos, crédito, ledger, moderação, clãs, custódia B→C e infraestrutura do demo (Supabase, Cloudflare/Render), no backend, app mobile e painel.
 **Fora do escopo:** produção comercial com dinheiro real, escrow contratado, publicidade e operação de NFS-e. Esses itens estão bloqueados pela ADR 0049 e pela Fase 19A.
 
 ## Ativos
@@ -34,6 +34,10 @@
 5. Operador → CLI: confiável apenas se o ambiente e a lista de operadores estiverem protegidos.
 6. API → storage de fotos: privado; o arquivo nunca é servido estaticamente.
 7. Provedores externos → API: não confiáveis até validação criptográfica/autenticação.
+8. Data API/PostgREST do Supabase → PostgreSQL: **não usada** pelo JOGA; se for
+   habilitada, é não confiável e precisa de RLS, grants mínimos e ADR.
+9. Cliente → Cloudflare/Render → Caddy: o IP de origem é dado de borda; só é
+   aceito quando o peer imediato é privado e vem de `CF-Connecting-IP`.
 
 ## Ameaças e controles
 
@@ -55,6 +59,8 @@
 | Dependência vulnerável | Biblioteca com CVE | versões fixadas, CI, revisão de lockfile | auditoria automatizada de CVE ainda pendente |
 | Enumeração de usuários | Buscar usuários/perfis livremente | sem endpoint global de busca; dados sociais limitados às relações | ranking expõe nome/divisão; revisar privacidade |
 | Abuso de recursos | Payload grande, muitas conexões, carga | limites de tamanho, rate limiting parcial, timeouts | rate limit global e proteção de borda pendentes |
+| Exposição do banco pela Data API do Supabase | `anon`/`authenticated` alcançarem tabelas de `public` via PostgREST, incluindo `TRUNCATE` e DML em `spatial_ref_sys` | RLS habilitada sem policies; `USAGE`/`CREATE` revogados de `PUBLIC`/`anon`/`authenticated`; `ALL` revogado em tabelas, sequences e funções do app; `security_invoker` nas views; default privileges revogadas; Data API/Storage/Auth sem uso e a desligar no dashboard; app usa só o papel owner com `BYPASSRLS` (ADR 0075) | desligar a Data API é ação manual fora do Git; `spatial_ref_sys` segue do `supabase_admin` |
+| IP de borda compartilhado ou forjado | Todos os clientes caírem no mesmo balde de rate limit, ou `X-Forwarded-For`/`CF-Connecting-IP` forjados mudarem a chave | Caddy com `trusted_proxies static private_ranges`, `trusted_proxies_strict`, `client_ip_headers CF-Connecting-IP`, `header_up X-Forwarded-For {client_ip}` e remoção de `CF-Connecting-IP`/`True-Client-IP`; uvicorn confia só em `127.0.0.1` | se o host do Render aceitar tráfego fora do Cloudflare, validar se o header ainda pode ser forjado |
 | Acesso cruzado entre organizações (BOLA) | Membro de uma organização lê ou altera membros, estabelecimentos, quadras, fotos, reservas ou financeiro de outra | vínculo obrigatório, capacidade por papel, consulta sempre escopada pela organização, 404 para não-membro e testes BOLA | ACL por quadra não existe; autorização é por organização |
 | Upload de imagem maliciosa | Polyglot, malware, decompression bomb, EXIF com localização, arquivo acima do limite | validação real por Pillow, reencode JPEG, remoção de EXIF, limites de bytes/pixels/dimensões, storage privado e serving autorizado | antivírus dedicado e storage de produção pendentes |
 | Abuso de revisão de foto | Organização aprovar conteúdo impróprio ou foto com pessoa | revisão por `OWNER`/`ADMIN`, motivo obrigatório na rejeição, auditoria, `OPERATOR` sem revisão | revisão independente e denúncia de foto pendentes |
@@ -75,7 +81,7 @@
 | Cobrança dupla Pix + crédito | Pagar a vaga por Pix e depois quitá-la com crédito | — | P0: bloquear quitação se a vaga já estiver paga |
 | Perda de crédito no T3 | Expirar reserva sem devolver crédito consumido | — | P0: devolver no T3 |
 | Abuso de identidade visual | Foto de terceiro, ícone de perfil ofensivo, impersonação | sem fotos de pessoas; identidade de catálogo fechado validado pelo backend; nome/tag moderados; denúncia de perfil | catálogo e critérios de moderação ainda pendentes |
-| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, CSP estrita no build e no header do Caddy, `frame-ancestors 'none'`, HSTS condicional | `JOGA_WEB_COOKIE_SECURE` sem validação obrigatória no boot; revisão dedicada de XSS pendente |
+| Sequestro de sessão web | XSS, CSRF ou vazamento de refresh token | refresh em cookie `HttpOnly`/`SameSite=Strict`, access só em memória, CSRF de duplo envio em refresh/logout, CSP estrita no build e no header do Caddy, `frame-ancestors 'none'`, HSTS condicional, boot recusa `JOGA_WEB_COOKIE_SECURE=false` fora de local/teste | revisão dedicada de XSS pendente |
 
 ## Controles transversais
 
@@ -97,6 +103,8 @@
 - A revisão inicial de foto é restrita a `OWNER`/`ADMIN` e auditada; `OPERATOR` não revisa.
 - Reservas são escopadas por participante ou organização; hold e confirmação usam lock transacional.
 - T1/T2/T3 são registrados em timers independentes; o pagamento simulado é bloqueado fora de ambiente local/teste.
+- O banco do demo não é exposto por Data API: `anon`/`authenticated` não têm `USAGE` no schema `public` nem grants nas tabelas do app; RLS fica ligada sem policies e o owner/BYPASSRLS atende a API (ADR 0075).
+- O IP do cliente é resolvido na borda a partir de `CF-Connecting-IP` apenas quando o peer é privado; o `X-Forwarded-For` do cliente não é aceito como verdade e o uvicorn confia só no Caddy local.
 
 ## Decisão P3-10: cache e rate limit do catálogo público (2026-11-20)
 
@@ -171,6 +179,128 @@ processo recebe HTTP. O middleware da API mantém `no-store`, `nosniff` e
 `no-referrer`, inclusive em respostas 500 não tratadas, que também carregam
 `X-Request-ID` e corpo genérico `internal_error`.
 
+## Endurecimento de 2026-11-24
+
+Rodada de segurança disparada pelo alerta `rls_disabled_in_public` do Supabase e
+pela revisão do IP real na borda. As correções foram aplicadas e validadas no
+demo em 2026-11-24 (deploy `dep-dc30mce1egvs73832rk0`); os registros abaixo são
+os invariantes que devem permanecer verdadeiros.
+
+### Supabase, schema `public` e Data API
+
+**Achado da auditoria read-only:** 120 tabelas em `public` sem RLS — 118 tabelas
+de dados do app + `alembic_version` (controle de migração), donas de `postgres`,
++ `spatial_ref_sys` (PostGIS, dona `supabase_admin`). A auditoria conta 118
+tabelas de dados porque exclui `alembic_version` e objetos de extensão.
+`anon` e `authenticated` não tinham `SELECT`/`INSERT`/`UPDATE`/`DELETE` nas
+tabelas do app, mas mantinham `TRUNCATE`; `anon` tinha DML completo em
+`spatial_ref_sys`; `USAGE` no schema `public` para `PUBLIC`, `anon` e
+`authenticated`; default privileges concedendo `ALL` a objetos novos.
+
+**Modelo de ameaça:**
+
+| Elemento | Descrição |
+|---|---|
+| Ativo | Dados do app em `public`, incluindo contas, reservas, ledger e auditoria; `spatial_ref_sys` do PostGIS |
+| Ator | Qualquer portador da chave `anon` (pública por desenho) ou cliente da Data API; não requer sessão do JOGA |
+| Vetor | PostgREST/Data API usando `anon`/`authenticated`, grant default ou `TRUNCATE`; DML direto em tabela de extensão |
+| Impacto | Leitura, escrita ou destruição de dados sem passar pela API e pela autorização do JOGA |
+| Controle | RLS habilitada sem policies; `USAGE`/`CREATE` revogados de `PUBLIC`/`anon`/`authenticated`; `ALL` revogado nas tabelas/sequences/funções do app; `security_invoker` nas views; default privileges revogadas; Data API/Storage/Auth sem uso, mas ainda não desligados no dashboard |
+| Residual | Data API/Storage/Auth não desligados/verificados no dashboard; `spatial_ref_sys` continua do `supabase_admin` e só é inalcançável pela falta de `USAGE` |
+
+**Resultado pós-deploy (2026-11-24):** `audit_db_security` exit 0, `ok=true`,
+`violations=[]`, `warnings=[]`; 118/118 tabelas de dados do app com RLS e 0 sem;
+119/120 tabelas de `public` com RLS (a 120ª é `spatial_ref_sys`, ainda sem RLS);
+2 funções do app e 0 sequences; nenhuma default privilege para
+`anon`/`authenticated`/`PUBLIC`. `SET ROLE anon`/`authenticated` em
+`public.users`, `public.spatial_ref_sys` e `public.ticket_balances` retornou
+`permission denied for schema public`.
+
+**Invariantes:** o app continua falando Postgres direto pelo Session pooler com
+`postgres.<ref>` (`BYPASSRLS`); `anon`/`authenticated` não têm `USAGE` no schema
+nem grants em objetos do app; toda tabela de dados do app tem
+`relrowsecurity = true` sem policy; toda view do app tem `security_invoker`;
+`service_role` não é usada pelo JOGA e não é o caminho de operação.
+
+**O que não fazer:** reconceder acesso a `anon`/`authenticated` para "consertar"
+erro, criar policy `USING (true)`, habilitar Data API/PostgREST sem ADR, expor a
+chave `anon` no app, desabilitar RLS em tabela ou alterar `spatial_ref_sys`/
+`supabase_admin` à mão. A decisão completa está na ADR 0075; o procedimento
+operacional e o reteste estão em `docs/RUNBOOK.md` §10 e `docs/DEPLOY_DEMO.md`
+§4.
+
+**Gatilhos:** novo alerta de RLS/grants; criação de tabela/view fora de migração;
+adoção de Data API, PostgREST ou chave `anon`; troca do papel de conexão; upgrade
+do Supabase que mude default privileges; incidente de acesso ou `TRUNCATE`.
+
+### IP real atrás de Render + Cloudflare (SEC-002)
+
+**Estado anterior:** o Caddy enxergava o peer interno do Render e não resolvia o
+IP do cliente. Todos os clientes compartilhavam o mesmo balde de rate limit, e o
+hash da chave não correspondia ao IP real. Além disso, cabeçalhos de
+encaminhamento chegavam ao uvicorn sem sanitização.
+
+**Controle aplicado e validado em 2026-11-24:**
+
+- bloco global do Caddy com `trusted_proxies static private_ranges` e
+  `trusted_proxies_strict`;
+- `client_ip_headers CF-Connecting-IP` como fonte do IP;
+- proxy para o uvicorn com `header_up X-Forwarded-For {client_ip}`;
+- remoção de `CF-Connecting-IP` e `True-Client-IP` antes do backend;
+- uvicorn continua confiando apenas em `127.0.0.1` (`--forwarded-allow-ips
+  127.0.0.1`), porque só o Caddy local fala com ele.
+
+**Validação:** o balde `email_login_ip` passou a corresponder ao **IP público
+real do cliente** (hash conferido com o segredo do demo), não ao IP da borda.
+`X-Forwarded-For` e `True-Client-IP` forjados retornaram `401` e não criaram
+balde com o valor forjado; `CF-Connecting-IP` forjado foi bloqueado na borda
+(`403`). Na janela analisada havia 1 chave, o IP real, e nenhuma chave forjada.
+O access log do uvicorn mostra o IP real do cliente; o health check chega da
+faixa privada `10.x` da rede do Render.
+
+**Invariante:** o backend usa `request.client.host`, que passa a ser o IP
+resolvido pelo Caddy; `X-Forwarded-For` recebido do cliente não é usado como
+verdade. Se o peer imediato não for privado, o Caddy ignora os headers e o IP
+volta a ser o do Render: nesse caso, **não** ampliar `trusted_proxies` para
+faixas públicas; corrigir o ingresso (Cloudflare proxied, rede do Render) ou
+aceitar o balde compartilhado de forma explícita.
+
+**Residual:** havia apenas uma saída externa disponível, então a prova com dois
+clientes/IPs externos distintos não foi executada; o procedimento está no
+`docs/RUNBOOK.md` §10.3. O smoke local com o Caddy exato e dois
+`CF-Connecting-IP` sintéticos gerou XFFs distintos, e o live prova que o IP real
+(não o da borda) é usado. O ingresso exclusivo pelo Cloudflare também não foi
+medido; até essas provas, o rate limit por IP é best-effort contra abuso
+distribuído.
+
+**Gatilhos:** mudança de CDN/proxy; host do Render exposto; rate limit global
+ativado; incidente de força bruta ou abuso; alteração na cadeia de headers.
+
+### Blueprint do Render e ambiente demo (SEC-004)
+
+`render.yaml` passou a declarar `JOGA_ENVIRONMENT=demo` e `autoDeploy: false`
+como política desejada, com o comentário de que o blueprint **não governa** o
+serviço em execução. A fonte da verdade continua sendo o dashboard/API do
+Render. O serviço atual **ainda está com `autoDeploy=yes`** (confirmado via API
+em 2026-11-24), embora o handoff preveja deploy manual: o dashboard e o arquivo
+estão divergentes e precisam ser alinhados/confirmados. O arquivo também não
+contém todas as variáveis aplicadas no dashboard (por exemplo
+`JOGA_TICKET_PURCHASE_ENABLED` e `JOGA_PLATFORM_ADMINS`); sincronizar o Blueprint
+ou recriar o serviço exige conferir essas entradas antes, senão o demo volta a
+um perfil incompleto.
+
+**Gatilhos:** sincronização do Blueprint; recriação do serviço; troca de
+`JOGA_ENVIRONMENT`; diferença entre dashboard e arquivo, inclusive
+`autoDeploy`.
+
+### Cookie `Secure` do painel (SEC-013)
+
+A afirmação anterior de que `JOGA_WEB_COOKIE_SECURE` não tinha validação
+obrigatória no boot está desatualizada. `backend/app/core/config.py` recusa o
+boot fora de `local`/`teste` quando `JOGA_WEB_COOKIE_SECURE` é falso. O risco de
+emitir cookie de refresh sem `Secure` por esquecimento de configuração está
+fechado; resta a revisão dedicada de XSS.
+
 ## Riscos aceitos da auditoria de 2026-11-20
 
 Auditoria de infraestrutura, segredos e dependências. Os três itens abaixo
@@ -193,11 +323,19 @@ como build de produção com essa chave. A loja exige AAB assinado por chave de
 upload própria, com custódia e rotação documentadas.
 
 **Gatilhos de revisão:** primeira publicação em loja; primeiro build
-distribuído fora do círculo de demonstração; inclusão de usuários reais; troca
-do `package` (`com.anonymous.joga`); renovação do `assetlinks.json`; suspeita
-de vazamento do keystore de debug. Nesses casos: criar chave de release com
-custódia (keystore fora do repositório, senha em cofre), assinar com ela e
-reemitir o `assetlinks.json` com a nova impressão digital.
+distribuído fora do círculo de demonstração; troca do `package`
+(`com.anonymous.joga`); renovação do `assetlinks.json`; suspeita de vazamento
+do keystore de debug. Nesses casos: criar chave de release com custódia
+(keystore fora do repositório, senha em cofre), assinar com ela e reemitir o
+`assetlinks.json` com a nova impressão digital.
+
+**Gatilho de usuários reais já disparado (2026-11-24):** o demo admite usuários
+reais desde o SEC-001, aceito pelo dono. Isso **não** autoriza corrigir o
+`assetlinks.json` com o certificado de debug nem distribuir o APK de debug. A
+partir daqui, antes de qualquer distribuição fora do sideload interno, é
+obrigatório: (1) gerar a chave de release com custódia; (2) fixar o `package`
+definitivo; (3) reemitir o `assetlinks.json` com a impressão digital da chave de
+release. O aceite atual cobre apenas o demo privado.
 
 Registro operacional complementar: `docs/DEPLOY_DEMO.md`, seção 11.
 
@@ -254,7 +392,8 @@ e reavaliar a exposição da URL.
 - **Médio:** rate limiting global/borda e proteção contra abuso distribuído incompletos.
 - **Médio:** Redis/fan-out multi-processo e múltiplas instâncias não implementados.
 - **Médio:** push real e SMS dependem de provedor/credenciais.
-- **Médio:** HSTS, CSP de header, `frame-ancestors` e `Permissions-Policy` agora saem do Caddy; `JOGA_WEB_COOKIE_SECURE` continua sem validação obrigatória no boot.
+- **Médio:** HSTS, CSP de header, `frame-ancestors` e `Permissions-Policy` saem do Caddy; `JOGA_WEB_COOKIE_SECURE=false` impede o boot fora de local/teste, então o cookie sem `Secure` está fechado.
+- **Médio:** schema `public` do Supabase fechado por RLS/grants e validado (ADR 0075); pendências: desligar Data API, Storage e Auth no dashboard, confirmar o ingresso exclusivo pelo Cloudflare e executar a prova com dois IPs externos distintos.
 - **Médio:** moderação de chat e denúncias têm backend/painel, mas o classificador local e a suspensão permanente não existem.
 - **Médio:** catálogo de identidade por ícones e moderação de nome/ícone de perfil pendentes.
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pendentes.
