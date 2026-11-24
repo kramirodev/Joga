@@ -10,6 +10,24 @@
 # DEMO_BASIC_AUTH_HASH e um hash bcrypt gerado por:
 #   caddy hash-password --plaintext '<senha-do-demo>'
 # Nunca coloque a senha em claro neste arquivo ou no Git.
+#
+# IP real do cliente:
+# O trafego externo passa pelo Cloudflare e chega ao Render; o peer imediato
+# do Caddy e sempre um endereco privado da rede interna. O Cloudflare define
+# (e sobrescreve) CF-Connecting-IP. O bloco global abaixo so aceita headers de
+# encaminhamento quando o peer imediato e privado, usa CF-Connecting-IP como
+# fonte e, com trusted_proxies_strict, considera apenas o primeiro valor dessa
+# cadeia. X-Forwarded-For da entrada e ignorado: o cliente pode forjar o
+# primeiro valor, entao a cadeia nao deve ser usada sem sanitizacao. Sem esse
+# bloco o Caddy usa o IP do peer do Render e todos os clientes caem no mesmo
+# balde de rate limit.
+{
+	servers {
+		trusted_proxies static private_ranges
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP
+	}
+}
 
 :{$PORT} {
 	# TLS termina na borda do Render: o processo recebe HTTP e a borda envia
@@ -43,13 +61,21 @@
 	}
 
 	handle /api/* {
-		# A porta do container nao e publica no Render: o unico caminho externo e
-		# a borda, que envia X-Forwarded-Proto: https. Sem trusted_proxies, o
-		# reverse_proxy descartaria esse valor e mandaria "http" ao uvicorn,
-		# gerando Location http:// atras de HTTPS. O header_up repassa o valor da
-		# borda. Se o header nao existir (health check interno/direto), o
-		# placeholder resolve vazio; o uvicorn ignora o valor vazio e usa http.
+		# X-Forwarded-For: reescrito com o IP resolvido pelo bloco global
+		# (CF-Connecting-IP), portanto o uvicorn recebe uma cadeia de um unico
+		# elemento. Nao usar o primeiro valor do X-Forwarded-For original: ele
+		# pode vir forjado. CF-Connecting-IP e True-Client-IP nao seguem para o
+		# backend.
+		#
+		# X-Forwarded-Proto: o Render envia https na borda; o header_up preserva
+		# o valor original em vez do esquema interno do proxy. Se o header nao
+		# existir (health check interno/direto), o placeholder resolve vazio; o
+		# uvicorn ignora o valor vazio e usa http. Sem repassar esse valor, o
+		# Location absoluto sairia em http:// atras de HTTPS.
 		reverse_proxy 127.0.0.1:8000 {
+			header_up X-Forwarded-For {client_ip}
+			header_up -CF-Connecting-IP
+			header_up -True-Client-IP
 			header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
 		}
 	}
