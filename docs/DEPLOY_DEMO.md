@@ -7,7 +7,9 @@ Cadastro **aberto** desde 2026-11-19. A Outbox é drenada **no processo da API**
 remota está DISPATCHED e as entregas `password_reset`/`security_alert` estão
 `sent`. Desde 2026-11-20 o serviço roda em **`JOGA_ENVIRONMENT=demo`** (ADR
 0053): documentação interativa desabilitada, webhook do Mercado Pago desligado e
-compra de tickets bloqueada (seção 5.1).
+compra de tickets bloqueada (seção 5.1). Em 2026-11-24 o deploy
+`dep-dc30mce1egvs73832rk0` aplicou o endurecimento do schema `public` e a
+resolução do IP real na borda (seção 11).
 
 **Data:** 2026-11-24 (última atualização)
 
@@ -35,13 +37,13 @@ domínios diferentes **quebram o login**.
 
 Não adicionar CORS.
 
-A correção em revisão faz o Caddy resolver o IP real atrás do
+A correção aplicada em 2026-11-24 faz o Caddy resolver o IP real atrás do
 Cloudflare/Render com `trusted_proxies static private_ranges`,
 `trusted_proxies_strict` e `client_ip_headers CF-Connecting-IP`; para o uvicorn
 ele envia `X-Forwarded-For: {client_ip}` e remove
 `CF-Connecting-IP`/`True-Client-IP`. O uvicorn continua confiando apenas em
 `127.0.0.1`. Sem esse bloco, todos os clientes compartilhavam o balde de rate
-limit. Reteste em `docs/RUNBOOK.md` §10.3.
+limit. Resultado em `docs/RUNBOOK.md` §10.3.
 
 ### Roteamento no Caddy
 
@@ -97,12 +99,19 @@ podem ser desligados no dashboard sem afetar o app; a recomendação é desligar
 registrar a data/responsável. A chave `anon` é pública por desenho e não é
 segredo: esconder a chave não é controle de segurança.
 
-A migração em revisão da ADR 0075 endurece o schema `public`: RLS habilitada sem
-policies nas tabelas do app, `USAGE`/`CREATE` revogados de `PUBLIC`, `anon` e
-`authenticated`, `ALL` revogado em tabelas/views/sequences/funções do app,
-`security_invoker` nas views e default privileges revogadas. O app continua
-funcionando porque o papel `postgres` tem `BYPASSRLS`; `service_role` fica
-intacta e não é usada.
+A migração da ADR 0075, aplicada no deploy `dep-dc30mce1egvs73832rk0` em
+2026-11-24, endureceu o schema `public`: RLS habilitada sem policies nas tabelas
+do app, `USAGE`/`CREATE` revogados de `PUBLIC`, `anon` e `authenticated`, `ALL`
+revogado em tabelas/views/sequences/funções do app, `security_invoker` nas views
+e default privileges revogadas. O app continua funcionando porque o papel
+`postgres` tem `BYPASSRLS`; `service_role` fica intacta e não é usada.
+
+O `public` tem 120 tabelas: 118 de dados do app + `alembic_version` (controle de
+migração), donas de `postgres`, + `spatial_ref_sys` (PostGIS, dona
+`supabase_admin`). Após a migração, 119 estão com RLS — todas as donas de
+`postgres`, incluindo `alembic_version` — e `spatial_ref_sys` segue sem RLS, mas
+inalcançável por `anon`/`authenticated` pela falta de `USAGE`. A auditoria
+conta 118 tabelas de dados porque exclui `alembic_version` e a extensão.
 
 Consequências operacionais:
 
@@ -113,8 +122,9 @@ Consequências operacionais:
   `USAGE`;
 - se a Data API for religada por engano, o schema fechado ainda bloqueia o
   acesso, mas o estado correto é desligada;
-- o alerta `rls_disabled_in_public` do Security Advisor deve sumir depois da
-  migração; se continuar, confira se o objeto apontado é de extensão.
+- a auditoria pós-deploy não encontrou tabela do app sem RLS; se o Security
+  Advisor ainda listar `rls_disabled_in_public`, confira se o objeto apontado é
+  de extensão (`spatial_ref_sys`), não do app.
 
 ### Por que Session pooler e não conexão direta
 
@@ -497,7 +507,7 @@ O web service foi criado pela API do Render, somente para o demo:
 | Região | `ohio` (mesma região AWS do Supabase, `us-east-2`) |
 | Health check | `/api/v1/health/ready` |
 | Variáveis | 34, com `JOGA_ENVIRONMENT` agora `demo`; somam-se `JOGA_TICKET_PURCHASE_ENABLED=false` e `JOGA_PLATFORM_ADMINS` (seção 5.1); valores secretos só no Render |
-| Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API); `6a89c79` **live** em 2026-11-20, já em `JOGA_ENVIRONMENT=demo` |
+| Deploy | `bed5e96` **live** em 2026-11-19 (disparado pela API); `6a89c79` **live** em 2026-11-20, já em `JOGA_ENVIRONMENT=demo`; `dep-dc30mce1egvs73832rk0` **live** em 2026-11-24, com os commits `65bc9b2` (borda) e `0db2a49` (backend) |
 | Auto-deploy | **`yes`** no serviço atual (API do Render, 2026-11-24); o `render.yaml` declara `autoDeploy: false` como política desejada — alinhar/confirmar |
 | URL | `<url-do-demo>` (intencionalmente não versionada) |
 
@@ -616,7 +626,11 @@ headers de segurança na borda (`Strict-Transport-Security`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
 `Cache-Control: no-store`). Comandos e tabela completa na seção 5.1.
 
-### Reteste do endurecimento: Supabase e IP real (2026-11-24)
+### Aplicação e validação do endurecimento (2026-11-24)
+
+**Deploy e migração.** Deploy manual `dep-dc30mce1egvs73832rk0` **live** em
+2026-11-24, com os commits `65bc9b2` (borda) e `0db2a49` (backend) na `main`. No
+boot, o log registrou `Running upgrade d9e0f1a2b3c4 -> e2f3a4b5c6d7`.
 
 **Auditoria do schema.** Com a URL do Session pooler na sessão (nunca no Git):
 
@@ -627,34 +641,52 @@ $env:JOGA_DATABASE_URL = "postgresql+psycopg://postgres.<ref>:<senha>@aws-1-<reg
 Remove-Item Env:JOGA_DATABASE_URL
 ```
 
-Critério de aceite: exit 0 com `violations` e `warnings` vazios; 0 tabelas do app
-sem RLS; `anon`/`authenticated` sem `USAGE`/`CREATE` em `public`; 0 grants
-diretos em tabelas/views do app; 0 views sem `security_invoker`; nenhuma default
-privilege para esses papéis. O script cobre RLS, `USAGE` do schema,
-tabelas/views, sequences, funções/procedures e default privileges; as consultas
-de `docs/RUNBOOK.md` §10.1 ficam como conferência manual complementar. Depois,
-confirmar
-`GET /api/v1/health/ready` 200, login do jogador, catálogo, login do painel e uma
-entrega da Outbox. A regressão automatizada equivalente é
-`backend/tests/test_db_security_hardening.py` (com `JOGA_TEST_DATABASE_URL`).
+Resultado: exit 0, `ok=true`, `violations=[]`, `warnings=[]`. Contagens:
 
-**IP real.** Dois clientes em redes/IPs públicos distintos (por exemplo, Wi-Fi e
-dados móveis). Anotar o IP público de cada um. No cliente A, repetir o login com
-senha errada, com um e-mail diferente por tentativa, até o limite por IP
-(`JOGA_EMAIL_LOGIN_MAX_PER_IP`, padrão 30 em 15 min) e confirmar `429`. No
-cliente B, com um e-mail que não foi usado em A, uma tentativa deve continuar em
-`401`, não em `429`: os baldes são independentes. Depois, no cliente B, a
-tentativa que deve ser bloqueada envia `X-Forwarded-For: 203.0.113.10`,
-`CF-Connecting-IP: 203.0.113.10` e `True-Client-IP: 203.0.113.10` (faixa de
-documentação); o correto é continuar `429` no IP real de B, não abrir um balde
-novo. Se os dois clientes caírem no mesmo balde, o peer não está sendo
-reconhecido como privado: não ampliar `trusted_proxies`; conferir o ingresso
-pelo Cloudflare e a rede do Render. Com uma só rede, o mínimo é confirmar que o
-balde acompanha o IP do cliente (não o da borda) e que cabeçalhos forjados não o
-alteram; a independência entre baldes exige duas redes/clientes reais.
+| Item | Resultado |
+|---|---|
+| Tabelas de dados do app com RLS | **118/118**, 0 sem RLS |
+| Tabelas em `public` com RLS | **119/120**; a 120ª é `spatial_ref_sys`, sem RLS, dona `supabase_admin`/PostGIS |
+| Funções do app | 2, sem privilégio para `anon`/`authenticated` |
+| Sequences do app | 0 |
+| Default privileges para `anon`/`authenticated`/`PUBLIC` | nenhuma |
 
-Registrar a saída da auditoria e o resultado do teste de IP no PR, sem URL com
-senha, IP real ou PII. Procedimento completo em `docs/RUNBOOK.md` §10.
+O `public` reúne 120 tabelas: 118 de dados do app + `alembic_version` (controle
+de migração), donas de `postgres`, + `spatial_ref_sys`. A auditoria conta 118
+tabelas de dados porque exclui `alembic_version` e objetos de extensão.
+`SET ROLE anon`/`authenticated` em `public.users`, `public.spatial_ref_sys` e
+`public.ticket_balances` retornou `permission denied for schema public`.
+
+**Smoke pós-deploy:**
+
+| Verificação | Resultado |
+|---|---|
+| `/api/v1/health/live` e `/api/v1/health/ready` | 200 |
+| `/api/v1/app-config` | 200, `demo_mode=true` |
+| Login de jogador e operador | 200 |
+| `/api/v1/auth/me`, `/me/profile`, `/catalog/sports`, `/me/tickets`, `/me/pass`, `/admin/users` | 200 |
+| Painel com basic auth | 200, CSP presente |
+| `/.well-known/assetlinks.json` | 200 JSON |
+
+Os logs do Render não tiveram 5xx após o boot; os 502 de health check durante o
+boot foram transitórios, antes de o uvicorn subir. A regressão automatizada
+equivalente é `backend/tests/test_db_security_hardening.py` (com
+`JOGA_TEST_DATABASE_URL`).
+
+**IP real (SEC-002).** O balde `email_login_ip` passou a corresponder ao IP
+público real do cliente (hash conferido com o segredo do demo), não ao IP da
+borda. `X-Forwarded-For` e `True-Client-IP` forjados retornaram `401` e não
+criaram balde com o valor forjado; `CF-Connecting-IP` forjado foi bloqueado na
+borda (`403`). Na janela analisada havia 1 chave, o IP real, e nenhuma chave
+forjada. O access log do uvicorn mostra o IP real do cliente e o health check
+vindo da faixa privada `10.x` do Render.
+
+**Pendente:** só havia uma saída externa disponível, então a prova com dois
+clientes/IPs externos distintos não foi executada. O smoke local com o Caddy
+exato e dois `CF-Connecting-IP` sintéticos produziu XFFs distintos, mas a
+independência entre baldes de dois IPs reais continua pendente; procedimento em
+`docs/RUNBOOK.md` §10.3. Data API, Storage e Auth do Supabase também **não**
+foram desligados nem verificados no dashboard.
 
 ### Executado localmente (API + Postgres local, sem Caddy)
 

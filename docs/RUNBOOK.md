@@ -1193,6 +1193,17 @@ rollback: reabre a exposição.
    apontado pertence a `supabase_admin`/extensão, não ao app.
 9. Registre a saída sem URL com senha, IP real ou PII; anexe ao PR/incidente.
 
+**Resultado em 2026-11-24:** deploy manual `dep-dc30mce1egvs73832rk0` **live**;
+log de boot `Running upgrade d9e0f1a2b3c4 -> e2f3a4b5c6d7`; `audit_db_security`
+exit 0 com `ok=true`, `violations=[]` e `warnings=[]`. Contagens: 118/118
+tabelas de dados do app com RLS; 119/120 tabelas de `public` com RLS
+(`spatial_ref_sys` segue sem RLS, dona `supabase_admin`); 2 funções do app e 0
+sequences; nenhuma default privilege para `anon`/`authenticated`/`PUBLIC`.
+`SET ROLE anon`/`authenticated` em `public.users`, `public.spatial_ref_sys` e
+`public.ticket_balances` retornou `permission denied for schema public`. Data
+API, Storage e Auth do Supabase **não** foram desligados nem verificados no
+dashboard. Smoke e demais detalhes em `docs/DEPLOY_DEMO.md` §11.
+
 ### 10.2 Rotação da senha do banco
 
 Use quando houver suspeita de vazamento, troca de responsável ou encerramento do
@@ -1243,6 +1254,17 @@ entre baldes.
    CF-Connecting-IP`, `header_up X-Forwarded-For {client_ip}` e remoção de
    `CF-Connecting-IP`/`True-Client-IP`. O uvicorn deve continuar com
    `--forwarded-allow-ips 127.0.0.1`.
+
+**Resultado em 2026-11-24 (uma saída externa):** o balde `email_login_ip` passou
+a corresponder ao IP público real do cliente (hash conferido com o segredo do
+demo), não ao IP da borda. `X-Forwarded-For` e `True-Client-IP` forjados
+retornaram `401` e não criaram balde com o valor forjado; `CF-Connecting-IP`
+forjado foi bloqueado na borda (`403`). Na janela havia 1 chave, o IP real, e
+nenhuma chave forjada. O access log do uvicorn mostra o IP real do cliente; o
+health check chega da faixa privada `10.x` da rede do Render. **Pendente:** a
+prova com dois clientes/IPs externos distintos não foi executada porque só havia
+uma saída disponível; o smoke local com o Caddy exato e dois `CF-Connecting-IP`
+sintéticos gerou XFFs distintos, mas não substitui a prova com dois IPs reais.
 
 **Se o peer não for privado** (os dois clientes caem no mesmo balde e o header
 forjado não muda nada): não amplie `trusted_proxies` para faixas públicas e não

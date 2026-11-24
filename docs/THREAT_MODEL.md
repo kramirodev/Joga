@@ -182,13 +182,16 @@ processo recebe HTTP. O middleware da API mantém `no-store`, `nosniff` e
 ## Endurecimento de 2026-11-24
 
 Rodada de segurança disparada pelo alerta `rls_disabled_in_public` do Supabase e
-pela revisão do IP real na borda. As correções estão em revisão; os registros
-abaixo são os invariantes que devem permanecer verdadeiros depois do merge.
+pela revisão do IP real na borda. As correções foram aplicadas e validadas no
+demo em 2026-11-24 (deploy `dep-dc30mce1egvs73832rk0`); os registros abaixo são
+os invariantes que devem permanecer verdadeiros.
 
 ### Supabase, schema `public` e Data API
 
-**Achado da auditoria read-only:** 120 tabelas em `public` sem RLS — 119 do app
-(dono `postgres`) + `spatial_ref_sys` (PostGIS, dona `supabase_admin`).
+**Achado da auditoria read-only:** 120 tabelas em `public` sem RLS — 118 tabelas
+de dados do app + `alembic_version` (controle de migração), donas de `postgres`,
++ `spatial_ref_sys` (PostGIS, dona `supabase_admin`). A auditoria conta 118
+tabelas de dados porque exclui `alembic_version` e objetos de extensão.
 `anon` e `authenticated` não tinham `SELECT`/`INSERT`/`UPDATE`/`DELETE` nas
 tabelas do app, mas mantinham `TRUNCATE`; `anon` tinha DML completo em
 `spatial_ref_sys`; `USAGE` no schema `public` para `PUBLIC`, `anon` e
@@ -202,14 +205,22 @@ tabelas do app, mas mantinham `TRUNCATE`; `anon` tinha DML completo em
 | Ator | Qualquer portador da chave `anon` (pública por desenho) ou cliente da Data API; não requer sessão do JOGA |
 | Vetor | PostgREST/Data API usando `anon`/`authenticated`, grant default ou `TRUNCATE`; DML direto em tabela de extensão |
 | Impacto | Leitura, escrita ou destruição de dados sem passar pela API e pela autorização do JOGA |
-| Controle | RLS habilitada sem policies; `USAGE`/`CREATE` revogados de `PUBLIC`/`anon`/`authenticated`; `ALL` revogado nas tabelas/sequences/funções do app; `security_invoker` nas views; default privileges revogadas; Data API/Storage/Auth sem uso e com desligamento recomendado |
-| Residual | Desligar a Data API é ação de dashboard, fora do Git; `spatial_ref_sys` continua do `supabase_admin` e só é inalcançável pela falta de `USAGE` |
+| Controle | RLS habilitada sem policies; `USAGE`/`CREATE` revogados de `PUBLIC`/`anon`/`authenticated`; `ALL` revogado nas tabelas/sequences/funções do app; `security_invoker` nas views; default privileges revogadas; Data API/Storage/Auth sem uso, mas ainda não desligados no dashboard |
+| Residual | Data API/Storage/Auth não desligados/verificados no dashboard; `spatial_ref_sys` continua do `supabase_admin` e só é inalcançável pela falta de `USAGE` |
+
+**Resultado pós-deploy (2026-11-24):** `audit_db_security` exit 0, `ok=true`,
+`violations=[]`, `warnings=[]`; 118/118 tabelas de dados do app com RLS e 0 sem;
+119/120 tabelas de `public` com RLS (a 120ª é `spatial_ref_sys`, ainda sem RLS);
+2 funções do app e 0 sequences; nenhuma default privilege para
+`anon`/`authenticated`/`PUBLIC`. `SET ROLE anon`/`authenticated` em
+`public.users`, `public.spatial_ref_sys` e `public.ticket_balances` retornou
+`permission denied for schema public`.
 
 **Invariantes:** o app continua falando Postgres direto pelo Session pooler com
 `postgres.<ref>` (`BYPASSRLS`); `anon`/`authenticated` não têm `USAGE` no schema
-nem grants em objetos do app; toda tabela do app tem `relrowsecurity = true` sem
-policy; toda view do app tem `security_invoker`; `service_role` não é usada pelo
-JOGA e não é o caminho de operação.
+nem grants em objetos do app; toda tabela de dados do app tem
+`relrowsecurity = true` sem policy; toda view do app tem `security_invoker`;
+`service_role` não é usada pelo JOGA e não é o caminho de operação.
 
 **O que não fazer:** reconceder acesso a `anon`/`authenticated` para "consertar"
 erro, criar policy `USING (true)`, habilitar Data API/PostgREST sem ADR, expor a
@@ -229,7 +240,7 @@ IP do cliente. Todos os clientes compartilhavam o mesmo balde de rate limit, e o
 hash da chave não correspondia ao IP real. Além disso, cabeçalhos de
 encaminhamento chegavam ao uvicorn sem sanitização.
 
-**Controle em revisão:**
+**Controle aplicado e validado em 2026-11-24:**
 
 - bloco global do Caddy com `trusted_proxies static private_ranges` e
   `trusted_proxies_strict`;
@@ -239,6 +250,14 @@ encaminhamento chegavam ao uvicorn sem sanitização.
 - uvicorn continua confiando apenas em `127.0.0.1` (`--forwarded-allow-ips
   127.0.0.1`), porque só o Caddy local fala com ele.
 
+**Validação:** o balde `email_login_ip` passou a corresponder ao **IP público
+real do cliente** (hash conferido com o segredo do demo), não ao IP da borda.
+`X-Forwarded-For` e `True-Client-IP` forjados retornaram `401` e não criaram
+balde com o valor forjado; `CF-Connecting-IP` forjado foi bloqueado na borda
+(`403`). Na janela analisada havia 1 chave, o IP real, e nenhuma chave forjada.
+O access log do uvicorn mostra o IP real do cliente; o health check chega da
+faixa privada `10.x` da rede do Render.
+
 **Invariante:** o backend usa `request.client.host`, que passa a ser o IP
 resolvido pelo Caddy; `X-Forwarded-For` recebido do cliente não é usado como
 verdade. Se o peer imediato não for privado, o Caddy ignora os headers e o IP
@@ -246,10 +265,13 @@ volta a ser o do Render: nesse caso, **não** ampliar `trusted_proxies` para
 faixas públicas; corrigir o ingresso (Cloudflare proxied, rede do Render) ou
 aceitar o balde compartilhado de forma explícita.
 
-**Residual:** se o host do Render continuar acessível fora do Cloudflare, um
-cliente direto pode chegar com peer privado e forjar `CF-Connecting-IP`. Validar
-o ingresso exclusivo pelo Cloudflare; até lá, o rate limit por IP é
-best-effort contra abuso distribuído.
+**Residual:** havia apenas uma saída externa disponível, então a prova com dois
+clientes/IPs externos distintos não foi executada; o procedimento está no
+`docs/RUNBOOK.md` §10.3. O smoke local com o Caddy exato e dois
+`CF-Connecting-IP` sintéticos gerou XFFs distintos, e o live prova que o IP real
+(não o da borda) é usado. O ingresso exclusivo pelo Cloudflare também não foi
+medido; até essas provas, o rate limit por IP é best-effort contra abuso
+distribuído.
 
 **Gatilhos:** mudança de CDN/proxy; host do Render exposto; rate limit global
 ativado; incidente de força bruta ou abuso; alteração na cadeia de headers.
@@ -371,7 +393,7 @@ e reavaliar a exposição da URL.
 - **Médio:** Redis/fan-out multi-processo e múltiplas instâncias não implementados.
 - **Médio:** push real e SMS dependem de provedor/credenciais.
 - **Médio:** HSTS, CSP de header, `frame-ancestors` e `Permissions-Policy` saem do Caddy; `JOGA_WEB_COOKIE_SECURE=false` impede o boot fora de local/teste, então o cookie sem `Secure` está fechado.
-- **Médio:** schema `public` do Supabase fechado por RLS/grants (ADR 0075); falta desligar Data API, Storage e Auth no dashboard e confirmar que o host do Render não é alcançável fora do Cloudflare.
+- **Médio:** schema `public` do Supabase fechado por RLS/grants e validado (ADR 0075); pendências: desligar Data API, Storage e Auth no dashboard, confirmar o ingresso exclusivo pelo Cloudflare e executar a prova com dois IPs externos distintos.
 - **Médio:** moderação de chat e denúncias têm backend/painel, mas o classificador local e a suspensão permanente não existem.
 - **Médio:** catálogo de identidade por ícones e moderação de nome/ícone de perfil pendentes.
 - **Médio:** revisão de foto de quadra ainda é feita pela própria organização; revisão independente e denúncia de foto pendentes.
