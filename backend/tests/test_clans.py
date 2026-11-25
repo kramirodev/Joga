@@ -1066,6 +1066,7 @@ def test_repeated_join_returns_same_request_without_duplicate_notification(
         db_session.query(Notification).filter_by(user_id=owner_id, kind="clan_join_request").all()
     )
     assert len(notifications) == 1
+    assert notifications[0].body == "Um jogador pediu para entrar em Tijuca FC."
     assert notifications[0].data["request_id"] == request_id
     assert notifications[0].data["clan_id"] == clan["id"]
 
@@ -1327,6 +1328,7 @@ def test_join_notifies_owner_and_admins_and_decision_notifies_requester(
             if row.data["request_id"] == request_id
         ]
         assert len(notifications) == 1
+        assert notifications[0].body == "JOGADOR PEDIDO pediu para entrar em Tijuca FC."
         assert notifications[0].data == {
             "clan_id": clan["id"],
             "request_id": request_id,
