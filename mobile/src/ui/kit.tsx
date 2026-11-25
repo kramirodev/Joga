@@ -536,6 +536,9 @@ export function Btn({
       style={({ pressed }) => ({
         width: inRow ? undefined : block ? '100%' : small ? undefined : '100%',
         flex: inRow ? 1 : undefined,
+        // Fora de `BtnRow` o botão mantém a largura do rótulo: sem isto, um
+        // nome em duas linhas espreme o texto e corta "Adicionar" na linha.
+        flexShrink: inRow ? 1 : 0,
         minHeight: largeTargets ? (small ? 54 : 60) : small ? 46 : 52,
         borderRadius: small ? 11 : 14,
         borderWidth: 1.5,

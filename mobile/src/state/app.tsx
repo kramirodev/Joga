@@ -14,6 +14,7 @@ import { AppState, Appearance } from 'react-native';
 import {
   api,
   ApiError,
+  setCurrentTokenProvider,
   setRefreshHandler,
   setSessionExpiredHandler,
   setSuspensionHandler,
@@ -1077,6 +1078,18 @@ export function AppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  // O cliente confere o token atual antes de renovar. Um 401 de um token já
+  // rotacionado apenas repete a chamada com o token novo; sem isso, cada
+  // requisição em voo dispara outra rotação e revoga a sessão em cascata.
+  useLayoutEffect(() => {
+    if (!token) {
+      setCurrentTokenProvider(null);
+      return;
+    }
+    setCurrentTokenProvider(() => sessionRef.current?.accessToken ?? null);
+    return () => setCurrentTokenProvider(null);
+  }, [token]);
 
   // Layout effect: o handler de refresh precisa existir antes de qualquer
   // efeito passivo que dispare chamadas autenticadas (ex.: `/me/visual`).
