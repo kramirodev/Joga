@@ -37,6 +37,7 @@ import type {
   ClanMember,
   ClanMessage,
   Friend,
+  FriendRequest,
   LobbyInvite,
   MatchSummary,
   Mission,
@@ -144,6 +145,11 @@ type AppValue = {
   bands: Band[];
   venues: Venue[];
   friends: Friend[];
+  friendRequestsIncoming: FriendRequest[];
+  friendRequestsOutgoing: FriendRequest[];
+  blocks: Friend[];
+  /** Seções sociais que falharam na última carga (`friends`, `incoming`...). */
+  socialFailures: string[];
   invites: LobbyInvite[];
   clan: Clan | null;
   clanMembers: ClanMember[];
@@ -252,6 +258,10 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [bands, setBands] = useState<Band[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequestsIncoming, setFriendRequestsIncoming] = useState<FriendRequest[]>([]);
+  const [friendRequestsOutgoing, setFriendRequestsOutgoing] = useState<FriendRequest[]>([]);
+  const [blocks, setBlocks] = useState<Friend[]>([]);
+  const [socialFailures, setSocialFailures] = useState<string[]>([]);
   const [invites, setInvites] = useState<LobbyInvite[]>([]);
   const [clan, setClan] = useState<Clan | null>(null);
   const [clanMembers, setClanMembers] = useState<ClanMember[]>([]);
@@ -275,6 +285,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [confirmedVisual, setConfirmedVisual] = useState<VisualIdentityResponse | null>(null);
   const queueSnapshotRef = useRef<QueueSnapshot>(emptySnapshot());
   const queueRevisionRef = useRef(0);
+  const socialRevisionRef = useRef(0);
 
   const token = session?.accessToken ?? null;
 
@@ -675,12 +686,50 @@ export function AppProvider({ children }: PropsWithChildren) {
     if (!token) {
       return;
     }
-    const [friendResult, inviteResult] = await Promise.all([
-      api.social.friends(token),
-      api.social.invites(token),
-    ]);
-    setFriends(friendResult.friends);
-    setInvites(inviteResult.invites);
+    // Uma resposta antiga (boot, foreground, foco de tela) não pode sobrescrever
+    // o resultado de uma recarga disparada depois de uma mutação.
+    const revision = ++socialRevisionRef.current;
+    // Paralelo tolerante: uma rota que falha não impede as outras de atualizar
+    // a tela e não derruba as listas já carregadas. A seção afetada fica em
+    // `socialFailures` para a tela avisar sem esconder o que está bom.
+    const [friendResult, incomingResult, outgoingResult, blockResult, inviteResult] =
+      await Promise.allSettled([
+        api.social.friends(token),
+        api.social.friendRequests(token, 'incoming'),
+        api.social.friendRequests(token, 'outgoing'),
+        api.social.blocks(token),
+        api.social.invites(token),
+      ]);
+    if (revision !== socialRevisionRef.current) {
+      return;
+    }
+    const failures: string[] = [];
+    if (friendResult.status === 'fulfilled') {
+      setFriends(friendResult.value.friends);
+    } else {
+      failures.push('friends');
+    }
+    if (incomingResult.status === 'fulfilled') {
+      setFriendRequestsIncoming(incomingResult.value.requests);
+    } else {
+      failures.push('incoming');
+    }
+    if (outgoingResult.status === 'fulfilled') {
+      setFriendRequestsOutgoing(outgoingResult.value.requests);
+    } else {
+      failures.push('outgoing');
+    }
+    if (blockResult.status === 'fulfilled') {
+      setBlocks(blockResult.value.blocks);
+    } else {
+      failures.push('blocks');
+    }
+    if (inviteResult.status === 'fulfilled') {
+      setInvites(inviteResult.value.invites);
+    } else {
+      failures.push('invites');
+    }
+    setSocialFailures(failures);
   }, [token]);
 
   const loadClan = useCallback(async () => {
@@ -939,6 +988,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       loadNotifications(),
       loadModerationActions(),
       loadEmail(),
+      loadSocial(),
+      loadClan(),
     ]);
     if (catalog.length === 0) {
       await loadCatalog().catch(() => []);
@@ -953,6 +1004,8 @@ export function AppProvider({ children }: PropsWithChildren) {
     loadNotifications,
     loadModerationActions,
     loadEmail,
+    loadSocial,
+    loadClan,
     catalog.length,
     loadCatalog,
   ]);
@@ -1264,6 +1317,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       bands,
       venues,
       friends,
+      friendRequestsIncoming,
+      friendRequestsOutgoing,
+      blocks,
+      socialFailures,
       invites,
       clan,
       clanMembers,
@@ -1350,6 +1407,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       bands,
       venues,
       friends,
+      friendRequestsIncoming,
+      friendRequestsOutgoing,
+      blocks,
+      socialFailures,
       invites,
       clan,
       clanMembers,

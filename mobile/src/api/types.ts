@@ -642,7 +642,28 @@ export type ChatMessage = {
   created_at: string;
 };
 
-export type Friend = { user_id: string; display_name: string | null };
+export type Friend = { user_id: string; display_name: string | null; tag: string };
+
+/** Relação de amizade devolvida pela busca de jogador. */
+export type PlayerRelation = 'friend' | 'incoming_request' | 'outgoing_request' | 'none';
+
+export type PlayerSearchResult = {
+  user_id: string;
+  display_name: string | null;
+  tag: string;
+  relation: PlayerRelation;
+};
+
+export type FriendRequest = {
+  id: string;
+  counterpart_id: string;
+  counterpart_name: string | null;
+  counterpart_tag: string;
+  direction: 'incoming' | 'outgoing';
+  status: string;
+  created_at: string;
+  responded_at: string | null;
+};
 
 export type LobbyInvite = {
   id: string;
@@ -737,6 +758,7 @@ export type ClanInvite = {
 export type ClanMember = {
   user_id: string;
   display_name: string | null;
+  tag: string;
   role: string;
   joined_at: string;
 };
