@@ -136,6 +136,18 @@ def ordered_pair(first: uuid.UUID, second: uuid.UUID) -> tuple[uuid.UUID, uuid.U
     return (first, second) if str(first) < str(second) else (second, first)
 
 
+def _friend_answer_body(kind: str, counterpart_name: str | None) -> str:
+    """Corpo da resposta ao pedido, citando o nome público de quem respondeu."""
+
+    if kind == "friend_accepted":
+        return f"{counterpart_name or 'Seu novo amigo'} aceitou seu pedido de amizade."
+    if kind == "friend_declined":
+        return f"{counterpart_name or 'A pessoa'} recusou seu pedido de amizade."
+    if kind == "friend_cancelled":
+        return f"{counterpart_name or 'A pessoa'} cancelou o pedido de amizade."
+    raise ValueError(f"corpo ausente para notificação {kind}")
+
+
 class SocialService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -404,7 +416,6 @@ class SocialService:
             user_id=friendship.requested_by,
             kind="friend_accepted",
             title="Pedido de amizade aceito",
-            body="Seu pedido de amizade foi aceito.",
             friendship=friendship,
             counterpart_id=user_id,
             moment=moment,
@@ -435,7 +446,6 @@ class SocialService:
             user_id=friendship.requested_by,
             kind="friend_declined",
             title="Pedido de amizade recusado",
-            body="Seu pedido de amizade foi recusado.",
             friendship=friendship,
             counterpart_id=user_id,
             moment=moment,
@@ -468,7 +478,6 @@ class SocialService:
             else friendship.user_high_id,
             kind="friend_cancelled",
             title="Pedido de amizade cancelado",
-            body="Um pedido de amizade enviado a você foi cancelado.",
             friendship=friendship,
             counterpart_id=user_id,
             moment=moment,
@@ -890,7 +899,7 @@ class SocialService:
         user_id: uuid.UUID,
         kind: str,
         title: str,
-        body: str,
+        body: str | None = None,
         friendship: Friendship,
         counterpart_id: uuid.UUID,
         moment: datetime,
@@ -898,6 +907,8 @@ class SocialService:
         counterpart_name, counterpart_tag = self._player_labels([counterpart_id]).get(
             counterpart_id, (None, "")
         )
+        if body is None:
+            body = _friend_answer_body(kind, counterpart_name)
         # A chave carrega o destinatário: NotificationService.create procura a
         # chave globalmente e não pode engolir a notificação de outro usuário.
         NotificationService(self._session).create(

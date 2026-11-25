@@ -193,6 +193,11 @@ def test_friend_request_lists_and_accept_flow(db_session: Session) -> None:
     accepted = service.accept_friend_request(request.id, second, now=accepted_at)
     assert accepted.status == "ACCEPTED"
     assert ensure_utc(accepted.responded_at) == accepted_at
+    accepted_note = db_session.scalars(
+        select(Notification).where(Notification.kind == "friend_accepted")
+    ).one()
+    assert accepted_note.user_id == first
+    assert accepted_note.body == "Seu novo amigo aceitou seu pedido de amizade."
 
     assert service.are_friends(first, second) is True
     friends = service.list_friends(first)
@@ -219,6 +224,10 @@ def test_decline_only_recipient_and_reopen(db_session: Session) -> None:
     declined = service.decline_friend_request(request.id, second, now=declined_at)
     assert declined.status == "DECLINED"
     assert ensure_utc(declined.responded_at) == declined_at
+    declined_note = db_session.scalars(
+        select(Notification).where(Notification.kind == "friend_declined")
+    ).one()
+    assert declined_note.body == "A pessoa recusou seu pedido de amizade."
 
     with pytest.raises(FriendshipNotFound):
         service.accept_friend_request(request.id, second, now=declined_at)
@@ -250,6 +259,11 @@ def test_cancel_only_author_and_reopen_by_other_side(db_session: Session) -> Non
     cancelled = service.cancel_friend_request(request.id, first, now=cancelled_at)
     assert cancelled.status == "CANCELLED"
     assert ensure_utc(cancelled.responded_at) == cancelled_at
+    cancelled_note = db_session.scalars(
+        select(Notification).where(Notification.kind == "friend_cancelled")
+    ).one()
+    assert cancelled_note.user_id == second
+    assert cancelled_note.body == "A pessoa cancelou o pedido de amizade."
 
     history = service.list_friend_requests(first, direction="outgoing", status="history")
     assert [entry.status for entry in history] == ["CANCELLED"]
@@ -412,6 +426,7 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     )
     assert len(accepted) == 1
     assert accepted[0].user_id == first
+    assert accepted[0].body == "SEGUNDO JOGADOR aceitou seu pedido de amizade."
     assert accepted[0].data == {
         "friendship_id": str(request.id),
         "counterpart_id": str(second),
@@ -432,6 +447,7 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     )
     assert len(declined) == 1
     assert declined[0].user_id == first
+    assert declined[0].body == "TERCEIRO JOGADOR recusou seu pedido de amizade."
     assert declined[0].data["counterpart_id"] == str(third)
     assert declined[0].data["counterpart_name"] == "TERCEIRO JOGADOR"
     assert declined[0].data["counterpart_tag"] == db_session.get(User, third).tag
@@ -457,6 +473,7 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     )
     assert len(cancelled) == 1
     assert cancelled[0].user_id == fourth
+    assert cancelled[0].body == "PRIMEIRO JOGADOR cancelou o pedido de amizade."
     assert cancelled[0].data["counterpart_id"] == str(first)
     assert cancelled[0].data["counterpart_name"] == "PRIMEIRO JOGADOR"
     assert cancelled[0].data["counterpart_tag"] == db_session.get(User, first).tag

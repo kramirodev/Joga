@@ -369,17 +369,18 @@ def _notify_join_request(
         .where(User.id == request.user_id)
     ).first()
     service = NotificationService(session)
+    requester_name = requester.display_name if requester is not None else None
     for admin_id in admin_member_ids(session, clan.id, exclude_user_id=request.user_id):
         service.create(
             user_id=admin_id,
             kind="clan_join_request",
             title="Novo pedido no clã",
-            body=f"{clan.name} tem um novo pedido de entrada.",
+            body=f"{requester_name or 'Um jogador'} pediu para entrar em {clan.name}.",
             idempotency_key=f"clan_join_request:{admin_id}:{request.id}",
             data={
                 "clan_id": str(clan.id),
                 "request_id": str(request.id),
-                "requester_name": requester.display_name if requester is not None else None,
+                "requester_name": requester_name,
                 "requester_tag": requester.tag if requester is not None else "",
             },
             now=moment,
