@@ -9,6 +9,8 @@ import type {
   ChatMessage,
   Clan,
   ClanInvite,
+  ClanJoinRequestRow,
+  ClanJoinResult,
   ClanMember,
   ClanMessage,
   ClanRanking,
@@ -25,6 +27,7 @@ import type {
   ModerationAction,
   ModerationAppeal,
   ModerationReport,
+  MyClanRequest,
   MyRating,
   Network,
   Notification,
@@ -61,6 +64,7 @@ import type {
 
 import { APP_BUILD, APP_VERSION, CLIENT_NAME, CLIENT_PLATFORM } from './version';
 import { isExplicitSessionRevocation } from './refreshPolicy';
+import { retryTokenAfterRefresh } from './tokenRetry';
 
 // Configure pela variável de ambiente EXPO_PUBLIC_API_URL.
 // Sem a variável, usa o backend local via `adb reverse tcp:8000 tcp:8000`.
@@ -121,6 +125,7 @@ export type RefreshResult =
 
 let refreshHandler: (() => Promise<RefreshResult>) | null = null;
 let refreshPromise: Promise<RefreshResult> | null = null;
+let currentTokenProvider: (() => string | null) | null = null;
 let suspensionHandler: (() => void) | null = null;
 let sessionExpiredHandler: ((token?: string | null) => void) | null = null;
 let updateRequiredHandler: (() => void) | null = null;
@@ -130,6 +135,15 @@ export function setRefreshHandler(handler: (() => Promise<RefreshResult>) | null
   if (!handler) {
     refreshPromise = null;
   }
+}
+
+/**
+ * Token da sessão agora. `call()` consulta antes de renovar: se o token já
+ * mudou, a resposta 401 veio de um token antigo e a chamada só precisa ser
+ * repetida — renovar de novo revogaria o token recém-rotacionado.
+ */
+export function setCurrentTokenProvider(provider: (() => string | null) | null) {
+  currentTokenProvider = provider;
 }
 
 export function setSuspensionHandler(handler: (() => void) | null) {
@@ -189,48 +203,61 @@ async function call<T>(path: string, init: Init = {}, allowRefresh = true): Prom
 
   let unauthorizedHandled = false;
 
-  if (response.status === 401 && init.token && allowRefresh && refreshHandler) {
-    const refreshToken = init.token;
-    if (!refreshPromise) {
-      refreshPromise = refreshHandler().finally(() => {
-        refreshPromise = null;
-      });
-    }
-    const refreshed = await refreshPromise;
-    if (refreshed.ok) {
-      try {
-        return await call<T>(path, { ...init, token: refreshed.token }, false);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 401) {
-          // Só o corpo explícito do servidor pode acusar suspensão ou provar
-          // que a sessão morreu. Rede/token recém-rotacionado e códigos
-          // transitórios mantêm a sessão local.
-          if (error.code === 'account_suspended') {
-            suspensionHandler?.();
-          } else if (!init.keepSession && isExplicitSessionRevocation(error.code)) {
-            sessionExpiredHandler?.(refreshed.token);
-          }
-          unauthorizedHandled = true;
+  const retryWithToken = async (token: string): Promise<T> => {
+    try {
+      return await call<T>(path, { ...init, token }, false);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        // Só o corpo explícito do servidor pode acusar suspensão ou provar
+        // que a sessão morreu. Rede/token recém-rotacionado e códigos
+        // transitórios mantêm a sessão local.
+        if (error.code === 'account_suspended') {
+          suspensionHandler?.();
+        } else if (!init.keepSession && isExplicitSessionRevocation(error.code)) {
+          sessionExpiredHandler?.(token);
         }
-        throw error;
       }
+      throw error;
     }
-    if (refreshed.reason === 'suspended') {
-      suspensionHandler?.();
-      unauthorizedHandled = true;
-      throw new ApiError(401, 'account_suspended');
+  };
+
+  if (response.status === 401 && init.token && allowRefresh) {
+    const currentToken = currentTokenProvider?.() ?? null;
+    if (currentToken && currentToken !== init.token) {
+      // A sessão já tem um token mais novo: este 401 veio do token antigo.
+      // Repetir com o atual evita outra rotação e a revogação em cascata.
+      return retryWithToken(currentToken);
     }
-    if (refreshed.reason === 'expired') {
-      if (!init.keepSession) {
-        sessionExpiredHandler?.(refreshToken);
+
+    if (refreshHandler) {
+      const refreshToken = init.token;
+      if (!refreshPromise) {
+        refreshPromise = refreshHandler().finally(() => {
+          refreshPromise = null;
+        });
       }
-      unauthorizedHandled = true;
-    }
-    // `retry` persistente (ADR 0058) e `unavailable` (rede/timeout/5xx/429)
-    // mantêm a sessão; o erro original chega à tela e a próxima chamada pode
-    // recuperar. Nunca desloga nem acusa suspensão.
-    if (refreshed.reason === 'retry' || refreshed.reason === 'unavailable') {
-      unauthorizedHandled = true;
+      const refreshed = await refreshPromise;
+      if (refreshed.ok) {
+        const latestToken = currentTokenProvider?.() ?? null;
+        return retryWithToken(retryTokenAfterRefresh(refreshToken, latestToken, refreshed.token));
+      }
+      if (refreshed.reason === 'suspended') {
+        suspensionHandler?.();
+        unauthorizedHandled = true;
+        throw new ApiError(401, 'account_suspended');
+      }
+      if (refreshed.reason === 'expired') {
+        if (!init.keepSession) {
+          sessionExpiredHandler?.(refreshToken);
+        }
+        unauthorizedHandled = true;
+      }
+      // `retry` persistente (ADR 0058) e `unavailable` (rede/timeout/5xx/429)
+      // mantêm a sessão; o erro original chega à tela e a próxima chamada pode
+      // recuperar. Nunca desloga nem acusa suspensão.
+      if (refreshed.reason === 'retry' || refreshed.reason === 'unavailable') {
+        unauthorizedHandled = true;
+      }
     }
   }
 
@@ -1215,18 +1242,18 @@ export const api = {
     mine(token: string) {
       return call<Clan | null>('/me/clan', { token });
     },
+    myRequests(token: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ requests: MyClanRequest[] }>(`/me/clan-requests${qs({ status })}`, { token });
+    },
     get(token: string, clanId: string) {
       return call<Clan>(`/clans/${encodeURIComponent(clanId)}`, { token });
     },
     join(token: string, clanId: string, message?: string) {
-      return call<{ status: string; request: unknown }>(
-        `/clans/${encodeURIComponent(clanId)}/join`,
-        {
-          method: 'POST',
-          body: { message: message ?? null },
-          token,
-        },
-      );
+      return call<ClanJoinResult>(`/clans/${encodeURIComponent(clanId)}/join`, {
+        method: 'POST',
+        body: { message: message ?? null },
+        token,
+      });
     },
     members(token: string, clanId: string) {
       return call<{ members: ClanMember[] }>(`/clans/${encodeURIComponent(clanId)}/members`, {
@@ -1277,15 +1304,34 @@ export const api = {
         token,
       });
     },
-    requests(token: string, clanId: string) {
-      return call<{ requests: unknown[] }>(`/clans/${encodeURIComponent(clanId)}/requests`, {
-        token,
-      });
+    requests(token: string, clanId: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ requests: ClanJoinRequestRow[] }>(
+        `/clans/${encodeURIComponent(clanId)}/requests${qs({ status })}`,
+        { token },
+      );
     },
-    decideRequest(token: string, clanId: string, requestId: string, approve: boolean) {
-      return call<unknown>(
+    decideRequest(
+      token: string,
+      clanId: string,
+      requestId: string,
+      approve: boolean,
+      note?: string,
+    ) {
+      return call<ClanJoinRequestRow>(
         `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}/decide`,
-        { method: 'POST', body: { approve }, token },
+        { method: 'POST', body: { approve, note: note?.trim() || null }, token },
+      );
+    },
+    cancelRequest(token: string, clanId: string, requestId: string) {
+      return call<ClanJoinRequestRow>(
+        `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}`,
+        { method: 'DELETE', token },
+      );
+    },
+    invites(token: string, clanId: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ invites: ClanInvite[] }>(
+        `/clans/${encodeURIComponent(clanId)}/invites${qs({ status })}`,
+        { token },
       );
     },
     invite(token: string, clanId: string, userId: string) {

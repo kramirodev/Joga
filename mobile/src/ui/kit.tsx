@@ -536,6 +536,9 @@ export function Btn({
       style={({ pressed }) => ({
         width: inRow ? undefined : block ? '100%' : small ? undefined : '100%',
         flex: inRow ? 1 : undefined,
+        // Fora de `BtnRow` o botão mantém a largura do rótulo: sem isto, um
+        // nome em duas linhas espreme o texto e corta "Adicionar" na linha.
+        flexShrink: inRow ? 1 : 0,
         minHeight: largeTargets ? (small ? 54 : 60) : small ? 46 : 52,
         borderRadius: small ? 11 : 14,
         borderWidth: 1.5,
@@ -552,16 +555,15 @@ export function Btn({
     >
       {icon ? <Icon name={icon} size={18} color={textColor} /> : null}
       <Text
-        numberOfLines={2}
+        numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
         maxFontSizeMultiplier={1.2}
         style={{
-          flexShrink: 1,
+          flexShrink: inRow ? 1 : 0,
           fontSize: small ? 14 : 15,
           lineHeight: small ? 18 : 20,
           fontWeight: '800',
-          letterSpacing: 0.1,
           color: textColor,
           textAlign: 'center',
         }}

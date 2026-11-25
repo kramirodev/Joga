@@ -716,6 +716,18 @@ export type ModerationAppeal = {
   decision_reason: string | null;
 };
 
+/** Status do pedido do próprio jogador para entrar em um clã. */
+export type ClanMyRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** Pedido do próprio jogador embutido no clã (lista, detalhe e `/me/clan`). */
+export type ClanMyRequest = {
+  id: string;
+  status: ClanMyRequestStatus;
+  message: string | null;
+  created_at: string;
+  decision_note: string | null;
+};
+
 export type Clan = {
   id: string;
   name: string;
@@ -727,6 +739,7 @@ export type Clan = {
   trophies: number;
   my_role: string | null;
   is_member: boolean;
+  my_request: ClanMyRequest | null;
 };
 
 /** Política de entrada aceita na edição do clã. */
@@ -749,11 +762,45 @@ export type ClanInvite = {
   clan_tag: string;
   inviter_id: string;
   inviter_display_name: string | null;
+  inviter_tag: string;
+  invitee_id: string;
+  invitee_display_name: string | null;
+  invitee_tag: string;
   status: string;
   created_at: string;
   expires_at: string;
   answered_at: string | null;
 };
+
+/** Pedido do jogador para entrar em um clã, com o clã de destino. */
+export type MyClanRequest = {
+  id: string;
+  clan_id: string;
+  clan_name: string;
+  clan_tag: string;
+  status: ClanMyRequestStatus;
+  message: string | null;
+  decision_note: string | null;
+  created_at: string;
+  decided_at: string | null;
+};
+
+/** Fila do dono/admin: pedido de outro jogador para entrar no clã. */
+export type ClanJoinRequestRow = {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  tag: string;
+  status: ClanMyRequestStatus;
+  message: string | null;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  decision_note: string | null;
+};
+
+/** Resposta de `POST /clans/{id}/join`: entrou direto ou ficou na fila. */
+export type ClanJoinResult = { status: 'joined' } | { status: 'pending'; request: ClanMyRequest };
 
 export type ClanMember = {
   user_id: string;
