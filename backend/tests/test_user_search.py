@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.clans.models import Clan, ClanMember
 from app.modules.identity.models import User
 from app.modules.profile.models import UserProfile
 from app.modules.social.models import Friendship, UserBlock
@@ -240,6 +241,164 @@ def test_search_validates_query_and_authentication(
     assert spaces.status_code == 422
     assert spaces.json()["detail"]["code"] == "invalid_search_query"
     assert client.get("/api/v1/users/search", params={"q": "abc"}).status_code == 401
+
+
+def test_profile_update_canonicalizes_name_and_search_is_case_insensitive(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Regressão: escrita do perfil canoniza; busca por nome/tag não diferencia caixa."""
+
+    api = api_client(client, db_session)
+    actor_token = make_token(db_session, add_player(db_session, "BUSCADOR"))
+    target = add_player(db_session, "NOME ANTIGO", tag="#ABCD1234")
+    target_token = make_token(db_session, target)
+
+    updated = api.put(
+        "/api/v1/me/profile",
+        headers=bearer(target_token),
+        json={"display_name": "  novo   jogador ", "bio": None},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["display_name"] == "NOVO JOGADOR"
+    profile = db_session.get(UserProfile, target)
+    assert profile is not None
+    assert profile.display_name == "NOVO JOGADOR"
+
+    for query in ("novo jogador", "NOVO", "abcd1234", "#abcd1234"):
+        response = search(api, actor_token, query)
+        assert response.status_code == 200, response.text
+        results = response.json()["results"]
+        assert [item["user_id"] for item in results] == [str(target)], query
+        assert results[0]["display_name"] == "NOVO JOGADOR"
+        assert results[0]["tag"] == "#ABCD1234"
+
+
+def test_public_player_shape_tag_relation_and_clan(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    actor = add_player(db_session, "VISITANTE")
+    token = make_token(db_session, actor)
+    target = add_player(
+        db_session,
+        "PERFIL PUBLICO",
+        tag="#FEED1234",
+        email="pii@example.com",
+    )
+    low, high = ordered_pair(actor, target)
+    db_session.add(
+        Friendship(
+            user_low_id=low,
+            user_high_id=high,
+            requested_by=actor,
+            status="ACCEPTED",
+        )
+    )
+    clan = Clan(name="Clã Público", tag="#PUB", created_by=target)
+    db_session.add(clan)
+    db_session.flush()
+    db_session.add(ClanMember(clan_id=clan.id, user_id=target, role="owner", status="active"))
+    db_session.flush()
+
+    response = api.get(f"/api/v1/users/{target}", headers=bearer(token))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body == {
+        "user_id": str(target),
+        "display_name": "PERFIL PUBLICO",
+        "tag": "#FEED1234",
+        "relation": "friend",
+        "clan": {"id": str(clan.id), "name": "Clã Público", "tag": "#PUB"},
+    }
+    assert set(body) == {"user_id", "display_name", "tag", "relation", "clan"}
+    assert set(body["clan"]) == {"id", "name", "tag"}
+    for forbidden_key in (
+        "email",
+        "phone",
+        "cpf",
+        "status",
+        "lat",
+        "lng",
+        "coordinates",
+        "mmr",
+    ):
+        assert forbidden_key not in body
+    assert "pii@example.com" not in response.text
+
+
+def test_public_player_reports_relation_and_null_clan(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    actor = add_player(db_session, "ATOR RELACAO PUBLICA")
+    token = make_token(db_session, actor)
+    incoming = add_player(db_session, "PEDIDO RECEBIDO")
+    outgoing = add_player(db_session, "PEDIDO ENVIADO")
+    stranger = add_player(db_session, "SEM RELACAO")
+
+    low, high = ordered_pair(actor, incoming)
+    db_session.add(
+        Friendship(
+            user_low_id=low,
+            user_high_id=high,
+            requested_by=incoming,
+            status="PENDING",
+        )
+    )
+    low, high = ordered_pair(actor, outgoing)
+    db_session.add(
+        Friendship(
+            user_low_id=low,
+            user_high_id=high,
+            requested_by=actor,
+            status="PENDING",
+        )
+    )
+    db_session.flush()
+
+    expected = {
+        incoming: "incoming_request",
+        outgoing: "outgoing_request",
+        stranger: "none",
+    }
+    for user_id, relation in expected.items():
+        body = api.get(f"/api/v1/users/{user_id}", headers=bearer(token)).json()
+        assert body["relation"] == relation
+        assert body["clan"] is None
+
+
+def test_public_player_is_404_for_missing_inactive_and_blocked(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    api = api_client(client, db_session)
+    actor = add_player(db_session, "ATOR BLOQUEIO")
+    token = make_token(db_session, actor)
+    suspended = add_player(db_session, "SUSPENSO PUBLICO", status="suspended")
+    deleted = add_player(db_session, "DELETADO PUBLICO", status="deleted")
+    blocked_by_me = add_player(db_session, "BLOQUEADO POR MIM")
+    blocked_me = add_player(db_session, "ME BLOQUEOU")
+    db_session.add(UserBlock(blocker_id=actor, blocked_id=blocked_by_me))
+    db_session.add(UserBlock(blocker_id=blocked_me, blocked_id=actor))
+    db_session.flush()
+
+    for user_id in (
+        uuid.uuid4(),
+        suspended,
+        deleted,
+        blocked_by_me,
+        blocked_me,
+    ):
+        response = api.get(f"/api/v1/users/{user_id}", headers=bearer(token))
+        assert response.status_code == 404, response.text
+        assert response.json() == {"detail": {"code": "user_not_found"}}
+
+    missing = uuid.uuid4()
+    assert client.get(f"/api/v1/users/{missing}").status_code == 401
 
 
 def test_search_is_rate_limited_per_user(

@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.dependency import get_session
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbyParticipant
 from app.modules.profile.models import UserSportProfile
 from app.modules.social import service as social_service
@@ -67,6 +68,9 @@ def test_friend_request_flow(client: TestClient, db_session: Session) -> None:
     friends = api.get("/api/v1/friends", headers=bearer(first_token))
     assert friends.status_code == 200
     assert [item["user_id"] for item in friends.json()["friends"]] == [str(second)]
+    friend = friends.json()["friends"][0]
+    assert friend["tag"] == db_session.get(User, second).tag
+    assert set(friend) == {"user_id", "display_name", "tag"}
 
     removed = api.delete(f"/api/v1/friends/{second}", headers=bearer(first_token))
     assert removed.status_code == 204
@@ -100,6 +104,7 @@ def test_friend_request_listing_and_decline(
     entry = incoming.json()["requests"][0]
     assert entry["counterpart_id"] == str(first)
     assert entry["counterpart_name"] is None
+    assert entry["counterpart_tag"] == db_session.get(User, first).tag
     assert entry["direction"] == "incoming"
     assert entry["status"] == "PENDING"
     assert entry["responded_at"] is None
@@ -294,6 +299,10 @@ def test_blocks_listing(client: TestClient, db_session: Session) -> None:
     assert {item["user_id"] for item in listing.json()["blocks"]} == {
         str(second),
         str(third),
+    }
+    assert {item["tag"] for item in listing.json()["blocks"]} == {
+        db_session.get(User, second).tag,
+        db_session.get(User, third).tag,
     }
 
     other_listing = api.get("/api/v1/blocks", headers=bearer(second_token))

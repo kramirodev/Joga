@@ -33,6 +33,7 @@ from app.modules.identity.audit import record_audit
 from app.modules.identity.clock import ensure_utc, utcnow
 from app.modules.identity.models import User
 from app.modules.notifications.service import NotificationService
+from app.modules.profile.models import UserProfile
 from app.modules.social.service import SocialService
 
 MAX_MEMBERS = 30
@@ -105,10 +106,16 @@ def active_membership(session: Session, user_id: uuid.UUID) -> ClanMember | None
 
 
 def active_clan_for(session: Session, user_id: uuid.UUID) -> Clan | None:
-    membership = active_membership(session, user_id)
-    if membership is None:
-        return None
-    return session.get(Clan, membership.clan_id)
+    """Clã ativo do jogador, resolvido em uma única consulta."""
+
+    return session.scalars(
+        select(Clan)
+        .join(ClanMember, ClanMember.clan_id == Clan.id)
+        .where(
+            ClanMember.user_id == user_id,
+            ClanMember.status == "active",
+        )
+    ).first()
 
 
 def member_count(session: Session, clan_id: uuid.UUID) -> int:
@@ -356,6 +363,11 @@ def _notify_join_request(
 ) -> None:
     """Avisa donos e admins ativos, uma única vez por pedido e destinatário."""
 
+    requester = session.execute(
+        select(User.tag, UserProfile.display_name)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(User.id == request.user_id)
+    ).first()
     service = NotificationService(session)
     for admin_id in admin_member_ids(session, clan.id, exclude_user_id=request.user_id):
         service.create(
@@ -364,7 +376,12 @@ def _notify_join_request(
             title="Novo pedido no clã",
             body=f"{clan.name} tem um novo pedido de entrada.",
             idempotency_key=f"clan_join_request:{admin_id}:{request.id}",
-            data={"clan_id": str(clan.id), "request_id": str(request.id)},
+            data={
+                "clan_id": str(clan.id),
+                "request_id": str(request.id),
+                "requester_name": requester.display_name if requester is not None else None,
+                "requester_tag": requester.tag if requester is not None else "",
+            },
             now=moment,
         )
 
@@ -778,6 +795,49 @@ def list_pending_invites(
             .order_by(ClanInvite.created_at.desc(), ClanInvite.id)
         )
     )
+
+
+def list_clan_invites(
+    session: Session,
+    actor_id: uuid.UUID,
+    clan_id: uuid.UUID,
+    *,
+    status: str = "pending",
+    now: datetime | None = None,
+) -> list[ClanInvite]:
+    """Convites do clã para dono/admin, pendentes ou histórico.
+
+    ``pending`` materializa como ``expired`` o que já venceu e devolve só o que
+    ainda pode ser respondido; ``history`` devolve aceitos, recusados, expirados
+    e cancelados do clã, sem misturar convites de outro clã.
+    """
+
+    if status not in ("pending", "history"):
+        raise ClanValidation("status_invalid")
+    moment = ensure_utc(now or utcnow())
+    get_clan(session, clan_id)
+    require_admin(session, clan_id, actor_id)
+    if status == "pending":
+        session.execute(
+            update(ClanInvite)
+            .where(
+                ClanInvite.clan_id == clan_id,
+                ClanInvite.status == "pending",
+                ClanInvite.expires_at <= moment,
+            )
+            .values(status="expired", answered_at=moment)
+        )
+        statement = select(ClanInvite).where(
+            ClanInvite.clan_id == clan_id,
+            ClanInvite.status == "pending",
+            ClanInvite.expires_at > moment,
+        )
+    else:
+        statement = select(ClanInvite).where(
+            ClanInvite.clan_id == clan_id,
+            ClanInvite.status != "pending",
+        )
+    return list(session.scalars(statement.order_by(ClanInvite.created_at.desc(), ClanInvite.id)))
 
 
 def _invite_for(

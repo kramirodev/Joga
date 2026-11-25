@@ -110,12 +110,22 @@ class PlayerSearchEntry:
 
 
 @dataclass(frozen=True)
+class FriendEntry:
+    """Amigo ou bloqueado na visão de quem consulta, sem PII."""
+
+    user_id: uuid.UUID
+    display_name: str | None
+    tag: str
+
+
+@dataclass(frozen=True)
 class FriendRequestEntry:
     """Pedido de amizade na visão de um dos participantes."""
 
     id: uuid.UUID
     counterpart_id: uuid.UUID
     counterpart_name: str | None
+    counterpart_tag: str
     direction: Literal["incoming", "outgoing"]
     status: str
     created_at: datetime
@@ -156,7 +166,7 @@ class SocialService:
             is not None
         )
 
-    def list_friends(self, user_id: uuid.UUID) -> list[tuple[uuid.UUID, str | None]]:
+    def list_friends(self, user_id: uuid.UUID) -> list[FriendEntry]:
         rows = list(
             self._session.scalars(
                 select(Friendship).where(
@@ -168,15 +178,22 @@ class SocialService:
                 )
             )
         )
-        result: list[tuple[uuid.UUID, str | None]] = []
-        for row in rows:
-            other = row.user_high_id if row.user_low_id == user_id else row.user_low_id
-            profile = self._session.get(UserProfile, other)
-            result.append((other, profile.display_name if profile else None))
-        result.sort(key=lambda item: str(item[0]))
+        other_ids = [
+            row.user_high_id if row.user_low_id == user_id else row.user_low_id for row in rows
+        ]
+        labels = self._player_labels(other_ids)
+        result = [
+            FriendEntry(
+                user_id=other_id,
+                display_name=labels.get(other_id, (None, ""))[0],
+                tag=labels.get(other_id, (None, ""))[1],
+            )
+            for other_id in other_ids
+        ]
+        result.sort(key=lambda item: str(item.user_id))
         return result
 
-    def list_blocks(self, user_id: uuid.UUID) -> list[tuple[uuid.UUID, str | None]]:
+    def list_blocks(self, user_id: uuid.UUID) -> list[FriendEntry]:
         rows = list(
             self._session.scalars(
                 select(UserBlock)
@@ -184,11 +201,15 @@ class SocialService:
                 .order_by(UserBlock.created_at.desc(), UserBlock.id.desc())
             )
         )
-        result: list[tuple[uuid.UUID, str | None]] = []
-        for row in rows:
-            profile = self._session.get(UserProfile, row.blocked_id)
-            result.append((row.blocked_id, profile.display_name if profile else None))
-        return result
+        labels = self._player_labels([row.blocked_id for row in rows])
+        return [
+            FriendEntry(
+                user_id=row.blocked_id,
+                display_name=labels.get(row.blocked_id, (None, ""))[0],
+                tag=labels.get(row.blocked_id, (None, ""))[1],
+            )
+            for row in rows
+        ]
 
     def search_players(
         self,
@@ -299,14 +320,18 @@ class SocialService:
             )
         )
         result: list[FriendRequestEntry] = []
+        labels = self._player_labels(
+            [row.user_high_id if row.user_low_id == user_id else row.user_low_id for row in rows]
+        )
         for row in rows:
             counterpart = row.user_high_id if row.user_low_id == user_id else row.user_low_id
-            profile = self._session.get(UserProfile, counterpart)
+            display_name, tag = labels.get(counterpart, (None, ""))
             result.append(
                 FriendRequestEntry(
                     id=row.id,
                     counterpart_id=counterpart,
-                    counterpart_name=profile.display_name if profile else None,
+                    counterpart_name=display_name,
+                    counterpart_tag=tag,
                     direction="outgoing" if row.requested_by == user_id else "incoming",
                     status=row.status,
                     created_at=row.created_at,
@@ -533,6 +558,11 @@ class SocialService:
             self._session.delete(row)
             self._session.flush()
 
+    def relation_with(self, actor_id: uuid.UUID, counterpart_id: uuid.UUID) -> PlayerRelation:
+        """Relação social do ator com um jogador, em uma única consulta."""
+
+        return self._relations_for(actor_id, [counterpart_id]).get(counterpart_id, "none")
+
     # Convites ----------------------------------------------------------
 
     def invite_to_lobby(
@@ -703,6 +733,19 @@ class SocialService:
 
     # Internos ----------------------------------------------------------
 
+    def _player_labels(self, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[str | None, str]]:
+        """Nome e tag pública de cada usuário, em uma única consulta."""
+
+        unique_ids = list(dict.fromkeys(user_ids))
+        if not unique_ids:
+            return {}
+        rows = self._session.execute(
+            select(User.id, User.tag, UserProfile.display_name)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(User.id.in_(unique_ids))
+        ).all()
+        return {row.id: (row.display_name, row.tag) for row in rows}
+
     def _relations_for(
         self, actor_id: uuid.UUID, counterpart_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, PlayerRelation]:
@@ -830,11 +873,12 @@ class SocialService:
         target_id: uuid.UUID,
         moment: datetime,
     ) -> None:
+        display_name, _tag = self._player_labels([actor_id]).get(actor_id, (None, ""))
         self._notify(
             user_id=target_id,
             kind="friend_request_received",
             title="Novo pedido de amizade",
-            body="Você recebeu um pedido de amizade.",
+            body=f"{display_name or 'Um jogador'} quer ser seu amigo.",
             friendship=friendship,
             counterpart_id=actor_id,
             moment=moment,
@@ -851,6 +895,9 @@ class SocialService:
         counterpart_id: uuid.UUID,
         moment: datetime,
     ) -> None:
+        counterpart_name, counterpart_tag = self._player_labels([counterpart_id]).get(
+            counterpart_id, (None, "")
+        )
         # A chave carrega o destinatário: NotificationService.create procura a
         # chave globalmente e não pode engolir a notificação de outro usuário.
         NotificationService(self._session).create(
@@ -862,6 +909,8 @@ class SocialService:
             data={
                 "friendship_id": str(friendship.id),
                 "counterpart_id": str(counterpart_id),
+                "counterpart_name": counterpart_name,
+                "counterpart_tag": counterpart_tag,
             },
             now=moment,
         )
