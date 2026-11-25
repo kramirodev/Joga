@@ -13,11 +13,14 @@ import type {
   ChatMessage,
   Clan,
   ClanInvite as ClanInviteData,
+  ClanJoinRequestRow,
+  ClanJoinResult,
   ClanMember,
   ClanRanking as ClanRankingData,
   FriendRequest,
   ModerationAction,
   ModerationReport,
+  MyClanRequest,
   MyRating,
   Notification,
   PlayerRelation,
@@ -26,6 +29,13 @@ import type {
   VisualItem,
 } from '../api/types';
 import { useApp } from '../state/app';
+import {
+  clanCardAction,
+  clanCardActionLabel,
+  clanJoinState,
+  clanRequestErrorCopy,
+  clanRequestStatusLabel,
+} from '../state/clanFlow';
 import {
   clanUpdatePatch,
   displayClanTag,
@@ -1062,10 +1072,46 @@ function AddFriend() {
 function ClanProfile() {
   const nav = useNav();
   const { palette, dark } = useTheme();
-  const { clan, clanMembers, clanMessages, loadClan } = useApp();
+  const { clan, clanMembers, clanMessages, loadClan, session } = useApp();
+  const token = session?.accessToken ?? null;
+  const clanId = clan?.id ?? null;
+  const canManageRequests = isAdminRole(clan?.my_role);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+  const [requestsInfo, setRequestsInfo] = useState<{
+    clanId: string;
+    count: number | null;
+    failed: boolean;
+  } | null>(null);
+  const [requestsTick, setRequestsTick] = useState(0);
+
+  useEffect(() => {
+    if (!token || !clanId || !canManageRequests) {
+      return;
+    }
+    let active = true;
+    api.clans
+      .requests(token, clanId, 'pending')
+      .then((response) => {
+        if (active) {
+          setRequestsInfo({ clanId, count: response.requests.length, failed: false });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRequestsInfo({ clanId, count: null, failed: true });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, clanId, canManageRequests, requestsTick]);
+
+  useScreenFocus('clan', () => {
+    setRequestsTick((value) => value + 1);
+  });
+
   useEffect(() => {
     let active = true;
     loadClan()
@@ -1137,6 +1183,41 @@ function ClanProfile() {
       </Page>
     );
   }
+  const requestsInfoForClan = requestsInfo?.clanId === clanId ? requestsInfo : null;
+  const pendingRequests = requestsInfoForClan?.count ?? null;
+  const requestsFailed = !!requestsInfoForClan?.failed;
+  const requestSub = requestsFailed
+    ? 'Não foi possível contar os pedidos agora'
+    : pendingRequests === null
+      ? 'Pedidos de entrada do clã'
+      : pendingRequests === 0
+        ? 'Nenhum pedido pendente'
+        : `${pendingRequests} ${pendingRequests === 1 ? 'pedido pendente' : 'pedidos pendentes'}`;
+  const rows = [
+    ...(canManageRequests
+      ? [
+          {
+            icon: 'user' as const,
+            title: 'Pedidos de entrada',
+            sub: requestSub,
+            go: 'clan-requests',
+          },
+        ]
+      : []),
+    {
+      icon: 'users' as const,
+      title: 'Membros e cargos',
+      sub: `${clanMembers.length} ${clanMembers.length === 1 ? 'membro' : 'membros'}`,
+      go: 'clan-members',
+    },
+    {
+      icon: 'gear' as const,
+      title: 'Configurações do clã',
+      sub: 'Editar nome, descrição e entrada',
+      go: 'clan-settings',
+    },
+  ];
+
   return (
     <Page title={clan.name}>
       {failed ? (
@@ -1207,20 +1288,7 @@ function ClanProfile() {
         </Card>
       </View>
       <CardList>
-        {[
-          {
-            icon: 'users' as const,
-            title: 'Membros e cargos',
-            sub: `${clanMembers.length} ${clanMembers.length === 1 ? 'membro' : 'membros'}`,
-            go: 'clan-members',
-          },
-          {
-            icon: 'gear' as const,
-            title: 'Configurações do clã',
-            sub: 'Editar nome, descrição e entrada',
-            go: 'clan-settings',
-          },
-        ].map((item, index, all) => (
+        {rows.map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
             <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
             <View style={{ flex: 1 }}>
@@ -1240,24 +1308,11 @@ function ClanProfile() {
   );
 }
 
-function joinErrorMessage(code: string): string {
-  const map: Record<string, string> = {
-    already_member: 'Você já é membro deste clã.',
-    already_in_clan: 'Você já está em outro clã. Saia do atual antes de entrar em outro.',
-    clan_full: 'Clã cheio. Volte quando abrir uma vaga.',
-    clan_cooldown: 'Você saiu de um clã há menos de 7 dias. Tente novamente mais tarde.',
-    clan_closed: 'Este clã não aceita novas entradas.',
-    not_found: 'Clã não encontrado. Atualize a lista.',
-    network_unavailable: 'Sem conexão. Tente novamente.',
-    request_timeout: 'A conexão demorou demais. Tente novamente.',
-  };
-  return map[code] ?? 'Não foi possível entrar no clã. Tente novamente.';
-}
-
 type ClanOpenFilter = 'all' | 'open' | 'closed';
 
 function ClanDiscovery() {
   const nav = useNav();
+  const { palette } = useTheme();
   const { session, clan: myClan, loadClan } = useApp();
   const token = session?.accessToken ?? null;
   const [query, setQuery] = useState('');
@@ -1272,8 +1327,17 @@ function ClanDiscovery() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  const [myRequests, setMyRequests] = useState<{
+    status: 'ready' | 'error';
+    requests: MyClanRequest[];
+  } | null>(null);
+  const [requestsTick, setRequestsTick] = useState(0);
+  const [cancelBusyId, setCancelBusyId] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState('');
   const requestSeq = useRef(0);
+  const requestsSeq = useRef(0);
   const joinLock = useRef<string | null>(null);
+  const cancelLock = useRef<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -1317,6 +1381,32 @@ function ClanDiscovery() {
       });
   }, [token, appliedQuery, openFilter, withSlots, requestKey]);
 
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    const run = ++requestsSeq.current;
+    api.clans
+      .myRequests(token, 'pending')
+      .then((response) => {
+        if (run !== requestsSeq.current) {
+          return;
+        }
+        setMyRequests({ status: 'ready', requests: response.requests });
+      })
+      .catch(() => {
+        if (run !== requestsSeq.current) {
+          return;
+        }
+        setMyRequests({ status: 'error', requests: [] });
+      });
+  }, [token, requestsTick]);
+
+  useScreenFocus('clan-discovery', () => {
+    setRetryTick((value) => value + 1);
+    setRequestsTick((value) => value + 1);
+  });
+
   const joinNow = useCallback(
     async (target: Clan) => {
       if (!token || joinLock.current) {
@@ -1326,7 +1416,15 @@ function ClanDiscovery() {
       setBusyId(target.id);
       setJoinError(null);
       try {
-        await api.clans.join(token, target.id);
+        const result = await api.clans.join(token, target.id);
+        if (result.status === 'pending') {
+          if (mounted.current) {
+            setJoinError('Este clã passou a exigir aprovação. Abra o clã para enviar o pedido.');
+            setRequestsTick((value) => value + 1);
+            setRetryTick((value) => value + 1);
+          }
+          return;
+        }
         try {
           await loadClan();
         } catch {
@@ -1341,7 +1439,7 @@ function ClanDiscovery() {
         if (!mounted.current) {
           return;
         }
-        setJoinError(joinErrorMessage(apiErrorCode(error)));
+        setJoinError(clanRequestErrorCopy(apiErrorCode(error)));
         if (apiErrorCode(error) === 'already_member') {
           loadClan().catch(() => {
             // O clã já existe no contexto; abrir a tela refaz a leitura.
@@ -1357,9 +1455,48 @@ function ClanDiscovery() {
     [token, loadClan, nav],
   );
 
+  const cancelMyRequest = useCallback(
+    async (request: MyClanRequest) => {
+      if (!token || cancelLock.current) {
+        return;
+      }
+      cancelLock.current = request.id;
+      setCancelBusyId(request.id);
+      setRequestError('');
+      try {
+        await api.clans.cancelRequest(token, request.clan_id, request.id);
+        if (!mounted.current) {
+          return;
+        }
+        nav.toast('Pedido cancelado.');
+        setRequestsTick((value) => value + 1);
+        setRetryTick((value) => value + 1);
+      } catch (error) {
+        if (!mounted.current) {
+          return;
+        }
+        const code = apiErrorCode(error);
+        setRequestError(clanRequestErrorCopy(code));
+        if (code === 'not_found' || code === 'request_not_pending') {
+          setRequestsTick((value) => value + 1);
+          setRetryTick((value) => value + 1);
+        }
+      } finally {
+        cancelLock.current = null;
+        if (mounted.current) {
+          setCancelBusyId(null);
+        }
+      }
+    },
+    [token, nav],
+  );
+
   const searching = status === 'loading';
   const empty = status === 'ready' && clans.length === 0;
   const hasFilters = appliedQuery.length > 0 || openFilter !== 'all' || withSlots;
+  const pendingRequests = myRequests?.status === 'ready' ? myRequests.requests : [];
+  const requestsLoading = myRequests === null;
+  const requestsError = myRequests?.status === 'error';
   const clearFilters = () => {
     setQuery('');
     setAppliedQuery('');
@@ -1437,6 +1574,52 @@ function ClanDiscovery() {
       </ChipRow>
       <Txt variant="tiny">Filtro por esporte ainda não disponível.</Txt>
 
+      <View style={{ gap: 8 }}>
+        <Txt variant="h3">Meus pedidos</Txt>
+        {requestsLoading ? (
+          <Txt variant="tiny">Carregando seus pedidos…</Txt>
+        ) : requestsError ? (
+          <View style={{ gap: 6 }}>
+            <Txt variant="tiny">Não foi possível carregar seus pedidos.</Txt>
+            <TextBtn onPress={() => setRequestsTick((value) => value + 1)}>
+              Tentar novamente
+            </TextBtn>
+          </View>
+        ) : pendingRequests.length === 0 ? (
+          <Txt variant="tiny">Nenhum pedido pendente.</Txt>
+        ) : (
+          <CardList>
+            {pendingRequests.map((request, index) => (
+              <ListRow key={request.id} last={index === pendingRequests.length - 1}>
+                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                  <Text
+                    numberOfLines={2}
+                    style={{ fontSize: 14, lineHeight: 19, fontWeight: '800', color: palette.ink }}
+                  >
+                    {playerHandle(request.clan_name, request.clan_tag)}
+                  </Text>
+                  <Txt variant="tiny">{`Enviado em ${shortDateTime(request.created_at)}`}</Txt>
+                </View>
+                <Btn
+                  tone="ghost"
+                  small
+                  block={false}
+                  disabled={cancelBusyId === request.id}
+                  onPress={() => void cancelMyRequest(request)}
+                >
+                  {cancelBusyId === request.id ? 'Cancelando.' : 'Cancelar'}
+                </Btn>
+              </ListRow>
+            ))}
+          </CardList>
+        )}
+        {requestError ? (
+          <Txt variant="tiny" color="red">
+            {requestError}
+          </Txt>
+        ) : null}
+      </View>
+
       {joinError ? (
         <View style={{ gap: 6 }}>
           <Notice tone="orange" icon="alert">
@@ -1474,25 +1657,20 @@ function ClanDiscovery() {
             const full = clan.members >= clan.max_members;
             const policy = clan.join_policy;
             const busy = busyId === clan.id;
-            let actionLabel = 'Solicitar';
-            let actionTone: 'primary' | 'ghost' = 'ghost';
+            const cardAction = clanCardAction({
+              is_member: isMine,
+              my_request: clan.my_request,
+              join_policy: policy,
+              full,
+            });
+            const actionTone: 'primary' | 'ghost' =
+              cardAction === 'open' || cardAction === 'join' ? 'primary' : 'ghost';
             let action: (() => void) | null = null;
-            if (isMine) {
-              actionLabel = 'Abrir';
-              actionTone = 'primary';
+            if (cardAction === 'open') {
               action = () => nav.replace('clan');
-            } else if (full) {
-              actionLabel = 'Cheio';
-              action = null;
-            } else if (policy === 'closed') {
-              actionLabel = 'Fechado';
-              action = null;
-            } else if (policy === 'open') {
-              actionLabel = busy ? 'Entrando…' : 'Entrar';
-              actionTone = 'primary';
+            } else if (cardAction === 'join') {
               action = () => void joinNow(clan);
-            } else {
-              actionLabel = 'Solicitar';
+            } else if (cardAction === 'request' || cardAction === 'resend') {
               action = () => nav.go('clan-join', { clanId: clan.id });
             }
             return (
@@ -1505,6 +1683,9 @@ function ClanDiscovery() {
                       {joinPolicyLabel(policy)}
                     </Badge>
                     {isMine ? <Badge tone="green">Seu clã</Badge> : null}
+                    {clan.my_request?.status === 'pending' ? (
+                      <Badge tone="blue">Pedido pendente</Badge>
+                    ) : null}
                   </Row>
                   <Txt variant="tiny">
                     {clan.members}/{clan.max_members}
@@ -1516,13 +1697,17 @@ function ClanDiscovery() {
                 <Txt variant="tiny">{displayClanTag(clan.tag)}</Txt>
                 <Row between style={{ marginTop: 12 }}>
                   <Txt variant="tiny" style={{ flexShrink: 1 }}>
-                    {isMine
-                      ? 'Você já participa deste clã'
-                      : full
-                        ? 'Sem vaga'
-                        : policy === 'closed'
-                          ? 'Não aceita entradas'
-                          : `${Math.max(0, clan.max_members - clan.members)} vagas`}
+                    {cardAction === 'pending'
+                      ? 'Aguardando aprovação do clã'
+                      : cardAction === 'resend'
+                        ? 'Seu pedido anterior não foi aprovado'
+                        : isMine
+                          ? 'Você já participa deste clã'
+                          : full
+                            ? 'Sem vaga'
+                            : policy === 'closed'
+                              ? 'Não aceita entradas'
+                              : `${Math.max(0, clan.max_members - clan.members)} vagas`}
                   </Txt>
                   <Btn
                     tone={actionTone}
@@ -1531,7 +1716,7 @@ function ClanDiscovery() {
                     disabled={action === null || busy}
                     onPress={action ?? undefined}
                   >
-                    {actionLabel}
+                    {clanCardActionLabel(cardAction, busy)}
                   </Btn>
                 </Row>
               </Card>
@@ -1749,7 +1934,7 @@ function ClanJoin() {
   const [loadError, setLoadError] = useState('Não foi possível carregar o clã.');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState(false);
+  const [joinResult, setJoinResult] = useState<ClanJoinResult | null>(null);
   const [failure, setFailure] = useState<JoinFailure | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   const submitLock = useRef(false);
@@ -1803,6 +1988,9 @@ function ClanJoin() {
   const isClosed = detail?.join_policy === 'closed';
   const canAsk = !!detail && !isMine && !isFull && !isClosed;
   const approval = detail?.join_policy === 'approval';
+  const joinStep = clanJoinState(detail?.my_request, joinResult);
+  const priorRequest =
+    detail?.my_request?.status === 'rejected' || detail?.my_request?.status === 'cancelled';
 
   const submit = async () => {
     if (!detail || !token || submitLock.current) {
@@ -1827,33 +2015,26 @@ function ClanJoin() {
         }
         return;
       }
-      setPending(true);
+      setJoinResult(result);
     } catch (error) {
       if (!mounted.current) {
         return;
       }
       const code = apiErrorCode(error);
       if (code === 'already_member') {
-        setFailure({ text: 'Você já é membro deste clã.', action: 'open' });
+        setFailure({ text: clanRequestErrorCopy(code), action: 'open' });
       } else if (code === 'already_in_clan') {
-        setFailure({
-          text: 'Você já está em outro clã. Saia do atual antes de entrar em outro.',
-        });
+        setFailure({ text: clanRequestErrorCopy(code) });
       } else if (code === 'clan_full') {
-        setFailure({ text: 'Clã cheio. Volte quando abrir uma vaga.', action: 'refresh' });
+        setFailure({ text: clanRequestErrorCopy(code), action: 'refresh' });
       } else if (code === 'clan_cooldown') {
-        setFailure({
-          text: 'Você saiu de um clã há menos de 7 dias. Tente novamente mais tarde.',
-        });
+        setFailure({ text: clanRequestErrorCopy(code) });
       } else if (code === 'clan_closed') {
-        setFailure({
-          text: 'Este clã não aceita mais entradas.',
-          action: 'refresh',
-        });
+        setFailure({ text: clanRequestErrorCopy(code), action: 'refresh' });
       } else if (code === 'not_found') {
-        setFailure({ text: 'Este clã não existe mais.', action: 'back' });
+        setFailure({ text: clanRequestErrorCopy(code), action: 'back' });
       } else {
-        setFailure({ text: joinErrorMessage(code) });
+        setFailure({ text: clanRequestErrorCopy(code) });
       }
     } finally {
       submitLock.current = false;
@@ -1954,7 +2135,7 @@ function ClanJoin() {
     );
   }
 
-  if (pending) {
+  if (joinStep === 'pending') {
     return (
       <Page title={detail.name}>
         <StateScreen
@@ -2074,10 +2255,350 @@ function ClanJoin() {
             </View>
           ) : null}
           <Btn tone="primary" onPress={submit} disabled={busy || !canAsk}>
-            {busy ? 'Enviando…' : approval ? 'Solicitar entrada' : 'Entrar no clã'}
+            {busy
+              ? 'Enviando…'
+              : approval
+                ? priorRequest
+                  ? 'Solicitar de novo'
+                  : 'Solicitar entrada'
+                : 'Entrar no clã'}
           </Btn>
         </>
       )}
+    </Page>
+  );
+}
+
+type ClanRequestTab = 'pending' | 'history';
+
+function ClanRequests() {
+  const nav = useNav();
+  const { palette } = useTheme();
+  const { clan, clanMembers, session, loadClan } = useApp();
+  const token = session?.accessToken ?? null;
+  const [tab, setTab] = useState<ClanRequestTab>('pending');
+  const [data, setData] = useState<{
+    key: string;
+    status: 'ready' | 'error';
+    requests: ClanJoinRequestRow[];
+  } | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+  const [busy, setBusy] = useState<{ id: string; approve: boolean } | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<{ tone: 'orange' | 'blue'; text: string } | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [noteOpen, setNoteOpen] = useState<Record<string, boolean>>({});
+  const [forbidden, setForbidden] = useState(false);
+  const mutationLock = useRef(false);
+  const mounted = useRef(true);
+  const requestSeq = useRef(0);
+  const clanId = clan?.id ?? null;
+  const canManage = isAdminRole(clan?.my_role) && !forbidden;
+  const listKey = `${clanId ?? 'none'}|${tab}|${retryTick}`;
+  const rows = data?.key === listKey && data.status === 'ready' ? data.requests : [];
+  const status: 'loading' | 'ready' | 'error' = data?.key === listKey ? data.status : 'loading';
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token || !clanId || !canManage) {
+      return;
+    }
+    const run = ++requestSeq.current;
+    api.clans
+      .requests(token, clanId, tab)
+      .then((response) => {
+        if (run !== requestSeq.current) {
+          return;
+        }
+        setData({ key: listKey, status: 'ready', requests: response.requests });
+      })
+      .catch(() => {
+        if (run !== requestSeq.current) {
+          return;
+        }
+        setData({ key: listKey, status: 'error', requests: [] });
+      });
+  }, [token, clanId, tab, listKey, canManage]);
+
+  const clearRowError = (id: string) => {
+    setRowErrors((current) => {
+      if (!(id in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const decide = async (request: ClanJoinRequestRow, approve: boolean) => {
+    if (!token || !clanId || mutationLock.current) {
+      return;
+    }
+    mutationLock.current = true;
+    setBusy({ id: request.id, approve });
+    setNotice(null);
+    clearRowError(request.id);
+    try {
+      await api.clans.decideRequest(token, clanId, request.id, approve, notes[request.id]);
+      if (!mounted.current) {
+        return;
+      }
+      setNotes((current) => {
+        const next = { ...current };
+        delete next[request.id];
+        return next;
+      });
+      setNoteOpen((current) => {
+        const next = { ...current };
+        delete next[request.id];
+        return next;
+      });
+      nav.toast(approve ? 'Pedido aprovado.' : 'Pedido recusado.');
+      if (approve) {
+        loadClan().catch(() => {
+          // A lista já recarrega; a contagem volta a ser lida ao abrir o clã.
+        });
+      }
+      setRetryTick((value) => value + 1);
+    } catch (error) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(error);
+      if (code === 'request_not_pending') {
+        setNotice({ tone: 'orange', text: clanRequestErrorCopy(code) });
+        setRetryTick((value) => value + 1);
+      } else if (
+        code === 'admin_required' ||
+        code === 'owner_required' ||
+        code === 'not_a_member'
+      ) {
+        setForbidden(true);
+        setNotice({ tone: 'orange', text: clanRequestErrorCopy(code) });
+      } else {
+        setRowErrors((current) => ({
+          ...current,
+          [request.id]: clanRequestErrorCopy(code),
+        }));
+      }
+    } finally {
+      mutationLock.current = false;
+      if (mounted.current) {
+        setBusy(null);
+      }
+    }
+  };
+
+  if (!clan) {
+    return (
+      <Page title="Pedidos de entrada">
+        <EmptyState
+          title="Você não está em um clã"
+          text="Entre em um clã para acompanhar os pedidos de entrada."
+          actions={
+            <Btn tone="primary" go="clan-discovery">
+              Descobrir clãs
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <Page title="Pedidos de entrada" sub={clan.name}>
+        <StateScreen
+          icon="shield"
+          title="Sem permissão para ver pedidos"
+          text={notice?.text ?? 'Só o Dono e os Oficiais podem ver os pedidos de entrada.'}
+          actions={
+            <Btn tone="ghost" back>
+              Voltar
+            </Btn>
+          }
+        />
+      </Page>
+    );
+  }
+
+  const deciderLabel = (request: ClanJoinRequestRow): string => {
+    if (!request.decided_by) {
+      return 'Não informado';
+    }
+    if (request.decided_by === session?.userId) {
+      return 'Você';
+    }
+    const member = clanMembers.find((item) => item.user_id === request.decided_by);
+    return member ? playerHandle(member.display_name, member.tag) : 'Liderança do clã';
+  };
+
+  return (
+    <Page title="Pedidos de entrada" sub={clan.name}>
+      <Seg>
+        <SegBtn
+          on={tab === 'pending'}
+          onPress={() => {
+            setTab('pending');
+            setNotice(null);
+          }}
+        >
+          {`Pendentes${tab === 'pending' && status === 'ready' && rows.length > 0 ? ` (${rows.length})` : ''}`}
+        </SegBtn>
+        <SegBtn
+          on={tab === 'history'}
+          onPress={() => {
+            setTab('history');
+            setNotice(null);
+          }}
+        >
+          Histórico
+        </SegBtn>
+      </Seg>
+      <SegContent value={tab}>
+        {notice ? (
+          <Notice tone={notice.tone} icon="alert">
+            {notice.text}
+          </Notice>
+        ) : null}
+
+        {status === 'loading' ? (
+          <LoadingState label="Buscando pedidos." variant="list" />
+        ) : status === 'error' ? (
+          <StateScreen
+            icon="wifi-off"
+            title="Não foi possível carregar os pedidos"
+            text="Verifique a conexão e tente novamente."
+            actions={
+              <Btn tone="primary" onPress={() => setRetryTick((value) => value + 1)}>
+                Tentar novamente
+              </Btn>
+            }
+          />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title={tab === 'pending' ? 'Nenhum pedido pendente' : 'Nenhum pedido no histórico'}
+            text={
+              tab === 'pending'
+                ? 'Quando alguém pedir entrada, o pedido aparece aqui.'
+                : 'Aprovações e recusas aparecem aqui.'
+            }
+          />
+        ) : (
+          <CardList>
+            {rows.map((request, index) => {
+              const requestBusy = busy?.id === request.id;
+              const note = notes[request.id] ?? '';
+              const showNote = !!noteOpen[request.id] || note.length > 0;
+              const rowError = rowErrors[request.id];
+              return (
+                <ListRow key={request.id} last={index === rows.length - 1}>
+                  <IdentityBadge
+                    size={34}
+                    identity={identityFromSeed(request.user_id)}
+                    palette={palette}
+                  />
+                  <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        fontSize: 14,
+                        lineHeight: 19,
+                        fontWeight: '800',
+                        color: palette.ink,
+                      }}
+                    >
+                      {playerHandle(request.display_name, request.tag)}
+                    </Text>
+                    <Txt variant="tiny">{`Pedido em ${shortDateTime(request.created_at)}`}</Txt>
+                    {request.message ? <Txt variant="sub">{request.message}</Txt> : null}
+                    {tab === 'history' ? (
+                      <>
+                        <Badge
+                          tone={
+                            request.status === 'approved'
+                              ? 'green'
+                              : request.status === 'rejected'
+                                ? 'red'
+                                : request.status === 'cancelled'
+                                  ? 'orange'
+                                  : 'blue'
+                          }
+                        >
+                          {clanRequestStatusLabel(request.status)}
+                        </Badge>
+                        <Txt variant="tiny">
+                          {request.decided_at
+                            ? `Decidido em ${shortDateTime(request.decided_at)}`
+                            : 'Decisão sem data registrada'}
+                        </Txt>
+                        <Txt variant="tiny">{`Por ${deciderLabel(request)}`}</Txt>
+                        {request.decision_note ? (
+                          <Txt variant="sub">{`Nota: ${request.decision_note}`}</Txt>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        {showNote ? (
+                          <Input
+                            value={note}
+                            onChangeText={(value) =>
+                              setNotes((current) => ({ ...current, [request.id]: value }))
+                            }
+                            placeholder="Nota (opcional)"
+                            maxLength={200}
+                          />
+                        ) : null}
+                        <TextBtn
+                          muted
+                          onPress={() =>
+                            setNoteOpen((current) => ({
+                              ...current,
+                              [request.id]: !current[request.id],
+                            }))
+                          }
+                        >
+                          {showNote ? 'Ocultar nota' : 'Incluir nota'}
+                        </TextBtn>
+                        {rowError ? (
+                          <Txt variant="tiny" color="red">
+                            {rowError}
+                          </Txt>
+                        ) : null}
+                        <BtnRow>
+                          <Btn
+                            tone="primary"
+                            small
+                            disabled={!!busy}
+                            onPress={() => void decide(request, true)}
+                          >
+                            {requestBusy && busy?.approve ? 'Aprovando.' : 'Aprovar'}
+                          </Btn>
+                          <Btn
+                            tone="ghost"
+                            small
+                            disabled={!!busy}
+                            onPress={() => void decide(request, false)}
+                          >
+                            {requestBusy && busy && !busy.approve ? 'Recusando.' : 'Recusar'}
+                          </Btn>
+                        </BtnRow>
+                      </>
+                    )}
+                  </View>
+                </ListRow>
+              );
+            })}
+          </CardList>
+        )}
+      </SegContent>
     </Page>
   );
 }
@@ -5203,13 +5724,6 @@ function BlockUser() {
   );
 }
 
-type PendingClanInvite = {
-  id: string;
-  userId: string;
-  name: string;
-  createdAt: string;
-};
-
 function ClanInvite() {
   const nav = useNav();
   const { palette } = useTheme();
@@ -5221,16 +5735,20 @@ function ClanInvite() {
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [rowBlocks, setRowBlocks] = useState<Record<string, string>>({});
-  const [pending, setPending] = useState<PendingClanInvite[]>([]);
+  const [pending, setPending] = useState<ClanInviteData[]>([]);
+  const [pendingStatus, setPendingStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [pendingTick, setPendingTick] = useState(0);
+  const [sentTo, setSentTo] = useState<Record<string, true>>({});
+  const [inviteByUser, setInviteByUser] = useState<Record<string, string>>({});
   const [cancelBusy, setCancelBusy] = useState<string | null>(null);
   const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
   const sendingRef = useRef<Set<string>>(new Set());
   const cancelLock = useRef<string | null>(null);
+  const pendingSeq = useRef(0);
   const mounted = useRef(true);
   const canInvite = isAdminRole(clan?.my_role);
   const isFull = !!clan && clan.members >= clan.max_members;
   const memberIds = new Set(clanMembers.map((member) => member.user_id));
-  const pendingIds = new Set(pending.map((invite) => invite.userId));
   const nameOf = (friend: { display_name: string | null }) =>
     friend.display_name?.trim() || 'Jogador';
 
@@ -5263,6 +5781,41 @@ function ClanInvite() {
     };
   }, [loadSocial, friends.length]);
 
+  useEffect(() => {
+    if (!token || !clan || !canInvite) {
+      return;
+    }
+    let active = true;
+    const run = ++pendingSeq.current;
+    api.clans
+      .invites(token, clan.id, 'pending')
+      .then((response) => {
+        if (!active || run !== pendingSeq.current) {
+          return;
+        }
+        setPending(response.invites);
+        setPendingStatus('ready');
+      })
+      .catch(() => {
+        if (!active || run !== pendingSeq.current) {
+          return;
+        }
+        setPendingStatus('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, clan, canInvite, pendingTick]);
+
+  useScreenFocus('clan-invite', () => {
+    setPendingTick((value) => value + 1);
+  });
+
+  const reloadPending = () => {
+    setPendingStatus('loading');
+    setPendingTick((value) => value + 1);
+  };
+
   const clearRow = (userId: string) => {
     setRowErrors((current) => {
       const next = { ...current };
@@ -5282,7 +5835,7 @@ function ClanInvite() {
     }
     if (
       memberIds.has(friend.user_id) ||
-      pendingIds.has(friend.user_id) ||
+      sentTo[friend.user_id] ||
       sendingRef.current.has(friend.user_id)
     ) {
       return;
@@ -5295,35 +5848,32 @@ function ClanInvite() {
       if (!mounted.current) {
         return;
       }
-      setPending((current) => [
-        {
-          id: created.id,
-          userId: friend.user_id,
-          name: nameOf(friend),
-          createdAt: created.created_at,
-        },
-        ...current.filter((item) => item.userId !== friend.user_id),
-      ]);
+      setSentTo((current) => ({ ...current, [friend.user_id]: true }));
+      setInviteByUser((current) => ({ ...current, [friend.user_id]: created.id }));
       AccessibilityInfo.announceForAccessibility('Convite enviado');
+      setPendingTick((value) => value + 1);
     } catch (cause) {
       if (!mounted.current) {
         return;
       }
       const code = apiErrorCode(cause);
+      if (code === 'already_invited') {
+        setSentTo((current) => ({ ...current, [friend.user_id]: true }));
+        setPendingTick((value) => value + 1);
+        return;
+      }
       const block =
         code === 'not_friends'
           ? 'Só é possível convidar amigos.'
           : code === 'blocked'
             ? 'Não é possível convidar esta pessoa.'
-            : code === 'already_invited'
-              ? 'Este convite já foi enviado.'
-              : code === 'already_member'
-                ? 'Essa pessoa já está no clã.'
-                : code === 'clan_full'
-                  ? 'O clã está cheio.'
-                  : code === 'cannot_invite_self'
-                    ? 'Você não pode convidar a si mesmo.'
-                    : null;
+            : code === 'already_member'
+              ? 'Essa pessoa já está no clã.'
+              : code === 'clan_full'
+                ? 'O clã está cheio.'
+                : code === 'cannot_invite_self'
+                  ? 'Você não pode convidar a si mesmo.'
+                  : null;
       if (block) {
         setRowBlocks((current) => ({ ...current, [friend.user_id]: block }));
       } else {
@@ -5344,7 +5894,33 @@ function ClanInvite() {
     }
   };
 
-  const cancel = async (invite: PendingClanInvite) => {
+  const inviteeLabel = (invite: ClanInviteData): string => {
+    if (invite.invitee_display_name?.trim()) {
+      return playerHandle(invite.invitee_display_name, invite.invitee_tag);
+    }
+    const userId = Object.keys(inviteByUser).find((key) => inviteByUser[key] === invite.id);
+    const friend = userId ? friends.find((item) => item.user_id === userId) : null;
+    return friend ? playerHandle(friend.display_name, friend.tag) : 'Convite pendente';
+  };
+
+  const forgetInviteUser = (inviteId: string) => {
+    const userId = Object.keys(inviteByUser).find((key) => inviteByUser[key] === inviteId);
+    if (!userId) {
+      return;
+    }
+    setInviteByUser((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+    setSentTo((current) => {
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+  };
+
+  const cancel = async (invite: ClanInviteData) => {
     if (!clan || !token || cancelLock.current) {
       return;
     }
@@ -5361,6 +5937,8 @@ function ClanInvite() {
         return;
       }
       setPending((current) => current.filter((item) => item.id !== invite.id));
+      forgetInviteUser(invite.id);
+      setPendingTick((value) => value + 1);
       AccessibilityInfo.announceForAccessibility('Convite cancelado');
     } catch (cause) {
       if (!mounted.current) {
@@ -5374,6 +5952,7 @@ function ClanInvite() {
         code === 'invite_expired'
       ) {
         setPending((current) => current.filter((item) => item.id !== invite.id));
+        forgetInviteUser(invite.id);
       } else {
         setCancelErrors((current) => ({
           ...current,
@@ -5497,7 +6076,7 @@ function ClanInvite() {
           {matching.map((friend, index) => {
             const name = nameOf(friend);
             const isMember = memberIds.has(friend.user_id);
-            const isPending = pendingIds.has(friend.user_id);
+            const isPending = !!sentTo[friend.user_id] || !!inviteByUser[friend.user_id];
             const block = rowBlocks[friend.user_id];
             const rowError = rowErrors[friend.user_id];
             const sending = !!sendingIds[friend.user_id];
@@ -5548,7 +6127,12 @@ function ClanInvite() {
         </CardList>
       )}
 
-      {pending.length > 0 ? (
+      {pendingStatus === 'error' ? (
+        <View style={{ gap: 6 }}>
+          <Txt variant="tiny">Não foi possível carregar os convites pendentes.</Txt>
+          <TextBtn onPress={reloadPending}>Tentar novamente</TextBtn>
+        </View>
+      ) : pending.length > 0 ? (
         <>
           <Txt variant="h3">Convites pendentes</Txt>
           <CardList>
@@ -5567,9 +6151,13 @@ function ClanInvite() {
                         color: palette.ink,
                       }}
                     >
-                      {invite.name}
+                      {inviteeLabel(invite)}
                     </Text>
-                    <Txt variant="tiny">{`${shortDateTime(invite.createdAt)} · vale por 7 dias`}</Txt>
+                    <Txt variant="tiny">
+                      {`${shortDateTime(invite.created_at)} · ${
+                        inviteExpiryLabel(invite.expires_at) ?? 'vale por 7 dias'
+                      }`}
+                    </Txt>
                     {cancelError ? (
                       <Txt variant="tiny" color="red">
                         {cancelError}
@@ -5583,7 +6171,7 @@ function ClanInvite() {
                     disabled={busy}
                     onPress={() => void cancel(invite)}
                   >
-                    {busy ? 'Cancelando.' : 'Cancelar'}
+                    {busy ? 'Cancelando.' : 'Cancelar convite'}
                   </Btn>
                 </ListRow>
               );
@@ -5631,6 +6219,7 @@ export const socialScreens: ScreenDef[] = [
   { id: 'clan-discovery', tab: 'social', render: () => <ClanDiscovery /> },
   { id: 'clan-create', tab: 'social', render: () => <ClanCreate /> },
   { id: 'clan-join', tab: 'social', render: () => <ClanJoin /> },
+  { id: 'clan-requests', tab: 'social', render: () => <ClanRequests /> },
   { id: 'clan-members', tab: 'social', render: () => <ClanMembers /> },
   { id: 'clan-settings', tab: 'social', render: () => <ClanSettings /> },
   { id: 'clan-chat', tab: 'social', render: () => <ClanChat /> },

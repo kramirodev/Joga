@@ -9,6 +9,8 @@ import type {
   ChatMessage,
   Clan,
   ClanInvite,
+  ClanJoinRequestRow,
+  ClanJoinResult,
   ClanMember,
   ClanMessage,
   ClanRanking,
@@ -25,6 +27,7 @@ import type {
   ModerationAction,
   ModerationAppeal,
   ModerationReport,
+  MyClanRequest,
   MyRating,
   Network,
   Notification,
@@ -1215,18 +1218,18 @@ export const api = {
     mine(token: string) {
       return call<Clan | null>('/me/clan', { token });
     },
+    myRequests(token: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ requests: MyClanRequest[] }>(`/me/clan-requests${qs({ status })}`, { token });
+    },
     get(token: string, clanId: string) {
       return call<Clan>(`/clans/${encodeURIComponent(clanId)}`, { token });
     },
     join(token: string, clanId: string, message?: string) {
-      return call<{ status: string; request: unknown }>(
-        `/clans/${encodeURIComponent(clanId)}/join`,
-        {
-          method: 'POST',
-          body: { message: message ?? null },
-          token,
-        },
-      );
+      return call<ClanJoinResult>(`/clans/${encodeURIComponent(clanId)}/join`, {
+        method: 'POST',
+        body: { message: message ?? null },
+        token,
+      });
     },
     members(token: string, clanId: string) {
       return call<{ members: ClanMember[] }>(`/clans/${encodeURIComponent(clanId)}/members`, {
@@ -1277,15 +1280,34 @@ export const api = {
         token,
       });
     },
-    requests(token: string, clanId: string) {
-      return call<{ requests: unknown[] }>(`/clans/${encodeURIComponent(clanId)}/requests`, {
-        token,
-      });
+    requests(token: string, clanId: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ requests: ClanJoinRequestRow[] }>(
+        `/clans/${encodeURIComponent(clanId)}/requests${qs({ status })}`,
+        { token },
+      );
     },
-    decideRequest(token: string, clanId: string, requestId: string, approve: boolean) {
-      return call<unknown>(
+    decideRequest(
+      token: string,
+      clanId: string,
+      requestId: string,
+      approve: boolean,
+      note?: string,
+    ) {
+      return call<ClanJoinRequestRow>(
         `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}/decide`,
-        { method: 'POST', body: { approve }, token },
+        { method: 'POST', body: { approve, note: note?.trim() || null }, token },
+      );
+    },
+    cancelRequest(token: string, clanId: string, requestId: string) {
+      return call<ClanJoinRequestRow>(
+        `/clans/${encodeURIComponent(clanId)}/requests/${encodeURIComponent(requestId)}`,
+        { method: 'DELETE', token },
+      );
+    },
+    invites(token: string, clanId: string, status: 'pending' | 'history' = 'pending') {
+      return call<{ invites: ClanInvite[] }>(
+        `/clans/${encodeURIComponent(clanId)}/invites${qs({ status })}`,
+        { token },
       );
     },
     invite(token: string, clanId: string, userId: string) {
