@@ -1,5 +1,7 @@
 import { dark, light, type Palette } from './theme.ts';
-import type { ThemeArtKey } from './themeArt.ts';
+
+export type ThemeArtKey =
+  'noite-quadra' | 'golden-hour' | 'dia-de-jogo' | 'ceu-vermelho' | 'ceu-claro';
 
 export type ThemeId =
   | 'claro'

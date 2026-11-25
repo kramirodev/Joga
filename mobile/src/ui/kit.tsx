@@ -679,6 +679,30 @@ export function IconBtn({
   );
 }
 
+/**
+ * Ícone decorativo de linha (menu/lista). Não é alvo de toque: quem responde
+ * é o `Pressable` da `ListRow`, evitando dois botões sobrepostos.
+ */
+export function ListIcon({ icon }: { icon: IconName }) {
+  const { palette, largeTargets } = useTheme();
+  return (
+    <View
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no"
+      style={{
+        width: largeTargets ? 54 : 48,
+        height: largeTargets ? 54 : 48,
+        flexShrink: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon name={icon} size={20} color={palette.ink} />
+    </View>
+  );
+}
+
 export function Chip({
   children,
   on,
@@ -2122,6 +2146,7 @@ export function ListRow({
           gap: 12,
           paddingHorizontal: 18,
           paddingVertical: largeTargets ? 18 : 15,
+          minHeight: largeTargets ? 60 : 52,
           borderBottomWidth: last ? 0 : 1,
           borderBottomColor: palette.line,
         },

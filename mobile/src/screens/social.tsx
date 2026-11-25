@@ -86,6 +86,7 @@ import {
   Input,
   InputPrefix,
   Kv,
+  ListIcon,
   ListRow,
   LoadingState,
   Notice,
@@ -407,7 +408,7 @@ function Friends() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -1072,7 +1073,7 @@ function AddFriend() {
 
 function ClanProfile() {
   const nav = useNav();
-  const { palette, dark } = useTheme();
+  const { palette } = useTheme();
   const { clan, clanMembers, clanMessages, loadClan, session } = useApp();
   const token = session?.accessToken ?? null;
   const clanId = clan?.id ?? null;
@@ -1291,7 +1292,7 @@ function ClanProfile() {
       <CardList>
         {rows.map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -2972,7 +2973,7 @@ function ClanPolicyOption({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const { palette, dark } = useTheme();
+  const { palette } = useTheme();
   return (
     <Pressable
       accessibilityRole="radio"

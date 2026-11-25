@@ -14,9 +14,9 @@ import {
   Card,
   CardList,
   Field,
-  IconBtn,
   Input,
   Kv,
+  ListIcon,
   ListRow,
   LoadingState,
   Notice,
@@ -38,6 +38,12 @@ function Settings() {
   const nav = useNav();
   const { palette } = useTheme();
   const items = [
+    {
+      icon: 'bolt' as const,
+      title: 'Personalização',
+      sub: 'Temas, densidade, home, sons e háptica',
+      go: 'customization',
+    },
     {
       icon: 'user' as const,
       title: 'Conta e perfil',
@@ -61,12 +67,6 @@ function Settings() {
       title: 'Acessibilidade',
       sub: 'Fonte, movimento e alvos',
       go: 'accessibility',
-    },
-    {
-      icon: 'bolt' as const,
-      title: 'Personalização',
-      sub: 'Temas, densidade, home, sons e háptica',
-      go: 'customization',
     },
     {
       icon: 'shield' as const,
@@ -120,7 +120,7 @@ function Settings() {
             last={index === items.length - 1}
             onPress={() => nav.go(item.go)}
           >
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -215,12 +215,8 @@ function Customization() {
         <View style={{ marginTop: 12, gap: 8 }}>
           {themes.map((theme) => {
             const selected = theme.id === themeId;
-            const samples = [
-              theme.palette.bg,
-              theme.palette.surface2,
-              theme.palette.lime,
-              theme.palette.ink,
-            ];
+            const isBase = theme.id === 'claro' || theme.id === 'escuro';
+            const samples = [theme.palette.bg, theme.palette.brand, theme.palette.ink];
             return (
               <Pressable
                 key={theme.id}
@@ -259,7 +255,7 @@ function Customization() {
                     {theme.name}
                   </Text>
                   <Text style={{ fontSize: 12, color: palette.muted, marginTop: 1 }}>
-                    {theme.dark ? 'Escuro' : 'Claro'}
+                    {isBase ? 'Base do app' : 'Tema com arte'}
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 4, marginTop: 6 }}>
                     {samples.map((color, index) => (
@@ -504,7 +500,7 @@ function Security() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -636,7 +632,7 @@ function Privacy() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -922,13 +918,7 @@ function TermsPrivacy() {
               nav.toast('Conteúdo disponível pelo suporte.');
             }}
           >
-            <IconBtn
-              icon={item.icon}
-              label={item.title}
-              plain
-              onPress={item.readOnly ? () => nav.go('terms', { readOnly: 1 }) : undefined}
-              toast={item.readOnly ? undefined : 'Conteúdo disponível pelo suporte'}
-            />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -999,7 +989,7 @@ function Support() {
               }
             }}
           >
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -1021,6 +1011,7 @@ function Support() {
 }
 
 function About() {
+  const nav = useNav();
   const { palette } = useTheme();
   const { profile, session, progress } = useApp();
   const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
@@ -1076,8 +1067,20 @@ function About() {
             toast: 'Licenças em implantação',
           },
         ].map((item, index, all) => (
-          <ListRow key={item.title} last={index === all.length - 1}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+          <ListRow
+            key={item.title}
+            last={index === all.length - 1}
+            onPress={() => {
+              if ('go' in item && typeof item.go === 'string') {
+                nav.go(item.go);
+                return;
+              }
+              if ('toast' in item && typeof item.toast === 'string') {
+                nav.toast(item.toast);
+              }
+            }}
+          >
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}

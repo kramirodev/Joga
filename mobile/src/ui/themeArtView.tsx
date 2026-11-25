@@ -1,19 +1,27 @@
-import { SvgXml } from 'react-native-svg';
+import { Image, type ImageSourcePropType } from 'react-native';
 
-import { themeArtXml, type ThemeArtKey } from './themeArt';
+import type { ThemeArtKey } from './themes';
 
 /**
- * Arte do tema como fundo decorativo. O XML já vem preparado pelo gerador
- * (`scripts/generate-theme-art.mjs`): classes embutidas e ids prefixados.
- * `slice` cobre o cartão sem distorcer a proporção original.
+ * Arte do tema rasterizada (PNG 1200×900). O SVG com gradientes/máscaras não
+ * renderizava de forma confiável no Android dentro do `SvgXml`; o PNG usa o
+ * pipeline de imagem normal e cobre o cartão com `resizeMode="cover"`.
  */
+const THEME_IMAGES: Record<ThemeArtKey, ImageSourcePropType> = {
+  'noite-quadra': require('../../assets/themes/noite-quadra.png'),
+  'golden-hour': require('../../assets/themes/golden-hour.png'),
+  'dia-de-jogo': require('../../assets/themes/dia-de-jogo.png'),
+  'ceu-vermelho': require('../../assets/themes/ceu-vermelho.png'),
+  'ceu-claro': require('../../assets/themes/ceu-claro.png'),
+};
+
 export function ThemeArt({ art }: { art: ThemeArtKey }) {
   return (
-    <SvgXml
-      xml={themeArtXml[art]}
-      width="100%"
-      height="100%"
-      preserveAspectRatio="xMidYMid slice"
+    <Image
+      source={THEME_IMAGES[art]}
+      resizeMode="cover"
+      accessible={false}
+      style={{ width: '100%', height: '100%' }}
     />
   );
 }

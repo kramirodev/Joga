@@ -18,6 +18,7 @@ import {
   Field,
   Input,
   Kv,
+  ListIcon,
   ListRow,
   LoadingState,
   Notice,
@@ -284,6 +285,7 @@ function Wallet() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
