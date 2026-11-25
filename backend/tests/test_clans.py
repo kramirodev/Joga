@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterator
 from datetime import timedelta
@@ -9,6 +10,7 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.text import normalize_display_name
 from app.infrastructure.database.dependency import get_session
 from app.modules.clans import service as clans_service
 from app.modules.clans.models import (
@@ -27,6 +29,7 @@ from app.modules.clans.service import (
 )
 from app.modules.identity.clock import utcnow
 from app.modules.identity.models import AuditLog, User
+from app.modules.identity.tags import tag_from_uuid
 from app.modules.notifications.models import Notification
 from app.modules.profile.models import UserProfile
 from app.modules.season.service import active_season
@@ -786,6 +789,9 @@ def test_invite_friend_lists_and_notifies(client: TestClient, db_session: Sessio
     assert body["clan_tag"] == "#TFC"
     assert body["inviter_id"] == str(owner_id)
     assert body["inviter_tag"] == db_session.get(User, owner_id).tag
+    assert body["invitee_id"] == str(friend_id)
+    assert body["invitee_tag"] == db_session.get(User, friend_id).tag
+    assert body["invitee_display_name"] is None
 
     listed = api.get("/api/v1/me/clan-invites", headers=bearer(friend_token))
     assert listed.status_code == 200, listed.text
@@ -793,6 +799,8 @@ def test_invite_friend_lists_and_notifies(client: TestClient, db_session: Sessio
     assert [item["id"] for item in invites] == [body["id"]]
     assert invites[0]["clan_name"] == "Tijuca FC"
     assert invites[0]["inviter_tag"] == db_session.get(User, owner_id).tag
+    assert invites[0]["invitee_id"] == str(friend_id)
+    assert invites[0]["invitee_tag"] == body["invitee_tag"]
 
     notification = (
         db_session.query(Notification).filter_by(user_id=friend_id, kind="clan_invite").one()
@@ -1464,6 +1472,8 @@ def test_clan_invites_listing_for_owner_and_admin(client: TestClient, db_session
         assert [item["id"] for item in invites] == [pending_invite["id"]]
         assert invites[0]["status"] == "pending"
         assert invites[0]["inviter_tag"] == db_session.get(User, owner_id).tag
+        assert invites[0]["invitee_id"] == str(pending_id)
+        assert invites[0]["invitee_tag"] == db_session.get(User, pending_id).tag
         assert other_invite["id"] not in {item["id"] for item in invites}
 
     history = api.get(
@@ -1506,3 +1516,73 @@ def test_clan_invites_requires_admin_and_known_clan(
     assert unknown.json()["detail"]["code"] == "not_found"
 
     assert client.get(f"/api/v1/clans/{clan['id']}/invites").status_code == 401
+
+
+def test_clan_invites_expose_invitee_identity_without_pii(
+    client: TestClient, db_session: Session
+) -> None:
+    api = api_client(client, db_session)
+    owner_id, owner_token = make_player(db_session)
+    invitee_id, invitee_token = make_player(db_session)
+    make_friends(db_session, owner_id, invitee_id)
+    invitee_row = db_session.get(User, invitee_id)
+    assert invitee_row is not None
+    invitee_row.email = "convidado@example.test"
+    db_session.commit()
+    profile = api.put(
+        "/api/v1/me/profile",
+        headers=bearer(invitee_token),
+        json={"display_name": "  jogador   convidado "},
+    )
+    assert profile.status_code == 200, profile.text
+    clan = create_clan_api(api, owner_token)
+    invite = invite_api(api, clan["id"], owner_token, invitee_id).json()
+
+    other_owner_id, other_owner_token = make_player(db_session)
+    other_invitee_id, _ = make_player(db_session)
+    other_clan = create_clan_api(api, other_owner_token, name="Outro Clã", tag="OUT")
+    make_friends(db_session, other_owner_id, other_invitee_id)
+    other_invite = invite_api(api, other_clan["id"], other_owner_token, other_invitee_id).json()
+
+    owner_list = api.get(f"/api/v1/clans/{clan['id']}/invites", headers=bearer(owner_token))
+    assert owner_list.status_code == 200, owner_list.text
+    listed = owner_list.json()["invites"]
+    assert [item["id"] for item in listed] == [invite["id"]]
+    pending = listed[0]
+    assert pending["invitee_id"] == str(invitee_id)
+    assert pending["invitee_tag"] == tag_from_uuid(invitee_id)
+    assert re.fullmatch(r"#[0-9A-F]{8,12}", pending["invitee_tag"])
+    assert pending["invitee_display_name"] == normalize_display_name("  jogador   convidado ")
+    assert pending["invitee_display_name"] == "JOGADOR CONVIDADO"
+    assert other_invite["id"] not in {item["id"] for item in listed}
+
+    own_list = api.get("/api/v1/me/clan-invites", headers=bearer(invitee_token))
+    assert own_list.status_code == 200, own_list.text
+    own = own_list.json()["invites"]
+    assert [item["id"] for item in own] == [invite["id"]]
+    assert own[0]["invitee_id"] == str(invitee_id)
+    assert own[0]["invitee_tag"] == pending["invitee_tag"]
+    assert own[0]["invitee_display_name"] == pending["invitee_display_name"]
+
+    # O convite expõe apenas identidade pública; nenhum dado pessoal vaza.
+    for item in (pending, own[0]):
+        assert set(item) == {
+            "id",
+            "clan_id",
+            "clan_name",
+            "clan_tag",
+            "inviter_id",
+            "inviter_display_name",
+            "inviter_tag",
+            "invitee_id",
+            "invitee_display_name",
+            "invitee_tag",
+            "status",
+            "created_at",
+            "expires_at",
+            "answered_at",
+        }
+    for response in (owner_list, own_list):
+        assert "convidado@example.test" not in response.text
+        assert "phone" not in response.text
+        assert "cpf" not in response.text

@@ -106,6 +106,9 @@ class ClanInviteView(BaseModel):
     inviter_id: UUID
     inviter_display_name: str | None
     inviter_tag: str
+    invitee_id: UUID
+    invitee_display_name: str | None
+    invitee_tag: str
     status: str
     created_at: datetime
     expires_at: datetime
@@ -311,9 +314,13 @@ def _invite_view(
     session: Session,
     invite: ClanInvite,
     label: _PlayerLabel | None = None,
+    invitee_label: _PlayerLabel | None = None,
 ) -> ClanInviteView:
     clan = session.get(Clan, invite.clan_id)
     inviter = label if label is not None else _player_label(session, invite.inviter_id)
+    invitee = (
+        invitee_label if invitee_label is not None else _player_label(session, invite.invitee_id)
+    )
     return ClanInviteView(
         id=invite.id,
         clan_id=invite.clan_id,
@@ -322,6 +329,9 @@ def _invite_view(
         inviter_id=invite.inviter_id,
         inviter_display_name=inviter.display_name,
         inviter_tag=inviter.tag,
+        invitee_id=invite.invitee_id,
+        invitee_display_name=invitee.display_name,
+        invitee_tag=invitee.tag,
         status=invite.status,
         created_at=invite.created_at,
         expires_at=invite.expires_at,
@@ -962,9 +972,20 @@ def read_clan_invites(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    labels = _player_labels(session, [item.inviter_id for item in invites])
+    labels = _player_labels(
+        session,
+        [item.inviter_id for item in invites] + [item.invitee_id for item in invites],
+    )
     return ClanInviteListView(
-        invites=[_invite_view(session, item, labels.get(item.inviter_id)) for item in invites]
+        invites=[
+            _invite_view(
+                session,
+                item,
+                labels.get(item.inviter_id),
+                labels.get(item.invitee_id),
+            )
+            for item in invites
+        ]
     )
 
 
@@ -975,9 +996,20 @@ def my_clan_invites(
 ) -> ClanInviteListView:
     invites = list_pending_invites(session, current.user_id)
     session.commit()
-    labels = _player_labels(session, [item.inviter_id for item in invites])
+    labels = _player_labels(
+        session,
+        [item.inviter_id for item in invites] + [item.invitee_id for item in invites],
+    )
     return ClanInviteListView(
-        invites=[_invite_view(session, item, labels.get(item.inviter_id)) for item in invites]
+        invites=[
+            _invite_view(
+                session,
+                item,
+                labels.get(item.inviter_id),
+                labels.get(item.invitee_id),
+            )
+            for item in invites
+        ]
     )
 
 
