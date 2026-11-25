@@ -61,7 +61,8 @@ export const light: Palette = {
   limeSoft: '#E7EAE7',
   brand: '#E53935',
   brandStrong: '#E53935',
-  brandInk: '#F1F3F0',
+  // Texto sobre o vermelho da marca: escuro o bastante para 4,5:1 no claro.
+  brandInk: '#1A0505',
   focus: '#E53935',
   blue: '#62686E',
   blueSoft: '#E7EAE7',

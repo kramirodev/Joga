@@ -81,14 +81,16 @@ test('escuro usa exatamente a paleta do Prompt 18', () => {
   assert.equal(dark.info, '#8EC8FF');
 });
 
-test('claro mantém os valores atuais', () => {
+test('claro mantém a base e corrige o texto sobre a marca', () => {
   assert.equal(light.bg, '#F1F3F0');
   assert.equal(light.surface, '#FFFFFF');
   assert.equal(light.ink, '#17191B');
   assert.equal(light.lime, '#E53935');
   assert.equal(light.line, '#D5D9D6');
   assert.equal(light.brand, '#E53935');
-  assert.equal(light.brandInk, '#F1F3F0');
+  // O texto sobre a marca deixou de ser branco: #F1F3F0 sobre #E53935 ficava
+  // em 3,79:1. O tom escuro garante 4,5:1 e é o `brandInk` dos botões.
+  assert.equal(light.brandInk, '#1A0505');
   assert.equal(light.lineSubtle, '#D5D9D6');
 });
 

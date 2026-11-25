@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Quadra de dia, com céu claro, sol e rede de vôlei">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8e9cc"/>
+      <stop offset=".5" stop-color="#f5d9ad"/>
+      <stop offset="1" stop-color="#efc58e"/>
+    </linearGradient>
+    <linearGradient id="court" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f7c5b"/>
+      <stop offset="1" stop-color="#2f5540"/>
+    </linearGradient>
+    <radialGradient id="sun" cx=".72" cy=".28" r=".6">
+      <stop offset="0" stop-color="#fff4c9"/>
+      <stop offset=".6" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#f2a33a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft3"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="grain3">
+      <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 .07"/></feComponentTransfer>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#sky)"/>
+  <rect width="1200" height="675" fill="url(#sun)"/>
+  <circle cx="880" cy="150" r="98" fill="#fff0bf" opacity=".92"/>
+  <circle cx="880" cy="150" r="126" fill="none" stroke="#fff6dd" stroke-opacity=".55" stroke-width="2"/>
+
+  <!-- nuvens -->
+  <g fill="#fff8e8" opacity=".72">
+    <ellipse cx="170" cy="138" rx="120" ry="32"/>
+    <ellipse cx="270" cy="120" rx="72" ry="24"/>
+    <ellipse cx="1040" cy="250" rx="100" ry="24"/>
+  </g>
+
+  <!-- arquibancada / muro -->
+  <path d="M0 420h1200v86H0z" fill="#d9b98c"/>
+  <path d="M0 420h1200" stroke="#f8e9cc" stroke-opacity=".8" stroke-width="3"/>
+  <g stroke="#b98f63" stroke-opacity=".35" stroke-width="2">
+    <path d="M0 448h1200M0 476h1200"/>
+  </g>
+
+  <!-- quadra -->
+  <path d="M0 505h1200v170H0z" fill="url(#court)"/>
+  <path d="M92 640 310 505h580l218 135z" fill="#3f6b4b" stroke="#f6e7c8" stroke-opacity=".85" stroke-width="4"/>
+  <path d="M310 505h580" stroke="#f6e7c8" stroke-opacity=".9" stroke-width="4"/>
+  <path d="M92 640h1016" stroke="#f6e7c8" stroke-opacity=".9" stroke-width="4"/>
+  <path d="M232 570h736" stroke="#f6e7c8" stroke-opacity=".5" stroke-width="2"/>
+  <path d="M600 505v135" stroke="#f6e7c8" stroke-opacity=".6" stroke-width="3"/>
+  <ellipse cx="600" cy="570" rx="86" ry="42" fill="none" stroke="#f6e7c8" stroke-opacity=".45" stroke-width="2"/>
+  <path d="M310 505 232 570M890 505l78 65" stroke="#f6e7c8" stroke-opacity=".4" stroke-width="2"/>
+
+  <!-- rede -->
+  <g transform="translate(600 505)">
+    <path d="M0 0v135" stroke="#f6e7c8" stroke-opacity=".9" stroke-width="4"/>
+    <path d="M-118 16h236v82H-118z" fill="none" stroke="#f6e7c8" stroke-opacity=".5" stroke-width="2"/>
+    <g stroke="#f6e7c8" stroke-opacity=".24" stroke-width="1">
+      <path d="M-118 38h236M-118 60h236M-118 82h236"/>
+      <path d="M-78 16v82M-38 16v82M2 16v82M42 16v82M82 16v82"/>
+    </g>
+  </g>
+
+  <!-- bola -->
+  <g transform="translate(858 370)">
+    <circle r="34" fill="#fff6e2"/>
+    <path d="M-34 0a34 34 0 0 1 68 0M-28-19c15 13 41 13 56 0M-28 19c15-13 41-13 56 0" fill="none" stroke="#2f5540" stroke-width="2.5" stroke-opacity=".65"/>
+  </g>
+
+  <!-- sombras -->
+  <ellipse cx="300" cy="650" rx="180" ry="18" fill="#24452f" opacity=".25" filter="url(#soft3)"/>
+  <rect width="1200" height="675" filter="url(#grain3)" opacity=".65"/>
+</svg>

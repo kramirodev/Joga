@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Quadra noturna iluminada por refletores, com linhas em verde-menta">
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070b16"/>
+      <stop offset=".55" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#0d1a2b"/>
+    </linearGradient>
+    <radialGradient id="flood" cx=".2" cy="0" r=".9">
+      <stop offset="0" stop-color="#38f2c8" stop-opacity=".32"/>
+      <stop offset=".45" stop-color="#38f2c8" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#38f2c8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="flood2" cx=".86" cy=".06" r=".75">
+      <stop offset="0" stop-color="#7aa7ff" stop-opacity=".25"/>
+      <stop offset=".55" stop-color="#7aa7ff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#7aa7ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eaf0ff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#eaf0ff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="grain2">
+      <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer>
+    </filter>
+    <pattern id="mesh2" width="46" height="46" patternUnits="userSpaceOnUse">
+      <path d="M0 46 46 0" stroke="#eaf0ff" stroke-opacity=".035" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#night)"/>
+  <rect width="1200" height="675" fill="url(#mesh2)"/>
+  <rect width="1200" height="675" fill="url(#flood)"/>
+  <rect width="1200" height="675" fill="url(#flood2)"/>
+
+  <!-- torres de luz -->
+  <g stroke="#eaf0ff" stroke-opacity=".28" stroke-width="4">
+    <path d="M126 0v162M1074 0v142"/>
+    <path d="M96 42h60M1044 30h60"/>
+  </g>
+  <g fill="#38f2c8">
+    <rect x="90" y="34" width="18" height="10" rx="2" opacity=".85"/>
+    <rect x="114" y="34" width="18" height="10" rx="2" opacity=".65"/>
+    <rect x="138" y="34" width="18" height="10" rx="2" opacity=".9"/>
+    <rect x="1038" y="22" width="18" height="10" rx="2" opacity=".75"/>
+    <rect x="1062" y="22" width="18" height="10" rx="2" opacity=".95"/>
+    <rect x="1086" y="22" width="18" height="10" rx="2" opacity=".6"/>
+  </g>
+  <path d="M138 44 420 620h-180z" fill="url(#beam)" opacity=".42"/>
+  <path d="M1062 32 800 620h190z" fill="url(#beam)" opacity=".3"/>
+
+  <!-- arquibancada -->
+  <path d="M0 430h1200v90H0z" fill="#080d17"/>
+  <g stroke="#eaf0ff" stroke-opacity=".09" stroke-width="2">
+    <path d="M0 458h1200M0 486h1200M0 514h1200"/>
+  </g>
+  <g fill="#eaf0ff" opacity=".16">
+    <circle cx="170" cy="470" r="4"/><circle cx="224" cy="470" r="4"/><circle cx="288" cy="470" r="4"/>
+    <circle cx="354" cy="470" r="4"/><circle cx="430" cy="470" r="4"/><circle cx="506" cy="470" r="4"/>
+    <circle cx="582" cy="470" r="4"/><circle cx="658" cy="470" r="4"/><circle cx="734" cy="470" r="4"/>
+    <circle cx="810" cy="470" r="4"/><circle cx="886" cy="470" r="4"/><circle cx="962" cy="470" r="4"/>
+    <circle cx="1038" cy="470" r="4"/><circle cx="1114" cy="470" r="4"/>
+  </g>
+
+  <!-- quadra -->
+  <path d="M96 620 318 452h564l222 168z" fill="#0a1524" stroke="#38f2c8" stroke-opacity=".7" stroke-width="3"/>
+  <path d="M318 452h564" stroke="#38f2c8" stroke-opacity=".95" stroke-width="4"/>
+  <path d="M96 620h1008" stroke="#38f2c8" stroke-opacity=".95" stroke-width="4"/>
+  <path d="M242 536h716" stroke="#38f2c8" stroke-opacity=".55" stroke-width="2"/>
+  <path d="M600 452v168" stroke="#eaf0ff" stroke-opacity=".55" stroke-width="3"/>
+  <ellipse cx="600" cy="536" rx="88" ry="54" fill="none" stroke="#eaf0ff" stroke-opacity=".42" stroke-width="2"/>
+  <path d="M318 452 242 536M882 452l76 84" stroke="#38f2c8" stroke-opacity=".45" stroke-width="2"/>
+
+  <!-- rede -->
+  <g transform="translate(600 452)">
+    <path d="M0 0v168" stroke="#eaf0ff" stroke-opacity=".7" stroke-width="4"/>
+    <path d="M-112 18h224v96H-112z" fill="none" stroke="#eaf0ff" stroke-opacity=".34" stroke-width="2"/>
+    <g stroke="#eaf0ff" stroke-opacity=".2" stroke-width="1">
+      <path d="M-112 42h224M-112 66h224M-112 90h224"/>
+      <path d="M-72 18v96M-32 18v96M8 18v96M48 18v96M88 18v96"/>
+    </g>
+  </g>
+
+  <!-- bola -->
+  <g transform="translate(858 340)">
+    <circle r="34" fill="#eaf0ff"/>
+    <path d="M-34 0a34 34 0 0 1 68 0M-28-19c15 13 41 13 56 0M-28 19c15-13 41-13 56 0" fill="none" stroke="#0b1220" stroke-width="2.5" stroke-opacity=".75"/>
+  </g>
+
+  <!-- marcas -->
+  <g fill="#38f2c8" opacity=".55">
+    <circle cx="1000" cy="310" r="2.5"/><circle cx="1022" cy="292" r="1.8"/><circle cx="978" cy="280" r="1.6"/>
+  </g>
+  <rect width="1200" height="675" filter="url(#grain2)" opacity=".8"/>
+</svg>

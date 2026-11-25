@@ -76,6 +76,8 @@ import {
   WEEKDAY_NAMES,
 } from '../ui/datetime';
 import { Text } from '../ui/text';
+import { ThemeArt } from '../ui/themeArtView';
+import { themeById } from '../ui/themes';
 import type { ScreenDef } from './types';
 import { QueueScreen, QueueSearch } from './queue';
 
@@ -202,7 +204,7 @@ function Home() {
         >
           <Text
             style={{
-              color: dark ? palette.brandInk : '#F1F3F0',
+              color: palette.brandInk,
               fontSize: 10,
               fontWeight: '900',
             }}
@@ -1302,7 +1304,8 @@ function LobbyFull() {
 
 function ProfileMe() {
   const nav = useNav();
-  const { palette } = useTheme();
+  const { palette, themeId } = useTheme();
+  const theme = themeById(themeId);
   const {
     profile,
     progress,
@@ -1400,7 +1403,28 @@ function ProfileMe() {
   const seasonA11y = seasonCountdown?.long ?? `${seasonLabel}, reseta na virada`;
   return (
     <Page title="Perfil">
-      <Card padding={18}>
+      <Card padding={18} style={{ overflow: 'hidden' }}>
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+        >
+          <ThemeArt art={theme.art} />
+          {/* Véu na cor do fundo: a arte aparece como fundo, mas o texto
+              mantém o contraste da página em qualquer tema. */}
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: palette.bg,
+              opacity: 0.86,
+            }}
+          />
+        </View>
         <Row style={{ gap: 14 }}>
           <View
             style={{
@@ -1416,7 +1440,7 @@ function ProfileMe() {
             <Txt variant="h1" style={{ fontSize: 26 }}>
               {name}
             </Txt>
-            <Txt variant="tiny">
+            <Txt variant="tiny" color="ink">
               #{tag} · {personalClan}
             </Txt>
             <View style={{ flexDirection: 'row', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
@@ -1446,7 +1470,7 @@ function ProfileMe() {
               style={{
                 fontSize: 14,
                 lineHeight: 19.6,
-                color: palette.muted,
+                color: palette.ink,
                 fontVariant: ['tabular-nums'],
                 includeFontPadding: false,
               }}
@@ -1457,7 +1481,9 @@ function ProfileMe() {
           <View style={{ alignItems: 'flex-end' }}>
             <Txt variant="label">Nível</Txt>
             <Txt variant="h3">{`${tier} ${level}`}</Txt>
-            <Txt variant="tiny">temporada · {number(xp)} XP</Txt>
+            <Txt variant="tiny" color="ink">
+              temporada · {number(xp)} XP
+            </Txt>
           </View>
         </Row>
         <View style={{ marginTop: 10 }}>

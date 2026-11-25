@@ -241,7 +241,7 @@ export function Badge({ children, tone = 'default' }: PropsWithChildren<{ tone?:
     bg = dark ? palette.surface2 : palette.ink;
     border = dark ? palette.lineSubtle : palette.ink;
     // Marca como texto pequeno sobre superfície escura exige `brandStrong`.
-    color = dark ? palette.brandStrong : palette.lime;
+    color = palette.brandStrong;
   } else if (tone === 'ink') {
     bg = dark ? palette.surface2 : palette.ink;
     border = dark ? palette.lineSubtle : palette.ink;
@@ -500,15 +500,17 @@ export function Btn({
   const textColor =
     action.disabled && dark
       ? palette.muted
-      : tone === 'primary' || tone === 'danger'
-        ? dark
-          ? palette.brandInk
-          : '#F1F3F0'
-        : tone === 'ghost' || tone === 'soft'
-          ? palette.ink
-          : dark
-            ? palette.bg
-            : palette.onInk;
+      : tone === 'primary'
+        ? palette.brandInk
+        : tone === 'danger'
+          ? dark
+            ? palette.brandInk
+            : '#F1F3F0'
+          : tone === 'ghost' || tone === 'soft'
+            ? palette.ink
+            : dark
+              ? palette.bg
+              : palette.onInk;
   let backgroundColor = palette.ink;
   let borderColor: string = palette.lineStrong;
   if (tone === 'primary') {
@@ -709,7 +711,7 @@ export function Chip({
   if (on && tone === 'lime') {
     bg = palette.lime;
     border = dark ? palette.lime : palette.ink;
-    color = dark ? palette.brandInk : palette.ink;
+    color = palette.brandInk;
   } else if (on) {
     bg = dark ? palette.surface3 : palette.ink;
     border = dark ? palette.lime : palette.ink;

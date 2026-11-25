@@ -1251,7 +1251,7 @@ function ClanProfile() {
               justifyContent: 'center',
             }}
           >
-            <Icon name="clan" size={26} color={dark ? palette.brandInk : '#F1F3F0'} />
+            <Icon name="clan" size={26} color={palette.brandInk} />
           </View>
           <View style={{ flex: 1 }}>
             <Txt variant="display" color="onInk" style={{ fontSize: 28 }}>
@@ -3006,9 +3006,7 @@ function ClanPolicyOption({
           justifyContent: 'center',
         }}
       >
-        {selected ? (
-          <Icon name="check" size={14} color={dark ? palette.brandInk : palette.ink} />
-        ) : null}
+        {selected ? <Icon name="check" size={14} color={palette.brandInk} /> : null}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, lineHeight: 18, fontWeight: '800', color: palette.ink }}>

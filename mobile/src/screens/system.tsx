@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
 import type { CpfStatus, Device, Passkey } from '../api/types';
@@ -13,7 +13,6 @@ import {
   Btn,
   Card,
   CardList,
-  Chip,
   Field,
   IconBtn,
   Input,
@@ -31,6 +30,8 @@ import {
 } from '../ui/kit';
 import { formatDateShort } from '../ui/datetime';
 import { Text } from '../ui/text';
+import { ThemeArt } from '../ui/themeArtView';
+import { themes } from '../ui/themes';
 import type { ScreenDef } from './types';
 
 function Settings() {
@@ -196,8 +197,7 @@ function Accessibility() {
 }
 
 function Customization() {
-  const { dark, setDark } = useApp();
-  const { palette } = useTheme();
+  const { themeId, setTheme, palette } = useTheme();
   const [density, setDensity] = useState('Confortável');
   const [sounds, setSounds] = useState(true);
   const [animations, setAnimations] = useState(true);
@@ -209,38 +209,95 @@ function Customization() {
       </Row>
       <Card>
         <Txt variant="h3">Tema</Txt>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          {['Claro', 'Escuro'].map((item) => (
-            <Chip
-              key={item}
-              on={item === 'Escuro' ? dark : !dark}
-              onPress={() => setDark(item === 'Escuro')}
-            >
-              {item}
-            </Chip>
-          ))}
-        </View>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Claro e escuro são gratuitos e acompanham o sistema até você escolher manualmente.
+        <Txt variant="tiny" style={{ marginTop: 4 }}>
+          Troca as cores do app inteiro e a arte do seu perfil na hora.
         </Txt>
-      </Card>
-      <Card>
-        <Txt variant="h3">Cor de destaque</Txt>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {['#E53935', '#62686E', '#62686E', '#E53935', '#62686E'].map((color, index) => (
-            <View
-              key={index}
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 23,
-                backgroundColor: color,
-                borderWidth: index === 0 ? 2 : 1.5,
-                borderColor: index === 0 ? palette.ink : palette.line,
-              }}
-            />
-          ))}
+        <View style={{ marginTop: 12, gap: 8 }}>
+          {themes.map((theme) => {
+            const selected = theme.id === themeId;
+            const samples = [
+              theme.palette.bg,
+              theme.palette.surface2,
+              theme.palette.lime,
+              theme.palette.ink,
+            ];
+            return (
+              <Pressable
+                key={theme.id}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`Tema ${theme.name}`}
+                onPress={() => setTheme(theme.id)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 8,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: selected ? palette.brand : palette.line,
+                  backgroundColor: selected ? palette.surface2 : palette.surface,
+                  opacity: pressed ? 0.9 : 1,
+                })}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 46,
+                    borderRadius: 9,
+                    overflow: 'hidden',
+                    backgroundColor: theme.palette.surface2,
+                  }}
+                >
+                  <ThemeArt art={theme.art} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                  >
+                    {theme.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: palette.muted, marginTop: 1 }}>
+                    {theme.dark ? 'Escuro' : 'Claro'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 4, marginTop: 6 }}>
+                    {samples.map((color, index) => (
+                      <View
+                        key={`${theme.id}-sample-${index}`}
+                        style={{
+                          width: 18,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: color,
+                          borderWidth: 1,
+                          borderColor: palette.line,
+                        }}
+                      />
+                    ))}
+                  </View>
+                </View>
+                <View
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: selected ? theme.palette.brand : palette.line,
+                    backgroundColor: selected ? theme.palette.brand : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {selected ? <Icon name="check" size={14} color={theme.palette.brandInk} /> : null}
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
+        <Txt variant="tiny" style={{ marginTop: 10 }}>
+          O tema fica salvo neste aparelho.
+        </Txt>
       </Card>
       <Card>
         <Txt variant="h3">Densidade dos cartões</Txt>
@@ -288,9 +345,6 @@ function Customization() {
           <Toggle checked={animations} onChange={setAnimations} />
         </Row>
       </Card>
-      <Btn tone="primary" disabled>
-        Persistência da personalização em implantação
-      </Btn>
     </Page>
   );
 }

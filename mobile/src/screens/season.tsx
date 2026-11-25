@@ -273,7 +273,7 @@ function Node({
   track: string;
   onPress: () => void;
 }) {
-  const { palette, dark } = useTheme();
+  const { palette } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -299,7 +299,7 @@ function Node({
         style={{
           fontSize: 12,
           fontWeight: '900',
-          color: current ? (dark ? palette.brandInk : '#F1F3F0') : palette.ink,
+          color: current ? palette.brandInk : palette.ink,
           fontVariant: ['tabular-nums'],
         }}
       >
@@ -314,7 +314,7 @@ function Node({
           fontSize: 9,
           fontWeight: '800',
           textTransform: 'uppercase',
-          color: current ? (dark ? palette.brandInk : '#F1F3F0') : palette.muted,
+          color: current ? palette.brandInk : palette.muted,
         }}
       >
         {milestone ? 'item' : done ? 'ok' : 'XP'}
@@ -328,7 +328,7 @@ function Node({
           style={{
             fontSize: 9,
             fontWeight: '800',
-            color: current ? (dark ? palette.brandInk : '#17191B') : palette.limeDeep,
+            color: current ? palette.brandInk : palette.limeDeep,
           }}
         >
           {item === 30 ? 'insígnia' : track === 'pass' ? 'passe' : 'grátis'}

@@ -209,7 +209,7 @@ function Welcome() {
               >
                 <Text
                   style={{
-                    color: dark ? palette.brandInk : '#F1F3F0',
+                    color: palette.brandInk,
                     fontSize: 15,
                     fontWeight: '900',
                     lineHeight: 18,
