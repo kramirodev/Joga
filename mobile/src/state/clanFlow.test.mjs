@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   clanCardAction,
   clanCardActionLabel,
+  clanCardHint,
   clanJoinState,
   clanRequestErrorCopy,
   clanRequestStatusLabel,
@@ -97,6 +98,35 @@ test('rótulos do card não repetem "Solicitar" quando já há pedido', () => {
   assert.equal(clanCardActionLabel('join', true), 'Entrando…');
   assert.equal(clanCardActionLabel('full'), 'Cheio');
   assert.equal(clanCardActionLabel('closed'), 'Fechado');
+});
+
+test('cancelar e recusar têm copy própria no card', () => {
+  assert.equal(
+    clanCardHint({ action: 'resend', myRequestStatus: 'cancelled', vacancies: 3 }),
+    'Você cancelou seu pedido anterior.',
+  );
+  assert.equal(
+    clanCardHint({ action: 'resend', myRequestStatus: 'rejected', vacancies: 3 }),
+    'Seu pedido anterior não foi aprovado.',
+  );
+  assert.equal(
+    clanCardHint({ action: 'pending', myRequestStatus: 'pending', vacancies: 0 }),
+    'Aguardando aprovação do clã',
+  );
+  assert.equal(clanCardHint({ action: 'request', myRequestStatus: null, vacancies: 3 }), '3 vagas');
+  assert.equal(
+    clanCardHint({ action: 'request', myRequestStatus: null, vacancies: -2 }),
+    '0 vagas',
+  );
+  assert.equal(
+    clanCardHint({ action: 'open', myRequestStatus: null, vacancies: 0 }),
+    'Você já participa deste clã',
+  );
+  assert.equal(clanCardHint({ action: 'full', myRequestStatus: null, vacancies: 0 }), 'Sem vaga');
+  assert.equal(
+    clanCardHint({ action: 'closed', myRequestStatus: null, vacancies: 0 }),
+    'Não aceita entradas',
+  );
 });
 
 test('etapa da entrada: detalhe pendente abre direto como enviado', () => {

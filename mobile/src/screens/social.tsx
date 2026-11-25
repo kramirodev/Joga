@@ -32,6 +32,7 @@ import { useApp } from '../state/app';
 import {
   clanCardAction,
   clanCardActionLabel,
+  clanCardHint,
   clanJoinState,
   clanRequestErrorCopy,
   clanRequestStatusLabel,
@@ -1697,17 +1698,11 @@ function ClanDiscovery() {
                 <Txt variant="tiny">{displayClanTag(clan.tag)}</Txt>
                 <Row between style={{ marginTop: 12 }}>
                   <Txt variant="tiny" style={{ flexShrink: 1 }}>
-                    {cardAction === 'pending'
-                      ? 'Aguardando aprovação do clã'
-                      : cardAction === 'resend'
-                        ? 'Seu pedido anterior não foi aprovado'
-                        : isMine
-                          ? 'Você já participa deste clã'
-                          : full
-                            ? 'Sem vaga'
-                            : policy === 'closed'
-                              ? 'Não aceita entradas'
-                              : `${Math.max(0, clan.max_members - clan.members)} vagas`}
+                    {clanCardHint({
+                      action: cardAction,
+                      myRequestStatus: clan.my_request?.status,
+                      vacancies: clan.max_members - clan.members,
+                    })}
                   </Txt>
                   <Btn
                     tone={actionTone}

@@ -555,16 +555,15 @@ export function Btn({
     >
       {icon ? <Icon name={icon} size={18} color={textColor} /> : null}
       <Text
-        numberOfLines={2}
+        numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
         maxFontSizeMultiplier={1.2}
         style={{
-          flexShrink: 1,
+          flexShrink: inRow ? 1 : 0,
           fontSize: small ? 14 : 15,
           lineHeight: small ? 18 : 20,
           fontWeight: '800',
-          letterSpacing: 0.1,
           color: textColor,
           textAlign: 'center',
         }}

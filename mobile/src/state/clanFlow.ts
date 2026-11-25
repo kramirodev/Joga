@@ -61,6 +61,34 @@ export function clanCardActionLabel(action: ClanCardAction, busy = false): strin
   }
 }
 
+/**
+ * Texto auxiliar do card. Cancelar não é recusar: cada estado do pedido
+ * anterior tem sua própria copy, mesmo que a ação continue `resend`.
+ */
+export function clanCardHint(input: {
+  action: ClanCardAction;
+  myRequestStatus: ClanMyRequestStatus | null | undefined;
+  vacancies: number;
+}): string {
+  switch (input.action) {
+    case 'pending':
+      return 'Aguardando aprovação do clã';
+    case 'resend':
+      return input.myRequestStatus === 'cancelled'
+        ? 'Você cancelou seu pedido anterior.'
+        : 'Seu pedido anterior não foi aprovado.';
+    case 'open':
+      return 'Você já participa deste clã';
+    case 'full':
+      return 'Sem vaga';
+    case 'closed':
+      return 'Não aceita entradas';
+    case 'join':
+    case 'request':
+      return `${Math.max(0, input.vacancies)} vagas`;
+  }
+}
+
 export type ClanJoinStep = 'form' | 'pending' | 'joined';
 
 /**
