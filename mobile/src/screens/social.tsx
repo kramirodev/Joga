@@ -15,10 +15,13 @@ import type {
   ClanInvite as ClanInviteData,
   ClanMember,
   ClanRanking as ClanRankingData,
+  FriendRequest,
   ModerationAction,
   ModerationReport,
   MyRating,
   Notification,
+  PlayerRelation,
+  PlayerSearchResult,
   SportFormat,
   VisualItem,
 } from '../api/types';
@@ -44,6 +47,13 @@ import {
   type ChatRow,
 } from '../state/clanSocial';
 import { lobbyIdFromQueue } from '../state/queueState';
+import {
+  composePlayerQuery,
+  friendActionFor,
+  friendErrorCopy,
+  playerHandle,
+} from '../state/socialState';
+import { useScreenFocus } from '../state/useScreenFocus';
 import { BottomSheetFrame, useSheetClose } from '../ui/BottomSheetFrame';
 import { ChatEmoteBody, ChatEmotePicker } from '../ui/ChatEmotePicker';
 import { useNav, useTheme } from '../state/context';
@@ -84,6 +94,19 @@ import type { ScreenDef } from './types';
 
 function apiErrorCode(error: unknown): string {
   return error instanceof ApiError ? error.code : '';
+}
+
+/** 409 `incoming_friend_request` traz o id do pedido oposto para aceitar direto. */
+function incomingRequestId(error: unknown): string | null {
+  if (!(error instanceof ApiError)) {
+    return null;
+  }
+  const detail = (error.body as { detail?: unknown } | null)?.detail;
+  if (!detail || typeof detail !== 'object') {
+    return null;
+  }
+  const value = (detail as { request_id?: unknown }).request_id;
+  return typeof value === 'string' ? value : null;
 }
 
 type FormatOption = SportFormat;
@@ -187,18 +210,42 @@ function FormatPicker({
 function Friends() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { friends, loadSocial } = useApp();
+  const {
+    session,
+    friends,
+    friendRequestsIncoming,
+    friendRequestsOutgoing,
+    blocks,
+    socialFailures,
+    loadSocial,
+  } = useApp();
+  const token = session?.accessToken ?? null;
   const [tab, setTab] = useState('Amigos');
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState<{ id: string; action: string } | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const mutationLock = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      await loadSocial();
+    } catch {
+      // `loadSocial` registra as seções que falharam em `socialFailures`.
+    }
+  }, [loadSocial]);
+
   useEffect(() => {
     let active = true;
     loadSocial()
-      .catch(() => {
-        if (active) {
-          setFailed(true);
-        }
-      })
+      .catch(() => undefined)
       .finally(() => {
         if (active) {
           setLoading(false);
@@ -208,19 +255,123 @@ function Friends() {
       active = false;
     };
   }, [loadSocial]);
+
+  useScreenFocus('friends', () => {
+    void refresh();
+  });
+
+  const friendsFailed = socialFailures.includes('friends');
+  const friendsFatal = !loading && friendsFailed && friends.length === 0;
+  const partialFailure = !loading && !friendsFatal && socialFailures.length > 0;
+
   const retry = () => {
     setLoading(true);
-    setFailed(false);
-    loadSocial()
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+    refresh().finally(() => {
+      if (mounted.current) {
+        setLoading(false);
+      }
+    });
   };
-  const list = friends.map((friend) => ({
-    id: friend.user_id,
-    name: friend.display_name ?? 'Jogador',
-    tag: '',
-    meta: 'Amigo',
-  }));
+
+  const clearRowError = (id: string) => {
+    setRowErrors((current) => {
+      if (!(id in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  };
+
+  /**
+   * Mutação serializada: o lock global evita dois pedidos concorrentes e
+   * `busy.id` desabilita só a linha afetada. Toda ação recarrega as listas do
+   * servidor, inclusive depois de falhar com código que muda o estado.
+   */
+  const mutate = async (
+    id: string,
+    action: string,
+    run: (value: string) => Promise<unknown>,
+    successMessage: string,
+  ) => {
+    if (!token || mutationLock.current) {
+      return;
+    }
+    mutationLock.current = true;
+    setBusy({ id, action });
+    clearRowError(id);
+    try {
+      await run(token);
+      if (mounted.current) {
+        nav.toast(successMessage);
+      }
+      await refresh();
+    } catch (error) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(error);
+      setRowErrors((current) => ({ ...current, [id]: friendErrorCopy(code) }));
+      if (code === 'friendship_not_found' || code === 'user_not_found') {
+        void refresh();
+      }
+    } finally {
+      mutationLock.current = false;
+      if (mounted.current) {
+        setBusy(null);
+      }
+    }
+  };
+
+  const acceptRequest = (request: FriendRequest) =>
+    void mutate(
+      request.id,
+      'accept',
+      (value) => api.social.acceptFriend(value, request.id),
+      'Pedido aceito. Agora vocês são amigos.',
+    );
+
+  const declineRequest = (request: FriendRequest) =>
+    void mutate(
+      request.id,
+      'decline',
+      (value) => api.social.declineFriendRequest(value, request.id),
+      'Pedido recusado.',
+    );
+
+  const cancelRequest = (request: FriendRequest) =>
+    void mutate(
+      request.id,
+      'cancel',
+      (value) => api.social.cancelFriendRequest(value, request.id),
+      'Pedido cancelado.',
+    );
+
+  const removeFriend = (friendId: string) =>
+    void mutate(
+      friendId,
+      'remove',
+      (value) => api.social.removeFriend(value, friendId),
+      'Amizade removida.',
+    );
+
+  const unblock = (userId: string) =>
+    void mutate(
+      userId,
+      'unblock',
+      (value) => api.social.unblockUser(value, userId),
+      'Jogador desbloqueado.',
+    );
+
+  const tabs = ['Amigos', 'Solicitações', 'Bloqueados'];
+  const tabLabel = (item: string) =>
+    item === 'Solicitações' && friendRequestsIncoming.length > 0
+      ? `${item} (${friendRequestsIncoming.length})`
+      : item;
+
+  const isBusy = (id: string, action: string) => busy?.id === id && busy.action === action;
+
   return (
     <Page title="Amigos">
       <CardList>
@@ -258,7 +409,7 @@ function Friends() {
       </CardList>
       {loading ? (
         <LoadingState label="Buscando seus amigos." variant="social" />
-      ) : failed ? (
+      ) : friendsFatal ? (
         <StateScreen
           icon="wifi-off"
           title="Não foi possível carregar seus amigos"
@@ -271,37 +422,61 @@ function Friends() {
         />
       ) : (
         <>
+          {partialFailure ? (
+            <View style={{ gap: 6 }}>
+              <Notice tone="orange" icon="alert">
+                Alguns contatos não foram atualizados agora.
+              </Notice>
+              <TextBtn onPress={() => void refresh()}>Tentar novamente</TextBtn>
+            </View>
+          ) : null}
           <Seg>
-            {['Amigos', 'Solicitações', 'Bloqueados'].map((item) => (
+            {tabs.map((item) => (
               <SegBtn key={item} on={tab === item} onPress={() => setTab(item)}>
-                {item}
+                {tabLabel(item)}
               </SegBtn>
             ))}
           </Seg>
           <SegContent value={tab}>
             {tab === 'Amigos' ? (
-              list.length ? (
+              friends.length ? (
                 <CardList>
-                  {list.map((friend, index) => (
+                  {friends.map((friend, index) => (
                     <ListRow
-                      key={friend.id}
-                      last={index === list.length - 1}
+                      key={friend.user_id}
+                      last={index === friends.length - 1}
                       onPress={() =>
-                        nav.go('profile-other', { userId: friend.id, name: friend.name })
+                        nav.go('profile-other', {
+                          userId: friend.user_id,
+                          name: friend.display_name ?? 'Jogador',
+                        })
                       }
                     >
                       <IdentityBadge
                         size={34}
-                        identity={identityFromSeed(friend.id)}
+                        identity={identityFromSeed(friend.user_id)}
                         palette={palette}
                       />
-                      <View style={{ flex: 1 }}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                          {friend.name}{' '}
+                          {playerHandle(friend.display_name, friend.tag)}
                         </Text>
-                        <Text style={{ fontSize: 13, color: palette.muted }}>{friend.meta}</Text>
+                        <Text style={{ fontSize: 13, color: palette.muted }}>Amigo</Text>
+                        {rowErrors[friend.user_id] ? (
+                          <Txt variant="tiny" color="red">
+                            {rowErrors[friend.user_id]}
+                          </Txt>
+                        ) : null}
                       </View>
-                      <Text style={{ color: palette.muted }}>›</Text>
+                      <Btn
+                        tone="ghost"
+                        small
+                        block={false}
+                        disabled={isBusy(friend.user_id, 'remove')}
+                        onPress={() => removeFriend(friend.user_id)}
+                      >
+                        {isBusy(friend.user_id, 'remove') ? 'Removendo.' : 'Remover'}
+                      </Btn>
                     </ListRow>
                   ))}
                 </CardList>
@@ -311,12 +486,151 @@ function Friends() {
                   text="Adicione amigos para convidar para lobbies."
                 />
               )
+            ) : tab === 'Solicitações' ? (
+              <>
+                <Txt variant="h3">Recebidos</Txt>
+                {friendRequestsIncoming.length ? (
+                  <CardList>
+                    {friendRequestsIncoming.map((request, index) => (
+                      <ListRow key={request.id} last={index === friendRequestsIncoming.length - 1}>
+                        <IdentityBadge
+                          size={34}
+                          identity={identityFromSeed(request.counterpart_id)}
+                          palette={palette}
+                        />
+                        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                          <Text
+                            numberOfLines={2}
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 19,
+                              fontWeight: '800',
+                              color: palette.ink,
+                            }}
+                          >
+                            {playerHandle(request.counterpart_name, request.counterpart_tag)}
+                          </Text>
+                          <Txt variant="tiny">
+                            {`Recebido em ${shortDateTime(request.created_at)}`}
+                          </Txt>
+                          {rowErrors[request.id] ? (
+                            <Txt variant="tiny" color="red">
+                              {rowErrors[request.id]}
+                            </Txt>
+                          ) : null}
+                          <BtnRow>
+                            <Btn
+                              tone="primary"
+                              small
+                              disabled={!!busy && busy.id === request.id}
+                              onPress={() => acceptRequest(request)}
+                            >
+                              {isBusy(request.id, 'accept') ? 'Aceitando.' : 'Aceitar'}
+                            </Btn>
+                            <Btn
+                              tone="ghost"
+                              small
+                              disabled={!!busy && busy.id === request.id}
+                              onPress={() => declineRequest(request)}
+                            >
+                              {isBusy(request.id, 'decline') ? 'Recusando.' : 'Recusar'}
+                            </Btn>
+                          </BtnRow>
+                        </View>
+                      </ListRow>
+                    ))}
+                  </CardList>
+                ) : (
+                  <Card>
+                    <Txt variant="tiny">Nenhum pedido recebido.</Txt>
+                  </Card>
+                )}
+                <Txt variant="h3">Enviados</Txt>
+                {friendRequestsOutgoing.length ? (
+                  <CardList>
+                    {friendRequestsOutgoing.map((request, index) => (
+                      <ListRow key={request.id} last={index === friendRequestsOutgoing.length - 1}>
+                        <IdentityBadge
+                          size={34}
+                          identity={identityFromSeed(request.counterpart_id)}
+                          palette={palette}
+                        />
+                        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                          <Text
+                            numberOfLines={2}
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 19,
+                              fontWeight: '800',
+                              color: palette.ink,
+                            }}
+                          >
+                            {playerHandle(request.counterpart_name, request.counterpart_tag)}
+                          </Text>
+                          <Txt variant="tiny">
+                            {`Enviado em ${shortDateTime(request.created_at)}`}
+                          </Txt>
+                          {rowErrors[request.id] ? (
+                            <Txt variant="tiny" color="red">
+                              {rowErrors[request.id]}
+                            </Txt>
+                          ) : null}
+                          <Btn
+                            tone="ghost"
+                            small
+                            block={false}
+                            disabled={isBusy(request.id, 'cancel')}
+                            onPress={() => cancelRequest(request)}
+                          >
+                            {isBusy(request.id, 'cancel') ? 'Cancelando.' : 'Cancelar'}
+                          </Btn>
+                        </View>
+                      </ListRow>
+                    ))}
+                  </CardList>
+                ) : (
+                  <Card>
+                    <Txt variant="tiny">Nenhum pedido enviado.</Txt>
+                  </Card>
+                )}
+              </>
+            ) : blocks.length ? (
+              <CardList>
+                {blocks.map((block, index) => (
+                  <ListRow key={block.user_id} last={index === blocks.length - 1}>
+                    <IdentityBadge
+                      size={34}
+                      identity={identityFromSeed(block.user_id)}
+                      palette={palette}
+                    />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                        {playerHandle(block.display_name, block.tag)}
+                      </Text>
+                      <Text style={{ fontSize: 13, color: palette.muted }}>Bloqueado</Text>
+                      {rowErrors[block.user_id] ? (
+                        <Txt variant="tiny" color="red">
+                          {rowErrors[block.user_id]}
+                        </Txt>
+                      ) : null}
+                    </View>
+                    <Btn
+                      tone="ghost"
+                      small
+                      block={false}
+                      disabled={isBusy(block.user_id, 'unblock')}
+                      onPress={() => unblock(block.user_id)}
+                    >
+                      {isBusy(block.user_id, 'unblock') ? 'Desbloqueando.' : 'Desbloquear'}
+                    </Btn>
+                  </ListRow>
+                ))}
+              </CardList>
             ) : (
-              <Notice tone="blue" icon="info">
-                {tab === 'Solicitações'
-                  ? 'Nenhuma solicitação pendente.'
-                  : 'Nenhum jogador bloqueado.'}
-              </Notice>
+              <EmptyState
+                title="Nenhum jogador bloqueado"
+                text="Ninguém está bloqueado na sua conta."
+              />
             )}
           </SegContent>
         </>
@@ -333,39 +647,414 @@ function Friends() {
 
 function AddFriend() {
   const nav = useNav();
-  const [query, setQuery] = useState('');
-  const [searched, setSearched] = useState(false);
-  const search = () => {
-    if (query.trim().length < 3) {
-      nav.toast('Digite pelo menos 3 caracteres, como nome#tag.');
+  const { palette } = useTheme();
+  const { session, friendRequestsIncoming, loadSocial } = useApp();
+  const token = session?.accessToken ?? null;
+  const [name, setName] = useState('');
+  const [tag, setTag] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [results, setResults] = useState<PlayerSearchResult[]>([]);
+  const [searchedQuery, setSearchedQuery] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const [notice, setNotice] = useState<{
+    tone: 'blue' | 'green' | 'orange' | 'red';
+    text: string;
+  } | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<{ userId: string; action: string } | null>(null);
+  const [requestIds, setRequestIds] = useState<Record<string, string>>({});
+  const requestSeq = useRef(0);
+  const searchLock = useRef(false);
+  const mutationLock = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const reloadSocial = () => {
+    loadSocial().catch(() => undefined);
+  };
+
+  const nameOf = (item: PlayerSearchResult) => item.display_name?.trim() || 'esse jogador';
+
+  const setRelation = (userId: string, relation: PlayerRelation) => {
+    setResults((current) =>
+      current.map((item) => (item.user_id === userId ? { ...item, relation } : item)),
+    );
+  };
+
+  const clearRowError = (userId: string) => {
+    setRowErrors((current) => {
+      if (!(userId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
+  };
+
+  const runSearch = async () => {
+    if (!token) {
+      nav.toast('Entre na sua conta para buscar jogadores.');
       return;
     }
-    setSearched(true);
+    const query = composePlayerQuery(name, tag);
+    if (query.length < 3) {
+      nav.toast('Digite pelo menos 3 caracteres, como nome ou tag.');
+      return;
+    }
+    if (searchLock.current) {
+      return;
+    }
+    searchLock.current = true;
+    const seq = ++requestSeq.current;
+    setStatus('loading');
+    setSearchError('');
+    setNotice(null);
+    setRowErrors({});
+    try {
+      const response = await api.users.search(token, query);
+      if (seq !== requestSeq.current || !mounted.current) {
+        return;
+      }
+      setResults(response.results);
+      setSearchedQuery(query);
+      setStatus('ready');
+    } catch (error) {
+      if (seq !== requestSeq.current || !mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(error);
+      setStatus('error');
+      setSearchError(
+        code === 'rate_limited' || code === 'network_unavailable' || code === 'request_timeout'
+          ? friendErrorCopy(code)
+          : 'Não foi possível buscar jogadores agora. Tente de novo.',
+      );
+    } finally {
+      searchLock.current = false;
+    }
   };
+
+  /**
+   * Id do pedido recebido desta pessoa. O contexto normalmente já tem, mas a
+   * busca pode ser a primeira tela depois de um pedido novo: nesse caso relê a
+   * lista antes de aceitar/recusar, sem inventar id.
+   */
+  const resolveIncomingId = async (userId: string): Promise<string | null> => {
+    const known =
+      requestIds[userId] ??
+      friendRequestsIncoming.find((request) => request.counterpart_id === userId)?.id;
+    if (known || !token) {
+      return known ?? null;
+    }
+    try {
+      const response = await api.social.friendRequests(token, 'incoming');
+      return response.requests.find((request) => request.counterpart_id === userId)?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const runRowAction = async (
+    userId: string,
+    action: string,
+    run: (value: string) => Promise<void>,
+  ) => {
+    if (!token || mutationLock.current) {
+      return;
+    }
+    mutationLock.current = true;
+    setBusy({ userId, action });
+    clearRowError(userId);
+    try {
+      await run(token);
+    } catch (error) {
+      if (!mounted.current) {
+        return;
+      }
+      const code = apiErrorCode(error);
+      setRowErrors((current) => ({ ...current, [userId]: friendErrorCopy(code) }));
+      if (code === 'friendship_not_found' || code === 'user_not_found') {
+        reloadSocial();
+      }
+    } finally {
+      mutationLock.current = false;
+      if (mounted.current) {
+        setBusy(null);
+      }
+    }
+  };
+
+  const addFriend = (item: PlayerSearchResult) => {
+    if (friendActionFor(item.relation) !== 'add') {
+      return;
+    }
+    void runRowAction(item.user_id, 'add', async (value) => {
+      try {
+        await api.social.requestFriend(value, item.user_id);
+        if (!mounted.current) {
+          return;
+        }
+        setRelation(item.user_id, 'outgoing_request');
+        setNotice({ tone: 'green', text: `Pedido enviado para ${nameOf(item)}.` });
+        reloadSocial();
+      } catch (error) {
+        const code = apiErrorCode(error);
+        if (code === 'incoming_friend_request') {
+          const requestId = incomingRequestId(error);
+          if (!mounted.current) {
+            return;
+          }
+          if (requestId) {
+            setRequestIds((current) => ({ ...current, [item.user_id]: requestId }));
+          }
+          setRelation(item.user_id, 'incoming_request');
+          setNotice({
+            tone: 'orange',
+            text: `${nameOf(item)} já enviou um pedido para você. Aceite abaixo.`,
+          });
+          reloadSocial();
+          return;
+        }
+        if (!mounted.current) {
+          return;
+        }
+        if (code === 'already_friends') {
+          setRelation(item.user_id, 'friend');
+        } else if (code === 'friend_request_exists') {
+          setRelation(item.user_id, 'outgoing_request');
+        }
+        reloadSocial();
+        throw error;
+      }
+    });
+  };
+
+  const acceptExisting = (item: PlayerSearchResult) => {
+    void runRowAction(item.user_id, 'accept', async (value) => {
+      const requestId = await resolveIncomingId(item.user_id);
+      if (!requestId) {
+        if (mounted.current) {
+          setRowErrors((current) => ({
+            ...current,
+            [item.user_id]: friendErrorCopy('friendship_not_found'),
+          }));
+        }
+        reloadSocial();
+        return;
+      }
+      try {
+        await api.social.acceptFriend(value, requestId);
+        if (!mounted.current) {
+          return;
+        }
+        setRelation(item.user_id, 'friend');
+        setNotice({ tone: 'green', text: 'Pedido aceito. Agora vocês são amigos.' });
+        reloadSocial();
+      } catch (error) {
+        if (apiErrorCode(error) === 'friendship_not_found') {
+          if (mounted.current) {
+            setRelation(item.user_id, 'none');
+          }
+          reloadSocial();
+        }
+        throw error;
+      }
+    });
+  };
+
+  const declineExisting = (item: PlayerSearchResult) => {
+    void runRowAction(item.user_id, 'decline', async (value) => {
+      const requestId = await resolveIncomingId(item.user_id);
+      if (!requestId) {
+        if (mounted.current) {
+          setRowErrors((current) => ({
+            ...current,
+            [item.user_id]: friendErrorCopy('friendship_not_found'),
+          }));
+        }
+        reloadSocial();
+        return;
+      }
+      await api.social.declineFriendRequest(value, requestId);
+      if (!mounted.current) {
+        return;
+      }
+      setRelation(item.user_id, 'none');
+      setNotice({ tone: 'blue', text: 'Pedido recusado.' });
+      reloadSocial();
+    });
+  };
+
+  const isBusy = (userId: string, action: string) =>
+    busy?.userId === userId && busy.action === action;
+
   return (
     <Page title="Adicionar amigo">
       <Txt variant="lead">
-        Procure pelo nome de exibição e pela tag. O telefone nunca é usado como busca.
+        Procure pelo nome de exibição, pela tag, ou pelos dois. O telefone nunca é usado como busca.
       </Txt>
-      <Input
-        value={query}
-        onChangeText={setQuery}
-        placeholder="nome#tag"
-        maxLength={60}
-        autoCorrect={false}
-      />
-      <Btn tone="primary" icon="search" onPress={search}>
-        Buscar jogador
+      <Row top gap={10}>
+        <View style={{ flex: 1.4, minWidth: 0 }}>
+          <Field label="Nome">
+            <Input
+              value={name}
+              onChangeText={setName}
+              placeholder="NOME"
+              maxLength={60}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              returnKeyType="search"
+              onSubmitEditing={() => void runSearch()}
+            />
+          </Field>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Field label="Tag">
+            <InputPrefix
+              input={
+                <Input
+                  value={tag}
+                  onChangeText={(value) =>
+                    setTag(
+                      value
+                        .replace(/[^A-Za-z0-9]/g, '')
+                        .slice(0, 12)
+                        .toUpperCase(),
+                    )
+                  }
+                  maxLength={12}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  placeholder="TAG"
+                  returnKeyType="search"
+                  onSubmitEditing={() => void runSearch()}
+                  style={{ borderWidth: 0, borderRadius: 0, minHeight: 50 }}
+                />
+              }
+            >
+              #
+            </InputPrefix>
+          </Field>
+        </View>
+      </Row>
+      <Btn
+        tone="primary"
+        icon="search"
+        onPress={() => void runSearch()}
+        disabled={status === 'loading'}
+      >
+        Buscar
       </Btn>
-      {searched ? (
-        <Notice tone="blue" icon="search">
-          {`Nenhum jogador encontrado para "${query.trim()}". Confira o nome#tag ou peça a tag ao jogador.`}
+      {notice ? (
+        <Notice
+          tone={notice.tone}
+          icon={
+            notice.tone === 'green'
+              ? 'check'
+              : notice.tone === 'red' || notice.tone === 'orange'
+                ? 'alert'
+                : 'info'
+          }
+        >
+          {notice.text}
         </Notice>
-      ) : (
+      ) : null}
+      {status === 'idle' ? (
         <Card tone="flat">
-          <Txt variant="tiny">Digite nome#tag para buscar jogadores.</Txt>
+          <Txt variant="tiny">Digite o nome, a tag, ou os dois para buscar jogadores.</Txt>
         </Card>
-      )}
+      ) : null}
+      {status === 'loading' ? <LoadingState label="Buscando jogadores." variant="list" /> : null}
+      {status === 'error' ? (
+        <View style={{ gap: 8 }}>
+          <Notice tone="orange" icon="alert">
+            {searchError}
+          </Notice>
+          <Btn tone="primary" onPress={() => void runSearch()}>
+            Tentar novamente
+          </Btn>
+        </View>
+      ) : null}
+      {status === 'ready' && results.length === 0 ? (
+        <EmptyState
+          title="Nenhum jogador encontrado"
+          text={`Não encontramos ninguém para "${searchedQuery}". Confira o nome e a tag.`}
+        />
+      ) : null}
+      {status === 'ready' && results.length > 0 ? (
+        <CardList>
+          {results.map((item, index) => {
+            const action = friendActionFor(item.relation);
+            const rowBusy = busy?.userId === item.user_id;
+            return (
+              <ListRow key={item.user_id} last={index === results.length - 1}>
+                <IdentityBadge
+                  size={34}
+                  identity={identityFromSeed(item.user_id)}
+                  palette={palette}
+                />
+                <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                  <Text
+                    numberOfLines={2}
+                    style={{ fontSize: 14, lineHeight: 19, fontWeight: '800', color: palette.ink }}
+                  >
+                    {playerHandle(item.display_name, item.tag)}
+                  </Text>
+                  {rowErrors[item.user_id] ? (
+                    <Txt variant="tiny" color="red">
+                      {rowErrors[item.user_id]}
+                    </Txt>
+                  ) : null}
+                  {action === 'accept' ? (
+                    <BtnRow>
+                      <Btn
+                        tone="primary"
+                        small
+                        disabled={!!rowBusy}
+                        onPress={() => acceptExisting(item)}
+                      >
+                        {isBusy(item.user_id, 'accept') ? 'Aceitando.' : 'Aceitar'}
+                      </Btn>
+                      <Btn
+                        tone="ghost"
+                        small
+                        disabled={!!rowBusy}
+                        onPress={() => declineExisting(item)}
+                      >
+                        {isBusy(item.user_id, 'decline') ? 'Recusando.' : 'Recusar'}
+                      </Btn>
+                    </BtnRow>
+                  ) : null}
+                </View>
+                {action === 'accept' ? null : (
+                  <Btn
+                    tone={action === 'add' ? 'primary' : 'ghost'}
+                    small
+                    block={false}
+                    disabled={action !== 'add' || rowBusy}
+                    onPress={() => addFriend(item)}
+                  >
+                    {action === 'add'
+                      ? isBusy(item.user_id, 'add')
+                        ? 'Enviando.'
+                        : 'Adicionar'
+                      : action === 'sent'
+                        ? 'Enviado'
+                        : 'Amigo'}
+                  </Btn>
+                )}
+              </ListRow>
+            );
+          })}
+        </CardList>
+      ) : null}
     </Page>
   );
 }

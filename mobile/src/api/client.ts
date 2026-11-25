@@ -18,6 +18,7 @@ import type {
   EmailCredential,
   EmailVerification,
   Friend,
+  FriendRequest,
   LobbyInvite,
   MatchSummary,
   Mission,
@@ -32,6 +33,7 @@ import type {
   Passkey,
   PasskeyOptions,
   Passport,
+  PlayerSearchResult,
   Presence,
   Profile,
   Progress,
@@ -1090,9 +1092,27 @@ export const api = {
     },
   },
 
+  users: {
+    /** Busca pública por nome parcial, tag exata ou `NOME#TAG`. */
+    search(token: string, q: string, limit = 20) {
+      return call<{ results: PlayerSearchResult[] }>(`/users/search${qs({ q, limit })}`, {
+        token,
+      });
+    },
+  },
+
   social: {
     friends(token: string) {
       return call<{ friends: Friend[] }>('/friends', { token });
+    },
+    friendRequests(
+      token: string,
+      direction: 'incoming' | 'outgoing' = 'incoming',
+      status: 'pending' | 'history' = 'pending',
+    ) {
+      return call<{ requests: FriendRequest[] }>(`/friends/requests${qs({ direction, status })}`, {
+        token,
+      });
     },
     requestFriend(token: string, userId: string) {
       return call<{ id: string; status: string }>('/friends/requests', {
@@ -1107,17 +1127,32 @@ export const api = {
         { method: 'POST', token },
       );
     },
+    declineFriendRequest(token: string, requestId: string) {
+      return call<{ id: string; status: string }>(
+        `/friends/requests/${encodeURIComponent(requestId)}/decline`,
+        { method: 'POST', token },
+      );
+    },
+    cancelFriendRequest(token: string, requestId: string) {
+      return call<{ id: string; status: string }>(
+        `/friends/requests/${encodeURIComponent(requestId)}`,
+        { method: 'DELETE', token },
+      );
+    },
     removeFriend(token: string, userId: string) {
       return call<void>(`/friends/${encodeURIComponent(userId)}`, { method: 'DELETE', token });
     },
-    block(token: string, userId: string) {
+    blocks(token: string) {
+      return call<{ blocks: Friend[] }>('/blocks', { token });
+    },
+    blockUser(token: string, userId: string) {
       return call<{ status: string }>('/blocks', {
         method: 'POST',
         body: { user_id: userId },
         token,
       });
     },
-    unblock(token: string, userId: string) {
+    unblockUser(token: string, userId: string) {
       return call<void>(`/blocks/${encodeURIComponent(userId)}`, { method: 'DELETE', token });
     },
     invites(token: string) {
