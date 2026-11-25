@@ -70,7 +70,7 @@ import {
   useReducedMotion,
   useSystemReducedMotion,
 } from './src/ui/motion';
-import { dark, light } from './src/ui/theme';
+import { themeById } from './src/ui/themes';
 import { Icon } from './src/ui/icons';
 
 // Mantém o splash nativo até fontes e sessão estarem prontas, para não haver
@@ -396,8 +396,8 @@ function SheetActions({
 
 function useAppTheme() {
   const app = useApp();
-  const palette = app.dark ? dark : light;
-  return { palette, dark: app.dark };
+  const theme = themeById(app.themeId);
+  return { palette: theme.palette, dark: theme.dark };
 }
 
 type TabStacks = Record<TabKey, StackEntry[]>;
@@ -779,7 +779,7 @@ function Shell() {
   const transitionId = useRef(0);
   const [phase, setPhase] = useState<ScreenPhase>('idle');
   const [motion, setMotion] = useState<ScreenMotion>('push');
-  const palette = app.dark ? dark : light;
+  const palette = themeById(app.themeId).palette;
   const systemReducedMotion = useSystemReducedMotion();
   const reducedMotion = combineReducedMotion(app.accessibility.reducedMotion, systemReducedMotion);
   const { width: screenWidth } = useWindowDimensions();
@@ -1029,6 +1029,8 @@ function Shell() {
 
   const theme = useMemo(
     () => ({
+      themeId: app.themeId,
+      setTheme: app.setTheme,
       palette,
       dark: app.dark,
       setDark: app.setDark,
@@ -1037,7 +1039,16 @@ function Shell() {
       reducedMotion,
       contentBottomInset,
     }),
-    [palette, app.dark, app.setDark, app.accessibility, reducedMotion, contentBottomInset],
+    [
+      palette,
+      app.themeId,
+      app.setTheme,
+      app.dark,
+      app.setDark,
+      app.accessibility,
+      reducedMotion,
+      contentBottomInset,
+    ],
   );
 
   const confirmModal = () => {

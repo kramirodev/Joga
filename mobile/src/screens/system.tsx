@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 
 import { api, ApiError } from '../api/client';
 import type { CpfStatus, Device, Passkey } from '../api/types';
@@ -13,11 +13,10 @@ import {
   Btn,
   Card,
   CardList,
-  Chip,
   Field,
-  IconBtn,
   Input,
   Kv,
+  ListIcon,
   ListRow,
   LoadingState,
   Notice,
@@ -31,12 +30,20 @@ import {
 } from '../ui/kit';
 import { formatDateShort } from '../ui/datetime';
 import { Text } from '../ui/text';
+import { ThemeArt } from '../ui/themeArtView';
+import { themes } from '../ui/themes';
 import type { ScreenDef } from './types';
 
 function Settings() {
   const nav = useNav();
   const { palette } = useTheme();
   const items = [
+    {
+      icon: 'bolt' as const,
+      title: 'Personalização',
+      sub: 'Temas, densidade, home, sons e háptica',
+      go: 'customization',
+    },
     {
       icon: 'user' as const,
       title: 'Conta e perfil',
@@ -60,12 +67,6 @@ function Settings() {
       title: 'Acessibilidade',
       sub: 'Fonte, movimento e alvos',
       go: 'accessibility',
-    },
-    {
-      icon: 'bolt' as const,
-      title: 'Personalização',
-      sub: 'Temas, densidade, home, sons e háptica',
-      go: 'customization',
     },
     {
       icon: 'shield' as const,
@@ -119,7 +120,7 @@ function Settings() {
             last={index === items.length - 1}
             onPress={() => nav.go(item.go)}
           >
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
@@ -196,8 +197,7 @@ function Accessibility() {
 }
 
 function Customization() {
-  const { dark, setDark } = useApp();
-  const { palette } = useTheme();
+  const { themeId, setTheme, palette } = useTheme();
   const [density, setDensity] = useState('Confortável');
   const [sounds, setSounds] = useState(true);
   const [animations, setAnimations] = useState(true);
@@ -209,38 +209,91 @@ function Customization() {
       </Row>
       <Card>
         <Txt variant="h3">Tema</Txt>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          {['Claro', 'Escuro'].map((item) => (
-            <Chip
-              key={item}
-              on={item === 'Escuro' ? dark : !dark}
-              onPress={() => setDark(item === 'Escuro')}
-            >
-              {item}
-            </Chip>
-          ))}
-        </View>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Claro e escuro são gratuitos e acompanham o sistema até você escolher manualmente.
+        <Txt variant="tiny" style={{ marginTop: 4 }}>
+          Troca as cores do app inteiro e a arte do seu perfil na hora.
         </Txt>
-      </Card>
-      <Card>
-        <Txt variant="h3">Cor de destaque</Txt>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {['#E53935', '#62686E', '#62686E', '#E53935', '#62686E'].map((color, index) => (
-            <View
-              key={index}
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 23,
-                backgroundColor: color,
-                borderWidth: index === 0 ? 2 : 1.5,
-                borderColor: index === 0 ? palette.ink : palette.line,
-              }}
-            />
-          ))}
+        <View style={{ marginTop: 12, gap: 8 }}>
+          {themes.map((theme) => {
+            const selected = theme.id === themeId;
+            const isBase = theme.id === 'claro' || theme.id === 'escuro';
+            const samples = [theme.palette.bg, theme.palette.brand, theme.palette.ink];
+            return (
+              <Pressable
+                key={theme.id}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`Tema ${theme.name}`}
+                onPress={() => setTheme(theme.id)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 8,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: selected ? palette.brand : palette.line,
+                  backgroundColor: selected ? palette.surface2 : palette.surface,
+                  opacity: pressed ? 0.9 : 1,
+                })}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 46,
+                    borderRadius: 9,
+                    overflow: 'hidden',
+                    backgroundColor: theme.palette.surface2,
+                  }}
+                >
+                  <ThemeArt art={theme.art} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                  >
+                    {theme.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: palette.muted, marginTop: 1 }}>
+                    {isBase ? 'Base do app' : 'Tema com arte'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 4, marginTop: 6 }}>
+                    {samples.map((color, index) => (
+                      <View
+                        key={`${theme.id}-sample-${index}`}
+                        style={{
+                          width: 18,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: color,
+                          borderWidth: 1,
+                          borderColor: palette.line,
+                        }}
+                      />
+                    ))}
+                  </View>
+                </View>
+                <View
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: selected ? theme.palette.brand : palette.line,
+                    backgroundColor: selected ? theme.palette.brand : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {selected ? <Icon name="check" size={14} color={theme.palette.brandInk} /> : null}
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
+        <Txt variant="tiny" style={{ marginTop: 10 }}>
+          O tema fica salvo neste aparelho.
+        </Txt>
       </Card>
       <Card>
         <Txt variant="h3">Densidade dos cartões</Txt>
@@ -288,9 +341,6 @@ function Customization() {
           <Toggle checked={animations} onChange={setAnimations} />
         </Row>
       </Card>
-      <Btn tone="primary" disabled>
-        Persistência da personalização em implantação
-      </Btn>
     </Page>
   );
 }
@@ -450,7 +500,7 @@ function Security() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -582,7 +632,7 @@ function Privacy() {
           },
         ].map((item, index, all) => (
           <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -868,13 +918,7 @@ function TermsPrivacy() {
               nav.toast('Conteúdo disponível pelo suporte.');
             }}
           >
-            <IconBtn
-              icon={item.icon}
-              label={item.title}
-              plain
-              onPress={item.readOnly ? () => nav.go('terms', { readOnly: 1 }) : undefined}
-              toast={item.readOnly ? undefined : 'Conteúdo disponível pelo suporte'}
-            />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -945,7 +989,7 @@ function Support() {
               }
             }}
           >
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}
@@ -967,6 +1011,7 @@ function Support() {
 }
 
 function About() {
+  const nav = useNav();
   const { palette } = useTheme();
   const { profile, session, progress } = useApp();
   const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
@@ -1022,8 +1067,20 @@ function About() {
             toast: 'Licenças em implantação',
           },
         ].map((item, index, all) => (
-          <ListRow key={item.title} last={index === all.length - 1}>
-            <IconBtn icon={item.icon} label={item.title} plain go={item.go} toast={item.toast} />
+          <ListRow
+            key={item.title}
+            last={index === all.length - 1}
+            onPress={() => {
+              if ('go' in item && typeof item.go === 'string') {
+                nav.go(item.go);
+                return;
+              }
+              if ('toast' in item && typeof item.toast === 'string') {
+                nav.toast(item.toast);
+              }
+            }}
+          >
+            <ListIcon icon={item.icon} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
                 {item.title}

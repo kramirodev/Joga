@@ -24,6 +24,7 @@ import {
   IconBtn,
   Input,
   InputPrefix,
+  ListIcon,
   ListRow,
   Notice,
   Page,
@@ -113,7 +114,7 @@ function PhoneMethodUnavailable() {
 function Welcome() {
   const nav = useNav();
   const { setAuth } = useApp();
-  const { palette, dark } = useTheme();
+  const { palette } = useTheme();
   // Sem tab bar neste fluxo. O Expo Go pode devolver 0 para a barra de 3
   // botões; 34 dp é só o piso quando não há inset (nunca sobrepõe um inset
   // real de gesto/3 botões). O CTA vive num footer fora do scroll para não
@@ -209,7 +210,7 @@ function Welcome() {
               >
                 <Text
                   style={{
-                    color: dark ? palette.brandInk : '#F1F3F0',
+                    color: palette.brandInk,
                     fontSize: 15,
                     fontWeight: '900',
                     lineHeight: 18,
@@ -1050,7 +1051,7 @@ function Recovery() {
             last={index === items.length - 1}
           >
             <View style={{ width: 46, alignItems: 'center' }}>
-              <IconBtn icon={item.icon} label={item.title} plain go={item.go} />
+              <ListIcon icon={item.icon} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>

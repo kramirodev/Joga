@@ -30,7 +30,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint .",
-    "test": "node --test src/state/queueState.test.mjs src/state/navigationStack.test.mjs src/state/clanSocial.test.mjs src/state/clanFlow.test.mjs src/state/socialState.test.mjs src/api/singleFlight.test.mjs src/api/refreshPolicy.test.mjs src/api/tokenRetry.test.mjs src/ui/identity.test.mjs src/ui/datetime.test.mjs src/ui/emote.test.mjs src/ui/venueFilters.test.mjs src/ui/theme.test.mjs",
+    "test": "node --test src/state/queueState.test.mjs src/state/navigationStack.test.mjs src/state/clanSocial.test.mjs src/state/clanFlow.test.mjs src/state/socialState.test.mjs src/api/singleFlight.test.mjs src/api/refreshPolicy.test.mjs src/api/tokenRetry.test.mjs src/ui/identity.test.mjs src/ui/datetime.test.mjs src/ui/emote.test.mjs src/ui/venueFilters.test.mjs src/ui/theme.test.mjs src/ui/themes.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit"

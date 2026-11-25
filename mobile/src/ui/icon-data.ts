@@ -525,6 +525,14 @@ export const ICONS: Record<string, IconChild[]> = {
       },
     },
   ],
+  flame: [
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M12 2s5 4.5 5 9a5 5 0 0 1-10 0c0-2.2 1.2-3.7 2.5-5 .2 1.6 1 2.5 2 2.5 1.2 0 2-1.1 2-2.6C13.5 4.3 12.7 3 12 2z',
+      },
+    },
+  ],
 };
 
 export type IconName = keyof typeof ICONS;

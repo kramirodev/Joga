@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 
 import { dark, light, type Palette } from '../ui/theme';
+import type { ThemeId } from '../ui/themes';
 
 export type TabKey = 'jogar' | 'partidas' | 'temporada' | 'social' | 'perfil';
 
@@ -31,6 +32,10 @@ export function useNav(): NavValue {
 }
 
 export type ThemeValue = {
+  /** Id do tema escolhido (claro, escuro ou uma das artes). */
+  themeId: ThemeId;
+  setTheme: (themeId: ThemeId) => void;
+  /** Paleta completa do tema escolhido. */
   palette: Palette;
   dark: boolean;
   setDark: (value: boolean) => void;
@@ -53,6 +58,8 @@ export type ThemeValue = {
 };
 
 export const ThemeContext = createContext<ThemeValue>({
+  themeId: 'claro',
+  setTheme: () => undefined,
   palette: light,
   dark: false,
   setDark: () => undefined,

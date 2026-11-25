@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="Quadra de asfalto à noite, com linhas de cal e pintura verde-limão">
+  <defs>
+    <linearGradient id="asphalt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17191b"/>
+      <stop offset=".52" stop-color="#101214"/>
+      <stop offset="1" stop-color="#0a0b0c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".72" cy=".22" r=".7">
+      <stop offset="0" stop-color="#d7ff3f" stop-opacity=".22"/>
+      <stop offset=".5" stop-color="#d7ff3f" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#d7ff3f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff5a36"/>
+      <stop offset="1" stop-color="#b3261e"/>
+    </linearGradient>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 .09"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="soft">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <pattern id="mesh" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M0 44 44 0" stroke="#f4f1e8" stroke-opacity=".035" stroke-width="1"/>
+      <path d="M-11 33 33-11" stroke="#f4f1e8" stroke-opacity=".02" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#asphalt)"/>
+  <rect width="1200" height="675" fill="url(#mesh)"/>
+  <rect width="1200" height="675" fill="url(#glow)"/>
+
+  <!-- pista / rua -->
+  <path d="M0 585 1200 530v145H0z" fill="#0a0b0c"/>
+  <path d="M0 585 1200 530" stroke="#f4f1e8" stroke-opacity=".22" stroke-width="3"/>
+  <path d="M0 635 1200 580" stroke="#d7ff3f" stroke-opacity=".18" stroke-width="2" stroke-dasharray="38 34"/>
+
+  <!-- sol / pintura -->
+  <circle cx="905" cy="188" r="152" fill="url(#paint)" opacity=".96"/>
+  <circle cx="905" cy="188" r="152" fill="none" stroke="#f4f1e8" stroke-opacity=".32" stroke-width="2"/>
+  <circle cx="905" cy="188" r="188" fill="none" stroke="#d7ff3f" stroke-opacity=".2" stroke-width="2"/>
+
+  <!-- quadra em perspectiva -->
+  <g transform="translate(72 72)">
+    <path d="M44 404 300 212h540l-256 192z" fill="#15181a" stroke="#d7ff3f" stroke-opacity=".62" stroke-width="3"/>
+    <path d="M300 212h540" stroke="#d7ff3f" stroke-opacity=".9" stroke-width="4"/>
+    <path d="M44 404h540" stroke="#d7ff3f" stroke-opacity=".9" stroke-width="4"/>
+    <path d="M172 308h540" stroke="#d7ff3f" stroke-opacity=".55" stroke-width="2"/>
+    <path d="M300 212 172 308M840 212 712 308" stroke="#d7ff3f" stroke-opacity=".55" stroke-width="2"/>
+    <path d="M512 212v192M600 212v192M688 212v192" stroke="#f4f1e8" stroke-opacity=".24" stroke-width="2"/>
+    <ellipse cx="584" cy="308" rx="68" ry="52" fill="none" stroke="#f4f1e8" stroke-opacity=".4" stroke-width="2"/>
+    <path d="M44 404 300 212h540l-256 192z" fill="none" stroke="#f4f1e8" stroke-opacity=".12" stroke-width="1"/>
+  </g>
+
+  <!-- bola -->
+  <g transform="translate(232 470)">
+    <circle r="46" fill="#f4f1e8"/>
+    <path d="M-46 0a46 46 0 0 1 92 0M-38-26c20 18 55 18 76 0M-38 26c20-18 55-18 76 0" fill="none" stroke="#101214" stroke-width="3" stroke-opacity=".72"/>
+    <circle r="46" fill="none" stroke="#101214" stroke-opacity=".24" stroke-width="2"/>
+  </g>
+
+  <!-- respingos / marcas -->
+  <g fill="#d7ff3f" opacity=".5">
+    <circle cx="1085" cy="500" r="3"/><circle cx="1103" cy="486" r="2"/><circle cx="1064" cy="478" r="2"/>
+    <circle cx="1041" cy="513" r="1.6"/><circle cx="1117" cy="518" r="1.2"/>
+  </g>
+  <path d="M760 528c38-16 94-24 152-20" stroke="#ff5a36" stroke-opacity=".5" stroke-width="8" stroke-linecap="round" filter="url(#soft)"/>
+
+  <rect width="1200" height="675" filter="url(#grain)" opacity=".7"/>
+</svg>

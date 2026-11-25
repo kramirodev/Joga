@@ -78,6 +78,7 @@ import {
   normalizeIdentity,
   visualUpdatePayload,
 } from '../ui/identity';
+import { themeById, type ThemeId } from '../ui/themes';
 import {
   applyNetworkFailure,
   cancelOutcome,
@@ -97,6 +98,7 @@ import {
   type QueueSnapshot,
 } from './queueState';
 import { useQueueWatcher } from './queueWatcher';
+import { loadThemeId, saveThemeId } from './themePreference';
 
 export type OnboardingState = {
   formats: string[];
@@ -119,6 +121,9 @@ type AppValue = {
   ready: boolean;
   hydrated: boolean;
   session: Session | null;
+  /** Tema escolhido; a paleta e `dark` derivam dele. */
+  themeId: ThemeId;
+  setTheme: (themeId: ThemeId) => void;
   dark: boolean;
   setDark: (value: boolean) => void;
   auth: AuthState;
@@ -237,7 +242,10 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [hydratedToken, setHydratedToken] = useState<string | null>(null);
   const [session, setSessionState] = useState<Session | null>(null);
   const sessionRef = useRef<Session | null>(null);
-  const [dark, setDark] = useState(() => Appearance.getColorScheme() === 'dark');
+  const [themeId, setThemeId] = useState<ThemeId>(
+    () => themeById(Appearance.getColorScheme() === 'dark' ? 'escuro' : 'claro').id,
+  );
+  const dark = themeById(themeId).dark;
   const [auth, setAuthState] = useState<AuthState>(initialAuth);
   const [onboarding, setOnboardingState] = useState<OnboardingState>(initialOnboarding);
   const [catalog, setCatalog] = useState<Sport[]>([]);
@@ -1076,6 +1084,34 @@ export function AppProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    loadThemeId()
+      .then((stored) => {
+        if (active && stored) {
+          setThemeId(stored);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setTheme = useCallback((next: ThemeId) => {
+    setThemeId(next);
+    // A gravação é best-effort: tema em memória vale mesmo sem SecureStore.
+    void saveThemeId(next);
+  }, []);
+
+  /** Compatibilidade com as telas atuais: claro/escuro mapeiam para os ids. */
+  const setDark = useCallback(
+    (value: boolean) => {
+      setTheme(value ? 'escuro' : 'claro');
+    },
+    [setTheme],
+  );
+
+  useEffect(() => {
     sessionRef.current = session;
   }, [session]);
 
@@ -1305,6 +1341,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       ready,
       hydrated,
       session,
+      themeId,
+      setTheme,
       dark,
       setDark,
       auth,
@@ -1396,7 +1434,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       ready,
       hydrated,
       session,
+      themeId,
       dark,
+      setTheme,
+      setDark,
       auth,
       setAuth,
       onboarding,
