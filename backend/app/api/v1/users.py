@@ -1,8 +1,8 @@
-"""Busca pública de jogador por nome parcial ou tag exata.
+"""Perfil público mínimo e busca de jogador por nome parcial ou tag exata.
 
 O resultado é deliberadamente mínimo: identificador interno, nome canônico,
-tag e relação de amizade. E-mail, telefone, CPF, status de conta e localização
-nunca saem por esta rota.
+tag, relação de amizade e clã ativo. E-mail, telefone, CPF, status de conta,
+localização e MMR nunca saem por estas rotas.
 """
 
 from __future__ import annotations
@@ -12,12 +12,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.infrastructure.database.dependency import get_session
+from app.modules.clans.service import active_clan_for
+from app.modules.identity.models import User
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.profile.models import UserProfile
 from app.modules.ratelimit.service import RateLimitExceeded
+from app.modules.social.models import UserBlock
 from app.modules.social.service import (
     InvalidPlayerSearch,
     SocialService,
@@ -37,6 +42,27 @@ class PlayerSearchResult(BaseModel):
 
 class PlayerSearchResponse(BaseModel):
     results: list[PlayerSearchResult]
+
+
+class PublicClanView(BaseModel):
+    id: UUID
+    name: str
+    tag: str
+
+
+class PublicPlayerView(BaseModel):
+    user_id: UUID
+    display_name: str | None
+    tag: str
+    relation: PlayerRelation
+    clan: PublicClanView | None
+
+
+def _not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "user_not_found"},
+    )
 
 
 @router.get("/users/search", response_model=PlayerSearchResponse)
@@ -78,4 +104,43 @@ def search_players(
             )
             for entry in entries
         ]
+    )
+
+
+@router.get("/users/{user_id}", response_model=PublicPlayerView)
+def read_player(
+    user_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+) -> PublicPlayerView:
+    """Perfil público mínimo; conta inexistente, inativa ou bloqueada é 404."""
+
+    blocked_either_direction = exists().where(
+        or_(
+            (UserBlock.blocker_id == current.user_id) & (UserBlock.blocked_id == User.id),
+            (UserBlock.blocker_id == User.id) & (UserBlock.blocked_id == current.user_id),
+        )
+    )
+    row = session.execute(
+        select(User.id, User.tag, UserProfile.display_name)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(
+            User.id == user_id,
+            User.status == "active",
+            ~blocked_either_direction,
+        )
+    ).first()
+    if row is None:
+        raise _not_found()
+
+    relation = SocialService(session).relation_with(current.user_id, user_id)
+    clan = active_clan_for(session, user_id)
+    return PublicPlayerView(
+        user_id=row.id,
+        display_name=row.display_name,
+        tag=row.tag,
+        relation=relation,
+        clan=(
+            PublicClanView(id=clan.id, name=clan.name, tag=clan.tag) if clan is not None else None
+        ),
     )

@@ -355,3 +355,22 @@ def test_action_after_cancel_is_rejected(db_session: Session) -> None:
 
     with pytest.raises(ActionNotAllowed):
         MatchService(db_session).decline(match.id, users[0], now=START)
+
+
+def test_match_creation_notifies_every_participant_with_match_id(
+    db_session: Session,
+) -> None:
+    from app.modules.notifications.models import Notification
+
+    match, users = build_match(db_session)
+
+    notifications = list(
+        db_session.scalars(select(Notification).where(Notification.kind == "match_created"))
+    )
+    assert {item.user_id for item in notifications} == set(users)
+    for item in notifications:
+        # ``match_id``/``lobby_id`` são o que permite o deep link direto.
+        assert item.data == {
+            "match_id": str(match.id),
+            "lobby_id": str(match.lobby_id),
+        }

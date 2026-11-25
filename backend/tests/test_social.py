@@ -9,9 +9,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.identity.clock import ensure_utc
+from app.modules.identity.models import User
 from app.modules.matchmaking.models import LobbyParticipant
 from app.modules.notifications.models import Notification
-from app.modules.profile.models import UserSportProfile
+from app.modules.profile.models import UserProfile, UserSportProfile
 from app.modules.ratelimit.service import RateLimitExceeded
 from app.modules.social import service as social_service
 from app.modules.social.models import Friendship, LobbyInvite, UserBlock
@@ -174,6 +175,7 @@ def test_friend_request_lists_and_accept_flow(db_session: Session) -> None:
     assert [entry.id for entry in incoming] == [request.id]
     assert incoming[0].counterpart_id == first
     assert incoming[0].counterpart_name is None
+    assert incoming[0].counterpart_tag == db_session.get(User, first).tag
     assert incoming[0].direction == "incoming"
     assert incoming[0].status == "PENDING"
     assert ensure_utc(incoming[0].created_at) == AT
@@ -193,7 +195,9 @@ def test_friend_request_lists_and_accept_flow(db_session: Session) -> None:
     assert ensure_utc(accepted.responded_at) == accepted_at
 
     assert service.are_friends(first, second) is True
-    assert service.list_friends(first) == [(second, None)]
+    friends = service.list_friends(first)
+    assert [(item.user_id, item.display_name) for item in friends] == [(second, None)]
+    assert friends[0].tag == db_session.get(User, second).tag
     assert service.list_friend_requests(second, status="pending") == []
     history = service.list_friend_requests(second, direction="incoming", status="history")
     assert [entry.status for entry in history] == ["ACCEPTED"]
@@ -371,6 +375,14 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     second = make_user(db_session)
     third = make_user(db_session)
     fourth = make_user(db_session)
+    for user_id, display_name in (
+        (first, "PRIMEIRO JOGADOR"),
+        (second, "SEGUNDO JOGADOR"),
+        (third, "TERCEIRO JOGADOR"),
+        (fourth, "QUARTO JOGADOR"),
+    ):
+        db_session.add(UserProfile(user_id=user_id, display_name=display_name))
+    db_session.flush()
     service = SocialService(db_session)
 
     request = service.send_friend_request(first, second, now=AT)
@@ -382,9 +394,12 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     )
     assert len(received) == 1
     assert received[0].user_id == second
+    assert received[0].body == "PRIMEIRO JOGADOR quer ser seu amigo."
     assert received[0].data == {
         "friendship_id": str(request.id),
         "counterpart_id": str(first),
+        "counterpart_name": "PRIMEIRO JOGADOR",
+        "counterpart_tag": db_session.get(User, first).tag,
     }
     assert str(second) in received[0].idempotency_key
 
@@ -400,6 +415,8 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     assert accepted[0].data == {
         "friendship_id": str(request.id),
         "counterpart_id": str(second),
+        "counterpart_name": "SEGUNDO JOGADOR",
+        "counterpart_tag": db_session.get(User, second).tag,
     }
 
     declined_request = service.send_friend_request(first, third, now=AT + timedelta(minutes=2))
@@ -416,6 +433,8 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     assert len(declined) == 1
     assert declined[0].user_id == first
     assert declined[0].data["counterpart_id"] == str(third)
+    assert declined[0].data["counterpart_name"] == "TERCEIRO JOGADOR"
+    assert declined[0].data["counterpart_tag"] == db_session.get(User, third).tag
 
     cancelled_request = service.send_friend_request(
         first,
@@ -439,6 +458,8 @@ def test_friend_request_notifications_once_per_event(db_session: Session) -> Non
     assert len(cancelled) == 1
     assert cancelled[0].user_id == fourth
     assert cancelled[0].data["counterpart_id"] == str(first)
+    assert cancelled[0].data["counterpart_name"] == "PRIMEIRO JOGADOR"
+    assert cancelled[0].data["counterpart_tag"] == db_session.get(User, first).tag
 
     third_notifications = list(
         db_session.scalars(select(Notification).where(Notification.user_id == third))
@@ -472,5 +493,7 @@ def test_list_blocks_returns_only_own_blocks(db_session: Session) -> None:
 
     service.block(first, second, now=AT)
     service.block(third, first, now=AT)
-    assert service.list_blocks(first) == [(second, None)]
+    blocks = service.list_blocks(first)
+    assert [(item.user_id, item.display_name) for item in blocks] == [(second, None)]
+    assert blocks[0].tag == db_session.get(User, second).tag
     assert service.list_blocks(second) == []

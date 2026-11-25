@@ -122,7 +122,7 @@ def create_match_for_lobby(
             f"Confirme sua participação até {ensure_utc(match.confirmation_deadline).isoformat()}."
         ),
         idempotency_key_prefix=f"match_created:{match.id}",
-        data={"match_id": str(match.id)},
+        data={"match_id": str(match.id), "lobby_id": str(match.lobby_id)},
         now=current,
     )
     return match

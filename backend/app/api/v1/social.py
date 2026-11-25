@@ -42,6 +42,7 @@ router = APIRouter(tags=["social"])
 class FriendView(BaseModel):
     user_id: UUID
     display_name: str | None
+    tag: str
 
 
 class FriendsResponse(BaseModel):
@@ -66,6 +67,7 @@ class FriendRequestView(BaseModel):
     id: UUID
     counterpart_id: UUID
     counterpart_name: str | None
+    counterpart_tag: str
     direction: Literal["incoming", "outgoing"]
     status: str
     created_at: datetime
@@ -172,6 +174,7 @@ def _friend_request_view(entry: FriendRequestEntry) -> FriendRequestView:
         id=entry.id,
         counterpart_id=entry.counterpart_id,
         counterpart_name=entry.counterpart_name,
+        counterpart_tag=entry.counterpart_tag,
         direction=entry.direction,
         status=entry.status,
         created_at=entry.created_at,
@@ -199,7 +202,10 @@ def list_friends(
 ) -> FriendsResponse:
     rows = SocialService(session).list_friends(current.user_id)
     return FriendsResponse(
-        friends=[FriendView(user_id=user_id, display_name=name) for user_id, name in rows]
+        friends=[
+            FriendView(user_id=row.user_id, display_name=row.display_name, tag=row.tag)
+            for row in rows
+        ]
     )
 
 
@@ -306,7 +312,10 @@ def list_blocks(
 ) -> BlocksResponse:
     rows = SocialService(session).list_blocks(current.user_id)
     return BlocksResponse(
-        blocks=[FriendView(user_id=user_id, display_name=name) for user_id, name in rows]
+        blocks=[
+            FriendView(user_id=row.user_id, display_name=row.display_name, tag=row.tag)
+            for row in rows
+        ]
     )
 
 

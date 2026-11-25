@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -44,6 +45,7 @@ from app.modules.clans.service import (
     latest_request_for,
     latest_requests_for_clans,
     leave_clan,
+    list_clan_invites,
     list_join_requests,
     list_messages,
     list_my_requests,
@@ -73,6 +75,7 @@ class MyRequestSummaryView(BaseModel):
 
     id: UUID
     status: str
+    message: str | None = None
     created_at: datetime
     decision_note: str | None
 
@@ -102,6 +105,7 @@ class ClanInviteView(BaseModel):
     clan_tag: str
     inviter_id: UUID
     inviter_display_name: str | None
+    inviter_tag: str
     status: str
     created_at: datetime
     expires_at: datetime
@@ -129,6 +133,7 @@ class ClanRankingView(BaseModel):
 class MemberView(BaseModel):
     user_id: UUID
     display_name: str | None
+    tag: str
     role: str
     joined_at: datetime
 
@@ -141,6 +146,7 @@ class RequestView(BaseModel):
     id: UUID
     user_id: UUID
     display_name: str | None
+    tag: str
     status: str
     message: str | None
     created_at: datetime
@@ -218,12 +224,40 @@ def _display_name(session: Session, user_id: UUID) -> str | None:
     return session.scalar(select(UserProfile.display_name).where(UserProfile.user_id == user_id))
 
 
+@dataclass(frozen=True)
+class _PlayerLabel:
+    display_name: str | None
+    tag: str
+
+
+def _player_labels(session: Session, user_ids: list[UUID]) -> dict[UUID, _PlayerLabel]:
+    """Nome e tag pública de vários jogadores, em uma única consulta."""
+
+    from app.modules.identity.models import User
+    from app.modules.profile.models import UserProfile
+
+    unique_ids = list(dict.fromkeys(user_ids))
+    if not unique_ids:
+        return {}
+    rows = session.execute(
+        select(User.id, User.tag, UserProfile.display_name)
+        .outerjoin(UserProfile, UserProfile.user_id == User.id)
+        .where(User.id.in_(unique_ids))
+    ).all()
+    return {row.id: _PlayerLabel(display_name=row.display_name, tag=row.tag) for row in rows}
+
+
+def _player_label(session: Session, user_id: UUID) -> _PlayerLabel:
+    return _player_labels(session, [user_id]).get(user_id, _PlayerLabel(None, ""))
+
+
 def _my_request_summary(request: ClanJoinRequest | None) -> MyRequestSummaryView | None:
     if request is None:
         return None
     return MyRequestSummaryView(
         id=request.id,
         status=request.status,
+        message=request.message,
         created_at=request.created_at,
         decision_note=request.decision_note,
     )
@@ -273,15 +307,21 @@ def _clan_view(
     )
 
 
-def _invite_view(session: Session, invite: ClanInvite) -> ClanInviteView:
+def _invite_view(
+    session: Session,
+    invite: ClanInvite,
+    label: _PlayerLabel | None = None,
+) -> ClanInviteView:
     clan = session.get(Clan, invite.clan_id)
+    inviter = label if label is not None else _player_label(session, invite.inviter_id)
     return ClanInviteView(
         id=invite.id,
         clan_id=invite.clan_id,
         clan_name=clan.name if clan is not None else "",
         clan_tag=clan.tag if clan is not None else "",
         inviter_id=invite.inviter_id,
-        inviter_display_name=_display_name(session, invite.inviter_id),
+        inviter_display_name=inviter.display_name,
+        inviter_tag=inviter.tag,
         status=invite.status,
         created_at=invite.created_at,
         expires_at=invite.expires_at,
@@ -289,17 +329,38 @@ def _invite_view(session: Session, invite: ClanInvite) -> ClanInviteView:
     )
 
 
-def _request_view(session: Session, request: ClanJoinRequest) -> RequestView:
+def _request_view(
+    session: Session,
+    request: ClanJoinRequest,
+    label: _PlayerLabel | None = None,
+) -> RequestView:
+    player = label if label is not None else _player_label(session, request.user_id)
     return RequestView(
         id=request.id,
         user_id=request.user_id,
-        display_name=_display_name(session, request.user_id),
+        display_name=player.display_name,
+        tag=player.tag,
         status=request.status,
         message=request.message,
         created_at=request.created_at,
         decided_at=request.decided_at,
         decided_by=request.decided_by,
         decision_note=request.decision_note,
+    )
+
+
+def _member_view(
+    session: Session,
+    member: ClanMember,
+    label: _PlayerLabel | None = None,
+) -> MemberView:
+    player = label if label is not None else _player_label(session, member.user_id)
+    return MemberView(
+        user_id=member.user_id,
+        display_name=player.display_name,
+        tag=player.tag,
+        role=member.role,
+        joined_at=member.joined_at,
     )
 
 
@@ -607,7 +668,10 @@ def read_requests(
         )
     except Exception as exc:  # noqa: BLE001
         raise _handle(exc) from None
-    return RequestListView(requests=[_request_view(session, item) for item in requests])
+    labels = _player_labels(session, [item.user_id for item in requests])
+    return RequestListView(
+        requests=[_request_view(session, item, labels.get(item.user_id)) for item in requests]
+    )
 
 
 @router.post(
@@ -668,16 +732,9 @@ def read_members(
         .where(ClanMember.clan_id == clan_id, ClanMember.status == "active")
         .order_by(ClanMember.joined_at.asc())
     ).all()
+    labels = _player_labels(session, [row.user_id for row in rows])
     return MemberListView(
-        members=[
-            MemberView(
-                user_id=row.user_id,
-                display_name=_display_name(session, row.user_id),
-                role=row.role,
-                joined_at=row.joined_at,
-            )
-            for row in rows
-        ]
+        members=[_member_view(session, row, labels.get(row.user_id)) for row in rows]
     )
 
 
@@ -694,12 +751,7 @@ def remove(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return MemberView(
-        user_id=member.user_id,
-        display_name=_display_name(session, member.user_id),
-        role=member.role,
-        joined_at=member.joined_at,
-    )
+    return _member_view(session, member)
 
 
 @router.post("/clans/{clan_id}/members/{user_id}/role", response_model=MemberView)
@@ -716,12 +768,7 @@ def change_role(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return MemberView(
-        user_id=member.user_id,
-        display_name=_display_name(session, member.user_id),
-        role=member.role,
-        joined_at=member.joined_at,
-    )
+    return _member_view(session, member)
 
 
 @router.post("/clans/{clan_id}/transfer", response_model=MemberView)
@@ -737,12 +784,7 @@ def transfer(
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         raise _handle(exc) from None
-    return MemberView(
-        user_id=member.user_id,
-        display_name=_display_name(session, member.user_id),
-        role=member.role,
-        joined_at=member.joined_at,
-    )
+    return _member_view(session, member)
 
 
 @router.post("/clans/{clan_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
@@ -900,6 +942,32 @@ def invite(
     return _invite_view(session, invite_row)
 
 
+@router.get("/clans/{clan_id}/invites", response_model=ClanInviteListView)
+def read_clan_invites(
+    clan_id: UUID,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    invite_status: Annotated[Literal["pending", "history"], Query(alias="status")] = "pending",
+) -> ClanInviteListView:
+    """Convites do clã para dono/admin; ``history`` inclui respondidos/expirados."""
+
+    try:
+        invites = list_clan_invites(
+            session,
+            current.user_id,
+            clan_id,
+            status=invite_status,
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise _handle(exc) from None
+    labels = _player_labels(session, [item.inviter_id for item in invites])
+    return ClanInviteListView(
+        invites=[_invite_view(session, item, labels.get(item.inviter_id)) for item in invites]
+    )
+
+
 @router.get("/me/clan-invites", response_model=ClanInviteListView)
 def my_clan_invites(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
@@ -907,7 +975,10 @@ def my_clan_invites(
 ) -> ClanInviteListView:
     invites = list_pending_invites(session, current.user_id)
     session.commit()
-    return ClanInviteListView(invites=[_invite_view(session, item) for item in invites])
+    labels = _player_labels(session, [item.inviter_id for item in invites])
+    return ClanInviteListView(
+        invites=[_invite_view(session, item, labels.get(item.inviter_id)) for item in invites]
+    )
 
 
 @router.post("/clans/invites/{invite_id}/accept", response_model=ClanSummaryView)
