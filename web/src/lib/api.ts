@@ -46,6 +46,15 @@ import type {
   ModerationQueue,
   ModerationReport,
   ModeratorMe,
+  ObservabilityEventDetail,
+  ObservabilityEventFilters,
+  ObservabilityEventListResponse,
+  ObservabilityEventPageParams,
+  ObservabilityExportFile,
+  ObservabilityExportParams,
+  ObservabilityIpReport,
+  ObservabilitySummaryResponse,
+  ObservabilityUserActivityResponse,
   OperatorNotification,
   OperatorNotificationListResponse,
   Organization,
@@ -442,6 +451,26 @@ function adminUserPath(userId: string): string {
 
 function adminVenuePath(venueId: string): string {
   return `/admin/venues/${encodeURIComponent(venueId)}`;
+}
+
+function adminObservabilityPath(suffix: string): string {
+  return `/admin/observability${suffix}`;
+}
+
+function observabilityQuery(filters: ObservabilityEventFilters): URLSearchParams {
+  const query = new URLSearchParams();
+  if (filters.from) query.set("from", filters.from);
+  if (filters.to) query.set("to", filters.to);
+  if (filters.level) query.set("level", filters.level);
+  if (filters.category) query.set("category", filters.category);
+  if (filters.userId) query.set("user_id", filters.userId);
+  if (filters.ip) query.set("ip", filters.ip);
+  if (filters.endpoint) query.set("endpoint", filters.endpoint);
+  if (filters.status) query.set("status", String(filters.status));
+  if (filters.requestId) query.set("request_id", filters.requestId);
+  if (filters.correlationId) query.set("correlation_id", filters.correlationId);
+  if (filters.q) query.set("q", filters.q);
+  return query;
 }
 
 export const api = {
@@ -1512,5 +1541,62 @@ export const api = {
       `${adminVenuePath(venueId)}/business-hours/${encodeURIComponent(businessHourId)}?${query.toString()}`,
       { method: "DELETE" },
     );
+  },
+
+  getObservabilitySummary(window: "24h" | "7d"): Promise<ObservabilitySummaryResponse> {
+    const query = new URLSearchParams({ window });
+    return request<ObservabilitySummaryResponse>(adminObservabilityPath(`/summary?${query}`));
+  },
+
+  listObservabilityEvents(
+    params: ObservabilityEventPageParams = {},
+  ): Promise<ObservabilityEventListResponse> {
+    const query = observabilityQuery(params);
+    if (params.cursor) query.set("cursor", params.cursor);
+    query.set("limit", String(params.limit ?? 50));
+    return request<ObservabilityEventListResponse>(
+      adminObservabilityPath(`/events?${query.toString()}`),
+    );
+  },
+
+  getObservabilityEvent(eventId: string): Promise<ObservabilityEventDetail> {
+    return request<ObservabilityEventDetail>(
+      adminObservabilityPath(`/events/${encodeURIComponent(eventId)}`),
+    );
+  },
+
+  getObservabilityUserActivity(
+    userId: string,
+    params: ObservabilityEventPageParams = {},
+  ): Promise<ObservabilityUserActivityResponse> {
+    const query = observabilityQuery({ ...params, userId: undefined });
+    if (params.cursor) query.set("cursor", params.cursor);
+    query.set("limit", String(params.limit ?? 50));
+    return request<ObservabilityUserActivityResponse>(
+      adminObservabilityPath(`/users/${encodeURIComponent(userId)}/activity?${query.toString()}`),
+    );
+  },
+
+  getObservabilityIp(ip: string): Promise<ObservabilityIpReport> {
+    return request<ObservabilityIpReport>(adminObservabilityPath(`/ips/${encodeURIComponent(ip)}`));
+  },
+
+  async exportObservability(params: ObservabilityExportParams): Promise<ObservabilityExportFile> {
+    const query = observabilityQuery(params);
+    query.set("format", params.format);
+    query.set("full_ip", params.fullIp ? "true" : "false");
+    const response = await requestRaw(adminObservabilityPath(`/export?${query.toString()}`));
+    if (!response.ok) {
+      throw await readApiError(response);
+    }
+    const rawRows = Number(response.headers.get("x-export-rows") ?? "0");
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+    return {
+      blob: await response.blob(),
+      filename: filename ?? `observabilidade.${params.format}`,
+      rows: Number.isFinite(rawRows) ? rawRows : 0,
+      truncated: response.headers.get("x-export-truncated") === "true",
+    };
   },
 };
