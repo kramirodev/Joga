@@ -106,6 +106,12 @@ function userDisplayName(user: AdminUserSummary): string {
   return user.display_name?.trim() || user.email || "Sem nome";
 }
 
+function userTag(user: AdminUserSummary): string {
+  const tag = user.tag?.trim();
+  if (!tag) return "";
+  return tag.startsWith("#") ? tag : `#${tag}`;
+}
+
 export function AdminUsersPage() {
   useDocumentTitle("Usuários");
   const queryClient = useQueryClient();
@@ -116,6 +122,7 @@ export function AdminUsersPage() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -173,6 +180,19 @@ export function AdminUsersPage() {
 
   function openDetail(userId: string) {
     setSelectedId(userId);
+  }
+
+  async function copyTag(tag: string) {
+    if (!navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(tag);
+      setCopiedTag(tag);
+      window.setTimeout(() => {
+        setCopiedTag((current) => (current === tag ? null : current));
+      }, 2000);
+    } catch {
+      // Sem permissão de área de transferência: a tag continua visível para cópia manual.
+    }
   }
 
   function resetCreateForm() {
@@ -420,7 +440,7 @@ export function AdminUsersPage() {
             label="Buscar"
             value={queryDraft}
             onChange={(event) => setQueryDraft(event.target.value)}
-            placeholder="E-mail, nome ou UUID"
+            placeholder="Nome, tag, e-mail ou CPF"
             maxLength={120}
           />
           <SelectField
@@ -469,31 +489,37 @@ export function AdminUsersPage() {
           </EmptyState>
         ) : (
           <ul className="admin-list">
-            {users.map((user) => (
-              <li key={user.id}>
-                <button
-                  type="button"
-                  className={selectedId === user.id ? "admin-row admin-row--active" : "admin-row"}
-                  onClick={() => openDetail(user.id)}
-                  aria-pressed={selectedId === user.id}
-                >
-                  <span className="admin-row__identity">
-                    <span className="avatar avatar--small" aria-hidden="true">
-                      {initials(userDisplayName(user))}
+            {users.map((user) => {
+              const tag = userTag(user);
+              return (
+                <li key={user.id}>
+                  <button
+                    type="button"
+                    className={selectedId === user.id ? "admin-row admin-row--active" : "admin-row"}
+                    onClick={() => openDetail(user.id)}
+                    aria-pressed={selectedId === user.id}
+                  >
+                    <span className="admin-row__identity">
+                      <span className="avatar avatar--small" aria-hidden="true">
+                        {initials(userDisplayName(user))}
+                      </span>
+                      <span>
+                        <strong>
+                          {userDisplayName(user)}
+                          {tag ? <span className="admin-tag">{tag}</span> : null}
+                        </strong>
+                        <small>
+                          {user.email ?? "Sem e-mail"} · desde {formatDate(user.created_at)}
+                        </small>
+                      </span>
                     </span>
-                    <span>
-                      <strong>{userDisplayName(user)}</strong>
-                      <small>
-                        {user.email ?? "Sem e-mail"} · desde {formatDate(user.created_at)}
-                      </small>
+                    <span className={`badge badge--${statusTone(user.status)}`}>
+                      {userStatusLabel(user.status)}
                     </span>
-                  </span>
-                  <span className={`badge badge--${statusTone(user.status)}`}>
-                    {userStatusLabel(user.status)}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -540,6 +566,18 @@ export function AdminUsersPage() {
               </span>
               <div>
                 <strong>{userDisplayName(detail)}</strong>
+                {userTag(detail) ? (
+                  <span className="admin-detail__tagline">
+                    <span className="admin-tag">{userTag(detail)}</span>
+                    <button
+                      type="button"
+                      className="button button--small button--ghost admin-tag__copy"
+                      onClick={() => void copyTag(userTag(detail))}
+                    >
+                      {copiedTag === userTag(detail) ? "Copiado" : "Copiar tag"}
+                    </button>
+                  </span>
+                ) : null}
                 <small>{detail.email ?? "Sem e-mail cadastrado"}</small>
               </div>
               <span className={`badge badge--${statusTone(detail.status)}`}>
@@ -819,7 +857,12 @@ export function AdminUsersPage() {
       >
         {action ? (
           <div className="dialog-summary">
-            <strong>{userDisplayName(action.user)}</strong>
+            <strong>
+              {userDisplayName(action.user)}
+              {userTag(action.user) ? (
+                <span className="admin-tag">{userTag(action.user)}</span>
+              ) : null}
+            </strong>
             <span>{action.user.email ?? "Sem e-mail"}</span>
           </div>
         ) : null}
@@ -880,7 +923,12 @@ export function AdminUsersPage() {
       >
         {revokeTarget ? (
           <div className="dialog-summary">
-            <strong>{userDisplayName(revokeTarget)}</strong>
+            <strong>
+              {userDisplayName(revokeTarget)}
+              {userTag(revokeTarget) ? (
+                <span className="admin-tag">{userTag(revokeTarget)}</span>
+              ) : null}
+            </strong>
             <span>{revokeTarget.email ?? "Sem e-mail"}</span>
           </div>
         ) : null}
