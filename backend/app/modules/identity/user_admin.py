@@ -60,6 +60,7 @@ class ReasonRequired(InvalidAdminUser):
 @dataclass(frozen=True)
 class AdminUserView:
     id: uuid.UUID
+    tag: str
     status: str
     email: str | None
     display_name: str | None
@@ -102,6 +103,7 @@ def _view(session: Session, user: User) -> AdminUserView:
     credential = _primary_email(session, user.id)
     return AdminUserView(
         id=user.id,
+        tag=user.tag,
         status=user.status,
         email=credential.email_normalized if credential is not None else None,
         display_name=profile.display_name if profile is not None else None,
@@ -134,13 +136,18 @@ def search_users(
 
     conditions = []
     if search:
-        term = f"%{escape_like(search.strip())}%"
-        conditions.append(
-            or_(
-                UserEmail.email_normalized.ilike(term, escape="\\"),
-                UserProfile.display_name.ilike(term, escape="\\"),
-            )
-        )
+        term = search.strip()
+        if term:
+            pattern = f"%{escape_like(term)}%"
+            matches = [
+                UserEmail.email_normalized.ilike(pattern, escape="\\"),
+                UserProfile.display_name.ilike(pattern, escape="\\"),
+            ]
+            # A tag pode ser buscada com ou sem ``#``, exata ou parcialmente.
+            tag_term = term.rsplit("#", 1)[-1].strip().upper()
+            if tag_term:
+                matches.append(User.tag.ilike(f"%{escape_like(tag_term)}%", escape="\\"))
+            conditions.append(or_(*matches))
     if status:
         conditions.append(User.status == status)
 

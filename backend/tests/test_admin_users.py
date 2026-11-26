@@ -13,7 +13,7 @@ from app.api.v1.email_auth import get_password_service
 from app.core.config import Settings, get_settings
 from app.infrastructure.database.dependency import get_session
 from app.modules.email.models import EmailDelivery, UserEmail
-from app.modules.identity.models import AuditLog
+from app.modules.identity.models import AuditLog, User
 from app.modules.organizations.models import Organization, OrganizationMembership
 from app.modules.profile.models import UserProfile
 from tests.email_helpers import fast_password_service, seed_user_with_email
@@ -163,6 +163,48 @@ def test_search_and_pagination(client: TestClient, db_session: Session) -> None:
     assert page.status_code == 200
     assert len(page.json()["users"]) == 2
     assert page.json()["total"] == 4  # admin + 3 jogadores
+
+
+def test_admin_user_tag_is_exposed_and_searchable(client: TestClient, db_session: Session) -> None:
+    admin_id, headers = admin_setup(db_session)
+    api = api_client(client, db_session, admin_id=admin_id)
+    first, _ = seed_user_with_email(db_session, "tag1@joga.example")
+    second, _ = seed_user_with_email(db_session, "tag2@joga.example")
+    db_session.add(UserProfile(user_id=first, display_name="TAG UM"))
+    db_session.add(UserProfile(user_id=second, display_name="TAG DOIS"))
+    db_session.commit()
+
+    first_tag = db_session.scalar(select(User.tag).where(User.id == first))
+    second_tag = db_session.scalar(select(User.tag).where(User.id == second))
+    assert first_tag is not None and second_tag is not None
+    assert first_tag != second_tag
+
+    listing = api.get("/api/v1/admin/users", headers=headers)
+    assert listing.status_code == 200, listing.text
+    persisted = dict(db_session.execute(select(User.id, User.tag)).all())
+    for item in listing.json()["users"]:
+        assert item["tag"] == persisted[UUID(item["id"])]
+
+    detail = api.get(f"/api/v1/admin/users/{first}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["tag"] == first_tag
+
+    for query in (f"#{first_tag}", first_tag.lstrip("#"), first_tag.lstrip("#").lower()):
+        found = api.get("/api/v1/admin/users", params={"q": query}, headers=headers)
+        assert found.status_code == 200, found.text
+        body = found.json()
+        assert body["total"] == 1
+        assert body["users"][0]["id"] == str(first)
+        assert body["users"][0]["tag"] == first_tag
+        assert all(item["id"] != str(second) for item in body["users"])
+
+    partial = api.get(
+        "/api/v1/admin/users",
+        params={"q": first_tag.lstrip("#")[:7].lower()},
+        headers=headers,
+    )
+    assert partial.status_code == 200, partial.text
+    assert [item["id"] for item in partial.json()["users"]] == [str(first)]
 
 
 def test_email_change_notifies_old_address_and_revokes_sessions(

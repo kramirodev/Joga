@@ -48,3 +48,9 @@ exige `user_id` e o jogador não tinha como descobri-lo.
   maiúsculas. A tag ainda não aparece no detalhe admin (contrato futuro).
 - Duas contas criadas simultaneamente com o mesmo prefixo de 8 hex podem
   disputar o índice único; é um caso raro e fica para o hardening.
+
+## Atualização (2026-11-26)
+
+O painel administrativo passa a expor `tag` na lista, no detalhe e nas respostas
+de escrita de usuário. A busca admin (`GET /admin/users?q=`) aceita a tag com ou
+sem `#`, exata ou parcial, sem diferenciar caixa, e continua sem consultar CPF.
