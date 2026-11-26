@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
 from app.modules.clans.service import snapshot_season
+from app.modules.observability.service import log_job
 from app.modules.season.models import Season
 from app.modules.season.service import close_expired_season
 from app.modules.tickets.service import expire_due
@@ -26,6 +27,9 @@ logger = logging.getLogger("joga.season")
 
 def run_once(session: Session) -> int:
     closed = 0
+    started = time.perf_counter()
+    log_job(session, job="season.close", status="started")
+    session.commit()
     try:
         while close_expired_season(session) is not None:
             closed += 1
@@ -33,11 +37,27 @@ def run_once(session: Session) -> int:
             snapshot_season(session, season_id)
         expired = expire_due(session)
         session.commit()
-    except Exception:
+    except Exception as exc:
         session.rollback()
         logger.exception("fechamento de temporada falhou")
+        log_job(
+            session,
+            job="season.close",
+            status="failed",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=exc,
+        )
+        session.commit()
         return 1
     logger.info("temporada: fechadas=%s lotes_expirados=%s", closed, expired)
+    log_job(
+        session,
+        job="season.close",
+        status="finished",
+        duration_ms=int((time.perf_counter() - started) * 1000),
+        details={"closed_seasons": closed, "expired_ticket_lots": expired},
+    )
+    session.commit()
     return 0
 
 

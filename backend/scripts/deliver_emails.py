@@ -22,6 +22,7 @@ from app.infrastructure.database.engine import build_engine
 from app.modules.email.dispatcher import DeliveryReport, dispatch_email_deliveries
 from app.modules.email.drain_lock import email_drain_lock
 from app.modules.email.sender import EmailSender, build_email_sender
+from app.modules.observability.service import log_job
 
 logger = logging.getLogger("joga.email")
 
@@ -48,9 +49,20 @@ def run_once_with_sender(
 
 def run_once(session: Session) -> int:
     settings = get_settings()
+    started = time.perf_counter()
+    log_job(session, job="email.delivery", status="started")
+    session.commit()
     sender = build_email_sender(settings)
     if sender is None:
         logger.warning("JOGA_EMAIL_PROVIDER=none; Outbox de e-mail preservada")
+        log_job(
+            session,
+            job="email.delivery",
+            status="finished",
+            message="job email.delivery sem provedor configurado",
+            details={"skipped": True},
+        )
+        session.commit()
         return 0
     try:
         # O mesmo lock usado pela drenagem inline da API: dois drenadores nunca
@@ -58,6 +70,14 @@ def run_once(session: Session) -> int:
         with email_drain_lock(session.get_bind()) as acquired:
             if not acquired:
                 logger.info("e-mail: Outbox já está sendo drenada por outro processo")
+                log_job(
+                    session,
+                    job="email.delivery",
+                    status="finished",
+                    message="job email.delivery sem lock",
+                    details={"skipped": True},
+                )
+                session.commit()
                 return 0
             report = run_once_with_sender(
                 session,
@@ -65,9 +85,17 @@ def run_once(session: Session) -> int:
                 max_attempts=settings.email_max_delivery_attempts,
                 bounce_threshold=settings.email_bounce_threshold,
             )
-    except Exception:
+    except Exception as exc:
         session.rollback()
         logger.exception("entrega de e-mail falhou")
+        log_job(
+            session,
+            job="email.delivery",
+            status="failed",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=exc,
+        )
+        session.commit()
         return 1
     finally:
         sender.close()
@@ -78,6 +106,19 @@ def run_once(session: Session) -> int:
         report.bounced,
         report.skipped,
     )
+    log_job(
+        session,
+        job="email.delivery",
+        status="finished",
+        duration_ms=int((time.perf_counter() - started) * 1000),
+        details={
+            "sent": report.sent,
+            "failed": report.failed,
+            "bounced": report.bounced,
+            "skipped": report.skipped,
+        },
+    )
+    session.commit()
     return 0
 
 
