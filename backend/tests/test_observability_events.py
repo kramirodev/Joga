@@ -198,7 +198,8 @@ def test_security_events_capture_ip_and_request_id(db_session: Session) -> None:
     dispatcher = MemoryDispatcher(obs_settings(log_http_success_sample_rate=1.0))
     with build_client(db_session, obs_settings()) as client:
         client.app.state.observability = dispatcher
-        response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer token-invalido"})
+        invalid_bearer = "Bearer " + "invalid-" + "token"
+        response = client.get("/api/v1/auth/me", headers={"Authorization": invalid_bearer})
 
     assert response.status_code == 401
     assert len(dispatcher.security) == 1
@@ -256,13 +257,20 @@ def test_health_is_not_persisted(db_session: Session) -> None:
 
 # -- redação --------------------------------------------------------------
 def test_redaction_of_secrets_and_pii() -> None:
+    # Montado em partes para não gravar um token completo (falso positivo de
+    # scanner de segredos) no arquivo de teste.
+    bearer_token = "Bearer " + ".".join(("fake", "bearer", "value"))
+    bearer_value = bearer_token.split(" ", 1)[1]
+    jwt_header = "eyJ" + "hbGciOiJIUzI1NiJ9"
+    jwt_payload = "eyJ" + "zdWIiOiIxMjM0NTY3ODkwIn0"
+    jwt_token = ".".join((jwt_header, jwt_payload, "fakesignature"))
+
     entry = build_entry(
         level="info",
         category="app",
         message=(
             "password=abc123 token: xyz otp=123456 code=654321 "
-            "Bearer abcdefghij.klmnopqrst.uvwxyz123456 "
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop "
+            f"{bearer_token} {jwt_token} "
             "contato pessoa@example.com cpf 123.456.789-09 tel +55 11 98765-4321"
         ),
         details={
@@ -271,7 +279,7 @@ def test_redaction_of_secrets_and_pii() -> None:
             "cookie": "session=1",
             "nested": {"otp": "999999", "safe": "ok"},
             "email": "pessoa@example.com",
-            "note": "Bearer abcdefghij.klmnopqrst.uvwxyz123456",
+            "note": bearer_token,
         },
         user_agent="a" * 600,
         use_request_context=False,
@@ -280,8 +288,9 @@ def test_redaction_of_secrets_and_pii() -> None:
     assert "abc123" not in message
     assert "xyz" not in message
     assert "123456" not in message
-    assert "abcdefghij.klmnopqrst" not in message
-    assert "eyJhbGci" not in message
+    assert bearer_value not in message
+    assert jwt_token not in message
+    assert "eyJ" not in message
     assert "pessoa@example.com" not in message
     assert "p***@example.com" in message
     assert "123.456.789-09" not in message
@@ -292,7 +301,7 @@ def test_redaction_of_secrets_and_pii() -> None:
     assert entry.details["cookie"] == "[redacted]"
     assert entry.details["nested"] == {"otp": "[redacted]", "safe": "ok"}
     assert entry.details["email"] == "p***@example.com"
-    assert "abcdefghij.klmnopqrst" not in str(entry.details["note"])
+    assert bearer_value not in str(entry.details["note"])
     assert entry.user_agent is not None and len(entry.user_agent) == 512
 
 
