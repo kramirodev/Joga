@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime
 from types import FrameType
@@ -28,6 +29,7 @@ from app.modules.notifications.dispatch import (
     NotificationPublisher,
     dispatch_notifications,
 )
+from app.modules.observability.service import log_job
 from app.modules.push.expo import build_expo_push_sender
 from app.modules.push.service import PushSender
 from app.modules.realtime.notifications import publish_notification_event_sync
@@ -92,6 +94,7 @@ class NotificationDispatchWorker:
             logger.warning("push: nenhum provedor configurado; ciclos desativados até reiniciar")
             return None
         report: DispatchReport
+        started = time.perf_counter()
         try:
             with self._session_factory() as session:
                 try:
@@ -103,9 +106,30 @@ class NotificationDispatchWorker:
                         now=self._now(),
                     )
                     session.commit()
-                except Exception:
+                    log_job(
+                        session,
+                        job="notification.worker",
+                        status="finished",
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                        details={
+                            "processed": report.processed,
+                            "delivered": report.delivered,
+                            "no_tokens": report.no_tokens,
+                            "failed": report.failed,
+                        },
+                    )
+                    session.commit()
+                except Exception as exc:
                     session.rollback()
                     logger.exception("push: ciclo falhou; Outbox preservada")
+                    log_job(
+                        session,
+                        job="notification.worker",
+                        status="failed",
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                        error=exc,
+                    )
+                    session.commit()
                     return None
         finally:
             sender.close()

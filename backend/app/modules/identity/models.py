@@ -287,10 +287,14 @@ class Session(Base):
 
 
 class SecurityEvent(Base):
-    """Evento de autenticação/abuso sem PII em claro."""
+    """Evento de autenticação/abuso; IP completo só para admin (ADR 0078)."""
 
     __tablename__ = "security_events"
-    __table_args__ = (Index("ix_security_events_type_created", "event_type", "created_at"),)
+    __table_args__ = (
+        Index("ix_security_events_type_created", "event_type", "created_at"),
+        Index("ix_security_events_ip_created", "ip", "created_at"),
+        Index("ix_security_events_request_id", "request_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -298,6 +302,11 @@ class SecurityEvent(Base):
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    result: Mapped[str | None] = mapped_column(String(20), nullable=True)
     details: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
@@ -308,7 +317,11 @@ class AuditLog(Base):
     """Trilha append-only de ações administrativas e sensíveis."""
 
     __tablename__ = "audit_logs"
-    __table_args__ = (Index("ix_audit_logs_resource", "resource_type", "resource_id"),)
+    __table_args__ = (
+        Index("ix_audit_logs_resource", "resource_type", "resource_id"),
+        Index("ix_audit_logs_ip_created", "ip", "created_at"),
+        Index("ix_audit_logs_request_id", "request_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -321,6 +334,12 @@ class AuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    result: Mapped[str | None] = mapped_column(String(20), nullable=True)
     details: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
