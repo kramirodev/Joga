@@ -1,12 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  BackHandler,
-  FlatList,
-  ScrollView,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { AccessibilityInfo, BackHandler, FlatList, ScrollView, View } from 'react-native';
 import * as Location from 'expo-location';
 
 import { api, ApiError, describeApiError } from '../api/client';
@@ -75,10 +68,9 @@ import {
   WEEKDAY_NAMES,
 } from '../ui/datetime';
 import { Text } from '../ui/text';
-import { Icon } from '../ui/icons';
-import { TierEmblem, tierLabel } from '../ui/TierEmblem';
-import { ThemeArt } from '../ui/themeArtView';
-import { themeById } from '../ui/themes';
+import { tierLabel } from '../ui/TierEmblem';
+import { CardShareSheet } from '../ui/CardShareSheet';
+import { ProfileCard, type ProfileCardData } from '../ui/ProfileCard';
 import type { ScreenDef } from './types';
 import { QueueScreen, QueueSearch } from './queue';
 
@@ -1305,8 +1297,7 @@ function LobbyFull() {
 
 function ProfileMe() {
   const nav = useNav();
-  const { palette, themeId } = useTheme();
-  const theme = themeById(themeId);
+  const { palette } = useTheme();
   const {
     profile,
     progress,
@@ -1321,9 +1312,8 @@ function ProfileMe() {
     badges,
     visual,
   } = useApp();
-  const { width } = useWindowDimensions();
-  const emblemSize = width < 360 ? 84 : 92;
-  const nameSize = width < 360 ? 28 : 30;
+  const [shareOpen, setShareOpen] = useState(false);
+  const captureTarget = useRef<ComponentRef<typeof View>>(null);
   const formatId = primaryFormatId;
   useEffect(() => {
     if (formatId) {
@@ -1362,559 +1352,261 @@ function ProfileMe() {
   const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
   const now = new Date();
   const seasonLabel = `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
-  const seasonCode = progress?.season?.code ?? seasonLabel;
   const qualifier = rating && !rating.provisional ? division.toUpperCase() : 'PROVISÓRIO';
   const record = stats?.totals.matches ?? 0;
-  const cardHeight = width < 360 ? 420 : 440;
-  const artText = theme.dark ? '#FFFFFF' : palette.ink;
-  const artShadow = {
-    textShadowColor: theme.dark ? 'rgba(0, 0, 0, 0.82)' : 'rgba(255, 255, 255, 0.92)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
+  const cardData: ProfileCardData = {
+    name,
+    tag,
+    clanName: personalClan,
+    tier,
+    level,
+    qualifier,
+    seasonLabel,
+    record,
+    visual,
   };
-  const pillBackground = theme.dark ? 'rgba(255, 255, 255, 0.26)' : 'rgba(255, 255, 255, 0.6)';
-  const pillBorder = theme.dark ? 'rgba(255, 255, 255, 0.36)' : 'rgba(0, 0, 0, 0.18)';
   return (
-    <Page title="Perfil">
-      <Card padding={0} style={{ overflow: 'hidden' }}>
+    <>
+      {shareOpen ? (
         <View
+          ref={captureTarget}
+          collapsable={false}
           pointerEvents="none"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: 360,
+            height: 480,
+            backgroundColor: palette.bg,
+          }}
         >
-          <ThemeArt art={theme.art} />
+          <ProfileCard data={cardData} imageMode width={360} height={480} />
         </View>
-        {/* Scrim único em faixas: a arte fica inteira visível no topo e ganha
-            contraste crescente só na metade inferior, onde ficam as pílulas. */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: '58%',
-            backgroundColor: palette.bg,
-            opacity: theme.dark ? 0.1 : 0.08,
-          }}
-        />
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: '40%',
-            backgroundColor: palette.bg,
-            opacity: theme.dark ? 0.2 : 0.18,
-          }}
-        />
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: '26%',
-            backgroundColor: palette.bg,
-            opacity: theme.dark ? 0.34 : 0.3,
-          }}
-        />
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: '12%',
-            backgroundColor: palette.bg,
-            opacity: theme.dark ? 0.52 : 0.46,
-          }}
-        />
-
-        <View
-          style={{
-            minHeight: cardHeight,
-            padding: 14,
-            justifyContent: 'space-between',
-          }}
-        >
-          <View
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-          >
-            <Text
-              style={[
-                artShadow,
-                {
-                  fontSize: 17,
-                  lineHeight: 19,
-                  fontWeight: '900',
-                  letterSpacing: 0.6,
-                  color: artText,
-                },
-              ]}
+      ) : null}
+      <Page
+        title="Perfil"
+        rightNode={
+          <IconBtn icon="share" label="Compartilhar cartão" onPress={() => setShareOpen(true)} />
+        }
+      >
+        <ProfileCard data={cardData} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Card style={{ flex: 1 }} padding={12}>
+            <Txt
+              variant="num"
+              align="center"
+              style={{ fontSize: 24, backgroundColor: 'transparent' }}
             >
-              JOGA<Text style={{ color: palette.brand }}>.</Text>
-            </Text>
-            <Text
-              style={[
-                artShadow,
-                {
-                  fontSize: 11,
-                  lineHeight: 14,
-                  fontWeight: '800',
-                  letterSpacing: 0.8,
-                  color: artText,
-                  textTransform: 'uppercase',
-                },
-              ]}
+              {matches}
+            </Txt>
+            <Txt variant="tiny" align="center">
+              partidas
+            </Txt>
+          </Card>
+          <Card style={{ flex: 1 }} padding={12}>
+            <Txt
+              variant="num"
+              align="center"
+              style={{ fontSize: 24, backgroundColor: 'transparent' }}
             >
-              {seasonLabel}
-            </Text>
+              {wins}
+            </Txt>
+            <Txt variant="tiny" align="center">
+              vitórias
+            </Txt>
+          </Card>
+          <Card style={{ flex: 1 }} padding={12}>
+            <Txt
+              variant="num"
+              align="center"
+              style={{ fontSize: 24, backgroundColor: 'transparent' }}
+            >
+              {presence}
+            </Txt>
+            <Txt variant="tiny" align="center">
+              presença
+            </Txt>
+          </Card>
+        </View>
+        <Card>
+          <Row between>
+            <Txt variant="h3">Insígnias</Txt>
+            <Txt variant="tiny">{Math.min(badges.length, 3)}/3 em destaque</Txt>
+          </Row>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {badges.length ? (
+              badges.slice(0, 3).map((badge) => (
+                <Badge key={badge.badge_id} tone={badge.kind === 'founder' ? 'default' : 'lime'}>
+                  {badge.name.toUpperCase()}
+                </Badge>
+              ))
+            ) : (
+              <Txt variant="tiny">Nenhuma insígnia ainda.</Txt>
+            )}
           </View>
-
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 6 }}>
-            <View style={{ zIndex: 2 }}>
-              <TierEmblem tier={tier} size={emblemSize} identity={visual} palette={palette} />
-            </View>
-            <View style={{ alignItems: 'center', marginTop: -12, zIndex: 1 }}>
-              <Text
-                style={[
-                  artShadow,
-                  {
-                    paddingTop: 12,
-                    fontSize: nameSize,
-                    lineHeight: Math.round(nameSize * 1.05),
-                    fontWeight: '900',
-                    letterSpacing: -0.6,
-                    textAlign: 'center',
-                    textTransform: 'uppercase',
-                    color: artText,
-                  },
-                ]}
-              >
-                {name}
-              </Text>
-              <Text
-                style={[
-                  artShadow,
-                  {
-                    marginTop: 4,
-                    fontSize: 11,
-                    lineHeight: 15,
-                    fontWeight: '800',
-                    letterSpacing: 1.1,
-                    textAlign: 'center',
-                    textTransform: 'uppercase',
-                    color: artText,
-                  },
-                ]}
-              >
-                #{tag} · {personalClan}
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ gap: 8 }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <View
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: 10,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: pillBorder,
-                  backgroundColor: pillBackground,
-                }}
-              >
-                <Icon name="shield" size={20} color={theme.dark ? '#FFFFFF' : palette.brand} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        fontSize: 12,
-                        lineHeight: 15,
-                        fontWeight: '900',
-                        color: artText,
-                        textTransform: 'uppercase',
-                      },
-                    ]}
-                  >
-                    {`${tier.toUpperCase()} ${level}`}
-                  </Text>
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        marginTop: 1,
-                        fontSize: 10.5,
-                        lineHeight: 14,
-                        fontWeight: '700',
-                        color: artText,
-                        textTransform: 'uppercase',
-                      },
-                    ]}
-                  >
-                    {`${qualifier} · ${seasonLabel}`}
-                  </Text>
-                </View>
-              </View>
-              <View
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: 10,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: pillBorder,
-                  backgroundColor: pillBackground,
-                }}
-              >
-                <Icon name="flame" size={20} color={theme.dark ? '#FFFFFF' : palette.brand} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        fontSize: 16,
-                        lineHeight: 18,
-                        fontWeight: '900',
-                        color: artText,
-                      },
-                    ]}
-                  >
-                    {record}
-                  </Text>
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        marginTop: 1,
-                        fontSize: 10,
-                        lineHeight: 13,
-                        fontWeight: '800',
-                        letterSpacing: 0.5,
-                        color: artText,
-                        textTransform: 'uppercase',
-                      },
-                    ]}
-                  >
-                    VITÓRIAS E DERROTAS
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {[
-                { label: seasonCode, sub: 'A conquistar' },
-                { label: 'FUNDADOR', sub: 'A conquistar' },
-                { label: 'MEDALHA', sub: 'A conquistar' },
-              ].map((item) => (
-                <View
-                  key={item.label}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    alignItems: 'center',
-                    paddingVertical: 8,
-                    paddingHorizontal: 4,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: pillBorder,
-                    backgroundColor: pillBackground,
-                  }}
-                >
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        fontSize: 10.5,
-                        lineHeight: 13,
-                        fontWeight: '900',
-                        textAlign: 'center',
-                        color: artText,
-                      },
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                  <Text
-                    style={[
-                      artShadow,
-                      {
-                        marginTop: 2,
-                        fontSize: 9.5,
-                        lineHeight: 12,
-                        fontWeight: '700',
-                        textAlign: 'center',
-                        color: artText,
-                      },
-                    ]}
-                  >
-                    {item.sub}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingTop: 2,
-              }}
+          <Row between style={{ marginTop: 12 }}>
+            <Txt variant="h3">Destaques do cartão</Txt>
+            <TextBtn go="badges">Ver todas</TextBtn>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 4 }}>
+            Até 3 insígnias aparecem nos quadros do cartão.
+          </Txt>
+        </Card>
+        <CardList>
+          {[
+            {
+              icon: 'trophy' as const,
+              title: 'Minha evolução',
+              sub: 'Divisão por formato',
+              go: 'stats-evolution',
+            },
+            {
+              icon: 'pin' as const,
+              title: 'Minhas quadras',
+              sub: 'Histórico por quadra',
+              go: 'stats-venues',
+            },
+            {
+              icon: 'globe' as const,
+              title: 'Meu passaporte',
+              sub: 'Quadras visitadas',
+              go: 'stats-passport',
+            },
+            {
+              icon: 'clock' as const,
+              title: 'Meus horários',
+              sub: 'Dias e formatos',
+              go: 'stats-times',
+            },
+            {
+              icon: 'globe' as const,
+              title: 'Rede',
+              sub: 'Onde e quando tem mais jogo',
+              go: 'stats',
+            },
+            {
+              icon: 'bolt' as const,
+              title: 'Personalização',
+              sub: 'Tema e arte do perfil',
+              go: 'customization',
+            },
+          ].map((item, index, all) => (
+            <ListRow
+              key={item.title}
+              last={index === all.length - 1}
+              onPress={() => nav.go(item.go)}
             >
-              <Text
-                style={[
-                  artShadow,
-                  {
-                    fontSize: 11,
-                    lineHeight: 14,
-                    fontWeight: '800',
-                    color: artText,
-                  },
-                ]}
-              >
-                {theme.name}
-              </Text>
-              <View
-                accessible
-                accessibilityLabel={`Cores do tema ${theme.name}`}
-                style={{ flexDirection: 'row', gap: 6 }}
-              >
-                {[palette.bg, palette.brand, palette.ink].map((color) => (
-                  <View
-                    key={color}
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: color,
-                      borderWidth: 1,
-                      borderColor: theme.dark ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.4)',
-                    }}
-                  />
+              <ListIcon icon={item.icon} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.title}
+                </Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+              </View>
+              <Text style={{ color: palette.muted }}>›</Text>
+            </ListRow>
+          ))}
+        </CardList>
+        <CardList>
+          {[
+            {
+              icon: 'search' as const,
+              title: 'Quadras',
+              sub: 'Descobrir e reservar',
+              go: 'venues',
+            },
+            {
+              icon: 'wallet' as const,
+              title: 'Ingressos',
+              sub: 'Ingressos, passe e extrato',
+              go: 'wallet',
+            },
+            {
+              icon: 'cal' as const,
+              title: 'Histórico de reservas',
+              sub: 'Reservas, status e comprovantes',
+              go: 'booking-history',
+            },
+            {
+              icon: 'clan' as const,
+              title: 'Meu clã',
+              sub: 'Membros, chat e troféus',
+              go: 'clan',
+            },
+            {
+              icon: 'trophy' as const,
+              title: 'Ranking',
+              sub: 'Sua posição por modalidade',
+              go: 'ranking',
+            },
+            {
+              icon: 'gear' as const,
+              title: 'Configurações',
+              sub: 'Conta, segurança, privacidade e LGPD',
+              go: 'settings',
+            },
+          ].map((item, index, all) => (
+            <ListRow
+              key={item.title}
+              last={index === all.length - 1}
+              onPress={() => nav.go(item.go)}
+            >
+              <ListIcon icon={item.icon} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
+                  {item.title}
+                </Text>
+                <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
+              </View>
+              <Text style={{ color: palette.muted }}>›</Text>
+            </ListRow>
+          ))}
+        </CardList>
+        <Card>
+          <Row between>
+            <Txt variant="h3">Modalidades</Txt>
+            <TextBtn go="sports">Editar</TextBtn>
+          </Row>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {sports.length ? (
+              <>
+                {sports.map((sport) => (
+                  <Badge key={sport.format_id}>{sport.format_name.toUpperCase()}</Badge>
                 ))}
-              </View>
-            </View>
+                <Badge>{levelLabel(sports[0].level).toUpperCase()}</Badge>
+              </>
+            ) : (
+              <Txt variant="tiny">Nenhuma modalidade cadastrada.</Txt>
+            )}
           </View>
-        </View>
-      </Card>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            {matches}
-          </Txt>
-          <Txt variant="tiny" align="center">
-            partidas
+          <Divider style={{ marginVertical: 12 }} />
+          <Row between>
+            <Txt variant="h3">Disponibilidade</Txt>
+            <TextBtn go="availability">Editar</TextBtn>
+          </Row>
+          <Txt variant="tiny" style={{ marginTop: 5 }}>
+            {availability}
           </Txt>
         </Card>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            {wins}
-          </Txt>
-          <Txt variant="tiny" align="center">
-            vitórias
-          </Txt>
-        </Card>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            {presence}
-          </Txt>
-          <Txt variant="tiny" align="center">
-            presença
-          </Txt>
-        </Card>
-      </View>
-      <Card>
-        <Row between>
-          <Txt variant="h3">Insígnias</Txt>
-          <Txt variant="tiny">{Math.min(badges.length, 3)}/3 em destaque</Txt>
-        </Row>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          {badges.length ? (
-            badges.slice(0, 3).map((badge) => (
-              <Badge key={badge.badge_id} tone={badge.kind === 'founder' ? 'default' : 'lime'}>
-                {badge.name.toUpperCase()}
-              </Badge>
-            ))
-          ) : (
-            <Txt variant="tiny">Nenhuma insígnia ainda.</Txt>
-          )}
-        </View>
-        <Row between style={{ marginTop: 12 }}>
-          <Txt variant="h3">Medalhas</Txt>
-          <TextBtn go="badges">Ver todas</TextBtn>
-        </Row>
-        <Txt variant="tiny" style={{ marginTop: 4 }}>
-          {badges.some((badge) => badge.kind === 'medal')
-            ? 'Medalha é conquista competitiva; insígnia marca temporada ou fundador.'
-            : 'Nenhuma medalha ainda.'}
-        </Txt>
-      </Card>
-      <CardList>
-        {[
-          {
-            icon: 'trophy' as const,
-            title: 'Minha evolução',
-            sub: 'Divisão por formato',
-            go: 'stats-evolution',
-          },
-          {
-            icon: 'pin' as const,
-            title: 'Minhas quadras',
-            sub: 'Histórico por quadra',
-            go: 'stats-venues',
-          },
-          {
-            icon: 'globe' as const,
-            title: 'Meu passaporte',
-            sub: 'Quadras visitadas',
-            go: 'stats-passport',
-          },
-          {
-            icon: 'clock' as const,
-            title: 'Meus horários',
-            sub: 'Dias e formatos',
-            go: 'stats-times',
-          },
-          {
-            icon: 'globe' as const,
-            title: 'Rede',
-            sub: 'Onde e quando tem mais jogo',
-            go: 'stats',
-          },
-          {
-            icon: 'bolt' as const,
-            title: 'Personalização',
-            sub: 'Tema e arte do perfil',
-            go: 'customization',
-          },
-        ].map((item, index, all) => (
-          <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <ListIcon icon={item.icon} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                {item.title}
-              </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
-            </View>
-            <Text style={{ color: palette.muted }}>›</Text>
-          </ListRow>
-        ))}
-      </CardList>
-      <CardList>
-        {[
-          {
-            icon: 'search' as const,
-            title: 'Quadras',
-            sub: 'Descobrir e reservar',
-            go: 'venues',
-          },
-          {
-            icon: 'wallet' as const,
-            title: 'Ingressos',
-            sub: 'Ingressos, passe e extrato',
-            go: 'wallet',
-          },
-          {
-            icon: 'cal' as const,
-            title: 'Histórico de reservas',
-            sub: 'Reservas, status e comprovantes',
-            go: 'booking-history',
-          },
-          {
-            icon: 'clan' as const,
-            title: 'Meu clã',
-            sub: 'Membros, chat e troféus',
-            go: 'clan',
-          },
-          {
-            icon: 'trophy' as const,
-            title: 'Ranking',
-            sub: 'Sua posição por modalidade',
-            go: 'ranking',
-          },
-          {
-            icon: 'gear' as const,
-            title: 'Configurações',
-            sub: 'Conta, segurança, privacidade e LGPD',
-            go: 'settings',
-          },
-        ].map((item, index, all) => (
-          <ListRow key={item.title} last={index === all.length - 1} onPress={() => nav.go(item.go)}>
-            <ListIcon icon={item.icon} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}>
-                {item.title}
-              </Text>
-              <Text style={{ fontSize: 13, color: palette.muted }}>{item.sub}</Text>
-            </View>
-            <Text style={{ color: palette.muted }}>›</Text>
-          </ListRow>
-        ))}
-      </CardList>
-      <Card>
-        <Row between>
-          <Txt variant="h3">Modalidades</Txt>
-          <TextBtn go="sports">Editar</TextBtn>
-        </Row>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {sports.length ? (
-            <>
-              {sports.map((sport) => (
-                <Badge key={sport.format_id}>{sport.format_name.toUpperCase()}</Badge>
-              ))}
-              <Badge>{levelLabel(sports[0].level).toUpperCase()}</Badge>
-            </>
-          ) : (
-            <Txt variant="tiny">Nenhuma modalidade cadastrada.</Txt>
-          )}
-        </View>
-        <Divider style={{ marginVertical: 12 }} />
-        <Row between>
-          <Txt variant="h3">Disponibilidade</Txt>
-          <TextBtn go="availability">Editar</TextBtn>
-        </Row>
-        <Txt variant="tiny" style={{ marginTop: 5 }}>
-          {availability}
-        </Txt>
-      </Card>
-      <BtnRow>
-        <Btn tone="primary" go="profile-edit">
-          Editar perfil
-        </Btn>
-        <Btn tone="ghost" modal="share">
-          Compartilhar
-        </Btn>
-      </BtnRow>
-    </Page>
+        <BtnRow>
+          <Btn tone="primary" go="profile-edit">
+            Editar perfil
+          </Btn>
+          <Btn tone="ghost" onPress={() => setShareOpen(true)}>
+            Compartilhar
+          </Btn>
+        </BtnRow>
+      </Page>
+      <CardShareSheet
+        visible={shareOpen}
+        data={cardData}
+        captureTarget={captureTarget}
+        onClose={() => setShareOpen(false)}
+      />
+    </>
   );
 }
 

@@ -16,6 +16,15 @@
       ],
       "expo-font",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "O JOGA usa sua galeria somente para salvar imagens que você pedir.",
+          "savePhotosPermission": "O JOGA salva a imagem do seu cartão na galeria quando você pede.",
+          "granularPermissions": []
+        }
+      ],
+      "expo-sharing",
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0F1214",

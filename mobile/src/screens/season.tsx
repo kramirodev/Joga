@@ -741,7 +741,7 @@ function Badges() {
   }));
   const equipped = badgeNames.filter((item) => item.equipped);
   return (
-    <Page title="Insígnias e medalhas">
+    <Page title="Insígnias">
       <Card>
         <Row between>
           <Txt variant="h3">Equipadas</Txt>
@@ -795,15 +795,6 @@ function Badges() {
             <Txt variant="tiny">Nenhuma insígnia ainda.</Txt>
           )}
         </View>
-      </Card>
-      <Card>
-        <Row between>
-          <Txt variant="h3">Medalhas</Txt>
-          <Badge tone="blue">0</Badge>
-        </Row>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Nenhuma medalha ainda.
-        </Txt>
       </Card>
       <Btn tone="ghost" go="inventory">
         Equipar insígnia
