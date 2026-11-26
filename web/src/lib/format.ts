@@ -463,6 +463,8 @@ export function formatError(error: unknown): string {
       return "A quadra pública precisa de pelo menos um espaço ativo com preço configurado para ser publicada.";
     case "geocoding_required":
       return "Informe o CEP ou as coordenadas da quadra antes de publicar.";
+    case "geocoding_unresolved":
+      return "Não foi possível obter as coordenadas deste CEP. Informe o ponto manualmente.";
     case "geocoding_unavailable":
       return "O serviço de CEP está indisponível agora. Tente novamente ou informe as coordenadas manualmente.";
     case "invalid_space":
