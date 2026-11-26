@@ -12,7 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
-from app.core.text import FreeText, OptionalFreeText, OptionalMultilineText
+from app.core.text import (
+    FreeText,
+    OptionalFreeText,
+    OptionalMultilineText,
+    OptionalVenueName,
+    VenueName,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.service import (
@@ -54,13 +60,13 @@ router = APIRouter(
 
 
 class SpaceCreate(BaseModel):
-    name: FreeText = Field(min_length=1, max_length=120)
+    name: VenueName = Field(min_length=1, max_length=120)
     description: OptionalMultilineText = Field(default=None, max_length=280)
     is_covered: bool = False
 
 
 class SpaceUpdate(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=1, max_length=120)
+    name: OptionalVenueName = Field(default=None, min_length=1, max_length=120)
     description: OptionalMultilineText = Field(default=None, max_length=280)
     status: str | None = Field(default=None, pattern="^(active|inactive)$")
     is_covered: bool | None = None

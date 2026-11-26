@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.text import (
+    ClanName,
     FreeText,
     MultilineText,
     OptionalFreeText,
@@ -411,7 +412,7 @@ def _handle(exc: Exception) -> HTTPException:
 
 
 class ClanCreateRequest(BaseModel):
-    name: FreeText = Field(min_length=3, max_length=40)
+    name: ClanName = Field(min_length=3, max_length=40)
     # O serviço normaliza e valida o miolo (2 a 7), aceitando "#" e espaços.
     tag: FreeText = Field(min_length=1, max_length=16)
     description: OptionalMultilineText = Field(default=None, max_length=280)
@@ -422,7 +423,7 @@ class ClanUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: FreeText | None = Field(default=None, min_length=3, max_length=40)
+    name: ClanName | None = Field(default=None, min_length=3, max_length=40)
     description: OptionalMultilineText = Field(default=None, max_length=280)
     join_policy: Literal["approval", "open", "closed"] | None = None
 

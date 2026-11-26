@@ -24,7 +24,7 @@ from app.api.v1.auth_guards import (
     require_email_registration_allowed,
 )
 from app.core.config import Settings, get_settings
-from app.core.text import OptionalDisplayName
+from app.core.text import OptionalDisplayName, OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.email.addresses import InvalidEmail, hash_email, normalize_email
 from app.modules.email.alerts import queue_security_alert
@@ -71,7 +71,7 @@ from app.modules.identity.otp import (
     OtpPolicy,
     ResendTooSoon,
 )
-from app.modules.identity.passwords import PasswordPolicyError, PasswordService
+from app.modules.identity.passwords import PasswordInput, PasswordPolicyError, PasswordService
 from app.modules.identity.phone import hash_ip
 from app.modules.identity.sessions import (
     AuthenticatedSession,
@@ -106,28 +106,28 @@ class EmailVerifyRequest(BaseModel):
 class EmailRegisterRequest(BaseModel):
     challenge_id: UUID
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=256)
-    display_name: OptionalDisplayName = Field(default=None, max_length=60)
-    device_name: str | None = Field(default=None, max_length=80)
+    password: PasswordInput = Field(min_length=1, max_length=256)
+    display_name: OptionalDisplayName = Field(default=None)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
     platform: Literal["android", "ios", "web", "unknown"] = "unknown"
 
 
 class EmailLoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=256)
-    device_name: str | None = Field(default=None, max_length=80)
+    password: PasswordInput = Field(min_length=1, max_length=256)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
     platform: Literal["android", "ios", "web", "unknown"] = "unknown"
 
 
 class EmailPasswordResetRequest(BaseModel):
     challenge_id: UUID
     email: str = Field(min_length=3, max_length=254)
-    new_password: str = Field(min_length=1, max_length=256)
+    new_password: PasswordInput = Field(min_length=1, max_length=256)
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=256)
-    new_password: str = Field(min_length=1, max_length=256)
+    current_password: PasswordInput = Field(min_length=1, max_length=256)
+    new_password: PasswordInput = Field(min_length=1, max_length=256)
 
 
 class EmailChangeChallengeRequest(BaseModel):

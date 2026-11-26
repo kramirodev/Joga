@@ -150,10 +150,10 @@ def test_profile_rejects_unsafe_text_and_keeps_unicode(
     accepted = api.put(
         "/api/v1/me/profile",
         headers=headers,
-        json={"display_name": "João 🎾", "bio": "Amo vôlei de areia 🏐\nSempre"},
+        json={"display_name": "João da Silva", "bio": "Amo vôlei de areia 🏐\nSempre"},
     )
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["display_name"] == "JOÃO 🎾"
+    assert accepted.json()["display_name"] == "JOÃO DA SILVA"
     assert accepted.json()["bio"] == "Amo vôlei de areia 🏐\nSempre"
 
 
@@ -214,7 +214,7 @@ def test_clan_rejects_nul_and_filters_literal_wildcards(
     created = api.post(
         "/api/v1/clans",
         headers=headers,
-        json={"name": "Clã Tijuca 🏐", "tag": "TFC", "description": "Treino de vôlei"},
+        json={"name": "Clã Tijuca", "tag": "TFC", "description": "Treino de vôlei 🏐"},
     )
     assert created.status_code == 201, created.text
 
@@ -263,7 +263,7 @@ def test_organization_and_venue_reject_nul(
         "/api/v1/organizations",
         headers=headers,
         json={
-            "name": "Arena Ação 🏟️",
+            "name": "Arena Ação",
             "cnpj": "11222333000181",
             "cpf": PARTNER_CPF,
         },
@@ -293,7 +293,7 @@ def test_organization_and_venue_reject_nul(
         base,
         headers=headers,
         json={
-            "name": "Arena Centro 🏟️",
+            "name": "Arena Centro",
             "city": "Rio de Janeiro",
             "state": "RJ",
             "address_line": "Av. Atlântica, 100",

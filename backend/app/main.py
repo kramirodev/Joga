@@ -13,6 +13,7 @@ from app.core.config import Settings, get_settings
 from app.core.environments import is_local
 from app.core.logging import configure_logging
 from app.core.observability import install_observability
+from app.core.text import TextPolicyError
 from app.modules.email.inline_drain import InlineEmailDrain
 
 
@@ -28,6 +29,16 @@ def _validation_fields(exc: RequestValidationError) -> list[dict[str, str]]:
             }
         )
     return fields
+
+
+def _validation_policy_error(exc: RequestValidationError) -> TextPolicyError | None:
+    """Primeiro erro de política de texto, se houver, com código específico."""
+
+    for error in exc.errors():
+        original = (error.get("ctx") or {}).get("error")
+        if isinstance(original, TextPolicyError):
+            return original
+    return None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -66,12 +77,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        policy_error = _validation_policy_error(exc)
+        code = policy_error.code if policy_error is not None else "validation_error"
+        message = policy_error.message if policy_error is not None else "Dados inválidos"
         return JSONResponse(
             status_code=422,
             content={
                 "detail": {
-                    "code": "validation_error",
-                    "message": "Dados inválidos",
+                    "code": code,
+                    "message": message,
                     "fields": _validation_fields(exc),
                 }
             },

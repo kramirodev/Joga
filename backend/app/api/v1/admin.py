@@ -25,7 +25,13 @@ from app.api.v1.email_auth import (
 )
 from app.api.v1.request_context import request_ip_hash
 from app.core.config import Settings, get_settings
-from app.core.text import FreeText, OptionalDisplayName, OptionalFreeText
+from app.core.text import (
+    FreeText,
+    LatinName,
+    OptionalDisplayName,
+    OptionalFreeText,
+    OptionalLatinName,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.catalog.sports import (
     FormatInput,
@@ -58,7 +64,7 @@ from app.modules.email.deliveries import EmailBudgetExhausted, EmailDeliveryServ
 from app.modules.identity.audit import record_audit
 from app.modules.identity.email_challenges import DisposableEmailDomain, EmailChallengeService
 from app.modules.identity.otp import HourlyLimitReached, IpLimitReached, ResendTooSoon
-from app.modules.identity.passwords import PasswordPolicyError, PasswordService
+from app.modules.identity.passwords import PasswordInput, PasswordPolicyError, PasswordService
 from app.modules.identity.sessions import AuthenticatedSession, SessionService
 from app.modules.identity.user_admin import (
     AdminEmailConflict,
@@ -212,7 +218,7 @@ def _user_error(exc: Exception) -> HTTPException:
 
 class SportFormatInput(BaseModel):
     slug: FreeText = Field(min_length=2, max_length=40)
-    name: FreeText = Field(min_length=2, max_length=80)
+    name: LatinName = Field(min_length=2, max_length=80)
     team_size: int = Field(ge=1, le=20)
     players_per_team: int | None = Field(default=None, ge=1, le=20)
     duration_minutes: int = Field(ge=5, le=240)
@@ -223,7 +229,7 @@ class SportFormatInput(BaseModel):
 
 class SportCreateRequest(BaseModel):
     slug: FreeText = Field(min_length=2, max_length=40)
-    name: FreeText = Field(min_length=2, max_length=80)
+    name: LatinName = Field(min_length=2, max_length=80)
     category: SportCategory = "collective"
     icon_key: FreeText = Field(min_length=2, max_length=64)
     sort_order: int = Field(default=0, ge=0)
@@ -232,7 +238,7 @@ class SportCreateRequest(BaseModel):
 
 
 class SportUpdateRequest(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=2, max_length=80)
+    name: OptionalLatinName = Field(default=None, min_length=2, max_length=80)
     category: SportCategory | None = None
     icon_key: OptionalFreeText = Field(default=None, min_length=2, max_length=64)
     sort_order: int | None = Field(default=None, ge=0)
@@ -261,7 +267,7 @@ class SportFormatAddRequest(SportFormatInput):
 
 
 class SportFormatUpdateRequest(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=2, max_length=80)
+    name: OptionalLatinName = Field(default=None, min_length=2, max_length=80)
     team_size: int | None = Field(default=None, ge=1, le=20)
     players_per_team: int | None = Field(default=None, ge=1, le=20)
     duration_minutes: int | None = Field(default=None, ge=5, le=240)
@@ -329,8 +335,8 @@ class AdminUserListResponse(BaseModel):
 
 class AdminUserCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=256)
-    display_name: OptionalDisplayName = Field(default=None, max_length=60)
+    password: PasswordInput = Field(min_length=1, max_length=256)
+    display_name: OptionalDisplayName = Field(default=None)
     verify_email: bool = False
     reason: FreeText = Field(min_length=1, max_length=500)
 

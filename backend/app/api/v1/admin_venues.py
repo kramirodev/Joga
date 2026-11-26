@@ -17,7 +17,14 @@ from app.api.v1.admin_reason import clean_reason
 from app.api.v1.geo import get_postal_code_service
 from app.api.v1.request_context import request_ip_hash
 from app.core.config import Settings, get_settings
-from app.core.text import FreeText, OptionalFreeText, OptionalMultilineText
+from app.core.text import (
+    FreeText,
+    OptionalAddressText,
+    OptionalFreeText,
+    OptionalMultilineText,
+    OptionalVenueName,
+    VenueName,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.catalog.platform_venues import (
     GeocodingRequired,
@@ -170,10 +177,10 @@ class AdminVenueListResponse(BaseModel):
 
 
 class AdminVenueCreateRequest(BaseModel):
-    name: FreeText = Field(min_length=1, max_length=120)
+    name: VenueName = Field(min_length=1, max_length=120)
     city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: OptionalFreeText = Field(default=None, max_length=200)
+    address_line: OptionalAddressText = Field(default=None, max_length=200)
     postal_code: str | None = Field(default=None, max_length=9)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
@@ -182,10 +189,10 @@ class AdminVenueCreateRequest(BaseModel):
 
 
 class AdminVenueUpdateRequest(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=1, max_length=120)
+    name: OptionalVenueName = Field(default=None, min_length=1, max_length=120)
     city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: OptionalFreeText = Field(default=None, max_length=200)
+    address_line: OptionalAddressText = Field(default=None, max_length=200)
     postal_code: str | None = Field(default=None, max_length=9)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
@@ -194,7 +201,7 @@ class AdminVenueUpdateRequest(BaseModel):
 
 
 class AdminSpaceCreateRequest(BaseModel):
-    name: FreeText = Field(min_length=1, max_length=120)
+    name: VenueName = Field(min_length=1, max_length=120)
     description: OptionalMultilineText = Field(default=None, max_length=280)
     is_covered: bool = False
     sport_id: UUID
@@ -205,7 +212,7 @@ class AdminSpaceCreateRequest(BaseModel):
 
 
 class AdminSpaceUpdateRequest(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=1, max_length=120)
+    name: OptionalVenueName = Field(default=None, min_length=1, max_length=120)
     description: OptionalMultilineText = Field(default=None, max_length=280)
     is_covered: bool | None = None
     sport_id: UUID | None = None
