@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Annotated, Literal
 from uuid import UUID
@@ -35,6 +34,7 @@ from app.modules.catalog.platform_venues import (
     validate_publication,
     validate_space_pricing,
 )
+from app.modules.geo.geocoding import geocode_if_needed
 from app.modules.geo.service import (
     CepNotFound,
     CepProviderUnavailable,
@@ -380,46 +380,6 @@ def _audit_details(
     return details
 
 
-@dataclass(frozen=True)
-class GeocodeOverrides:
-    postal_code: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    city: str | None = None
-    state: str | None = None
-    address_line: str | None = None
-    geocoding_source: str | None = None
-    geocoding_precision: str | None = None
-
-
-def _geocode_if_needed(
-    *,
-    postal_service: PostalCodeService,
-    postal_code: str | None,
-    latitude: float | None,
-    longitude: float | None,
-    city: str | None,
-    state: str | None,
-    address_line: str | None,
-) -> GeocodeOverrides:
-    if not postal_code:
-        return GeocodeOverrides()
-    if latitude is not None and longitude is not None:
-        return GeocodeOverrides(postal_code=postal_code)
-    result = postal_service.resolve(postal_code)
-    location = result.location
-    return GeocodeOverrides(
-        postal_code=location.cep,
-        latitude=location.lat if latitude is None else latitude,
-        longitude=location.lng if longitude is None else longitude,
-        city=location.city if city is None else city,
-        state=location.state if state is None else state,
-        address_line=location.street if address_line is None and location.street else address_line,
-        geocoding_source=location.source,
-        geocoding_precision=location.precision,
-    )
-
-
 @router.get("", response_model=AdminVenueListResponse)
 def list_admin_venues(
     admin: Annotated[AuthenticatedSession, Depends(require_platform_admin)],
@@ -497,7 +457,7 @@ def create_admin_venue(
 ) -> AdminVenueView:
     try:
         organization = _platform_org(session, settings)
-        geocoded = _geocode_if_needed(
+        geocoded = geocode_if_needed(
             postal_service=postal_service,
             postal_code=payload.postal_code,
             latitude=payload.latitude,
@@ -558,7 +518,7 @@ def update_admin_venue(
 
     try:
         current = moderation.get_venue(venue_id).venue
-        geocoded = _geocode_if_needed(
+        geocoded = geocode_if_needed(
             postal_service=postal_service,
             postal_code=payload.postal_code,
             latitude=payload.latitude if payload.latitude is not None else current.latitude,

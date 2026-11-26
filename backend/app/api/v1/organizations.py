@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
+from app.api.v1.geo import get_postal_code_service
 from app.core.config import Settings, get_settings
 from app.core.text import (
     OptionalAddressText,
@@ -20,6 +21,14 @@ from app.core.text import (
     VenueName,
 )
 from app.infrastructure.database.dependency import get_session
+from app.modules.geo.geocoding import GeocodeOverrides, geocode_if_needed
+from app.modules.geo.service import (
+    CepNotFound,
+    CepProviderUnavailable,
+    CepTimeout,
+    InvalidCep,
+    PostalCodeService,
+)
 from app.modules.identity.audit import record_audit
 from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.organizations.cnpj import CnpjLookup, mask_cnpj
@@ -52,6 +61,8 @@ from app.modules.organizations.verification import (
     CnpjVerificationError,
     verify_new_organization,
 )
+from app.modules.ratelimit.service import RateLimitExceeded
+from app.modules.ratelimit.service import enforce as enforce_rate_limit
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -126,8 +137,8 @@ class VenueCreate(BaseModel):
     city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
     address_line: OptionalAddressText = Field(default=None, max_length=200)
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     postal_code: str | None = Field(default=None, max_length=9)
     geocoding_source: str | None = Field(default=None, pattern="^[a-z0-9+._-]{1,40}$")
     geocoding_precision: str | None = Field(
@@ -205,13 +216,27 @@ class AuditListResponse(BaseModel):
     offset: int
 
 
-def _error(code: str, status_code: int) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"code": code})
+def _error(
+    code: str,
+    status_code: int,
+    *,
+    retry_after: int | None = None,
+) -> HTTPException:
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
+    return HTTPException(status_code=status_code, detail={"code": code}, headers=headers)
 
 
 def _handle(exc: Exception) -> HTTPException:
     if isinstance(exc, CnpjVerificationError):
         return _error(exc.code, exc.http_status)
+    if isinstance(exc, CepTimeout):
+        return _error("geocoding_timeout", status.HTTP_504_GATEWAY_TIMEOUT)
+    if isinstance(exc, CepProviderUnavailable):
+        return _error("geocoding_provider_error", status.HTTP_502_BAD_GATEWAY)
+    if isinstance(exc, InvalidCep):
+        return _error("invalid_postal_code", status.HTTP_422_UNPROCESSABLE_CONTENT)
+    if isinstance(exc, CepNotFound):
+        return _error("postal_code_not_found", status.HTTP_422_UNPROCESSABLE_CONTENT)
     mapping = {
         OrganizationNotFound: ("organization_not_found", status.HTTP_404_NOT_FOUND),
         VenueNotFound: ("venue_not_found", status.HTTP_404_NOT_FOUND),
@@ -568,21 +593,77 @@ def create_venue(
     payload: VenueCreate,
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    postal_service: Annotated[PostalCodeService, Depends(get_postal_code_service)],
 ) -> VenueView:
+    """Cadastra a quadra; com CEP, o servidor resolve as coordenadas."""
+
+    geocoded = GeocodeOverrides()
+    if payload.postal_code and (payload.latitude is None or payload.longitude is None):
+        try:
+            enforce_rate_limit(
+                session,
+                scope="org_venue_geocode",
+                key=str(current.user_id),
+                limit=settings.geo_rate_limit_per_minute,
+            )
+        except RateLimitExceeded as exc:
+            session.rollback()
+            raise _error(
+                "rate_limited",
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                retry_after=exc.retry_after_seconds,
+            ) from None
+        # Persistir o contador mesmo se o provedor falhar.
+        session.commit()
+        try:
+            geocoded = geocode_if_needed(
+                postal_service=postal_service,
+                postal_code=payload.postal_code,
+                latitude=payload.latitude,
+                longitude=payload.longitude,
+                city=payload.city,
+                state=payload.state,
+                address_line=payload.address_line,
+            )
+        except (InvalidCep, CepNotFound, CepTimeout, CepProviderUnavailable) as exc:
+            session.rollback()
+            raise _handle(exc) from None
+
+    latitude = geocoded.latitude if geocoded.latitude is not None else payload.latitude
+    longitude = geocoded.longitude if geocoded.longitude is not None else payload.longitude
+    if latitude is None or longitude is None:
+        raise _error(
+            "geocoding_unresolved" if payload.postal_code else "geocoding_required",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
     service = OrganizationService(session)
     try:
         venue = service.create_venue(
             current.user_id,
             organization_id,
             name=payload.name,
-            city=payload.city,
-            state=payload.state,
-            address_line=payload.address_line,
-            latitude=payload.latitude,
-            longitude=payload.longitude,
-            postal_code=payload.postal_code,
-            geocoding_source=payload.geocoding_source,
-            geocoding_precision=payload.geocoding_precision,
+            city=geocoded.city if geocoded.city is not None else payload.city,
+            state=geocoded.state if geocoded.state is not None else payload.state,
+            address_line=(
+                geocoded.address_line if geocoded.address_line is not None else payload.address_line
+            ),
+            latitude=latitude,
+            longitude=longitude,
+            postal_code=(
+                geocoded.postal_code if geocoded.postal_code is not None else payload.postal_code
+            ),
+            geocoding_source=(
+                geocoded.geocoding_source
+                if geocoded.geocoding_source is not None
+                else payload.geocoding_source
+            ),
+            geocoding_precision=(
+                geocoded.geocoding_precision
+                if geocoded.geocoding_precision is not None
+                else payload.geocoding_precision
+            ),
             timezone=payload.timezone,
             venue_id=payload.venue_id,
         )
