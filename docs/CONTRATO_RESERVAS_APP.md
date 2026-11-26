@@ -1279,6 +1279,7 @@ Detalhe do usuário (CPF mascarado; nenhum segredo):
 ```json
 {
   "id": "uuid",
+  "tag": "#9F55A2C1",
   "status": "active",
   "email": "jogador@exemplo.com",
   "display_name": "Jogador",
@@ -1289,6 +1290,10 @@ Detalhe do usuário (CPF mascarado; nenhum segredo):
 }
 ```
 
+- `q` busca nome, e-mail e tag pública (`#TAG` ou `TAG`, exata ou parcial, sem
+  diferenciar caixa). A busca não consulta CPF; o CPF só aparece mascarado.
+- Todas as respostas de usuário (`lista`, `detalhe`, `criação`, `suspensão`,
+  `reativação` e troca de e-mail) incluem `tag`.
 - `POST /admin/users`: `email`, `password`, `display_name?`,
   `verify_email` (opcional, auditado) e `reason`.
 - `PATCH /admin/users/{id}/email`: avisa o endereço antigo e revoga todas as

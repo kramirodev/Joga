@@ -150,6 +150,7 @@ def _admin_sport_view(session: Session, sport: Sport, formats: list[SportFormat]
 def _admin_user_view(item: AdminUserView) -> AdminUserResponse:
     return AdminUserResponse(
         id=item.id,
+        tag=item.tag,
         status=item.status,
         email=item.email,
         display_name=item.display_name,
@@ -317,6 +318,7 @@ class BandTicketsOverrideResponse(BaseModel):
 
 class AdminUserResponse(BaseModel):
     id: UUID
+    tag: str
     status: str
     email: str | None
     display_name: str | None
