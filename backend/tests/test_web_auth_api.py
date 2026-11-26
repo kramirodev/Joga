@@ -166,6 +166,7 @@ def test_web_session_exposes_moderation_capabilities(
 def test_web_session_exposes_platform_admin_capability(
     api: TestClient,
     sms_sender: RecordingSmsSender,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     receipt = receipt_for(api, sms_sender, PHONE, "registration")
     registered = web_register(api, receipt)
@@ -173,14 +174,19 @@ def test_web_session_exposes_platform_admin_capability(
     user_id = registered.json()["user"]["id"]
     assert registered.json()["capabilities"] == []
 
-    api.app.dependency_overrides[get_settings] = lambda: Settings(
-        _env_file=None,
-        platform_admins=user_id,
-    )
+    settings = Settings(_env_file=None, platform_admins=user_id)
+    api.app.dependency_overrides[get_settings] = lambda: settings
+    # ADR 0066: a plataforma modera por definição; o serviço de moderação lê
+    # ``get_settings`` diretamente, então os testes precisam alinhar os dois.
+    monkeypatch.setattr("app.modules.moderation.service.get_settings", lambda: settings)
 
     refreshed = api.post("/api/v1/auth/web/refresh", headers=csrf_headers(api))
     assert refreshed.status_code == 200, refreshed.text
-    assert "platform.admin" in refreshed.json()["capabilities"]
+    assert refreshed.json()["capabilities"] == [
+        "moderation.read",
+        "moderation.manage",
+        "platform.admin",
+    ]
 
 
 def test_web_refresh_requires_csrf_and_rotates_cookies(
