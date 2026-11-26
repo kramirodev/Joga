@@ -1,4 +1,4 @@
-"""Hashes de contexto da requisição; nunca IP ou user-agent em claro."""
+"""Hashes e IP de contexto da requisição; nunca cadeia de proxy própria."""
 
 from __future__ import annotations
 
@@ -6,15 +6,9 @@ import hashlib
 
 from fastapi import Request
 
-from app.core.config import Settings
-from app.modules.identity.phone import hash_ip
+from app.core.request_context import normalize_ip, request_ip, request_ip_hash
 
-
-def request_ip_hash(request: Request, settings: Settings) -> str | None:
-    ip = request.client.host if request.client else None
-    if ip is None:
-        return None
-    return hash_ip(ip, settings.phone_hash_secret.get_secret_value())
+__all__ = ["normalize_ip", "request_ip", "request_ip_hash", "request_user_agent_hash"]
 
 
 def request_user_agent_hash(request: Request) -> str | None:

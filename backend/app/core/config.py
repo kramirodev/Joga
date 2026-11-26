@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     log_level: str = "INFO"
 
+    # Observabilidade (ADR 0078). ``observability_enabled`` liga a persistência
+    # de eventos operacionais em ``log_events``; o log de acesso em stdout
+    # continua independente. A amostragem só vale para 2xx: 4xx/5xx, lentas e
+    # erros são sempre persistidos.
+    observability_enabled: bool = True
+    log_http_success_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
+    log_retention_days: int = Field(default=30, ge=1, le=730)
+    log_security_retention_days: int = Field(default=180, ge=30, le=3650)
+    log_async_queue_size: int = Field(default=10_000, ge=100, le=100_000)
+    log_stacktraces: bool = True
+    log_max_export_rows: int = Field(default=20_000, ge=100, le=100_000)
+
     # Allowlist do header Host (TrustedHostMiddleware). Lista extra separada por
     # vírgula, sem esquema, porta ou curinga. RENDER_EXTERNAL_HOSTNAME, quando
     # presente, entra na allowlist porque o Render é a origem pública do demo.
@@ -367,6 +379,15 @@ class Settings(BaseSettings):
     # Apenas para desenvolvimento local: fixa o OTP para facilitar testes no app.
     # Nunca usar em ambiente compartilhado/produção.
     dev_fixed_otp: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        """Recusa nível de log desconhecido no boot."""
+        normalized = value.strip().upper()
+        if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("JOGA_LOG_LEVEL deve ser DEBUG, INFO, WARNING, ERROR ou CRITICAL")
+        return normalized
 
     @field_validator("dev_fixed_otp", mode="before")
     @classmethod

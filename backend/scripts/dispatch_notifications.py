@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
 from app.modules.notifications.dispatch import dispatch_notifications
+from app.modules.observability.service import log_job
 from app.modules.push.expo import build_push_sender
 from app.modules.realtime.notifications import publish_notification_event_sync
 
@@ -27,9 +28,20 @@ logger = logging.getLogger("joga.notifications")
 
 def run_once(session: Session) -> int:
     settings = get_settings()
+    started = time.perf_counter()
+    log_job(session, job="notification.delivery", status="started")
+    session.commit()
     sender = build_push_sender(settings)
     if sender is None:
         logger.warning("nenhum provedor de push configurado; Outbox preservada")
+        log_job(
+            session,
+            job="notification.delivery",
+            status="finished",
+            message="job notification.delivery sem provedor configurado",
+            details={"skipped": True},
+        )
+        session.commit()
         return 0
     try:
         report = dispatch_notifications(
@@ -38,9 +50,17 @@ def run_once(session: Session) -> int:
             publisher=publish_notification_event_sync,
         )
         session.commit()
-    except Exception:
+    except Exception as exc:
         session.rollback()
         logger.exception("entrega de notificações falhou")
+        log_job(
+            session,
+            job="notification.delivery",
+            status="failed",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=exc,
+        )
+        session.commit()
         return 1
     finally:
         sender.close()
@@ -51,6 +71,19 @@ def run_once(session: Session) -> int:
         report.no_tokens,
         report.failed,
     )
+    log_job(
+        session,
+        job="notification.delivery",
+        status="finished",
+        duration_ms=int((time.perf_counter() - started) * 1000),
+        details={
+            "processed": report.processed,
+            "delivered": report.delivered,
+            "no_tokens": report.no_tokens,
+            "failed": report.failed,
+        },
+    )
+    session.commit()
     return 0
 
 

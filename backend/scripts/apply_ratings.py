@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.infrastructure.database.engine import build_engine
+from app.modules.observability.service import log_job
 from app.modules.ratings.service import RatingNotApplicable, RatingService
 
 logger = logging.getLogger("joga.ratings")
@@ -56,12 +57,27 @@ def run_once(engine, *, limit: int = 100) -> BatchResult:  # noqa: ANN001
         skipped,
         failed,
     )
-    return BatchResult(
+    result = BatchResult(
         matches=len(match_ids),
         applied=applied,
         skipped=skipped,
         failed=failed,
     )
+    with Session(engine) as session:
+        log_job(
+            session,
+            job="ratings.apply",
+            status="failed" if failed else "finished",
+            message=f"job ratings.apply falhas={failed}",
+            details={
+                "matches": result.matches,
+                "applied": result.applied,
+                "skipped": result.skipped,
+                "failed": result.failed,
+            },
+        )
+        session.commit()
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:

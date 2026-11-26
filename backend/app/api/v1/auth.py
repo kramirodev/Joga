@@ -14,6 +14,7 @@ from app.api.v1.auth_guards import (
     require_phone_auth_enabled,
     require_phone_registration_allowed,
 )
+from app.core import request_context
 from app.core.config import Settings, get_settings
 from app.core.text import OptionalFreeText
 from app.infrastructure.database.dependency import get_session
@@ -349,23 +350,32 @@ def _bearer_token(
     return token
 
 
+def _bind_authenticated(request: Request, current: AuthenticatedSession) -> AuthenticatedSession:
+    """Expõe o usuário ao middleware e ao contexto de logs."""
+    request.state.user_id = current.user_id
+    request_context.user_id_var.set(current.user_id)
+    return current
+
+
 def get_current_session(
+    request: Request,
     token: Annotated[str, Depends(_bearer_token)],
     service: Annotated[SessionService, Depends(get_session_service)],
 ) -> AuthenticatedSession:
     try:
-        return service.authenticate(token)
+        return _bind_authenticated(request, service.authenticate(token))
     except InvalidAccessToken:
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
 
 
 def get_current_session_allow_suspended(
+    request: Request,
     token: Annotated[str, Depends(_bearer_token)],
     service: Annotated[SessionService, Depends(get_session_service)],
 ) -> AuthenticatedSession:
     """Autentica a sessão mesmo com a conta suspensa, para contestar a medida."""
     try:
-        return service.authenticate(token, require_active=False)
+        return _bind_authenticated(request, service.authenticate(token, require_active=False))
     except InvalidAccessToken:
         raise _error(status.HTTP_401_UNAUTHORIZED, "invalid_token", www_authenticate=True) from None
 

@@ -14,7 +14,9 @@ from app.core.environments import is_local
 from app.core.logging import configure_logging
 from app.core.observability import install_observability
 from app.core.text import TextPolicyError
+from app.infrastructure.database.dependency import get_session_factory
 from app.modules.email.inline_drain import InlineEmailDrain
+from app.modules.observability.service import LogDispatcher
 
 
 def _validation_fields(exc: RequestValidationError) -> list[dict[str, str]]:
@@ -47,17 +49,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     inline_drain = (
         InlineEmailDrain.from_settings(resolved) if resolved.email_inline_drain_enabled else None
     )
+    dispatcher = (
+        LogDispatcher(resolved, session_factory=get_session_factory())
+        if resolved.observability_enabled
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.email_inline_drain = inline_drain
+        app.state.observability = dispatcher
         if inline_drain is not None:
             await inline_drain.start()
+        if dispatcher is not None:
+            await dispatcher.start()
         try:
             yield
         finally:
             if inline_drain is not None:
                 await inline_drain.stop()
+            if dispatcher is not None:
+                await dispatcher.stop()
 
     # Docs e schema só existem em ambiente local/teste. Fora deles a superfície
     # pública não expõe inventário de rotas nem console interativo.
