@@ -46,10 +46,14 @@ describe("AppHeader — moderação por capability", () => {
     vi.unstubAllGlobals();
   });
 
-  it("não mostra moderação nem sino sem moderation.read", () => {
+  it("jogador não vê moderação nem administração", () => {
     renderHeader([]);
     expect(screen.queryByRole("link", { name: "Moderação" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Notificações/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Usuários" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Esportes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Quadras" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Monitoramento" })).not.toBeInTheDocument();
   });
 
   it("mostra moderação e sino com moderation.read", () => {
@@ -72,9 +76,20 @@ describe("AppHeader — moderação por capability", () => {
 
   it("esconde a administração sem platform.admin", () => {
     renderHeader(["moderation.read"]);
+    expect(screen.getByRole("link", { name: "Moderação" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Usuários" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Esportes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Quadras" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Monitoramento" })).not.toBeInTheDocument();
+  });
+
+  it("administrador da plataforma vê moderação e administração", () => {
+    renderHeader(["platform.admin", "moderation.read", "moderation.manage"]);
+    expect(screen.getByRole("link", { name: "Moderação" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Usuários" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Esportes" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Quadras" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Monitoramento" })).toBeInTheDocument();
   });
 
   it("mostra a administração com platform.admin", () => {
@@ -82,6 +97,7 @@ describe("AppHeader — moderação por capability", () => {
     expect(screen.getByRole("link", { name: "Usuários" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Esportes" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Quadras" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Monitoramento" })).toBeInTheDocument();
   });
 
   it("troca a senha autenticada com senha atual e nova", async () => {

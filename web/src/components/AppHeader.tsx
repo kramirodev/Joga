@@ -2,7 +2,11 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth-context";
-import { MODERATION_NOTIFICATIONS_ENABLED, PLATFORM_ADMIN_CAPABILITY } from "../lib/features";
+import {
+  MODERATION_NOTIFICATIONS_ENABLED,
+  MODERATION_READ_CAPABILITY,
+  PLATFORM_ADMIN_CAPABILITY,
+} from "../lib/features";
 import { NotificationCenter } from "./NotificationCenter";
 import { PasswordDialog } from "./PasswordDialog";
 import { ClockIcon, LogoutIcon, MapPinIcon, ShieldIcon, SparkIcon, UsersIcon } from "./ui/Icons";
@@ -13,7 +17,7 @@ export function AppHeader() {
   const location = useLocation();
   const moderationArea = location.pathname.startsWith("/moderation");
   const adminArea = location.pathname.startsWith("/admin");
-  const canModerate = capabilities.includes("moderation.read");
+  const canModerate = capabilities.includes(MODERATION_READ_CAPABILITY);
   const canAdmin = capabilities.includes(PLATFORM_ADMIN_CAPABILITY);
   // Administradores da plataforma também precisam descobrir a área de moderação.
   // A autorização real continua no servidor (GET /moderation/me).
