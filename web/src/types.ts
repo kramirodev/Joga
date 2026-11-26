@@ -463,6 +463,8 @@ export type AdminUserStatus = "pending" | "active" | "suspended" | "deleted";
 
 export interface AdminUserSummary {
   id: string;
+  /** Tag pública (`#E38C69F5`), usada para desambiguar nomes repetidos. */
+  tag: string;
   email: string | null;
   display_name: string | null;
   status: AdminUserStatus | string;

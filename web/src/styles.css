@@ -2935,6 +2935,16 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.admin-tag {
+  margin-left: 0.45rem;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .admin-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line-subtle);
@@ -3026,6 +3036,24 @@ pre {
   color: var(--muted);
   font-size: 0.78rem;
   overflow-wrap: anywhere;
+}
+
+.admin-detail__tagline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.1rem;
+}
+
+.admin-detail__tagline .admin-tag {
+  margin-left: 0;
+  font-size: 0.9rem;
+}
+
+.admin-tag__copy {
+  padding: 0.08rem 0.5rem;
+  font-size: 0.68rem;
 }
 
 .admin-detail__heading .badge {

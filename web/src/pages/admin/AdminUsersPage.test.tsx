@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ import { AdminUsersPage } from "./AdminUsersPage";
 
 const summary: AdminUserSummary = {
   id: "user-1",
+  tag: "E38C69F5",
   email: "ana@example.com",
   display_name: "Ana Silva",
   status: "active",
@@ -213,6 +214,51 @@ describe("AdminUsersPage", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("mostra a tag pública na lista", async () => {
+    stubApi();
+    renderPage();
+
+    expect(await screen.findByText("#E38C69F5")).toBeInTheDocument();
+    expect(screen.getByText("Ana Silva")).toBeInTheDocument();
+  });
+
+  it("busca por tag enviando o q com #TAG", async () => {
+    const fetchMock = stubApi();
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Ana Silva");
+    await user.type(screen.getByLabelText("Buscar"), "#E38C69F5");
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    await waitFor(() =>
+      expect(
+        calls(fetchMock).some(
+          (call) => call.path === "/api/v1/admin/users" && call.search.get("q") === "#E38C69F5",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("mostra a tag e copia no detalhe", async () => {
+    stubApi();
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderPage();
+
+    await openDetail(user);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("#E38C69F5")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Copiar tag" }));
+    expect(writeText).toHaveBeenCalledWith("#E38C69F5");
+    expect(await screen.findByRole("button", { name: "Copiado" })).toBeInTheDocument();
   });
 
   it("não duplica a busca ao clicar duas vezes em Buscar", async () => {
