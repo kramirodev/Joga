@@ -37,6 +37,7 @@ from app.modules.legal import models as legal_models  # noqa: F401
 from app.modules.matchmaking import models as matchmaking_models  # noqa: F401
 from app.modules.moderation import models as moderation_models  # noqa: F401
 from app.modules.notifications import models as notifications_models  # noqa: F401
+from app.modules.observability import models as observability_models  # noqa: F401
 from app.modules.organizations import models as organizations_models  # noqa: F401
 from app.modules.organizations.platform import ensure_platform_organization
 from app.modules.outbox import models as outbox_models  # noqa: F401
@@ -97,6 +98,10 @@ def hermetic_test_settings() -> Iterator[None]:
         "JOGA_EXPO_PUSH_URL": "https://exp.host/--/api/v2/push/send",
         "JOGA_EXPO_ACCESS_TOKEN": "",
         "JOGA_PUSH_WEBHOOK_URL": "",
+        # O log operacional em banco é exercitado por testes dedicados, que
+        # injetam um dispatcher de memória. A suíte geral não escreve log_events
+        # no PostgreSQL de teste para não acoplar testes SQLite ao banco externo.
+        "JOGA_OBSERVABILITY_ENABLED": "false",
     }
     previous = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)
