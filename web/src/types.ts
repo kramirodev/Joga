@@ -896,3 +896,147 @@ export interface PostalCodeLookup {
   source: string;
   resolved_at: string;
 }
+
+export interface ObservabilityLevelCount {
+  level: string;
+  count: number;
+}
+
+export interface ObservabilityCategoryCount {
+  category: string;
+  count: number;
+}
+
+export interface ObservabilitySuspiciousUser {
+  user_id: string;
+  events: number;
+  security_events: number;
+  last_seen_at: string;
+}
+
+export interface ObservabilityHttpSummary {
+  requests: number;
+  status_4xx: number;
+  status_5xx: number;
+  slow_requests: number;
+  avg_duration_ms: number | null;
+}
+
+export interface ObservabilityAuthSummary {
+  unauthorized: number;
+  forbidden: number;
+  rate_limited: number;
+  failed_logins: number;
+}
+
+export interface ObservabilityJobSummary {
+  started: number;
+  finished: number;
+  failed: number;
+}
+
+export interface ObservabilitySummaryWindow {
+  from_at: string;
+  to_at: string;
+  total_events: number;
+  by_level: ObservabilityLevelCount[];
+  by_category: ObservabilityCategoryCount[];
+  http: ObservabilityHttpSummary;
+  auth: ObservabilityAuthSummary;
+  jobs: ObservabilityJobSummary;
+  audit_events: number;
+  security_events: number;
+  suspicious_users: ObservabilitySuspiciousUser[];
+}
+
+export interface ObservabilitySummaryResponse {
+  window: string;
+  current: ObservabilitySummaryWindow;
+  previous: ObservabilitySummaryWindow;
+}
+
+export interface ObservabilityEvent {
+  id: string;
+  occurred_at: string;
+  level: string;
+  category: string;
+  source: string;
+  module: string | null;
+  request_id: string | null;
+  correlation_id: string | null;
+  user_id: string | null;
+  ip: string | null;
+  ip_masked: boolean;
+  user_agent: string | null;
+  endpoint: string | null;
+  status: number | null;
+  duration_ms: number | null;
+  message: string | null;
+  error_code: string | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface ObservabilityEventDetail extends ObservabilityEvent {
+  stack: string | null;
+  result: string | null;
+}
+
+export interface ObservabilityEventListResponse {
+  events: ObservabilityEvent[];
+  next_cursor: string | null;
+}
+
+export interface ObservabilityUserActivityResponse {
+  user_id: string;
+  events: ObservabilityEvent[];
+  next_cursor: string | null;
+}
+
+export interface ObservabilityIpUserEntry {
+  user_id: string;
+  events: number;
+  last_seen_at: string;
+}
+
+export interface ObservabilityIpReport {
+  ip: string;
+  ip_hash: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  total_events: number;
+  security_events: number;
+  failed_logins: number;
+  users: ObservabilityIpUserEntry[];
+  events: ObservabilityEvent[];
+}
+
+export interface ObservabilityEventFilters {
+  from?: string;
+  to?: string;
+  level?: string;
+  category?: string;
+  userId?: string;
+  ip?: string;
+  endpoint?: string;
+  status?: number;
+  requestId?: string;
+  correlationId?: string;
+  q?: string;
+}
+
+export interface ObservabilityEventPageParams extends ObservabilityEventFilters {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ObservabilityExportParams extends ObservabilityEventFilters {
+  format: "csv" | "json";
+  fullIp?: boolean;
+}
+
+export interface ObservabilityExportFile {
+  blob: Blob;
+  filename: string;
+  rows: number;
+  truncated: boolean;
+}

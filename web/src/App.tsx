@@ -37,6 +37,31 @@ const AdminVenueDetailPage = lazy(() =>
     default: module.AdminVenueDetailPage,
   })),
 );
+const AdminObservabilityPage = lazy(() =>
+  import("./pages/admin/AdminObservabilityPage").then((module) => ({
+    default: module.AdminObservabilityPage,
+  })),
+);
+const AdminObservabilityEventsPage = lazy(() =>
+  import("./pages/admin/AdminObservabilityEventsPage").then((module) => ({
+    default: module.AdminObservabilityEventsPage,
+  })),
+);
+const AdminObservabilityEventPage = lazy(() =>
+  import("./pages/admin/AdminObservabilityEventPage").then((module) => ({
+    default: module.AdminObservabilityEventPage,
+  })),
+);
+const AdminObservabilityUserPage = lazy(() =>
+  import("./pages/admin/AdminObservabilityUserPage").then((module) => ({
+    default: module.AdminObservabilityUserPage,
+  })),
+);
+const AdminObservabilityIpPage = lazy(() =>
+  import("./pages/admin/AdminObservabilityIpPage").then((module) => ({
+    default: module.AdminObservabilityIpPage,
+  })),
+);
 
 function ProtectedRoute() {
   const { user, loading, sessionExpired } = useAuth();
@@ -103,6 +128,23 @@ export default function App() {
                     <Route path="/admin/sports" element={<AdminSportsPage />} />
                     <Route path="/admin/venues" element={<AdminVenuesPage />} />
                     <Route path="/admin/venues/:venueId" element={<AdminVenueDetailPage />} />
+                    <Route path="/admin/observability" element={<AdminObservabilityPage />} />
+                    <Route
+                      path="/admin/observability/events"
+                      element={<AdminObservabilityEventsPage />}
+                    />
+                    <Route
+                      path="/admin/observability/events/:eventId"
+                      element={<AdminObservabilityEventPage />}
+                    />
+                    <Route
+                      path="/admin/observability/users/:userId"
+                      element={<AdminObservabilityUserPage />}
+                    />
+                    <Route
+                      path="/admin/observability/ips/:ip"
+                      element={<AdminObservabilityIpPage />}
+                    />
                   </Route>
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />

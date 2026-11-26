@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth-context";
 import { MODERATION_NOTIFICATIONS_ENABLED, PLATFORM_ADMIN_CAPABILITY } from "../lib/features";
 import { NotificationCenter } from "./NotificationCenter";
 import { PasswordDialog } from "./PasswordDialog";
-import { LogoutIcon, MapPinIcon, ShieldIcon, SparkIcon, UsersIcon } from "./ui/Icons";
+import { ClockIcon, LogoutIcon, MapPinIcon, ShieldIcon, SparkIcon, UsersIcon } from "./ui/Icons";
 
 export function AppHeader() {
   const { signOut, capabilities } = useAuth();
@@ -87,6 +87,15 @@ export function AppHeader() {
               >
                 <MapPinIcon size={16} />
                 Quadras
+              </NavLink>
+              <NavLink
+                to="/admin/observability"
+                className={({ isActive }) =>
+                  isActive ? "app-nav__link is-active" : "app-nav__link"
+                }
+              >
+                <ClockIcon size={16} />
+                Monitoramento
               </NavLink>
             </>
           ) : null}

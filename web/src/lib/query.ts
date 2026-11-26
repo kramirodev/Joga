@@ -88,4 +88,13 @@ export const queryKeys = {
     ["admin", "venues", venueId, "availability"] as const,
   adminVenueBusinessHours: (venueId: string) =>
     ["admin", "venues", venueId, "business-hours"] as const,
+  adminObservabilitySummary: (window: string) =>
+    ["admin", "observability", "summary", window] as const,
+  adminObservabilityEvents: (key: string) =>
+    ["admin", "observability", "events", "list", key] as const,
+  adminObservabilityEvent: (eventId: string) =>
+    ["admin", "observability", "events", "detail", eventId] as const,
+  adminObservabilityUser: (userId: string, key: string) =>
+    ["admin", "observability", "users", userId, key] as const,
+  adminObservabilityIp: (ip: string) => ["admin", "observability", "ips", ip] as const,
 };
