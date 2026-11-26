@@ -18,6 +18,22 @@ export const MODERATION_NOTIFICATIONS_ENABLED = true;
 export const PLATFORM_ADMIN_CAPABILITY = "platform.admin";
 
 /**
+ * Capability que libera a leitura da moderação.
+ *
+ * A rota `/moderation`, o link no menu e o sino de notificações só existem com
+ * esta capability na sessão.
+ */
+export const MODERATION_READ_CAPABILITY = "moderation.read";
+
+/**
+ * Capability que libera a gestão de moderadores.
+ *
+ * Só o administrador de moderação (e o administrador da plataforma, que modera
+ * por definição) recebe esta capability.
+ */
+export const MODERATION_MANAGE_CAPABILITY = "moderation.manage";
+
+/**
  * Compra de tickets desligada enquanto o backend responde
  * `503 ticket_purchase_disabled`. Nenhuma ação de compra é renderizada no
  * painel; a constante documenta o portão e evita que uma tela futura apareça

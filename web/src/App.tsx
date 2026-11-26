@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "rea
 
 import { AdminRoute } from "./components/AdminRoute";
 import { AppShell } from "./components/AppShell";
+import { ModerationRoute } from "./components/ModerationRoute";
 import { LoadingBlock } from "./components/Feedback";
 import { ToastProvider } from "./components/ui/Toast";
 import { AuthProvider } from "./lib/auth";
@@ -116,7 +117,9 @@ export default function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route element={<ProtectedRoute />}>
                   <Route path="/" element={<OrganizationsPage />} />
-                  <Route path="/moderation" element={<ModerationPage />} />
+                  <Route element={<ModerationRoute />}>
+                    <Route path="/moderation" element={<ModerationPage />} />
+                  </Route>
                   <Route path="/organizations/:organizationId" element={<OrganizationPage />} />
                   <Route
                     path="/organizations/:organizationId/venues/:venueId"
