@@ -56,6 +56,9 @@ describe("format", () => {
     expect(formatError(new ApiError(504, "geocoding_timeout"))).toBe(
       "O serviço de CEP demorou para responder. Tente novamente em instantes.",
     );
+    expect(formatError(new ApiError(422, "geocoding_unresolved"))).toBe(
+      "Não foi possível obter as coordenadas deste CEP. Informe o ponto manualmente.",
+    );
   });
 
   it("trata a compra de tickets desligada e o e-mail duplicado", () => {

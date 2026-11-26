@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { EmptyState, ErrorNotice, InfoNotice, SkeletonList } from "../../components/Feedback";
@@ -12,6 +12,7 @@ import { api } from "../../lib/api";
 import { cepError, formatCep, normalizeCep } from "../../lib/cep";
 import { formatError, precisionLabel, requestIdOf } from "../../lib/format";
 import { queryKeys } from "../../lib/query";
+import { useCepLookup } from "../../lib/use-cep-lookup";
 import { coordinateError, normalizeWhitespace, textError } from "../../lib/validation";
 import type { GeocodingPrecision, Organization, Venue } from "../../types";
 
@@ -78,6 +79,85 @@ export function VenuesPanel({
     source: string;
     precision: Exclude<GeocodingPrecision, "unresolved">;
   } | null>(null);
+  const [manualCoordinatesOpen, setManualCoordinatesOpen] = useState(false);
+  const [coordinateFocus, setCoordinateFocus] = useState(0);
+  const [cepNotice, setCepNotice] = useState<string | null>(null);
+  const coordinateFocusTarget = useRef<string | null>(null);
+
+  function openManualCoordinates(focus = true) {
+    setManualCoordinatesOpen(true);
+    coordinateFocusTarget.current = null;
+    if (!focus) return;
+    const active = document.activeElement;
+    const typingElsewhere =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active.id !== "venue-cep" &&
+      active.tagName !== "BUTTON";
+    if (typingElsewhere) return;
+    coordinateFocusTarget.current = form.latitude.trim()
+      ? form.longitude.trim()
+        ? null
+        : "venue-longitude"
+      : "venue-latitude";
+    setCoordinateFocus((value) => value + 1);
+  }
+
+  useEffect(() => {
+    if (!manualCoordinatesOpen || coordinateFocus === 0) return;
+    const target = coordinateFocusTarget.current;
+    if (target) document.getElementById(target)?.focus();
+  }, [coordinateFocus, manualCoordinatesOpen]);
+
+  const cepLookup = useCepLookup({
+    cep: form.cep,
+    number: form.number,
+    enabled: verified,
+    onResolved: (result, postalCode) => {
+      const street = result.street?.trim() ?? "";
+      const number = form.number.trim();
+      const address = street ? [street, number].filter(Boolean).join(", ") : "";
+      const latitude = result.latitude === null ? null : String(result.latitude);
+      const longitude = result.longitude === null ? null : String(result.longitude);
+      const hasCoordinates = latitude !== null && longitude !== null;
+      const precision = result.precision;
+      const resolved = hasCoordinates && precision !== "unresolved";
+      setForm((current) => ({
+        ...current,
+        city: result.city || current.city,
+        state: result.state || current.state,
+        address: address || current.address,
+        // Sem coordenadas no retorno, preserva o que o usuário já digitou.
+        ...(hasCoordinates ? { latitude, longitude } : {}),
+      }));
+      if (resolved) {
+        setAppliedLookup({
+          postalCode,
+          latitude,
+          longitude,
+          source: result.source,
+          precision,
+        });
+        setManualCoordinatesOpen(false);
+      } else {
+        setAppliedLookup(null);
+        openManualCoordinates();
+      }
+      setCepNotice(null);
+      setErrors((current) => ({
+        ...current,
+        cep: "",
+        city: "",
+        state: "",
+        latitude: "",
+        longitude: "",
+      }));
+    },
+    onFailed: () => {
+      setAppliedLookup(null);
+      openManualCoordinates();
+    },
+  });
 
   const invalidate = async () => {
     await Promise.all([
@@ -116,7 +196,9 @@ export function VenuesPanel({
       setErrors({});
       setActionError(null);
       setAppliedLookup(null);
-      lookupCepMutation.reset();
+      setManualCoordinatesOpen(false);
+      setCepNotice(null);
+      cepLookup.reset();
       toast.push({
         title: "Estabelecimento cadastrado",
         description: "Agora cadastre quadras, modalidades, preços e expediente.",
@@ -149,43 +231,6 @@ export function VenuesPanel({
     onError: (caught) => setActionError(caught),
   });
 
-  const lookupCepMutation = useMutation({
-    mutationFn: () => api.lookupPostalCode(form.cep, form.number),
-    onSuccess: (result) => {
-      const street = result.street?.trim() ?? "";
-      const number = form.number.trim();
-      const address = street ? [street, number].filter(Boolean).join(", ") : "";
-      setForm((current) => ({
-        ...current,
-        city: result.city || current.city,
-        state: result.state || current.state,
-        address: address || current.address,
-        latitude: result.latitude === null ? "" : String(result.latitude),
-        longitude: result.longitude === null ? "" : String(result.longitude),
-      }));
-      const precision = result.precision;
-      if (precision !== "unresolved" && result.latitude !== null && result.longitude !== null) {
-        setAppliedLookup({
-          postalCode: normalizeCep(form.cep),
-          latitude: String(result.latitude),
-          longitude: String(result.longitude),
-          source: result.source,
-          precision,
-        });
-      } else {
-        setAppliedLookup(null);
-      }
-      setErrors((current) => ({
-        ...current,
-        cep: "",
-        city: "",
-        state: "",
-        latitude: "",
-        longitude: "",
-      }));
-    },
-  });
-
   const toggleVenueMutation = useMutation({
     mutationFn: (venue: Venue) =>
       api.updateVenue(organization.id, venue.id, {
@@ -215,6 +260,17 @@ export function VenuesPanel({
   });
 
   function update(field: keyof typeof form, value: string) {
+    if (field === "cep" || field === "number") setCepNotice(null);
+    if (field === "cep") {
+      const nextCep = normalizeCep(value);
+      if (nextCep !== normalizeCep(form.cep) && appliedLookup) {
+        setForm((current) => ({ ...current, cep: nextCep, latitude: "", longitude: "" }));
+        setAppliedLookup(null);
+        setManualCoordinatesOpen(false);
+        setErrors((current) => ({ ...current, cep: "" }));
+        return;
+      }
+    }
     setForm((current) => ({ ...current, [field]: value }));
     if (errors[field]) setErrors((current) => ({ ...current, [field]: "" }));
   }
@@ -226,7 +282,8 @@ export function VenuesPanel({
       document.getElementById("venue-cep")?.focus();
       return;
     }
-    lookupCepMutation.mutate();
+    setCepNotice(null);
+    cepLookup.run();
   }
 
   function updateEdit(field: keyof typeof editForm, value: string) {
@@ -300,6 +357,18 @@ export function VenuesPanel({
     if (form.number.trim().length > 20) {
       next.number = "O número deve ter no máximo 20 caracteres.";
     }
+    const coordinatesFilled = form.latitude.trim() !== "" && form.longitude.trim() !== "";
+    if (!coordinatesFilled && normalizeCep(form.cep).length === 8) {
+      if (cepLookup.pending) {
+        setCepNotice("Aguarde a consulta do CEP terminar para preencher as coordenadas.");
+        return;
+      }
+      if (!cepLookup.searched) {
+        setCepNotice("Consultando o CEP para preencher as coordenadas. Aguarde um instante.");
+        cepLookup.run();
+        return;
+      }
+    }
     const coordinates = coordinateError(form.latitude, form.longitude);
     if (coordinates.latitude) next.latitude = coordinates.latitude;
     if (coordinates.longitude) next.longitude = coordinates.longitude;
@@ -322,7 +391,7 @@ export function VenuesPanel({
   }
 
   const displayError = error ?? actionError;
-  const lookup = lookupCepMutation.data;
+  const lookup = cepLookup.data;
   const lookupAddress = lookup
     ? [lookup.street, lookup.neighborhood, [lookup.city, lookup.state].filter(Boolean).join("/")]
         .filter(Boolean)
@@ -493,36 +562,38 @@ export function VenuesPanel({
                 type="button"
                 className="button button--small button--ghost"
                 onClick={lookupCep}
-                disabled={lookupCepMutation.isPending}
-                aria-busy={lookupCepMutation.isPending || undefined}
+                disabled={cepLookup.pending}
+                aria-busy={cepLookup.pending || undefined}
               >
                 <SearchIcon size={16} />
-                {lookupCepMutation.isPending ? "Buscando..." : "Buscar CEP"}
+                {cepLookup.pending ? "Consultando..." : "Consultar CEP"}
               </button>
               <span className="field__hint">
                 Preenche cidade, UF, endereço e coordenadas a partir do CEP.
               </span>
             </div>
 
-            {lookupCepMutation.isSuccess && lookup ? (
+            {cepNotice ? <InfoNotice>{cepNotice}</InfoNotice> : null}
+
+            {lookup ? (
               <InfoNotice>
                 <p>
                   <strong>{lookupAddress || "Endereço localizado pelo CEP."}</strong>
                 </p>
                 <p>
                   Precisão: {precisionLabel(lookup.precision)}.
-                  {lookup.precision === "unresolved"
-                    ? " O CEP foi localizado sem coordenada; informe latitude e longitude abaixo."
-                    : " Confira o endereço e ajuste as coordenadas se necessário."}
+                  {lookup.latitude === null || lookup.longitude === null
+                    ? " Não foi possível obter as coordenadas deste CEP. Informe o ponto manualmente."
+                    : " Endereço e coordenadas preenchidos pelo CEP. Confira o ponto antes de salvar."}
                 </p>
               </InfoNotice>
             ) : null}
 
-            {lookupCepMutation.error ? (
+            {cepLookup.error ? (
               <ErrorNotice
-                message={formatError(lookupCepMutation.error)}
-                requestId={requestIdOf(lookupCepMutation.error)}
-                onRetry={() => lookupCepMutation.mutate()}
+                message={formatError(cepLookup.error)}
+                requestId={requestIdOf(cepLookup.error)}
+                onRetry={() => cepLookup.run()}
               />
             ) : null}
 
@@ -564,34 +635,60 @@ export function VenuesPanel({
               placeholder="Rua das Laranjeiras, 123"
               autoComplete="street-address"
             />
-            <div className="form-row">
-              <TextField
-                id="venue-latitude"
-                label="Latitude"
-                value={form.latitude}
-                onChange={(event) => update("latitude", event.target.value)}
-                error={errors.latitude}
-                hint="Preenchida pelo CEP. Ajuste se necessário."
-                inputMode="decimal"
-                placeholder="-22.934"
-                required
-              />
-              <TextField
-                id="venue-longitude"
-                label="Longitude"
-                value={form.longitude}
-                onChange={(event) => update("longitude", event.target.value)}
-                error={errors.longitude}
-                hint="Preenchida pelo CEP. Ajuste se necessário."
-                inputMode="decimal"
-                placeholder="-43.201"
-                required
-              />
+            <div>
+              <button
+                type="button"
+                className="button button--small button--ghost"
+                aria-expanded={manualCoordinatesOpen}
+                aria-controls="venue-coordinates-manual"
+                onClick={() => {
+                  if (manualCoordinatesOpen) setManualCoordinatesOpen(false);
+                  else openManualCoordinates();
+                }}
+              >
+                {manualCoordinatesOpen
+                  ? "Ocultar ajuste manual"
+                  : "Ajustar coordenadas manualmente"}
+              </button>
             </div>
-            <p className="field__hint">
-              Se precisar ajustar, copie as coordenadas do ponto exato em um mapa. Elas são usadas
-              na descoberta de quadras do aplicativo.
-            </p>
+            {manualCoordinatesOpen ? (
+              <div id="venue-coordinates-manual" className="stack">
+                <div className="form-row">
+                  <TextField
+                    id="venue-latitude"
+                    label="Latitude"
+                    value={form.latitude}
+                    onChange={(event) => update("latitude", event.target.value)}
+                    error={errors.latitude}
+                    hint="Entre -90 e 90."
+                    inputMode="decimal"
+                    placeholder="-22.934"
+                    required
+                  />
+                  <TextField
+                    id="venue-longitude"
+                    label="Longitude"
+                    value={form.longitude}
+                    onChange={(event) => update("longitude", event.target.value)}
+                    error={errors.longitude}
+                    hint="Entre -180 e 180."
+                    inputMode="decimal"
+                    placeholder="-43.201"
+                    required
+                  />
+                </div>
+                <p className="field__hint">
+                  Copie as coordenadas do ponto exato em um mapa. Elas são usadas na descoberta de
+                  quadras do aplicativo.
+                </p>
+              </div>
+            ) : (
+              <p className="field__hint">
+                {form.latitude.trim() && form.longitude.trim()
+                  ? `Coordenadas: ${form.latitude}, ${form.longitude}.`
+                  : "As coordenadas serão preenchidas ao consultar o CEP."}
+              </p>
+            )}
             <SelectField
               id="venue-timezone"
               label="Fuso horário"
@@ -608,7 +705,7 @@ export function VenuesPanel({
             <button
               type="submit"
               className="button button--primary"
-              disabled={createVenueMutation.isPending || !verified}
+              disabled={createVenueMutation.isPending || cepLookup.pending || !verified}
               aria-busy={createVenueMutation.isPending || undefined}
             >
               {createVenueMutation.isPending ? "Cadastrando..." : "Cadastrar estabelecimento"}

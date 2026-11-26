@@ -442,6 +442,9 @@ describe("AdminVenuesPage", () => {
     await user.type(within(dialog).getByLabelText("Cidade"), "Rio de Janeiro");
     await user.type(within(dialog).getByLabelText("UF"), "RJ");
     await user.type(within(dialog).getByLabelText("Endereço"), "Rua Nova, 100");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Ajustar coordenadas manualmente" }),
+    );
     await user.type(within(dialog).getByLabelText("Latitude"), "-22.9");
     await user.type(within(dialog).getByLabelText("Longitude"), "-43.2");
     await user.type(within(dialog).getByLabelText("Motivo"), "Cadastro inicial da quadra");
