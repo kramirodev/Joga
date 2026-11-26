@@ -12,7 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import get_current_session
 from app.core.config import Settings, get_settings
-from app.core.text import FreeText, OptionalFreeText
+from app.core.text import (
+    OptionalAddressText,
+    OptionalFreeText,
+    OptionalVenueName,
+    OrganizationName,
+    VenueName,
+)
 from app.infrastructure.database.dependency import get_session
 from app.modules.identity.audit import record_audit
 from app.modules.identity.sessions import AuthenticatedSession
@@ -51,7 +57,7 @@ router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
 class OrganizationCreate(BaseModel):
-    name: FreeText = Field(min_length=2, max_length=120)
+    name: OrganizationName = Field(min_length=2, max_length=120)
     cnpj: str = Field(min_length=14, max_length=20)
     # O CPF é pessoal e só existe em claro no corpo da requisição. Ele nunca é
     # devolvido, auditado ou registrado em log.
@@ -59,7 +65,7 @@ class OrganizationCreate(BaseModel):
 
 
 class OrganizationUpdate(BaseModel):
-    name: FreeText = Field(min_length=2, max_length=120)
+    name: OrganizationName = Field(min_length=2, max_length=120)
 
 
 class OrganizationVerificationRequest(BaseModel):
@@ -116,10 +122,10 @@ class MemberListResponse(BaseModel):
 
 
 class VenueCreate(BaseModel):
-    name: FreeText = Field(min_length=2, max_length=120)
+    name: VenueName = Field(min_length=2, max_length=120)
     city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: OptionalFreeText = Field(default=None, max_length=200)
+    address_line: OptionalAddressText = Field(default=None, max_length=200)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     postal_code: str | None = Field(default=None, max_length=9)
@@ -137,10 +143,10 @@ class VenueCreate(BaseModel):
 
 
 class VenueUpdate(BaseModel):
-    name: OptionalFreeText = Field(default=None, min_length=2, max_length=120)
+    name: OptionalVenueName = Field(default=None, min_length=2, max_length=120)
     city: OptionalFreeText = Field(default=None, max_length=120)
     state: str | None = Field(default=None, min_length=2, max_length=2)
-    address_line: OptionalFreeText = Field(default=None, max_length=200)
+    address_line: OptionalAddressText = Field(default=None, max_length=200)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     postal_code: str | None = Field(default=None, max_length=9)

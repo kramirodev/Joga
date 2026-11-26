@@ -15,6 +15,7 @@ from app.api.v1.auth_guards import (
     require_phone_registration_allowed,
 )
 from app.core.config import Settings, get_settings
+from app.core.text import OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.email.addresses import InvalidEmail, normalize_email
 from app.modules.email.alerts import queue_security_alert
@@ -126,7 +127,7 @@ class VerifyResponse(BaseModel):
 
 class ReceiptRequest(BaseModel):
     challenge_id: UUID
-    device_name: str | None = Field(default=None, max_length=80)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
     platform: Literal["android", "ios", "web", "unknown"] = "unknown"
 
 
@@ -166,7 +167,7 @@ class PasskeyOptionsResponse(BaseModel):
 class PasskeyRegistrationVerifyRequest(BaseModel):
     challenge_id: UUID
     credential: dict[str, Any]
-    name: str | None = Field(default=None, max_length=80)
+    name: OptionalFreeText = Field(default=None, max_length=80)
 
 
 class PasskeyRegistrationResponse(BaseModel):
@@ -178,7 +179,7 @@ class PasskeyAuthenticationVerifyRequest(BaseModel):
     challenge_id: UUID
     credential: dict[str, Any]
     email: str | None = Field(default=None, max_length=254)
-    device_name: str | None = Field(default=None, max_length=80)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
     platform: Literal["android", "ios", "web", "unknown"] = "unknown"
 
 

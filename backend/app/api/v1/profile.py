@@ -102,7 +102,7 @@ class ProfileResponse(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    display_name: OptionalDisplayName = Field(default=None, max_length=60)
+    display_name: OptionalDisplayName = Field(default=None)
     bio: OptionalMultilineText = Field(default=None, max_length=280)
 
 

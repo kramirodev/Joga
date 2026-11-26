@@ -95,7 +95,7 @@ def test_tag_is_canonical_with_hash(client: TestClient, db_session: Session) -> 
 
     for raw, expected in (("6666", "#6666"), (" #abcd ", "#ABCD"), ("##tfc", "#TFC")):
         _, token = make_player(db_session)
-        clan = create_clan_api(api, token, name=f"Clã {expected}", tag=raw)
+        clan = create_clan_api(api, token, name=f"Clã {expected.lstrip('#')}", tag=raw)
         assert clan["tag"] == expected
 
 

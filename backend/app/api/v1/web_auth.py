@@ -31,7 +31,7 @@ from app.api.v1.email_auth import (
     get_email_delivery_service,
 )
 from app.core.config import Settings, get_settings
-from app.core.text import OptionalDisplayName
+from app.core.text import OptionalDisplayName, OptionalFreeText
 from app.infrastructure.database.dependency import get_session
 from app.modules.email.addresses import InvalidEmail, normalize_email
 from app.modules.email.alerts import queue_security_alert
@@ -65,7 +65,7 @@ from app.modules.identity.events import (
     record_security_event,
 )
 from app.modules.identity.models import User
-from app.modules.identity.passwords import PasswordPolicyError
+from app.modules.identity.passwords import PasswordInput, PasswordPolicyError
 from app.modules.identity.phone import hash_ip
 from app.modules.identity.sessions import (
     InvalidRefreshToken,
@@ -87,19 +87,19 @@ REFRESH_COOKIE_PATH = "/api/v1/auth/web"
 
 class WebReceiptRequest(BaseModel):
     challenge_id: UUID
-    device_name: str | None = Field(default=None, max_length=80)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
 
 
 class WebEmailRegisterRequest(WebReceiptRequest):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=256)
-    display_name: OptionalDisplayName = Field(default=None, max_length=60)
+    password: PasswordInput = Field(min_length=1, max_length=256)
+    display_name: OptionalDisplayName = Field(default=None)
 
 
 class WebEmailLoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=256)
-    device_name: str | None = Field(default=None, max_length=80)
+    password: PasswordInput = Field(min_length=1, max_length=256)
+    device_name: OptionalFreeText = Field(default=None, max_length=80)
 
 
 class WebSessionResponse(BaseModel):
