@@ -1250,7 +1250,11 @@ function Decisions() {
       'Divisão reseta por temporada',
       'Decisão desta rodada. Altera a leitura anterior da ADR 0045 §1.6; registrar ADR.',
     ],
-    ['8', 'Medalhas no MVP', 'Bloco separado de insígnias no perfil.'],
+    [
+      '8',
+      'Insígnias no cartão',
+      'Até 3 insígnias aparecem em quadros 1:1 no perfil; não há bloco de medalhas.',
+    ],
     [
       '9',
       'Sem glow, brilho ou neon',

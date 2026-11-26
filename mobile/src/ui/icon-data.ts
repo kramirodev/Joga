@@ -455,6 +455,14 @@ export const ICONS: Record<string, IconChild[]> = {
       },
     },
   ],
+  crown: [
+    {
+      tag: 'path',
+      attrs: {
+        d: 'M4 18h16l1-9-5 3-4-6-4 6-5-3z',
+      },
+    },
+  ],
   medal: [
     {
       tag: 'circle',

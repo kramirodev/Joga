@@ -117,8 +117,8 @@ function Welcome() {
   const { palette } = useTheme();
   // Sem tab bar neste fluxo. O Expo Go pode devolver 0 para a barra de 3
   // botões; 34 dp é só o piso quando não há inset (nunca sobrepõe um inset
-  // real de gesto/3 botões). O CTA vive num footer fora do scroll para não
-  // nascer cortado atrás da barra do sistema.
+  // real de gesto/3 botões). O CTA fica dentro do scroll; o padding inferior
+  // garante que o último botão termine acima da barra do sistema.
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom || 34;
   return (
@@ -127,7 +127,7 @@ function Welcome() {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: 18,
+          paddingBottom: 18 + bottomInset,
           gap: 10,
           flexGrow: 1,
         }}
@@ -225,16 +225,6 @@ function Welcome() {
             </View>
           ))}
         </View>
-      </ScrollView>
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingTop: 10,
-          paddingBottom: 18 + bottomInset,
-          backgroundColor: palette.bg,
-          gap: 9,
-        }}
-      >
         <Btn
           tone="primary"
           icon="arrow"
@@ -268,7 +258,7 @@ function Welcome() {
         <TextBtn muted go="login">
           Entrar com passkey
         </TextBtn>
-      </View>
+      </ScrollView>
     </View>
   );
 }
