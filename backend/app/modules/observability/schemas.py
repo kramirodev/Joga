@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EventView(BaseModel):
@@ -147,9 +147,62 @@ class ObservabilityFilters(BaseModel):
     q: str | None = None
 
 
+class ClientEventIn(BaseModel):
+    """Evento de erro enviado pelo painel ou aplicativo móvel.
+
+    Campos de identidade (``user_id``, IP, e-mail, telefone) e ``details`` livre
+    não são aceitos: campos extras são ignorados e a identidade vem do contexto
+    da requisição.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    level: Literal["debug", "info", "warn", "error", "fatal"] = "error"
+    message: str | None = Field(default=None, max_length=500)
+    stack: str | None = Field(default=None, max_length=8_000)
+    error_code: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9_.:-]*$")
+    module: str | None = Field(default=None, max_length=80)
+    platform: Literal["web", "android", "ios"]
+    app_version: str = Field(min_length=1, max_length=40)
+    screen: str | None = Field(default=None, max_length=120)
+    build: str | None = Field(default=None, max_length=40)
+    request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:-]{1,64}$")
+    correlation_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:-]{1,64}$")
+
+
+class ClientEventsRequest(BaseModel):
+    """Lote de 1 a 20 eventos do cliente."""
+
+    events: list[ClientEventIn] = Field(min_length=1, max_length=20)
+
+
+class ClientEventsResponse(BaseModel):
+    accepted: int
+    dropped: int
+
+
+class AlertItem(BaseModel):
+    code: str
+    level: Literal["warning", "critical"]
+    count: int
+    threshold: int
+
+
+class AlertsResponse(BaseModel):
+    window: str
+    from_at: datetime
+    to_at: datetime
+    alerts: list[AlertItem]
+
+
 __all__ = [
+    "AlertItem",
+    "AlertsResponse",
     "AuthSummary",
     "CategoryCount",
+    "ClientEventIn",
+    "ClientEventsRequest",
+    "ClientEventsResponse",
     "EventDetail",
     "EventListResponse",
     "EventView",

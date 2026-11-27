@@ -29,6 +29,7 @@ from app.modules.identity.sessions import AuthenticatedSession
 from app.modules.observability.models import LOG_CATEGORIES, LOG_LEVELS
 from app.modules.observability.queries import (
     InvalidCursor,
+    alerts,
     count_events,
     decode_cursor,
     get_event,
@@ -40,6 +41,7 @@ from app.modules.observability.queries import (
     user_activity,
 )
 from app.modules.observability.schemas import (
+    AlertsResponse,
     EventDetail,
     EventListResponse,
     IpReportResponse,
@@ -206,6 +208,36 @@ def read_summary(
         extra={"view": "summary", "window": window},
     )
     return SummaryResponse(window=window, current=current, previous=previous)
+
+
+@router.get("/alerts", response_model=AlertsResponse)
+def read_alerts(
+    admin: Admin,
+    session: DbSession,
+    settings: SettingsDep,
+    window: WindowQuery = "24h",
+) -> AlertsResponse:
+    try:
+        normalize_window(window)
+    except ValueError:
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_window") from None
+    payload = alerts(
+        session,
+        window,
+        login_failures=settings.observability_alert_login_failures,
+        server_errors=settings.observability_alert_server_errors,
+        failed_jobs=settings.observability_alert_failed_jobs,
+        client_errors=settings.observability_alert_client_errors,
+    )
+    _audit_query(
+        session,
+        admin,
+        action="observability.query",
+        filters=ObservabilityFilters(),
+        count=len(payload.alerts),
+        extra={"view": "alerts", "window": window},
+    )
+    return payload
 
 
 @router.get("/events", response_model=EventListResponse)
