@@ -69,6 +69,8 @@ export type Region = {
 export type Profile = {
   user_id: string;
   display_name: string | null;
+  /** Tag canônica do servidor, no formato `#A1B2C3D4` (ADR 0071). */
+  tag: string;
   bio: string | null;
   sports: UserSport[];
   availability: Availability[];
@@ -652,6 +654,25 @@ export type PlayerSearchResult = {
   display_name: string | null;
   tag: string;
   relation: PlayerRelation;
+};
+
+/** Clã ativo exibido no perfil público. */
+export type PublicClan = {
+  id: string;
+  name: string;
+  tag: string;
+};
+
+/**
+ * Perfil público mínimo de `GET /users/{id}`: nome, tag, relação e clã ativo.
+ * A rota não devolve e-mail, telefone, CPF, localização, MMR ou insígnias.
+ */
+export type PublicPlayer = {
+  user_id: string;
+  display_name: string | null;
+  tag: string;
+  relation: PlayerRelation;
+  clan: PublicClan | null;
 };
 
 export type FriendRequest = {

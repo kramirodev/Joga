@@ -1,13 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { AccessibilityInfo, BackHandler, FlatList, ScrollView, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  BackHandler,
+  FlatList,
+  Pressable,
+  ScrollView,
+  View,
+} from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
 
 import { api, ApiError, describeApiError } from '../api/client';
 import { subscribeLobby, subscribeRealtime } from '../api/realtime';
-import type { MatchSummary, VisualIdentity, VisualItem } from '../api/types';
+import type { MatchSummary, PublicPlayer, VisualIdentity, VisualItem } from '../api/types';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
+import {
+  avatarTargetFor,
+  canRequestFriendship,
+  friendSearchPrefill,
+  profileClanName,
+  profileTagForCard,
+  profileTagLabel,
+  publicProfileStatus,
+  publicProfileStatusLabel,
+} from '../state/profileState';
 import { consumePendingQueueIntent } from '../state/queueIntent';
+import { friendErrorCopy } from '../state/socialState';
 import { useActiveInterval } from '../state/useActiveInterval';
 import { IdentityBadge } from '../ui/IdentityBadge';
 import { ChatEmoteBody, ChatEmotePicker } from '../ui/ChatEmotePicker';
@@ -1311,6 +1330,7 @@ function ProfileMe() {
     loadSeason,
     badges,
     visual,
+    hydrated,
   } = useApp();
   const [shareOpen, setShareOpen] = useState(false);
   const captureTarget = useRef<ComponentRef<typeof View>>(null);
@@ -1328,7 +1348,9 @@ function ProfileMe() {
   }, [loadSeason]);
   const rating = formatId ? ratings[formatId] : undefined;
   const name = profile?.display_name ?? onboarding.displayName ?? 'Jogador';
-  const personalClan = clan?.name ?? 'Sem clã';
+  // O clã vem do estado global: já está disponível no primeiro frame em que o
+  // perfil renderiza e não depende de uma segunda chamada ou de scroll.
+  const personalClan = profileClanName(clan?.name, hydrated);
   const level = progress?.level ?? 0;
   const tier = tierLabel(progress?.tier);
   const matches = stats?.totals.matches ?? 0;
@@ -1349,7 +1371,7 @@ function ProfileMe() {
     : rating
       ? divisionLabel(rating.division)
       : '—';
-  const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
+  const tag = profileTagForCard(profile?.tag);
   const now = new Date();
   const seasonLabel = `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
   const qualifier = rating && !rating.provisional ? division.toUpperCase() : 'PROVISÓRIO';
@@ -1364,6 +1386,31 @@ function ProfileMe() {
     seasonLabel,
     record,
     visual,
+  };
+  const openPublicProfile = () => {
+    if (!profile) {
+      nav.toast('Seu perfil ainda está carregando.');
+      return;
+    }
+    nav.go('profile-other', {
+      userId: profile.user_id,
+      name,
+      tag: profile.tag,
+      self: true,
+    });
+  };
+  const copyValue = async (value: string | null | undefined, label: string) => {
+    const clean = value?.trim();
+    if (!clean) {
+      nav.toast(`Sem ${label.toLowerCase()} para copiar ainda.`);
+      return;
+    }
+    try {
+      await Clipboard.setStringAsync(clean);
+      nav.toast(`${label} copiado.`);
+    } catch {
+      nav.toast('Não foi possível copiar agora.');
+    }
   };
   return (
     <>
@@ -1389,10 +1436,19 @@ function ProfileMe() {
       <Page
         title="Perfil"
         rightNode={
-          <IconBtn icon="share" label="Compartilhar cartão" onPress={() => setShareOpen(true)} />
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            <IconBtn icon="eye" label="Ver como outro jogador" onPress={openPublicProfile} />
+            <IconBtn icon="share" label="Compartilhar cartão" onPress={() => setShareOpen(true)} />
+          </View>
         }
       >
-        <ProfileCard data={cardData} />
+        <ProfileCard data={cardData} onPressAvatar={openPublicProfile} />
+        <Row between>
+          <TextBtn onPress={() => void copyValue(profile?.display_name, 'Nome')}>
+            Copiar nome
+          </TextBtn>
+          <TextBtn onPress={() => void copyValue(profile?.tag, 'Tag')}>Copiar tag</TextBtn>
+        </Row>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Card style={{ flex: 1 }} padding={12}>
             <Txt
@@ -1591,14 +1647,9 @@ function ProfileMe() {
             {availability}
           </Txt>
         </Card>
-        <BtnRow>
-          <Btn tone="primary" go="profile-edit">
-            Editar perfil
-          </Btn>
-          <Btn tone="ghost" onPress={() => setShareOpen(true)}>
-            Compartilhar
-          </Btn>
-        </BtnRow>
+        <Btn tone="primary" go="profile-edit">
+          Editar perfil
+        </Btn>
       </Page>
       <CardShareSheet
         visible={shareOpen}
@@ -1613,116 +1664,259 @@ function ProfileMe() {
 function ProfileOther() {
   const nav = useNav();
   const { palette } = useTheme();
-  const { matches } = useApp();
-  const name = typeof nav.params.name === 'string' ? nav.params.name : 'Jogador';
+  const { profile, clan, session, loadSocial, matches, hydrated, visual } = useApp();
+  const token = session?.accessToken ?? null;
   const userId = typeof nav.params.userId === 'string' ? nav.params.userId : '';
-  const tag = userId ? userId.slice(0, 4).toUpperCase() : '----';
+  const seedName = typeof nav.params.name === 'string' ? nav.params.name : '';
+  const seedTag = typeof nav.params.tag === 'string' ? nav.params.tag : '';
+  // O olhinho abre o próprio perfil; a rota também serve o perfil de terceiros.
+  const isSelf = nav.params.self === true || (!!userId && userId === session?.userId);
+  const [player, setPlayer] = useState<PublicPlayer | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(isSelf ? 'ready' : 'loading');
+  const [errorCode, setErrorCode] = useState('');
+  const [relation, setRelation] = useState<string | null>(isSelf ? 'none' : null);
+  const [friendBusy, setFriendBusy] = useState(false);
+  const [friendError, setFriendError] = useState('');
+  const [friendNotice, setFriendNotice] = useState('');
+
+  const loadPlayer = useCallback(async () => {
+    if (isSelf) {
+      setStatus('ready');
+      return;
+    }
+    if (!token || !userId) {
+      setErrorCode('user_not_found');
+      setStatus('error');
+      return;
+    }
+    setStatus('loading');
+    setErrorCode('');
+    try {
+      const result = await api.users.get(token, userId);
+      setPlayer(result);
+      setRelation(result.relation);
+      setStatus('ready');
+    } catch (error) {
+      setErrorCode(error instanceof ApiError ? error.code : '');
+      setStatus('error');
+    }
+  }, [isSelf, token, userId]);
+
+  useEffect(() => {
+    // Carga única do perfil público; o estado só muda quando a resposta chega.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadPlayer();
+  }, [loadPlayer]);
+
+  const reloadSocial = useCallback(() => {
+    void loadSocial().catch(() => undefined);
+  }, [loadSocial]);
+
+  if (!isSelf && status === 'loading') {
+    return (
+      <Page title="Perfil do jogador">
+        <LoadingState label="Abrindo o perfil." variant="social" />
+      </Page>
+    );
+  }
+
+  if (!isSelf && status === 'error') {
+    const notFound = errorCode === 'user_not_found';
+    return (
+      <Page title="Perfil do jogador">
+        <StateScreen
+          icon={notFound ? 'user' : 'wifi-off'}
+          title={notFound ? 'Jogador não encontrado' : 'Não foi possível abrir o perfil'}
+          text={
+            notFound
+              ? 'Esta conta não está disponível para outros jogadores.'
+              : 'Verifique a conexão e tente de novo.'
+          }
+          actions={
+            notFound ? (
+              <Btn tone="ghost" back>
+                Voltar
+              </Btn>
+            ) : (
+              <Btn tone="primary" onPress={() => void loadPlayer()}>
+                Tentar novamente
+              </Btn>
+            )
+          }
+        />
+      </Page>
+    );
+  }
+
+  const name =
+    (isSelf ? profile?.display_name : player?.display_name)?.trim() || seedName.trim() || 'Jogador';
+  const tag = isSelf ? profile?.tag : (player?.tag ?? seedTag);
+  const tagLabel = profileTagLabel(tag);
+  const publicClan = isSelf ? clan : player?.clan;
+  const clanName = isSelf
+    ? profileClanName(clan?.name, hydrated)
+    : profileClanName(player?.clan?.name, status === 'ready');
+  const publicStatus = publicProfileStatus(isSelf, relation);
+  const showAddFriend = canRequestFriendship(isSelf, relation);
+
+  const copyValue = async (value: string | null | undefined, label: string) => {
+    const clean = value?.trim();
+    if (!clean) {
+      nav.toast(`Sem ${label.toLowerCase()} para copiar ainda.`);
+      return;
+    }
+    try {
+      await Clipboard.setStringAsync(clean);
+      nav.toast(`${label} copiado.`);
+    } catch {
+      nav.toast('Não foi possível copiar agora.');
+    }
+  };
+
+  const useInSearch = () => {
+    const prefill = friendSearchPrefill(name, tag);
+    if (!prefill.name && !prefill.tag) {
+      nav.toast('Ainda não há nome ou tag para buscar.');
+      return;
+    }
+    nav.go('add-friend', prefill);
+  };
+
+  const addFriend = async () => {
+    if (!token || !player || !showAddFriend || friendBusy) {
+      return;
+    }
+    setFriendBusy(true);
+    setFriendError('');
+    setFriendNotice('');
+    try {
+      await api.social.requestFriend(token, player.user_id);
+      setRelation('outgoing_request');
+      setFriendNotice('Pedido de amizade enviado.');
+      reloadSocial();
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : '';
+      if (code === 'incoming_friend_request') {
+        setRelation('incoming_request');
+      } else if (code === 'already_friends') {
+        setRelation('friend');
+      } else if (code === 'friend_request_exists') {
+        setRelation('outgoing_request');
+      }
+      setFriendError(friendErrorCopy(code));
+      reloadSocial();
+    } finally {
+      setFriendBusy(false);
+    }
+  };
+
   return (
-    <Page title="Perfil do jogador">
+    <Page title={isSelf ? 'Seu perfil público' : 'Perfil do jogador'}>
+      {isSelf ? (
+        <Notice tone="blue" icon="eye">
+          É assim que outros jogadores veem seu perfil.
+        </Notice>
+      ) : null}
       <Card>
         <Row style={{ gap: 14 }}>
-          <IdentityBadge size={112} identity={identityFromSeed(userId || name)} palette={palette} />
+          <IdentityBadge
+            size={112}
+            identity={isSelf ? visual : identityFromSeed(userId || name)}
+            palette={palette}
+          />
           <View style={{ flex: 1 }}>
             <Txt variant="h1" style={{ fontSize: 26 }}>
               {name}
             </Txt>
-            <Txt variant="tiny">#{tag}</Txt>
+            <Txt variant="tiny">{tagLabel}</Txt>
             <View style={{ flexDirection: 'row', gap: 6, marginTop: 7 }}>
-              <Badge>PERFIL PÚBLICO</Badge>
+              <Badge>{publicProfileStatusLabel(publicStatus)}</Badge>
             </View>
           </View>
         </Row>
-        <Row
-          between
-          style={{
-            marginTop: 14,
-            paddingTop: 12,
-            borderTopWidth: 1.5,
-            borderTopColor: palette.line,
-          }}
-        >
-          <View>
-            <Txt variant="label">Divisão</Txt>
-            <Txt variant="h3">—</Txt>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Txt variant="label">Nível</Txt>
-            <Txt variant="h3">—</Txt>
-          </View>
-        </Row>
-      </Card>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            —
+        <Divider style={{ marginVertical: 12 }} />
+        <Kv label="Clã" value={clanName} />
+        {publicClan?.tag && clanName !== 'Sem clã' && clanName !== '—' ? (
+          <Txt variant="tiny" style={{ marginTop: 2 }}>
+            {profileTagLabel(publicClan.tag)}
           </Txt>
-          <Txt variant="tiny" align="center">
-            partidas
-          </Txt>
-        </Card>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            —
-          </Txt>
-          <Txt variant="tiny" align="center">
-            vitórias
-          </Txt>
-        </Card>
-        <Card style={{ flex: 1 }} padding={12}>
-          <Txt
-            variant="num"
-            align="center"
-            style={{ fontSize: 24, backgroundColor: 'transparent' }}
-          >
-            —
-          </Txt>
-          <Txt variant="tiny" align="center">
-            sequência
-          </Txt>
-        </Card>
-      </View>
-      <Card>
-        <Row between>
-          <Txt variant="h3">Conquistas</Txt>
-          <Txt variant="tiny">públicas</Txt>
-        </Row>
-        <Txt variant="tiny" style={{ marginTop: 8 }}>
-          Sem conquistas públicas.
+        ) : null}
+        <Txt variant="tiny" style={{ marginTop: 10 }}>
+          Divisão e insígnias ainda não aparecem no perfil público.
         </Txt>
       </Card>
-      <BtnRow>
-        <Btn tone="primary" go="lobby-invite">
-          Convidar
+
+      {friendNotice ? (
+        <Notice tone="green" icon="check">
+          {friendNotice}
+        </Notice>
+      ) : null}
+      {friendError ? (
+        <Notice tone="orange" icon="alert">
+          {friendError}
+        </Notice>
+      ) : null}
+
+      {showAddFriend ? (
+        <Btn tone="primary" icon="plus" disabled={friendBusy} onPress={() => void addFriend()}>
+          {friendBusy ? 'Enviando pedido.' : 'Adicionar amigo'}
         </Btn>
-        <Btn tone="ghost" go="add-friend">
-          Adicionar amigo
-        </Btn>
-      </BtnRow>
-      <BtnRow>
-        <Btn tone="ghost" modal="block">
-          Bloquear
-        </Btn>
-        <Btn
-          tone="ghost"
-          onPress={() =>
-            nav.go('report-profile', {
-              userId,
-              name,
-              lobbyId: matches.find((match) => match.lobby_id)?.lobby_id,
-            })
-          }
-        >
-          Denunciar
-        </Btn>
-      </BtnRow>
+      ) : null}
+
+      <Card>
+        <Row between>
+          <Txt variant="h3">Nome e tag</Txt>
+          <Txt variant="tiny">copiar ou usar na busca</Txt>
+        </Row>
+        <BtnRow>
+          <Btn tone="ghost" icon="copy" small onPress={() => void copyValue(name, 'Nome')}>
+            Copiar nome
+          </Btn>
+          <Btn
+            tone="ghost"
+            icon="copy"
+            small
+            onPress={() => void copyValue(tagLabel === '—' ? '' : tagLabel, 'Tag')}
+          >
+            Copiar tag
+          </Btn>
+        </BtnRow>
+        {!isSelf ? (
+          <View style={{ marginTop: 8 }}>
+            <Btn tone="ghost" icon="search" onPress={useInSearch}>
+              Usar na busca de amigos
+            </Btn>
+          </View>
+        ) : null}
+      </Card>
+
+      {!isSelf ? (
+        <>
+          <BtnRow>
+            <Btn tone="primary" go="lobby-invite">
+              Convidar
+            </Btn>
+          </BtnRow>
+          <BtnRow>
+            <Btn tone="ghost" modal="block">
+              Bloquear
+            </Btn>
+            <Btn
+              tone="ghost"
+              onPress={() =>
+                nav.go('report-profile', {
+                  userId,
+                  name,
+                  lobbyId: matches.find((match) => match.lobby_id)?.lobby_id,
+                })
+              }
+            >
+              Denunciar
+            </Btn>
+          </BtnRow>
+        </>
+      ) : null}
+
       <Notice tone="blue" icon="shield">
         Telefone, e-mail e localização exata não aparecem para outros jogadores.
       </Notice>
@@ -1754,25 +1948,33 @@ function ProfileEdit() {
   return (
     <Page title="Editar perfil">
       <Row style={{ gap: 14 }}>
-        <IdentityBadge size={86} identity={visual} palette={palette} />
+        <Pressable
+          onPress={() => {
+            const target = avatarTargetFor('edit');
+            if (target) {
+              nav.go(target);
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Editar identidade"
+          hitSlop={8}
+          style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
+        >
+          <IdentityBadge size={86} identity={visual} palette={palette} />
+        </Pressable>
         <View style={{ flex: 1 }}>
           <Txt variant="h3">Identidade</Txt>
           <Txt variant="tiny">Ícone, moldura e destaque do catálogo · sem upload</Txt>
-          <View style={{ marginTop: 6 }}>
-            <Btn tone="ghost" small block={false} go="identity-editor">
-              Escolher ícone
-            </Btn>
-          </View>
+          <Txt variant="tiny" style={{ marginTop: 6 }}>
+            Toque no ícone para trocar.
+          </Txt>
         </View>
       </Row>
       <Field label="Nome de exibição">
         <Input value={name} onChangeText={setName} maxLength={60} placeholder="Seu nome" />
       </Field>
       <Field label="Tag">
-        <Input
-          defaultValue={profile?.user_id ? `#${profile.user_id.slice(0, 4).toUpperCase()}` : ''}
-          editable={false}
-        />
+        <Input defaultValue={profile?.tag ? profileTagLabel(profile.tag) : ''} editable={false} />
       </Field>
       <Field label="Bio">
         <Input

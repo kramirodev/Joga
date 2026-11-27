@@ -240,7 +240,6 @@ function Season() {
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <Badge tone="lime">{seasonCode}</Badge>
           <Badge>FUNDADOR</Badge>
-          <Badge tone="blue">MEDALHA PRATA</Badge>
         </View>
       </Card>
       <BtnRow>
