@@ -2,6 +2,7 @@
   "expo": {
     "name": "JOGA",
     "slug": "joga",
+    "scheme": "joga",
     "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -54,7 +55,7 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "com.anonymous.joga"
+      "package": "com.jogaapp.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
