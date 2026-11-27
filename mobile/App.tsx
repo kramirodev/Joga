@@ -41,6 +41,13 @@ import { systemScreens } from './src/screens/system';
 import type { ScreenDef } from './src/screens/types';
 import { api, ApiError } from './src/api/client';
 import {
+  configureNotifications,
+  registerForPushNotificationsAsync,
+  scheduleLocalTestNotification,
+  setNotificationNavigator,
+  subscribeToNotificationResponses,
+} from './src/notifications';
+import {
   Badge,
   Btn,
   BtnRow,
@@ -1026,6 +1033,32 @@ function Shell() {
     });
     return () => subscription.remove();
   }, [modal, canGoBack, nav]);
+
+  // Notificações: handler, canal e token uma única vez por boot. Nada disto
+  // bloqueia a abertura do app nem pede permissão em loop (o pedido é
+  // memorizado em `notifications.ts`).
+  useEffect(() => {
+    configureNotifications();
+    void registerForPushNotificationsAsync();
+    void scheduleLocalTestNotification().catch(() => undefined);
+  }, []);
+
+  // Ponto único de navegação do toque na notificação. `reset` porque o destino
+  // pode viver em outra aba (ex.: `friends`); sem sessão, nada acontece.
+  useEffect(() => {
+    setNotificationNavigator((route) => {
+      if (!app.ready || !signedIn) {
+        return;
+      }
+      nav.reset(route.screen, route.params);
+    });
+    return () => setNotificationNavigator(null);
+  }, [app.ready, nav, signedIn]);
+
+  useEffect(() => {
+    const subscription = subscribeToNotificationResponses();
+    return () => subscription.remove();
+  }, []);
 
   const theme = useMemo(
     () => ({

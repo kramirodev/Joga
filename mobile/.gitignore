@@ -43,3 +43,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# configuração de build do Firebase (local/CI): não versionar
+/google-services.json
