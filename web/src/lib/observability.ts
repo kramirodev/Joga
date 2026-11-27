@@ -92,6 +92,41 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 
+const ALERT_LABELS: Record<string, string> = {
+  login_failures: "Falhas de acesso",
+  server_errors: "Erros do servidor",
+  failed_jobs: "Tarefas com falha",
+  client_errors: "Erros no aplicativo",
+};
+
+const ALERT_TARGETS: Record<string, string> = {
+  login_failures: "/admin/observability/events?category=security",
+  server_errors: "/admin/observability/events?level=error&category=http",
+  failed_jobs: "/admin/observability/events?category=job&level=error",
+  client_errors: "/admin/observability/events?category=client&level=error",
+};
+
+const ALERT_LEVEL_LABELS: Record<string, string> = {
+  warning: "Atenção",
+  critical: "Crítico",
+};
+
+export function alertLabel(code: string): string {
+  return ALERT_LABELS[code] ?? "Alerta";
+}
+
+export function alertTarget(code: string): string {
+  return ALERT_TARGETS[code] ?? "/admin/observability/events";
+}
+
+export function alertTone(level: string): string {
+  return level === "critical" ? "danger" : "warning";
+}
+
+export function alertLevelLabel(level: string): string {
+  return ALERT_LEVEL_LABELS[level] ?? level;
+}
+
 export function formatDuration(value: number | null): string {
   if (value === null) return "—";
   if (value < 1000) return `${formatCount(value)} ms`;

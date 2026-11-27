@@ -46,6 +46,7 @@ import type {
   ModerationQueue,
   ModerationReport,
   ModeratorMe,
+  ObservabilityAlertsResponse,
   ObservabilityEventDetail,
   ObservabilityEventFilters,
   ObservabilityEventListResponse,
@@ -1546,6 +1547,11 @@ export const api = {
   getObservabilitySummary(window: "24h" | "7d"): Promise<ObservabilitySummaryResponse> {
     const query = new URLSearchParams({ window });
     return request<ObservabilitySummaryResponse>(adminObservabilityPath(`/summary?${query}`));
+  },
+
+  getObservabilityAlerts(window: "24h" | "7d"): Promise<ObservabilityAlertsResponse> {
+    const query = new URLSearchParams({ window });
+    return request<ObservabilityAlertsResponse>(adminObservabilityPath(`/alerts?${query}`));
   },
 
   listObservabilityEvents(
