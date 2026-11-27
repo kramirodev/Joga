@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { reportClientError } from "../lib/telemetry";
+
 interface Props {
   children: ReactNode;
 }
@@ -17,6 +19,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("joga.panel.render_error", error, info.componentStack);
+    reportClientError(error, {
+      componentStack: info.componentStack,
+      source: "error-boundary",
+    });
   }
 
   render() {
