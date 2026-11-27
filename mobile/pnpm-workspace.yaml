@@ -19,6 +19,7 @@ minimumReleaseAgeExclude:
   - 'expo-location'
   - 'expo-sharing'
   - 'expo-splash-screen'
+  - 'expo-notifications'
   - '@expo/cli'
   - '@expo/config'
   - '@expo/config-plugins'
