@@ -71,6 +71,10 @@ def current_request_id() -> str | None:
     return request_id_var.get()
 
 
+def current_correlation_id() -> str | None:
+    return correlation_id_var.get()
+
+
 def current_user_id() -> uuid.UUID | None:
     return user_id_var.get()
 
