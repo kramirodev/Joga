@@ -15,21 +15,21 @@ nodeLinker: hoisted
 # REMOVER esta lista (e o bloco inteiro) depois de ~2026-11-27T16:24Z, quando a
 # quarentena padrão passar a aceitar esses pacotes. Não deixar como permanente.
 minimumReleaseAgeExclude:
-  - "expo"
-  - "expo-location"
-  - "expo-sharing"
-  - "expo-splash-screen"
-  - "@expo/cli"
-  - "@expo/config"
-  - "@expo/config-plugins"
-  - "@expo/fingerprint"
-  - "@expo/inline-modules"
-  - "@expo/local-build-cache-provider"
-  - "@expo/metro-config"
-  - "@expo/metro-file-map"
-  - "@expo/prebuild-config"
-  - "@expo/router-server"
-  - "babel-preset-expo"
-  - "expo-file-system"
-  - "expo-modules-core"
-  - "expo-modules-jsi"
+  - 'expo'
+  - 'expo-location'
+  - 'expo-sharing'
+  - 'expo-splash-screen'
+  - '@expo/cli'
+  - '@expo/config'
+  - '@expo/config-plugins'
+  - '@expo/fingerprint'
+  - '@expo/inline-modules'
+  - '@expo/local-build-cache-provider'
+  - '@expo/metro-config'
+  - '@expo/metro-file-map'
+  - '@expo/prebuild-config'
+  - '@expo/router-server'
+  - 'babel-preset-expo'
+  - 'expo-file-system'
+  - 'expo-modules-core'
+  - 'expo-modules-jsi'
