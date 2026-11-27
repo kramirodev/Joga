@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  ObservabilityAlertsResponse,
   ObservabilityEvent,
   ObservabilityEventDetail,
   ObservabilityIpReport,
@@ -113,6 +114,16 @@ const summary: ObservabilitySummaryResponse = {
   }),
 };
 
+const alerts: ObservabilityAlertsResponse = {
+  window: "24h",
+  from_at: "2026-11-25T10:00:00Z",
+  to_at: OCCURRED_AT,
+  alerts: [
+    { code: "login_failures", level: "warning", count: 12, threshold: 10 },
+    { code: "server_errors", level: "critical", count: 4, threshold: 1 },
+  ],
+};
+
 type FetchMock = ReturnType<typeof vi.fn>;
 
 interface Call {
@@ -214,6 +225,66 @@ describe("Monitoramento", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("mostra os alertas ativos com links para o explorador filtrado", async () => {
+    stubFetch((url) => {
+      if (url.pathname === "/api/v1/admin/observability/alerts") {
+        return jsonResponse({ ...alerts, window: url.searchParams.get("window") ?? "24h" });
+      }
+      if (url.pathname === "/api/v1/admin/observability/summary") {
+        return jsonResponse({ ...summary, window: url.searchParams.get("window") ?? "24h" });
+      }
+      return jsonResponse({ detail: { code: "not_found" } }, 404);
+    });
+    renderPage("/admin/observability", <AdminObservabilityPage />, "/admin/observability");
+
+    expect(await screen.findByRole("link", { name: /Falhas de acesso/ })).toBeInTheDocument();
+    expect(screen.getByText("12 ocorrências · limite de 10")).toBeInTheDocument();
+    expect(screen.getByText("4 ocorrências · limite de 1")).toBeInTheDocument();
+    expect(screen.getByText("Crítico")).toBeInTheDocument();
+
+    expect(screen.getByRole("link", { name: /Falhas de acesso/ })).toHaveAttribute(
+      "href",
+      "/admin/observability/events?category=security",
+    );
+    expect(screen.getByRole("link", { name: /Erros do servidor/ })).toHaveAttribute(
+      "href",
+      "/admin/observability/events?level=error&category=http",
+    );
+  });
+
+  it("mostra vazio quando não há alertas ativos", async () => {
+    stubFetch((url) => {
+      if (url.pathname === "/api/v1/admin/observability/alerts") {
+        return jsonResponse({ ...alerts, alerts: [] });
+      }
+      if (url.pathname === "/api/v1/admin/observability/summary") {
+        return jsonResponse(summary);
+      }
+      return jsonResponse({ detail: { code: "not_found" } }, 404);
+    });
+    renderPage("/admin/observability", <AdminObservabilityPage />, "/admin/observability");
+
+    expect(await screen.findByText("Nenhum alerta ativo no período.")).toBeInTheDocument();
+  });
+
+  it("mostra o erro do endpoint de alertas com nova tentativa", async () => {
+    stubFetch((url) => {
+      if (url.pathname === "/api/v1/admin/observability/alerts") {
+        return jsonResponse({ detail: { code: "request_failed" } }, 500);
+      }
+      if (url.pathname === "/api/v1/admin/observability/summary") {
+        return jsonResponse(summary);
+      }
+      return jsonResponse({ detail: { code: "not_found" } }, 404);
+    });
+    renderPage("/admin/observability", <AdminObservabilityPage />, "/admin/observability");
+
+    expect(
+      await screen.findByText(/O servidor encontrou um erro ao processar a operação/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Tentar novamente/ })).toBeInTheDocument();
   });
 
   it("mostra ausência de taxa quando não há requisições", async () => {

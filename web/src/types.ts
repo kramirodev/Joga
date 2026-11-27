@@ -955,6 +955,20 @@ export interface ObservabilitySummaryResponse {
   previous: ObservabilitySummaryWindow;
 }
 
+export interface ObservabilityAlert {
+  code: string;
+  level: string;
+  count: number;
+  threshold: number;
+}
+
+export interface ObservabilityAlertsResponse {
+  window: string;
+  from_at: string;
+  to_at: string;
+  alerts: ObservabilityAlert[];
+}
+
 export interface ObservabilityEvent {
   id: string;
   occurred_at: string;
