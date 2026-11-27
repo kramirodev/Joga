@@ -1,4 +1,4 @@
-import type { PropsWithChildren, ReactNode, Ref } from 'react';
+import type { PropsWithChildren, ReactElement, ReactNode, Ref } from 'react';
 import {
   Children,
   createContext,
@@ -22,6 +22,7 @@ import {
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
+  type RefreshControlProps,
   type ScrollViewInstance,
 } from 'react-native';
 import Svg, {
@@ -2269,6 +2270,7 @@ export function Page({
   hideHeader,
   scroll = true,
   onBack,
+  refreshControl,
 }: PropsWithChildren<{
   title?: string;
   sub?: string;
@@ -2286,6 +2288,8 @@ export function Page({
    * formulário sujo). Sem a prop, o comportamento continua sendo `nav.back()`.
    */
   onBack?: () => void;
+  /** Pull-to-refresh opcional; o indicador não esconde o conteúdo atual. */
+  refreshControl?: ReactElement<RefreshControlProps>;
 }>) {
   const { palette, contentBottomInset } = useTheme();
   const nav = useNav();
@@ -2383,6 +2387,7 @@ export function Page({
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={refreshControl}
         onScroll={(event) => {
           pageScrollOffsets.set(scrollKey, event.nativeEvent.contentOffset.y);
         }}
