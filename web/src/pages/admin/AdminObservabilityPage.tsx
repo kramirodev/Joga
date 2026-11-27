@@ -18,6 +18,10 @@ import { api } from "../../lib/api";
 import { formatDate, shortId } from "../../lib/format";
 import {
   OBSERVABILITY_WINDOWS,
+  alertLabel,
+  alertLevelLabel,
+  alertTarget,
+  alertTone,
   formatCount,
   formatDuration,
   observabilityPollInterval,
@@ -76,6 +80,16 @@ export function AdminObservabilityPage() {
     refetchIntervalInBackground: false,
   });
 
+  const alertsQuery = useQuery({
+    queryKey: queryKeys.adminObservabilityAlerts(window),
+    queryFn: () => api.getObservabilityAlerts(window),
+    refetchInterval: observabilityPollInterval,
+    refetchIntervalInBackground: false,
+  });
+
+  const alerts = alertsQuery.data?.alerts ?? [];
+  const isRefreshing = summaryQuery.isFetching || alertsQuery.isFetching;
+
   const summary = summaryQuery.data ?? null;
   const current = summary?.current ?? null;
   const previous = summary?.previous ?? null;
@@ -94,11 +108,53 @@ export function AdminObservabilityPage() {
         description="Acompanhe erros, acessos e tarefas da plataforma. Os números comparam o período escolhido com o anterior."
         actions={
           <RefreshButton
-            busy={summaryQuery.isFetching}
-            onClick={() => void summaryQuery.refetch()}
+            busy={isRefreshing}
+            onClick={() => {
+              void summaryQuery.refetch();
+              void alertsQuery.refetch();
+            }}
           />
         }
       />
+
+      <section className="card">
+        <SectionHeading
+          title="Alertas"
+          description="Limites de erro ultrapassados no período selecionado."
+        />
+        {alertsQuery.error ? (
+          <ObservabilityQueryError
+            error={alertsQuery.error}
+            onRetry={() => void alertsQuery.refetch()}
+          />
+        ) : alertsQuery.isPending ? (
+          <SkeletonList rows={2} label="Carregando alertas..." />
+        ) : alerts.length > 0 ? (
+          <ul className="admin-list">
+            {alerts.map((alert) => (
+              <li key={alert.code}>
+                <Link to={alertTarget(alert.code)} className="admin-row">
+                  <span className="admin-row__identity">
+                    <span>
+                      <strong>{alertLabel(alert.code)}</strong>
+                      <small>
+                        {formatCount(alert.count)}{" "}
+                        {alert.count === 1 ? "ocorrência" : "ocorrências"} · limite de{" "}
+                        {formatCount(alert.threshold)}
+                      </small>
+                    </span>
+                  </span>
+                  <span className={`badge badge--${alertTone(alert.level)}`}>
+                    {alertLevelLabel(alert.level)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Nenhum alerta ativo no período.</p>
+        )}
+      </section>
 
       <section className="card">
         <SectionHeading

@@ -731,7 +731,7 @@ stub. O restante (proxy, basic auth, fallback) é o mesmo do container:
 | Reset completo (código → nova senha) | depende do código recebido na caixa real |
 | Passkey Android | `/.well-known/assetlinks.json` servido e 200 sem basic auth; falta validar a cerimônia no APK 1.0.1 |
 
-O `web/public/.well-known/assetlinks.json` declara `com.anonymous.joga` e o
+O `web/public/.well-known/assetlinks.json` declara `com.jogaapp.mobile` e o
 SHA-256 do keystore de debug (`FA:C6:…:3B:9C`). O Caddy serve esse caminho sem
 basic auth; a validação local retornou 200 sem credencial, com `/` ainda 401 e o
 fallback do SPA 200. O login por senha continua independente de passkey.
@@ -749,8 +749,8 @@ de revisão em `docs/THREAT_MODEL.md` ("Riscos aceitos da auditoria de
 2026-11-20", item A). O gatilho "inclusão de usuários reais" **já foi
 disparado** (SEC-001, aceito pelo dono), então o aceite vale apenas para o demo
 privado por sideload. Antes de qualquer distribuição: gerar chave de release com
-custódia fora do repositório, fixar o `package` definitivo (hoje
-`com.anonymous.joga`), assinar com a chave de release e reemitir o
+custódia fora do repositório, usar o `package` definitivo já fixado
+(`com.jogaapp.mobile`), assinar com a chave de release e reemitir o
 `assetlinks.json` com a impressão digital dela. Não corrigir o arquivo com o
 certificado de debug.
 

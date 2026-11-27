@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     log_stacktraces: bool = True
     log_max_export_rows: int = Field(default=20_000, ge=100, le=100_000)
 
+    # Ingestão de erros do cliente (Fase 3). O painel/app envia lotes pequenos
+    # antes ou depois do login; o limite é por IP e os alertas são derivados
+    # dos próprios eventos, sem canal externo de notificação.
+    client_events_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
+    observability_alert_login_failures: int = Field(default=20, ge=1)
+    observability_alert_server_errors: int = Field(default=10, ge=1)
+    observability_alert_failed_jobs: int = Field(default=1, ge=1)
+    observability_alert_client_errors: int = Field(default=10, ge=1)
+
     # Allowlist do header Host (TrustedHostMiddleware). Lista extra separada por
     # vírgula, sem esquema, porta ou curinga. RENDER_EXTERNAL_HOSTNAME, quando
     # presente, entra na allowlist porque o Render é a origem pública do demo.

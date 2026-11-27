@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -33,6 +33,8 @@ from app.modules.identity.models import AuditLog, SecurityEvent
 from app.modules.observability.models import LogEvent
 from app.modules.observability.redaction import mask_ip
 from app.modules.observability.schemas import (
+    AlertItem,
+    AlertsResponse,
     AuthSummary,
     CategoryCount,
     EventDetail,
@@ -616,6 +618,14 @@ def _count_where(session: Session, model: Any, clauses: list[Any]) -> int:
     return int(session.scalar(select(func.count()).select_from(model).where(*clauses)) or 0)
 
 
+def _failed_logins_clause() -> Any:
+    """Mesma definição de ``auth.failed_logins`` da summary."""
+    return or_(
+        SecurityEvent.event_type.in_((EMAIL_LOGIN_FAILED, OTP_VERIFICATION_FAILED, PASSKEY_FAILED)),
+        SecurityEvent.event_type.ilike("%login_failed%"),
+    )
+
+
 def _summary_window(session: Session, from_at: datetime, to_at: datetime) -> SummaryWindow:
     filters = ObservabilityFilters(from_at=from_at, to_at=to_at)
     log_clauses = _in_window(LogEvent.occurred_at, filters)
@@ -678,15 +688,7 @@ def _summary_window(session: Session, from_at: datetime, to_at: datetime) -> Sum
     failed_logins = _count_where(
         session,
         SecurityEvent,
-        [
-            *security_clauses,
-            or_(
-                SecurityEvent.event_type.in_(
-                    (EMAIL_LOGIN_FAILED, OTP_VERIFICATION_FAILED, PASSKEY_FAILED)
-                ),
-                SecurityEvent.event_type.ilike("%login_failed%"),
-            ),
-        ],
+        [*security_clauses, _failed_logins_clause()],
     )
     auth = AuthSummary(
         unauthorized=unauthorized,
@@ -782,10 +784,79 @@ def summary(
     return current, previous
 
 
+def alerts(
+    session: Session,
+    window: str,
+    *,
+    login_failures: int,
+    server_errors: int,
+    failed_jobs: int,
+    client_errors: int,
+    now: datetime | None = None,
+) -> AlertsResponse:
+    """Deriva alertas simples dos eventos da janela corrente.
+
+    Cada alerta aparece somente quando a contagem atinge o limiar configurado.
+    Não há escrita nem canal externo: a resposta é calculada a partir de
+    ``log_events`` e ``security_events``.
+    """
+    size = normalize_window(window)
+    to_at = ensure_utc(now or datetime.now(UTC))
+    from_at = to_at - size
+    filters = ObservabilityFilters(from_at=from_at, to_at=to_at)
+    log_clauses = _in_window(LogEvent.occurred_at, filters)
+    security_clauses = _in_window(SecurityEvent.created_at, filters)
+
+    counts = {
+        "login_failures": _count_where(
+            session,
+            SecurityEvent,
+            [*security_clauses, _failed_logins_clause()],
+        ),
+        "server_errors": _count_where(
+            session,
+            LogEvent,
+            [*log_clauses, LogEvent.category == "http", LogEvent.status >= 500],
+        ),
+        "failed_jobs": _count_where(
+            session,
+            LogEvent,
+            [*log_clauses, LogEvent.category == "job", LogEvent.level == "error"],
+        ),
+        "client_errors": _count_where(
+            session,
+            LogEvent,
+            [
+                *log_clauses,
+                LogEvent.category == "client",
+                LogEvent.level.in_(("error", "fatal")),
+            ],
+        ),
+    }
+    specs: tuple[tuple[str, Literal["warning", "critical"], int], ...] = (
+        ("login_failures", "warning", login_failures),
+        ("server_errors", "critical", server_errors),
+        ("failed_jobs", "warning", failed_jobs),
+        ("client_errors", "warning", client_errors),
+    )
+    items = [
+        AlertItem(code=code, level=level, count=counts[code], threshold=threshold)
+        for code, level, threshold in specs
+        if counts[code] >= threshold
+    ]
+    return AlertsResponse(
+        window=window,
+        from_at=from_at,
+        to_at=to_at,
+        alerts=items,
+    )
+
+
 __all__ = [
     "InvalidCursor",
     "Page",
     "WINDOW_SIZES",
+    "alerts",
     "count_events",
     "decode_cursor",
     "encode_cursor",
