@@ -25,6 +25,7 @@
         }
       ],
       "expo-sharing",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -44,6 +45,7 @@
     },
     "android": {
       "versionCode": 2,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0F1214",
         "foregroundImage": "./assets/android-icon-foreground.png",
