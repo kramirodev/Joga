@@ -43,6 +43,7 @@ import { api, ApiError } from './src/api/client';
 import {
   configureNotifications,
   registerForPushNotificationsAsync,
+  routeColdStartNotification,
   scheduleLocalTestNotification,
   setNotificationNavigator,
   subscribeToNotificationResponses,
@@ -1059,6 +1060,16 @@ function Shell() {
     const subscription = subscribeToNotificationResponses();
     return () => subscription.remove();
   }, []);
+
+  // Toque que abriu o app (cold start): a resposta já foi capturada antes do
+  // listener ao vivo e é entregue uma única vez, quando sessão e navegação
+  // existem. Sem resposta pendente, não navega.
+  useEffect(() => {
+    if (!app.ready || !signedIn) {
+      return;
+    }
+    routeColdStartNotification();
+  }, [app.ready, signedIn]);
 
   const theme = useMemo(
     () => ({

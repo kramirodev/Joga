@@ -58,6 +58,7 @@ import {
   type ChatRow,
 } from '../state/clanSocial';
 import { lobbyIdFromQueue } from '../state/queueState';
+import { notificationRouteFor } from '../state/notificationRoutes';
 import {
   composePlayerQuery,
   friendActionFor,
@@ -4572,7 +4573,9 @@ function Notifications() {
   const [inviteErrors, setInviteErrors] = useState<Record<string, string>>({});
   const [inviteBlocks, setInviteBlocks] = useState<Record<string, ClanInviteBlock>>({});
   const [joined, setJoined] = useState<{ id: string; clanName: string }[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const inviteLock = useRef<string | null>(null);
+  const refreshingLock = useRef(false);
   const mounted = useRef(true);
   const actionsLocked = inviteBusy !== null;
 
@@ -4634,6 +4637,27 @@ function Notifications() {
       setFailed(feed.status === 'rejected');
       setLoading(false);
     });
+  };
+
+  // Pull-to-refresh mantém a lista atual na tela enquanto busca; só o indicador
+  // nativo aparece. Em falha, o conteúdo anterior continua visível.
+  const refresh = async () => {
+    if (refreshingLock.current) {
+      return;
+    }
+    refreshingLock.current = true;
+    setRefreshing(true);
+    try {
+      const [feed] = await Promise.allSettled([loadNotifications(), loadInvites()]);
+      if (mounted.current) {
+        setFailed(feed.status === 'rejected');
+      }
+    } finally {
+      refreshingLock.current = false;
+      if (mounted.current) {
+        setRefreshing(false);
+      }
+    }
   };
 
   const clearInviteState = (inviteId: string) => {
@@ -4822,6 +4846,12 @@ function Notifications() {
       nav.go('lobby-detail', matchId ? { matchId } : undefined);
       return;
     }
+    // Fallback para `kind`/`data` conhecidos que não caíram nas regras acima
+    // (ex.: `friend_accepted`). `notifications` é a própria central: não navega.
+    const route = notificationRouteFor({ ...data, kind: item.kind });
+    if (route && route.screen !== 'notifications') {
+      nav.go(route.screen, Object.keys(route.params).length ? route.params : undefined);
+    }
   };
 
   if (loading) {
@@ -4851,7 +4881,17 @@ function Notifications() {
 
   if (!notifications.length && !invites.length && !joined.length && !invitesFailed && !failed) {
     return (
-      <Page title="Notificações">
+      <Page
+        title="Notificações"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refresh()}
+            tintColor={palette.ink}
+            colors={[palette.ink]}
+          />
+        }
+      >
         <EmptyState
           title="Nenhuma notificação"
           text="Prazos, reservas, convites e resultados aparecem aqui."
@@ -4864,6 +4904,14 @@ function Notifications() {
     <Page
       title="Notificações"
       sub={unreadNotifications > 0 ? `${unreadNotifications} não lidas` : 'Tudo em dia'}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void refresh()}
+          tintColor={palette.ink}
+          colors={[palette.ink]}
+        />
+      }
     >
       <Row between>
         <Txt variant="h3">Convites de clã{invites.length > 0 ? ` (${invites.length})` : ''}</Txt>
@@ -5007,7 +5055,6 @@ function Notifications() {
                   <View style={{ flex: 1 }}>
                     <Row between>
                       <Text
-                        numberOfLines={2}
                         style={{ flex: 1, fontSize: 14, fontWeight: '800', color: palette.ink }}
                       >
                         {item.title}
