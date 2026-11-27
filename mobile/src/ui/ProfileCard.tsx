@@ -1,4 +1,4 @@
-import { View, useWindowDimensions } from 'react-native';
+import { Pressable, View, useWindowDimensions } from 'react-native';
 
 import type { VisualIdentity } from '../api/types';
 import { useTheme } from '../state/context';
@@ -31,11 +31,14 @@ export function ProfileCard({
   imageMode = false,
   width,
   height,
+  onPressAvatar,
 }: {
   data: ProfileCardData;
   imageMode?: boolean;
   width?: number;
   height?: number;
+  /** Toque no emblema/avatar; a imagem compartilhável não recebe ação. */
+  onPressAvatar?: () => void;
 }) {
   const { palette, themeId } = useTheme();
   const theme = themeById(themeId);
@@ -59,6 +62,8 @@ export function ProfileCard({
     { key: 'founder', icon: 'crown' as const, label: 'FUNDADOR' },
     { key: 'badge', icon: 'shield' as const, label: 'A CONQUISTAR' },
   ];
+  // A tag chega sem `#`; ausência nunca vira uma tag fake.
+  const tagText = data.tag && data.tag !== '—' ? `#${data.tag}` : '—';
 
   return (
     <Card
@@ -172,12 +177,29 @@ export function ProfileCard({
 
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 6 }}>
           <View style={{ zIndex: 2 }}>
-            <TierEmblem
-              tier={data.tier}
-              size={emblemSize}
-              identity={data.visual}
-              palette={palette}
-            />
+            {onPressAvatar && !imageMode ? (
+              <Pressable
+                onPress={onPressAvatar}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir perfil público"
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
+              >
+                <TierEmblem
+                  tier={data.tier}
+                  size={emblemSize}
+                  identity={data.visual}
+                  palette={palette}
+                />
+              </Pressable>
+            ) : (
+              <TierEmblem
+                tier={data.tier}
+                size={emblemSize}
+                identity={data.visual}
+                palette={palette}
+              />
+            )}
           </View>
           <View style={{ alignItems: 'center', marginTop: -12, zIndex: 1 }}>
             <Text
@@ -212,7 +234,7 @@ export function ProfileCard({
                 },
               ]}
             >
-              #{data.tag} · {data.clanName}
+              {tagText} · {data.clanName}
             </Text>
           </View>
         </View>

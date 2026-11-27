@@ -59,6 +59,7 @@ import {
 } from '../state/clanSocial';
 import { lobbyIdFromQueue } from '../state/queueState';
 import { notificationRouteFor } from '../state/notificationRoutes';
+import { friendSearchPrefill } from '../state/profileState';
 import {
   composePlayerQuery,
   friendActionFor,
@@ -462,6 +463,7 @@ function Friends() {
                         nav.go('profile-other', {
                           userId: friend.user_id,
                           name: friend.display_name ?? 'Jogador',
+                          tag: friend.tag,
                         })
                       }
                     >
@@ -663,8 +665,13 @@ function AddFriend() {
   const { palette } = useTheme();
   const { session, friendRequestsIncoming, loadSocial } = useApp();
   const token = session?.accessToken ?? null;
-  const [name, setName] = useState('');
-  const [tag, setTag] = useState('');
+  // O perfil público pode abrir a busca já com o nome e a tag reais.
+  const prefill = friendSearchPrefill(
+    typeof nav.params.name === 'string' ? nav.params.name : '',
+    typeof nav.params.tag === 'string' ? nav.params.tag : '',
+  );
+  const [name, setName] = useState(prefill.name);
+  const [tag, setTag] = useState(prefill.tag);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [results, setResults] = useState<PlayerSearchResult[]>([]);
   const [searchedQuery, setSearchedQuery] = useState('');

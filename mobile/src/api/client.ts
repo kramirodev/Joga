@@ -40,6 +40,7 @@ import type {
   Presence,
   Profile,
   Progress,
+  PublicPlayer,
   Purchase,
   QueueEntry,
   QueueSelectionPayload,
@@ -1125,6 +1126,10 @@ export const api = {
       return call<{ results: PlayerSearchResult[] }>(`/users/search${qs({ q, limit })}`, {
         token,
       });
+    },
+    /** Perfil público mínimo; conta inexistente, inativa ou bloqueada é 404. */
+    get(token: string, userId: string) {
+      return call<PublicPlayer>(`/users/${encodeURIComponent(userId)}`, { token });
     },
   },
 

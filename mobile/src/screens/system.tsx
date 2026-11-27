@@ -7,6 +7,7 @@ import { authConfig } from '../auth/config';
 import { createPasskey, passkeyAvailable } from '../passkey';
 import { useApp } from '../state/app';
 import { useNav, useTheme } from '../state/context';
+import { profileTagLabel } from '../state/profileState';
 import { Icon } from '../ui/icons';
 import {
   Badge,
@@ -1014,7 +1015,7 @@ function About() {
   const nav = useNav();
   const { palette } = useTheme();
   const { profile, session, progress } = useApp();
-  const tag = profile?.user_id ? profile.user_id.slice(0, 4).toUpperCase() : '----';
+  const tag = profileTagLabel(profile?.tag);
   return (
     <Page title="Sobre">
       <Card tone="ink">
@@ -1044,9 +1045,9 @@ function About() {
           label="Conta"
           value={
             profile?.display_name
-              ? `${profile.display_name} #${tag}`
+              ? `${profile.display_name} ${tag}`
               : session
-                ? `#${tag}`
+                ? tag
                 : 'não autenticado'
           }
         />
