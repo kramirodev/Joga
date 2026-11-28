@@ -569,6 +569,14 @@ export const api = {
         token,
       });
     },
+    /** Tema do cartão público; `null` volta ao padrão do app. */
+    updateTheme(token: string, themeId: string | null) {
+      return call<{ theme_id: string | null }>('/me/theme', {
+        method: 'PUT',
+        body: { theme_id: themeId },
+        token,
+      });
+    },
     replaceSports(
       token: string,
       sports: { format_id: string; level: string; court_preference: string }[],

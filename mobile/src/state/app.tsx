@@ -96,7 +96,13 @@ import {
   type QueueSnapshot,
 } from './queueState';
 import { useQueueWatcher } from './queueWatcher';
-import { loadThemeId, saveThemeId } from './themePreference';
+import {
+  loadThemeId,
+  loadThemeUploadPending,
+  saveThemeId,
+  saveThemeUploadPending,
+} from './themePreference';
+import { decideThemeSync } from './themeSync';
 
 export type OnboardingState = {
   formats: string[];
@@ -240,6 +246,20 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [themeId, setThemeId] = useState<ThemeId>(
     () => themeById(Appearance.getColorScheme() === 'dark' ? 'escuro' : 'claro').id,
   );
+  /** Preferência lida do aparelho; `ready` evita leituras duplicadas do SecureStore. */
+  const themeLocalRef = useRef<{ ready: boolean; themeId: ThemeId | null }>({
+    ready: false,
+    themeId: null,
+  });
+  const themeLoadRef = useRef<Promise<{ themeId: ThemeId | null; pending: boolean }> | null>(null);
+  /** Último PUT `/me/theme` falhou: reenviar antes de aceitar o servidor. */
+  const themePendingRef = useRef(false);
+  /** Um sync por vez; chamadas concorrentes de `loadProfile` não duplicam o PUT. */
+  const themeSyncingRef = useRef(false);
+  /** O servidor já decidiu o tema: o valor do aparelho não deve sobrescrevê-lo. */
+  const themeServerDecidedRef = useRef(false);
+  /** Trocas feitas pela UI; um GET em voo não pode sobrescrever a escolha mais nova. */
+  const themeUserEditRef = useRef(0);
   const dark = themeById(themeId).dark;
   const [auth, setAuthState] = useState<AuthState>(initialAuth);
   const [onboarding, setOnboardingState] = useState<OnboardingState>(initialOnboarding);
@@ -615,14 +635,99 @@ export function AppProvider({ children }: PropsWithChildren) {
     return result.sports;
   }, []);
 
+  /** Lê a preferência local uma única vez e memoriza também a pendência de PUT. */
+  const ensureThemeLocal = useCallback(async () => {
+    if (themeLocalRef.current.ready) {
+      return;
+    }
+    if (!themeLoadRef.current) {
+      themeLoadRef.current = Promise.all([loadThemeId(), loadThemeUploadPending()]).then(
+        ([stored, pending]) => ({ themeId: stored, pending }),
+      );
+    }
+    const { themeId: stored, pending } = await themeLoadRef.current;
+    if (themeLocalRef.current.ready) {
+      // A UI trocou o tema enquanto o armazenamento respondia: a escolha nova manda.
+      return;
+    }
+    themeLocalRef.current = { ready: true, themeId: stored };
+    themePendingRef.current = pending;
+  }, []);
+
+  /**
+   * Aplica a política de `themeSync.ts` depois de `GET /me/profile`. Aplicar o
+   * tema do servidor usa `setThemeId` direto: `setTheme` faria PUT e criaria loop.
+   * `editAtStart` descarta uma resposta antiga se a UI trocou o tema no meio.
+   */
+  const syncThemeFromServer = useCallback(
+    async (serverThemeId: string | null, editAtStart = 0) => {
+      if (!token || themeSyncingRef.current) {
+        return;
+      }
+      themeSyncingRef.current = true;
+      try {
+        await ensureThemeLocal();
+        const decision = decideThemeSync({
+          serverThemeId,
+          localThemeId: themeLocalRef.current.themeId,
+          pendingUpload: themePendingRef.current,
+        });
+        const staleResponse = editAtStart !== themeUserEditRef.current;
+        if (decision.kind === 'apply') {
+          // A escolha do usuário já foi aplicada e enviada pelo `setTheme`.
+          if (staleResponse) {
+            return;
+          }
+          themeServerDecidedRef.current = true;
+          themeLocalRef.current = { ready: true, themeId: decision.themeId };
+          setThemeId(decision.themeId);
+          void saveThemeId(decision.themeId);
+          return;
+        }
+        if (decision.kind === 'upload') {
+          if (staleResponse) {
+            return;
+          }
+          themeServerDecidedRef.current = true;
+          setThemeId(decision.themeId);
+          try {
+            await api.profile.updateTheme(token, decision.themeId);
+            // Outra troca durante o PUT é responsabilidade do PUT dela.
+            if (themeLocalRef.current.themeId === decision.themeId) {
+              themePendingRef.current = false;
+              await saveThemeUploadPending(false);
+            }
+          } catch (error) {
+            // A troca local permanece; a marca faz a próxima abertura/login reenviar.
+            themePendingRef.current = true;
+            await saveThemeUploadPending(true);
+            if (__DEV__) {
+              console.warn('PUT /me/theme falhou; tema local será reenviado', error);
+            }
+          }
+        }
+      } catch (error) {
+        // Falha inesperada não pode derrubar o carregamento do perfil.
+        if (__DEV__) {
+          console.warn('Sincronização do tema indisponível', error);
+        }
+      } finally {
+        themeSyncingRef.current = false;
+      }
+    },
+    [token, ensureThemeLocal],
+  );
+
   const loadProfile = useCallback(async () => {
     if (!token) {
       return null;
     }
+    const editAtStart = themeUserEditRef.current;
     const result = await api.profile.me(token);
     setProfile(result);
+    await syncThemeFromServer(result.theme_id ?? null, editAtStart);
     return result;
-  }, [token]);
+  }, [token, syncThemeFromServer]);
 
   const loadWallet = useCallback(async () => {
     if (!token) {
@@ -1059,11 +1164,16 @@ export function AppProvider({ children }: PropsWithChildren) {
     await saveAccessibility(preferences);
   }, []);
 
+  // Preferência do aparelho antes da sincronização: sem sessão ela é a única fonte.
   useEffect(() => {
     let active = true;
-    loadThemeId()
-      .then((stored) => {
-        if (active && stored) {
+    ensureThemeLocal()
+      .then(() => {
+        if (!active || themeServerDecidedRef.current) {
+          return;
+        }
+        const stored = themeLocalRef.current.themeId;
+        if (stored) {
           setThemeId(stored);
         }
       })
@@ -1071,13 +1181,38 @@ export function AppProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [ensureThemeLocal]);
 
-  const setTheme = useCallback((next: ThemeId) => {
-    setThemeId(next);
-    // A gravação é best-effort: tema em memória vale mesmo sem SecureStore.
-    void saveThemeId(next);
-  }, []);
+  const setTheme = useCallback(
+    (next: ThemeId) => {
+      themeUserEditRef.current += 1;
+      setThemeId(next);
+      themeLocalRef.current = { ready: true, themeId: next };
+      // A gravação é best-effort: tema em memória vale mesmo sem SecureStore.
+      void saveThemeId(next);
+      if (!token) {
+        // Sem sessão só há o aparelho; o login faz a primeira sincronização.
+        return;
+      }
+      void (async () => {
+        try {
+          await api.profile.updateTheme(token, next);
+          // Uma troca mais nova tem o próprio PUT; não limpe a pendência dela.
+          if (themeLocalRef.current.themeId === next) {
+            themePendingRef.current = false;
+            await saveThemeUploadPending(false);
+          }
+        } catch (error) {
+          themePendingRef.current = true;
+          await saveThemeUploadPending(true);
+          if (__DEV__) {
+            console.warn('PUT /me/theme falhou; tema aplicado só neste aparelho', error);
+          }
+        }
+      })();
+    },
+    [token],
+  );
 
   /** Compatibilidade com as telas atuais: claro/escuro mapeiam para os ids. */
   const setDark = useCallback(

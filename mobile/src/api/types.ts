@@ -72,6 +72,8 @@ export type Profile = {
   /** Tag canônica do servidor, no formato `#A1B2C3D4` (ADR 0071). */
   tag: string;
   bio: string | null;
+  /** Tema cosmético do cartão; `null` deixa o app usar o claro/escuro do sistema. */
+  theme_id: string | null;
   sports: UserSport[];
   availability: Availability[];
   region: Region | null;
