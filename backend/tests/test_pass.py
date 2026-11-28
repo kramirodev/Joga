@@ -52,7 +52,7 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_plans_are_the_four_quarter_sizes(client: TestClient, db_session: Session) -> None:
+def test_plans_follow_the_approved_catalog(client: TestClient, db_session: Session) -> None:
     api = api_client(client, db_session)
     user_id = make_user(db_session)
     token = make_token(db_session, user_id)
@@ -60,9 +60,26 @@ def test_plans_are_the_four_quarter_sizes(client: TestClient, db_session: Sessio
     response = api.get("/api/v1/me/pass/plans", headers=bearer(token))
     assert response.status_code == 200, response.text
     plans = response.json()["plans"]
-    assert [plan["tickets_per_month"] for plan in plans] == [10, 20, 30, 50]
-    assert [plan["quarter_cents"] for plan in plans] == [9_750, 19_500, 29_250, 48_750]
-    assert {plan["unit_price_cents"] for plan in plans} == {325}
+    assert [plan["code"] for plan in plans] == [
+        "mensal_20",
+        "mensal_40",
+        "mensal_60",
+        "trimestral_20",
+        "trimestral_40",
+        "trimestral_60",
+        "semestral_40",
+    ]
+    assert [plan["cycle_total_cents"] for plan in plans] == [
+        6_800,
+        12_800,
+        18_600,
+        19_200,
+        37_200,
+        54_000,
+        72_000,
+    ]
+    assert {plan["unit_price_cents"] for plan in plans} == {300, 310, 320, 340}
+    assert response.json()["catalog_version"] == 1
 
 
 def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Session) -> None:
@@ -73,7 +90,7 @@ def test_confirm_subscription_is_dev_only(client: TestClient, db_session: Sessio
     created = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert created.status_code == 201, created.text
 
@@ -115,7 +132,7 @@ def test_confirm_subscription_is_allowed_for_owner_in_demo(
     created = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert created.status_code == 201, created.text
 
@@ -145,12 +162,12 @@ def test_pass_purchase_is_idempotent_while_pending(client: TestClient, db_sessio
     first = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     second = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
@@ -169,12 +186,12 @@ def test_pass_idempotency_key_replays_and_rejects_different_plan(
     first = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=headers,
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     second = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=headers,
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
@@ -183,7 +200,7 @@ def test_pass_idempotency_key_replays_and_rejects_different_plan(
     conflict = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=headers,
-        json={"plan_code": "time"},
+        json={"plan_code": "trimestral_60"},
     )
     assert conflict.status_code == 409, conflict.text
     assert conflict.json()["detail"]["code"] == "idempotency_conflict"
@@ -200,7 +217,7 @@ def test_pass_refund_cancels_subscription(
     created = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert created.status_code == 201, created.text
     subscription_id = uuid.UUID(created.json()["id"])
@@ -247,12 +264,12 @@ def test_subscribe_opens_pix_and_only_payment_activates(
     created = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "craque"},
+        json={"plan_code": "trimestral_20"},
     )
     assert created.status_code == 201, created.text
     subscription = created.json()
     assert subscription["status"] == "pending"
-    assert subscription["amount_cents"] == 19_500
+    assert subscription["amount_cents"] == 19_200
     assert subscription["payment"]["qr_code"]
     assert subscription["payment"]["paid"] is False
 
@@ -291,14 +308,14 @@ def test_second_subscription_is_refused_while_active(
     first = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "jogador"},
+        json={"plan_code": "mensal_20"},
     ).json()
     api.post(f"/api/v1/me/pass/subscriptions/{first['id']}/confirm", headers=bearer(token))
 
     second = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "elenco"},
+        json={"plan_code": "mensal_40"},
     )
     assert second.status_code == 409, second.text
     assert second.json()["detail"]["code"] == "pass_already_active"
@@ -306,31 +323,32 @@ def test_second_subscription_is_refused_while_active(
 
 def test_delivery_is_monthly_idempotent_and_expires(db_session: Session) -> None:
     user_id = make_user(db_session)
-    subscription = create_subscription(db_session, user_id, "time", now=START)
+    subscription = create_subscription(db_session, user_id, "trimestral_20", now=START)
     assert subscription.status == "pending"
     assert get_balance(db_session, user_id, now=START) == 0
 
     activate_subscription(db_session, subscription.id, now=START)
-    assert get_balance(db_session, user_id, now=START) == 30
+    assert get_balance(db_session, user_id, now=START) == 20
     first_lot = db_session.scalar(
         select(TicketLot).where(TicketLot.user_id == user_id, TicketLot.source == "pass")
     )
     assert first_lot is not None
     assert first_lot.period == "2026-11"
-    assert first_lot.expires_at is None
+    assert first_lot.expires_at is not None
+    assert first_lot.expires_at.replace(tzinfo=UTC) == add_months(START, 1)
 
     deliver_due(db_session, subscription, now=START + timedelta(days=3))
-    assert get_balance(db_session, user_id, now=START + timedelta(days=3)) == 30
+    assert get_balance(db_session, user_id, now=START + timedelta(days=3)) == 20
 
     deliver_due(db_session, subscription, now=add_months(START, 1))
     expire_tickets(db_session, now=add_months(START, 1))
-    assert get_balance(db_session, user_id, now=add_months(START, 1)) == 30
+    assert get_balance(db_session, user_id, now=add_months(START, 1)) == 20
     db_session.refresh(first_lot)
     assert first_lot.remaining == 0
 
     deliver_due(db_session, subscription, now=add_months(START, 2))
     expire_tickets(db_session, now=add_months(START, 2))
-    assert get_balance(db_session, user_id, now=add_months(START, 2)) == 30
+    assert get_balance(db_session, user_id, now=add_months(START, 2)) == 20
     assert len(deliveries_for(db_session, subscription.id)) == 3
 
     deliver_due(db_session, subscription, now=add_months(START, 4))
@@ -366,7 +384,7 @@ def test_pass_track_requires_active_subscription(client: TestClient, db_session:
     subscription = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "jogador"},
+        json={"plan_code": "mensal_20"},
     ).json()
     api.post(
         f"/api/v1/me/pass/subscriptions/{subscription['id']}/confirm",
@@ -388,7 +406,7 @@ def test_subscription_is_private_to_its_owner(client: TestClient, db_session: Se
     subscription = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(owner_token),
-        json={"plan_code": "jogador"},
+        json={"plan_code": "mensal_20"},
     ).json()
 
     other_id = make_user(db_session)

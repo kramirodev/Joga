@@ -16,7 +16,7 @@ TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "avatar_migration_test"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS_REVISION = "c8d9e0f1a2b3"
-HEAD_REVISION = "f1a2b3c4d5e6"
+HEAD_REVISION = "bc23de45fa67"
 
 pytestmark = pytest.mark.skipif(
     not TEST_DATABASE_URL,
@@ -113,7 +113,11 @@ def test_avatar_migration_upgrade_downgrade_and_check(
 
     command.downgrade(config, PREVIOUS_REVISION)
     connection.commit()
-    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == PREVIOUS_REVISION
+    versions = {
+        row[0] for row in connection.execute(text("SELECT version_num FROM alembic_version"))
+    }
+    assert PREVIOUS_REVISION in versions
+    assert HEAD_REVISION not in versions
     remaining = connection.scalar(
         text(
             "SELECT count(*) FROM information_schema.tables "

@@ -41,6 +41,7 @@ from app.modules.tickets.service import (
     PackNotFound,
     PurchaseNotFound,
     TicketError,
+    TicketSalesDiscontinued,
     confirm_purchase,
     create_purchase,
     get_balance,
@@ -209,6 +210,11 @@ def _handle(exc: Exception) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"code": "terms_not_accepted"},
+        )
+    if isinstance(exc, TicketSalesDiscontinued):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ticket_sales_discontinued"},
         )
     if isinstance(exc, PspError):
         return HTTPException(

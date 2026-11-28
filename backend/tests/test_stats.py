@@ -35,7 +35,7 @@ def buy_pass(api: TestClient, token: str) -> None:
     created = api.post(
         "/api/v1/me/pass/subscriptions",
         headers=bearer(token),
-        json={"plan_code": "jogador"},
+        json={"plan_code": "mensal_20"},
     )
     assert created.status_code == 201, created.text
     confirmed = api.post(

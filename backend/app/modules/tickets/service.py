@@ -36,10 +36,10 @@ from app.modules.tickets.models import (
 
 SOURCE_PRIORITY = {
     "pass": 0,
-    "free_level": 1,
-    "admin": 2,
-    "purchase": 3,
-    "refund": 4,
+    "purchase": 1,
+    "refund": 1,
+    "free_level": 2,
+    "admin": 3,
 }
 GRANT_SOURCES = frozenset({"purchase", "pass", "free_level", "admin", "refund"})
 PAID_SOURCES = frozenset({"purchase", "refund"})
@@ -60,7 +60,11 @@ class TicketConflict(TicketError):
 
 
 class PackNotFound(TicketError):
-    """Pacote inexistente ou inativo."""
+    """Pacote inexistente."""
+
+
+class TicketSalesDiscontinued(TicketError):
+    """Compra avulsa descontinuada pela ADR 0070; legado permanece válido."""
 
 
 class PurchaseNotFound(TicketError):
@@ -108,11 +112,11 @@ def list_packs(session: Session) -> Sequence[TicketPack]:
 
 
 def get_pack(session: Session, code: str) -> TicketPack:
-    pack = session.scalars(
-        select(TicketPack).where(TicketPack.code == code, TicketPack.active.is_(True))
-    ).first()
+    pack = session.scalars(select(TicketPack).where(TicketPack.code == code)).first()
     if pack is None:
         raise PackNotFound
+    if not pack.active:
+        raise TicketSalesDiscontinued
     return pack
 
 
@@ -397,16 +401,26 @@ def current_period(now: datetime) -> str:
 
 
 def _usable_lot_condition(now: datetime) -> ColumnElement[bool]:
-    """Condição de lote utilizável (ADR 0049 §9.1).
+    """Condição de lote utilizável (ADR 0070 §4).
 
-    - passe: só a competência corrente;
+    - passe novo: enquanto o ciclo não termina (`expires_at`);
+    - passe legado: competência civil (`period`);
     - comprado/devolução: nunca expira;
     - nível/admin: expira apenas se houver `expires_at`.
     """
 
     period = current_period(now)
     return or_(
-        and_(TicketLot.source == "pass", TicketLot.period == period),
+        and_(
+            TicketLot.source == "pass",
+            TicketLot.expires_at.is_not(None),
+            TicketLot.expires_at > now,
+        ),
+        and_(
+            TicketLot.source == "pass",
+            TicketLot.expires_at.is_(None),
+            TicketLot.period == period,
+        ),
         and_(
             TicketLot.source.in_(("purchase", "refund")),
             TicketLot.expires_at.is_(None),
@@ -420,6 +434,8 @@ def _usable_lot_condition(now: datetime) -> ColumnElement[bool]:
 
 def _lot_is_usable(lot: TicketLot, now: datetime) -> bool:
     if lot.source == "pass":
+        if lot.expires_at is not None:
+            return ensure_utc(lot.expires_at) > now
         return lot.period == current_period(now)
     if lot.source in {"purchase", "refund"}:
         return True
@@ -847,6 +863,12 @@ def expire_due(session: Session, *, now: datetime | None = None) -> int:
     due_before = or_(
         and_(
             TicketLot.source == "pass",
+            TicketLot.expires_at.is_not(None),
+            TicketLot.expires_at <= moment,
+        ),
+        and_(
+            TicketLot.source == "pass",
+            TicketLot.expires_at.is_(None),
             or_(TicketLot.period.is_(None), TicketLot.period < period),
         ),
         and_(
