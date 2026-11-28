@@ -1,8 +1,10 @@
 # ADR 0079 — Catálogo mensal 20/40/70 e passe de temporada separado
 
-- **Status:** Proposto. Decisão financeira e de produto de 2026-11-28 registrada;
-  pendente de parecer jurídico (reembolso × CDC) e fiscal (6% × 15,5%) antes de
-  ser Aceito. **Nada foi implementado** em backend, app ou painel.
+- **Status:** **Aprovado como direção com ajustes (2026-11-28); jurídico/fiscal
+  pendentes; implementação faseada.** Catálogo, preço e parcelamento do passe
+  estão decididos; o parecer jurídico (reembolso × CDC) e o fiscal (6% × 15,5%)
+  continuam pendentes e não bloqueiam o início faseado. **Nada foi implementado**
+  em backend, app ou painel.
 - **Data:** 2026-11-28
 - **Decisores:** responsável pelo produto (decisão) e parecer financeiro
   (`docs/PARECER_FINANCEIRO_ASSINATURA_2026-11-28.md`).
@@ -52,6 +54,12 @@ célula de referência (5x5 econômica noturna, 6 tickets/jogador), custo
 fixo/cancelamento de R$ 0,1667/ticket, custódia 0,4%, Pix 0,99%, cartão 1x 4,99%
 e provisão de chargeback de 0,5%.
 
+Em 28/11/2026 o dono ajustou duas decisões sobre a mesma direção: (a) o **passe**
+pode ser pago em **até 3x** no cartão, mantendo a **assinatura em 1x** e o **6x
+fora**; (b) o **reembolso proporcional ao não usado entra no app** por decisão do
+dono, com o conflito com o CDC art. 49 e a ADR 0070 §8.1 registrado e o risco
+jurídico aceito de forma consciente — sem parecer que aprove a regra.
+
 ## Decisão
 
 ### 1. Catálogo: três planos mensais
@@ -83,21 +91,34 @@ e provisão de chargeback de 0,5%.
 6. O piso absoluto de R$ 3,00 da ADR 0070 §1 continua valendo como regra geral,
    mas o catálogo não usa o piso: usa R$ 3,10 no plano de maior volume.
 
-### 2. Cartão somente 1x, com o cliente absorvendo a taxa
+### 2. Cartão: assinatura somente 1x; passe em até 3x
 
-1. **Não existe 3x nem 6x.** O cartão é cobrado em **uma parcela**.
-2. O cliente absorve a taxa: `P_cartão = P_pix ÷ (1 − 5,49%)`, arredondado para
-   cima. A taxa é 4,99% de MDR + 0,5% de provisão de chargeback; o acréscimo
-   efetivo sobre o Pix é de 5,81%. Sem a provisão de 0,5%, os preços seriam
-   R$ 3,58 / 3,37 / 3,27.
-3. A apresentação correta é **“Pix R$ X; cartão R$ Y”** — dois preços de tabela,
-   não uma taxa adicionada depois.
-4. **Registro de conflito (6x × 1x).** O responsável pelo produto pediu
-   parcelamento em **6x**. O parecer financeiro de 28/11 mostrou que o 6x sem
-   juros exige preço dedicado e que o gross-up do Adendo A só preservaria a
-   margem com preço percebido pior; a decisão registrada é **1x**. Enquanto não
-   houver revisão financeira explícita, **1x prevalece** e o app não pode exibir
-   parcela.
+1. **Assinatura mensal: somente 1x.** Não existe 3x nem 6x para os planos de
+   tickets.
+2. **Passe de temporada: até 3x.** O parcelamento existe **apenas no passe**,
+   **sem 6x**. O cliente absorve a taxa e os juros; o Pix continua sendo o
+   preço-base.
+3. Gross-up: `P_cartão(n) = P_pix ÷ (1 − s_n − 0,5%)`, arredondado para cima,
+   com `s_1x = 4,99%` (MDR) e `s_3x = 9,05%` (MDR + parcelamento, tabela pública
+   do MP). Acréscimo efetivo sobre o Pix: **5,81% no 1x** e **10,56% no 3x**.
+   - assinatura 1x: R$ 3,60 / 3,39 / 3,29 por ticket;
+   - passe 1x: **R$ 44,97**; passe 3x: **R$ 46,99** (3× de R$ 15,66, com o
+     centavo restante na última parcela).
+4. A apresentação correta é **“Pix R$ X; cartão 1x R$ Y”** para a assinatura e
+   **“Pix R$ 42,50; cartão 1x R$ 44,97; cartão 3x R$ 46,99”** para o passe — dois
+   ou três preços de tabela, nunca uma taxa lançada depois.
+5. **Registro de conflito (6x × 1x × 3x).** O dono pediu 6x; o parecer mostrou
+   que o 6x sem juros exige preço dedicado e piora o preço percebido. A decisão
+   de 28/11 fechou em **1x para a assinatura** e, no ajuste do mesmo dia, em
+   **3x somente para o passe**. **6x permanece fora**; qualquer reabertura exige
+   nova análise financeira.
+6. **Implementação do 3x.** A tabela acima é o **modelo A** (taxa embutida no
+   preço; a JOGA paga o parcelamento e o recupera no gross-up). O **modelo B**
+   (1x + juros do emissor, com a JOGA pagando só o MDR) é alternativa válida e
+   mantém o custo com o cliente — a escolha depende do contrato do MP
+   (§Pendências). Em qualquer modelo, **o cliente paga**; a JOGA não absorve
+   parcelamento. Se a taxa real de 3x for maior que 9,05%, a tabela é refeita: o
+   gross-up preserva a margem, mas o preço sobe.
 
 ### 3. Recorrência e cobrança
 
@@ -118,8 +139,9 @@ e provisão de chargeback de 0,5%.
 
 1. O passe é **benefício de temporada**, não assinatura de tickets, e é
    **cobrança única** por temporada de 3 meses.
-2. Preço: **R$ 42,50/temporada** no Pix (**R$ 44,97** no cartão 1x), equivalente
-   a ~R$ 14,17/mês.
+2. Preço: **R$ 42,50/temporada** no Pix, **R$ 44,97** no cartão 1x e
+   **R$ 46,99** no cartão 3x (até 3x, §2), equivalente a ~R$ 14,17/mês no Pix. O
+   parcelamento é do passe, não da assinatura.
 3. O passe **não tem tickets pagos**. Ele libera trilha, cosméticos,
    estatísticas avançadas, lobby privado, busca por CEP e os tickets grátis da
    trilha (ADR 0043 §5, §7 e §10 permanecem).
@@ -128,14 +150,16 @@ e provisão de chargeback de 0,5%.
 5. **Margem:** com 12 tickets e imposto de 15,5%, a margem fica em
    **12,3%–12,9%** (Pix/cartão); no cenário incremental de 6 tickets,
    45,7%–57,7%. A R$ 37,50 (equivalente ao antigo R$ 12,50/mês) a margem cai para
-   3,4%–3,5% no cenário conservador; por isso o preço é R$ 42,50.
+   3,4%–3,5% no cenário conservador; por isso o preço é R$ 42,50. O **3x**, por
+   ser gross-up, mantém a margem do 1x (a taxa de parcelamento é pass-through).
 6. **Ressalva de faixa.** A R$ 42,50, o piso de 10% só se sustenta se os tickets
    grátis forem usados na faixa de referência (R$ 2,50/ticket) ou se houver
    restrição de faixa. No premium (R$ 2,68/ticket), a margem cai para **7,5%**
    (cartão, 15,5%) / 7,8% (Pix, 15,5%). Duas saídas: **restringir os tickets
    grátis às faixas elegíveis** (Econômica e Padrão dia, como o crédito de
    estreia da ADR 0042 §7) ou **subir o passe para R$ 49,90**. A escolha é
-   pendência (§Pendências), e o passe fica **aprovado com ressalva** até ela.
+   pendência (§Pendências); até ela, a direção está aprovada, mas **a condição de
+   preço do passe no premium fica aberta**.
 7. **Venda no meio da temporada:** pro-rata por mês restante, com cap
    proporcional de tickets, ou não vender após o início. Recomendação do
    parecer: pro-rata.
@@ -153,13 +177,14 @@ e provisão de chargeback de 0,5%.
 4. Ticket de assinatura e ticket grátis continuam **pessoais e intransferíveis**.
 5. Ordem de consumo e devolução por reserva cancelada seguem a ADR 0070 §5.
 
-### 6. Reembolso proporcional ao não usado
+### 6. Reembolso proporcional ao não usado (decisão do dono)
 
 1. **Assinatura mensal:**
    `reembolso = tickets_não_usados × P_pago × (1 − s)`, onde `P_pago` é o preço
-   por ticket efetivamente recebido e `s` o custo do meio (0,99% Pix; 4,99%
-   cartão 1x; 5,49% com chargeback). O que foi consumido é cobrado pelo preço do
-   plano; o mês pago não volta.
+   por ticket efetivamente recebido e `s` o custo do meio pago pela JOGA (0,99%
+   Pix; 4,99% cartão 1x; 9,05% cartão 3x do passe). A provisão de 0,5% de
+   chargeback **não** entra no `s`: fica retida como reserva de risco (§7). O que
+   foi consumido é cobrado pelo preço do plano; o mês pago não volta.
 2. **Sem uso e dentro de 7 dias:** reembolso do valor líquido da taxa; se o PSP
    devolver a taxa, reembolso cheio.
 3. **Passe:**
@@ -167,11 +192,18 @@ e provisão de chargeback de 0,5%.
    Resultado negativo significa **sem reembolso**. Exemplo: 1 mês usado e 6
    tickets resgatados → R$ 13,33 menos a taxa; 12 tickets resgatados →
    reembolso zero.
-4. **Conflito com CDC art. 49 e ADR 0070 §8.1.** A regra vigente garante
-   reembolso **integral em 7 dias**, sem desconto de tickets usados. A regra
-   proporcional é **proposta financeira**, não regra vigente: exige emenda à ADR
-   0070 e parecer jurídico. **O app e o painel não podem prometer a regra
-   proporcional antes disso**; até a decisão, prevalece o texto da ADR 0070 §8.
+4. **Decisão do dono: a regra proporcional entra no app.** Mesmo com o conflito
+   com o **CDC art. 49** e a **ADR 0070 §8.1**, o dono decidiu que o app e o
+   painel passam a exibir e aplicar a regra proporcional ao não usado. **Isto não
+   é aprovação jurídica:** o parecer jurídico segue pendente e pode exigir
+   mudança. O risco é **consciente e aceito** pelo dono e fica registrado nesta
+   ADR; a regra é implementada de forma reversível (flag e texto versionado).
+5. Mitigação mínima enquanto o jurídico não fecha: texto e consentimento
+   explícitos no checkout, Termos de Uso e tela de cancelamento alinhados,
+   atendimento com trilha de auditoria, provisão para reclamações e disposição
+   para reverter a regra se o parecer contrário vier.
+6. `s` no reembolso do passe pago em 3x é **9,05%** (custo real do meio); a
+   provisão de 0,5% de chargeback não entra no cálculo (§7).
 
 ### 7. Repasse à quadra e chargeback
 
@@ -215,17 +247,25 @@ e provisão de chargeback de 0,5%.
 
 ### 10. Vigência
 
-1. Esta ADR é **Proposto**. Código, contrato e preço só mudam depois de Aceito,
-   com parecer jurídico (reembolso) e fiscal (alíquota/base) anexados.
-2. Até lá, o catálogo em produção continua o da ADR 0070 e o app não exibe
-   20/40/70 nem o passe separado.
+1. Esta ADR está **aprovada como direção com ajustes (2026-11-28)**, com
+   **implementação faseada**. Catálogo, preço e parcelamento do passe estão
+   decididos; o jurídico (reembolso) e o fiscal (alíquota/base) seguem pendentes.
+2. **Faseamento:** (a) backend do catálogo, entitlements e preço de tabela por
+   meio e parcelamento; (b) app com 20/40/70, passe separado e 3x do passe;
+   (c) reembolso proporcional no app e no painel, com texto de risco e Termos;
+   (d) recorrência no cartão só com o contrato do MP confirmado.
+3. Enquanto a fase (a) não entra em produção, o catálogo vigente continua o da
+   ADR 0070.
+4. O parecer fiscal é condição para **escalar**, não para o piloto. O parecer
+   jurídico é condição para **consolidar** a regra de reembolso — que já entra no
+   app por decisão do dono, com o risco registrado em §6 e nos conflitos.
 
 ## Conflitos registrados
 
 | # | Conflito | Onde | Situação |
 |---|---|---|---|
-| 1 | **CDC art. 49 × reembolso proporcional.** CDC e ADR 0070 §8.1 garantem reembolso integral em 7 dias; a decisão de 28/11 propõe proporcional ao não usado, com desconto de tickets resgatados. | ADR 0070 §8.1; CDC art. 49; §6 desta ADR | **Aberto — prevalece a regra vigente** até parecer jurídico e emenda. Não prometer no app. |
-| 2 | **6x × 1x.** O dono pediu 6x; o parecer chegou a modelar 6x com gross-up (Adendo A) e 6x com juros (modelo B); a decisão de 28/11 fixou **somente 1x**. | §2; parecer §3, §4 e §12 | **Fechado por decisão financeira em 1x**, revisável apenas com nova análise. |
+| 1 | **CDC art. 49 × reembolso proporcional (decisão do dono).** CDC e ADR 0070 §8.1 preveem reembolso integral em 7 dias; a regra proporcional ao não usado vai para o app por decisão do dono, sem parecer que a aprove. | ADR 0070 §8.1; CDC art. 49; §6 desta ADR | **Decisão do dono em 2026-11-28, com risco jurídico registrado e aceito.** Jurídico pendente; a regra entra no app com texto/consentimento e é reversível. **Não é aprovação jurídica.** |
+| 2 | **6x × 1x × 3x.** O dono pediu 6x; o parecer modelou 6x com gross-up e 6x com juros; a decisão fixou 1x na assinatura e, no ajuste de 28/11, **3x somente no passe**. | §2; parecer §3, §4 e §12 | **Fechado: 6x fora; 3x só no passe; assinatura em 1x.** Reabertura exige análise financeira nova. |
 | 3 | **Fiscal 6% × 15,5% e base de cálculo.** 6% sobre a comissão é a conta; Anexo V (15,5%) é o stress. Se a base for a receita cheia, o plano de 70 fica em 2,4% e o passe no premium em 7,5%. | ADR 0049; §8 | **Aberto — pendente de parecer fiscal.** Precificação do 70 e do passe depende disso. |
 | 4 | **Numeração de ADR.** O parecer manda formalizar em “0075”, que já é Supabase; 0076/0077 são lacunas; existem dois arquivos 0070 (assinatura e pedido de entrada em clã). | `docs/ADR/` | **Aberto — esta ADR usa 0079.** Renumeração/desambiguação do 0070 fica para rodada própria; nenhum arquivo é renumerado aqui. |
 | 5 | **Mecânica dos 12 tickets do passe.** A ADR 0043 §2.1 dá 2 tickets a cada 5 níveis (teto 12); a decisão de 28/11 fala em “6 grátis + 6 do passe”. | ADR 0043 §2.1; §4, item 4 desta ADR | **Aberto — decidir se os 6 extras são fixos ou distribuídos por nível.** |
@@ -237,7 +277,8 @@ e provisão de chargeback de 0,5%.
 ### Positivas
 
 - Catálogo cai de 7 SKUs para **3 planos + 1 passe**, com uma duração só.
-- O 6x sai do produto e com ele o principal consumidor de margem.
+- O 6x sai do produto e com ele o principal consumidor de margem; o **3x fica
+  restrito ao passe**.
 - A temporada passa a ter preço próprio e deixa de esconder o custo dos tickets
   grátis.
 - O repasse à quadra continua cheio e simples: sem MDR, sem chargeback, sem
@@ -254,28 +295,34 @@ e provisão de chargeback de 0,5%.
 | 4 | Recorrência no cartão | Média | Falha de cobrança, churn, chargeback | 3 tentativas, suspender o mês seguinte, consentimento claro |
 | 5 | Contrato do MP | Média | Taxa de recorrência/card-on-file diferente de 4,99% | Extrair do painel/contrato antes de ligar |
 | 6 | Chargeback em ticket baixo | Média | Um chargeback do passe consome quase a temporada | Provisão 0,5%–1,0%; cobrança combinada no 1º mês |
-| 7 | Reembolso proporcional × CDC | Alta | Insegurança jurídica e reclamação | Não prometer no app; parecer + emenda à ADR 0070 |
+| 7 | Reembolso proporcional × CDC | Alta | Ação judicial/reclamação; a regra não é juridicamente aprovada | **Risco aceito pelo dono**; texto/consentimento, Termos, atendimento auditável, provisão e revisão se o parecer contrário vier |
 | 8 | NFS-e ausente | Alta | Autuação e imposto acumulado | Provisionar; emitir mensalmente quando formalizado |
 | 9 | Canibalização do 20 pelo passe | Média | Mix pior, margem blended menor | Vender o passe pelo benefício, não como ticket |
+| 10 | 3x do passe | Média | Taxa real > 9,05%, regra do MP, preço percebido e chargeback de maior valor | Gross-up versionado, feature flag, confirmar contrato e limitar a 3x e ao passe |
+| 11 | Parcelamento induz compra por impulso | Baixa | Aumento de arrependimento e de reembolso proporcional | 3x só no passe, texto claro e monitorar cancelamentos |
 
-### Critérios de aceite (quando Aceito)
+### Critérios de aceite (implementação faseada)
 
 1. O catálogo ativo tem **exatamente** 3 planos mensais e 1 passe; nenhum SKU
    trimestral/semestral é vendável.
-2. O checkout oferece **Pix e cartão 1x**; qualquer requisição com parcela > 1 é
-   rejeitada pelo backend (não apenas escondida no app).
+2. O checkout oferece **Pix e cartão 1x** na assinatura e **Pix, 1x e 3x** no
+   passe; o backend rejeita parcela > 1 na assinatura, > 3 no passe e **6x em
+   qualquer produto** (não apenas esconde no app).
 3. O preço do cartão é calculado por **gross-up versionado**, nunca digitado no
    app; mudança de taxa exige nova versão de preço, não edição do histórico.
 4. Assinatura e passe são **entitlements distintos**: um não libera o outro.
 5. Recorrência com consentimento, 3 tentativas e suspensão do mês seguinte;
    passe cobrado uma vez.
-6. Reembolso implementado **somente** na regra jurídica aprovada; enquanto o
-   conflito do CDC existir, o fluxo é o da ADR 0070 §8.
+6. Reembolso proporcional ao não usado implementado no app e no painel
+   **conforme decisão do dono**, com texto, consentimento e risco visível;
+   **jurídico pendente** e a regra é reversível por configuração.
 7. Repasse à quadra em `starts_at + 2h` pelo valor cheio, comprovado por teste.
 8. Chargeback suspende franquia e novas compras, sem clawback da quadra.
 9. Migração do legado honra lotes `purchase` sem validade e ciclos já pagos.
 10. Testes de idempotência da cobrança, autorização negativa, repetição de
     webhook, falha de PSP e concorrência na concessão de franquia.
+11. Preço de tabela do passe (1x e 3x) versionado e calculado pelo servidor;
+    nenhum preço de parcela é digitado no app.
 
 ## Impacto de implementação (não implementado)
 
@@ -290,37 +337,48 @@ e provisão de chargeback de 0,5%.
 - Entitlements separados: assinatura → tickets; passe → trilha, cosméticos,
   estatísticas, lobby, CEP e tickets grátis.
 - Cobrança recorrente de cartão para assinatura; cobrança única para passe.
-- Preço de cartão por gross-up versionado; taxa e provisão parametrizadas.
-- Reembolso conforme a regra jurídica vigente; cálculo do passe isolado.
+  **Assinatura só 1x; passe aceita 1x e 3x; 6x rejeitado no servidor para todos
+  os produtos.**
+- Preço de cartão por gross-up versionado, **por meio e por parcelamento**
+  (1x/3x); taxa de parcelamento e provisão de chargeback parametrizadas.
+- Reembolso proporcional ao não usado **conforme decisão do dono**, atrás de
+  flag de configuração e com trilha de auditoria; `s` do 3x = 9,05% e o passe
+  pago em 3x usa esse custo no cálculo.
 - Repasse e chargeback conforme §7; nenhum desconto no repasse da quadra.
 - Migração/limpeza de planos e convivência com lotes `purchase` legados.
 
 ### App mobile
 
 - Trocar “trimestre” por “mês” na tela de assinatura.
-- Exibir 20/40/70 com dois preços (Pix e cartão 1x); **sem 3x/6x**.
+- Exibir 20/40/70 com **Pix e cartão 1x**; a assinatura **não** mostra 3x/6x.
+- No **passe**, exibir Pix, **cartão 1x e cartão 3x** (R$ 42,50 / 44,97 / 46,99);
+  o 3x é exclusivo do passe.
 - Separar visualmente o **passe de temporada** da assinatura de tickets.
 - Mostrar 6 grátis do free e +6 do passe, com aviso de expiração no fim da
   temporada.
-- Consentimento de recorrência, cancelamento, falha de pagamento e a regra de
-  reembolso vigente.
+- Consentimento de recorrência, cancelamento, falha de pagamento e **texto
+  explícito do reembolso proporcional ao não usado** (sem apresentá-lo como
+  garantia legal).
 
 ### Painel/site
 
 - Catálogo de 3 planos + passe, com preço por meio de pagamento.
 - Margem por plano, passe, uso (`u`) e faixa; provisão de chargeback.
 - Receita diferida do passe (1/3 por mês) e receita mensal da assinatura.
-- Conciliação de recorrência, falhas, estornos e chargebacks.
+- Conciliação de recorrência, falhas, estornos, **3x do passe** e chargebacks.
+- Reembolso proporcional com cálculo auditável e relatório de impacto (CDC).
 - Sem promessa de split/repasse automático.
 
 ### Testes
 
 - Catálogo: 3 planos, 1 passe, nenhum SKU antigo vendável.
-- Parcela > 1 rejeitada no servidor.
-- Gross-up: tabela de preço por versão; arredondamento para cima.
+- Parcela > 1 rejeitada na assinatura, > 3 no passe e **6x rejeitado em tudo**.
+- Gross-up: tabela de preço por versão e por parcelamento; arredondamento para
+  cima e 3x de R$ 46,99 no passe.
 - Recorrência: 3 tentativas, suspensão do mês seguinte, cancelamento.
 - Passe: cobrança única, expiração dos tickets, pro-rata opcional.
-- Reembolso: regra vigente + casos-limite do passe (resultado negativo).
+- Reembolso: **regra proporcional do dono**, casos-limite do passe (resultado
+  negativo), `s` do 3x e reversão por flag.
 - Repasse cheio e chargeback sem clawback.
 - Autorização negativa, idempotência e repetição de webhook.
 
@@ -328,13 +386,14 @@ e provisão de chargeback de 0,5%.
 
 1. `docs/ADR/0070-assinatura-com-franquia-mensal-expiravel.md` — status:
    substituído parcialmente por esta ADR (catálogo, durações, parcelamento e
-   passe embutido); §8.1 permanece vigente até o parecer jurídico.
+   passe embutido). **§8.1 (reembolso) precisa de emenda:** por decisão do dono,
+   o app passa a aplicar a regra proporcional desta ADR, com o risco registrado.
 2. `docs/ADR/0043-temporada-trimestral-passe-e-customizacao.md` — atualizado
    nesta rodada apenas no status.
 3. `docs/JOGA_DOCUMENTACAO_CONCEITO_PRODUTO.md` — catálogo, passe, reembolso.
 4. `docs/JOGA_DOCUMENTACAO_TECNICA.md` — entitlements, contratos e cobrança.
-5. `docs/CONTRATO_RESERVAS_APP.md` — preço por meio de pagamento e recusa de
-   parcela.
+5. `docs/CONTRATO_RESERVAS_APP.md` — preço por meio e parcelamento (1x/3x do
+   passe) e recusa de parcela.
 6. `PLANS.md` e `PENDENCIAS.md` — fases de implementação e pendências
    jurídico/fiscais.
 
@@ -342,12 +401,13 @@ e provisão de chargeback de 0,5%.
 
 | # | Pendência | Gravidade | Depende de |
 |---|---|---|---|
-| 1 | Parecer jurídico sobre reembolso proporcional × CDC art. 49 | **P0** | Jurídico |
+| 1 | Parecer jurídico sobre reembolso proporcional × CDC art. 49 | **P0, não bloqueia o app** | Jurídico |
 | 2 | Parecer fiscal: 6% sobre comissão × 15,5% e base de cálculo | **P0** | Contador/advogado tributarista |
 | 3 | Restringir faixa dos tickets grátis do passe ou subir para R$ 49,90 | **P0** | Produto + financeiro |
-| 4 | Contrato do MP: recorrência, card-on-file e 1x | **P0** | Contrato/painel MP |
+| 4 | Contrato do MP: recorrência/card-on-file, 1x, **taxa real do 3x** e escolha do modelo A/B | **P0** | Contrato/painel MP |
 | 5 | Mecânica dos 12 tickets do passe (fixos × por nível) | P1 | Produto |
 | 6 | Pro-rata da venda do passe no meio da temporada | P1 | Produto |
 | 7 | Confirmar que a base legada está vazia e regra de migração | P1 | Dados |
 | 8 | Desambiguação da numeração 0070 e uso das lacunas 0076/0077 | P2 | Documentação |
 | 9 | NFS-e/recibo do passe e da assinatura | P2 | ADR 0068 + fiscal |
+| 10 | Termos de Uso, checkout e política de reembolso alinhados à decisão do dono | **P0** | Jurídico + produto |
