@@ -28,6 +28,7 @@ from app.modules.profile.cep import (
 from app.modules.profile.cpf import CpfAlreadyRegistered, CpfKeyUnavailable, InvalidCpf
 from app.modules.profile.models import Sport, SportFormat
 from app.modules.profile.service import (
+    THEME_ID_PATTERN,
     DiscoveryError,
     InvalidAvailability,
     InvalidProfile,
@@ -96,6 +97,7 @@ class ProfileResponse(BaseModel):
     display_name: str | None
     tag: str
     bio: str | None
+    theme_id: str | None
     sports: list[UserSportResponse]
     availability: list[AvailabilityResponse]
     region: RegionResponse | None
@@ -104,6 +106,14 @@ class ProfileResponse(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     display_name: OptionalDisplayName = Field(default=None)
     bio: OptionalMultilineText = Field(default=None, max_length=280)
+
+
+class ThemeUpdateRequest(BaseModel):
+    theme_id: str | None = Field(default=None, pattern=THEME_ID_PATTERN.pattern)
+
+
+class ThemeView(BaseModel):
+    theme_id: str | None
 
 
 class SportProfileRequest(BaseModel):
@@ -213,6 +223,7 @@ def _profile_response(session: Session, snapshot: ProfileSnapshot) -> ProfileRes
         display_name=snapshot.display_name,
         tag=snapshot.tag,
         bio=snapshot.bio,
+        theme_id=snapshot.theme_id,
         sports=sports,
         availability=[
             AvailabilityResponse(
@@ -369,6 +380,23 @@ def update_my_profile(
     )
     session.commit()
     return _profile_response(session, snapshot)
+
+
+@router.put("/me/theme", response_model=ThemeView)
+def update_my_theme(
+    payload: ThemeUpdateRequest,
+    current: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    session: Annotated[Session, Depends(get_session)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> ThemeView:
+    """Define o tema cosmético do cartão; ``null`` volta ao padrão do app."""
+
+    try:
+        snapshot = service.set_theme(current.user_id, payload.theme_id)
+    except InvalidProfile:
+        raise _error(status.HTTP_400_BAD_REQUEST, "invalid_theme") from None
+    session.commit()
+    return ThemeView(theme_id=snapshot.theme_id)
 
 
 @router.put("/me/sports", response_model=ProfileResponse)

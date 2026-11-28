@@ -306,15 +306,26 @@ def test_public_player_shape_tag_relation_and_clan(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body == {
-        "user_id": str(target),
-        "display_name": "PERFIL PUBLICO",
-        "tag": "#FEED1234",
-        "relation": "friend",
-        "clan": {"id": str(clan.id), "name": "Clã Público", "tag": "#PUB"},
-    }
-    assert set(body) == {"user_id", "display_name", "tag", "relation", "clan"}
+    assert body["user_id"] == str(target)
+    assert body["display_name"] == "PERFIL PUBLICO"
+    assert body["tag"] == "#FEED1234"
+    assert body["relation"] == "friend"
+    assert body["clan"] == {"id": str(clan.id), "name": "Clã Público", "tag": "#PUB"}
+    assert body["card"]["visual"]["icon_key"] is not None
+    assert body["card"]["badges"] == []
+    assert set(body) == {"user_id", "display_name", "tag", "relation", "clan", "card"}
     assert set(body["clan"]) == {"id", "name", "tag"}
+    assert set(body["card"]) == {
+        "theme_id",
+        "visual",
+        "tier",
+        "level",
+        "qualifier",
+        "season_label",
+        "record",
+        "win_streak",
+        "badges",
+    }
     for forbidden_key in (
         "email",
         "phone",

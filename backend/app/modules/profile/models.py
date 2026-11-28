@@ -145,6 +145,11 @@ class UserProfile(Base):
             postgresql_where=text("cpf_hash IS NOT NULL"),
             sqlite_where=text("cpf_hash IS NOT NULL"),
         ),
+        CheckConstraint(
+            "theme_id IS NULL OR "
+            "(length(theme_id) BETWEEN 1 AND 40 AND theme_id = lower(theme_id))",
+            name="theme_id_valid",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -152,6 +157,9 @@ class UserProfile(Base):
     )
     display_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     bio: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    # Tema do cartão de perfil (cosmético). O pattern completo é validado na
+    # escrita; o banco garante limite e caixa baixa.
+    theme_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # nonce(12) || ciphertext || tag(16). O texto claro nunca é persistido.
     cpf_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     cpf_key_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
