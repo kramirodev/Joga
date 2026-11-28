@@ -6,31 +6,3 @@
 # que estouram o limite de caminho do Windows e fazem o Ninja/CMake entrar em loop
 # ("manifest 'build.ninja' still dirty after 100 tries").
 nodeLinker: hoisted
-
-# TEMPORÁRIO — exceção à quarentena de 24 h (minimumReleaseAge) do pnpm 11,
-# autorizada pelo dono do produto apenas para os pacotes da onda Expo SDK 58.1.0
-# publicados em 2026-11-26T16:19–16:23Z. Sem isso o CI recusa o lockfile com
-# ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION. São nomes exatos, não curingas, para
-# não abrir a política além do necessário.
-# REMOVER esta lista (e o bloco inteiro) depois de ~2026-11-27T16:24Z, quando a
-# quarentena padrão passar a aceitar esses pacotes. Não deixar como permanente.
-minimumReleaseAgeExclude:
-  - 'expo'
-  - 'expo-location'
-  - 'expo-sharing'
-  - 'expo-splash-screen'
-  - 'expo-notifications'
-  - '@expo/cli'
-  - '@expo/config'
-  - '@expo/config-plugins'
-  - '@expo/fingerprint'
-  - '@expo/inline-modules'
-  - '@expo/local-build-cache-provider'
-  - '@expo/metro-config'
-  - '@expo/metro-file-map'
-  - '@expo/prebuild-config'
-  - '@expo/router-server'
-  - 'babel-preset-expo'
-  - 'expo-file-system'
-  - 'expo-modules-core'
-  - 'expo-modules-jsi'
