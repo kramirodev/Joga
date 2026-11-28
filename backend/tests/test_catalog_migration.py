@@ -26,7 +26,7 @@ from app.main import create_app
 TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "catalog_migration_test"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "f1a2b3c4d5e6"
+HEAD_REVISION = "bc23de45fa67"
 CATEGORY_PREVIOUS_REVISION = "b7c8d9e0f1a2"
 PRE_REPAIR_REVISION = "b1c2d3e4f5a6"
 LEGACY_REVISION = "a0b1c2d3e4f5"
@@ -334,9 +334,11 @@ def test_repair_migration_heals_legacy_database(
     # O downgrade do reparo é no-op: não remove o catálogo nem as seeds.
     command.downgrade(config, PRE_REPAIR_REVISION)
     connection.commit()
-    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-        PRE_REPAIR_REVISION
-    )
+    versions = {
+        row[0] for row in connection.execute(text("SELECT version_num FROM alembic_version"))
+    }
+    assert PRE_REPAIR_REVISION in versions
+    assert HEAD_REVISION not in versions
     assert connection.scalar(text("SELECT count(*) FROM visual_catalog_items")) == 14
 
     command.upgrade(config, "head")

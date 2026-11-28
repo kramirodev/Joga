@@ -42,6 +42,7 @@ from app.modules.organizations import models as organizations_models  # noqa: F4
 from app.modules.organizations.platform import ensure_platform_organization
 from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.passes import models as passes_models  # noqa: F401
+from app.modules.passes.plans import seed_default_plans
 from app.modules.payments import models as payments_models  # noqa: F401
 from app.modules.payments.adapter import SimulatorPspAdapter
 from app.modules.payments.dependency import get_psp_adapter
@@ -161,6 +162,7 @@ def db_session() -> Iterator[Session]:
     with Session(engine) as session:
         seed_default_bands(session)
         seed_default_packs(session)
+        seed_default_plans(session)
         seed_default_visual_catalog(session)
         ensure_platform_organization(session)
         season = seed_current_season(session)

@@ -248,7 +248,7 @@ def test_pass_sale_and_month_posts(
 ) -> None:
     user_id = make_user(db_session)
     subscription = create_subscription(
-        db_session, user_id, "time", now=datetime(2026, 11, 13, 12, tzinfo=UTC)
+        db_session, user_id, "trimestral_60", now=datetime(2026, 11, 13, 12, tzinfo=UTC)
     )
     activate_subscription(db_session, subscription.id, now=datetime(2026, 11, 13, 12, tzinfo=UTC))
     db_session.flush()
@@ -258,7 +258,7 @@ def test_pass_sale_and_month_posts(
     assert sale[(PASS_DEFERRED_REVENUE, "C")] == subscription.amount_cents
 
     month = entries(db_session, transaction(db_session, f"pass:{subscription.id}:month:1"))
-    monthly = subscription.amount_cents // 3
+    monthly = subscription.amount_cents // subscription.cycle_months
     assert month[(PASS_DEFERRED_REVENUE, "D")] == monthly
     assert month[(PASS_REVENUE, "C")] == monthly
 
