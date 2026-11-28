@@ -698,9 +698,38 @@ export type PublicClan = {
   tag: string;
 };
 
+export type PublicCardBadge = {
+  code: string;
+  name: string;
+  kind: string;
+};
+
 /**
- * Perfil público mínimo de `GET /users/{id}`: nome, tag, relação e clã ativo.
- * A rota não devolve e-mail, telefone, CPF, localização, MMR ou insígnias.
+ * Snapshot do cartão que o dono vê, para o perfil público renderizar o mesmo
+ * `ProfileCard`. Campos ausentes (`null`) não são preenchidos com valores
+ * inventados no app; o cartão mostra `—` e a falta é tratada como contrato
+ * incompleto do backend.
+ */
+export type PublicPlayerCard = {
+  theme_id: string | null;
+  /** Chaves de identidade do dono; aceita resposta parcial como `/me/visual`. */
+  visual: Partial<VisualIdentity> | null;
+  tier: string | null;
+  level: number | null;
+  qualifier: string | null;
+  season_label: string | null;
+  /** Número exibido no bloco de recorde do cartão (hoje, total de partidas). */
+  record: number | null;
+  /** Sequência atual de vitórias (`/me/progress.streak.current`). */
+  win_streak: number | null;
+  /** Insígnias equipadas, na ordem dos quadros do cartão. */
+  badges: PublicCardBadge[];
+};
+
+/**
+ * Perfil público mínimo de `GET /users/{id}`: nome, tag, relação, clã ativo e,
+ * quando o backend expõe, o snapshot do cartão. A rota não devolve e-mail,
+ * telefone, CPF, localização nem MMR bruto.
  */
 export type PublicPlayer = {
   user_id: string;
@@ -708,6 +737,8 @@ export type PublicPlayer = {
   tag: string;
   relation: PlayerRelation;
   clan: PublicClan | null;
+  /** Opcional até o backend publicar o snapshot; ausente = cartão incompleto. */
+  card?: PublicPlayerCard | null;
 };
 
 export type FriendRequest = {

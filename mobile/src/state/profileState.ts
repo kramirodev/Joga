@@ -6,6 +6,8 @@
  * devolve (`profile.tag`, `clan`, `relation`) para texto e ações da tela.
  */
 
+import type { Badge, PublicPlayer, VisualIdentity } from '../api/types';
+
 export type PublicProfileStatus =
   'self' | 'friend' | 'incoming_request' | 'outgoing_request' | 'public';
 
@@ -88,15 +90,74 @@ export function friendSearchPrefill(
   return { name: (name ?? '').trim(), tag: normalizeProfileTag(tag) };
 }
 
-export type AvatarTarget = 'profile-other' | 'identity-editor' | null;
+export type AvatarTarget = 'profile-edit' | 'profile-other' | 'identity-editor' | null;
 
-/** Toque no avatar: perfil público no próprio perfil e identidade na edição. */
+/** Toque no avatar: edita o próprio perfil e abre a identidade dentro da edição. */
 export function avatarTargetFor(screen: 'me' | 'edit' | 'other'): AvatarTarget {
   if (screen === 'me') {
-    return 'profile-other';
+    return 'profile-edit';
   }
   if (screen === 'edit') {
     return 'identity-editor';
   }
   return null;
+}
+
+export type PublicCardFields = {
+  tier: string | null;
+  level: number | null;
+  qualifier: string | null;
+  seasonLabel: string | null;
+  record: number | null;
+  winstreak: number | null;
+  badges: string[];
+  visual: Partial<VisualIdentity> | null;
+  themeId: string | null;
+};
+
+const EMPTY_PUBLIC_CARD: PublicCardFields = {
+  tier: null,
+  level: null,
+  qualifier: null,
+  seasonLabel: null,
+  record: null,
+  winstreak: null,
+  badges: [],
+  visual: null,
+  themeId: null,
+};
+
+/**
+ * Traduz o snapshot público para os campos do `ProfileCard`. Ausência continua
+ * ausência: nada aqui preenche tier, nível, recorde ou badge por conta própria.
+ */
+export function publicCardFields(player: PublicPlayer | null | undefined): PublicCardFields {
+  const card = player?.card;
+  if (!card) {
+    return { ...EMPTY_PUBLIC_CARD, badges: [] };
+  }
+  return {
+    tier: card.tier ?? null,
+    level: card.level ?? null,
+    qualifier: card.qualifier ?? null,
+    seasonLabel: card.season_label ?? null,
+    record: card.record ?? null,
+    winstreak: card.win_streak ?? null,
+    badges: (card.badges ?? []).slice(0, 3).map((badge) => badge.name),
+    visual: card.visual ?? null,
+    themeId: card.theme_id ?? null,
+  };
+}
+
+/** Insígnias dos quadros do cartão: só as equipadas, na ordem dos slots. */
+export function equippedBadges(badges: Badge[] | null | undefined): Badge[] {
+  return (badges ?? [])
+    .filter((badge) => badge.equipped_slot != null)
+    .sort((first, second) => (first.equipped_slot ?? 0) - (second.equipped_slot ?? 0))
+    .slice(0, 3);
+}
+
+/** Nomes das insígnias equipadas, para os três quadros do cartão. */
+export function equippedBadgeNames(badges: Badge[] | null | undefined): string[] {
+  return equippedBadges(badges).map((badge) => badge.name);
 }
