@@ -245,6 +245,48 @@ export function isFormatSelected(selection: QueueSelection, formatId: string): b
   return selection.formats.includes(formatId);
 }
 
+/**
+ * Um esporte que saiu do catálogo não pode continuar na seleção: o chip some
+ * da tela, mas a contagem e o `PUT` continuariam com um id que o servidor
+ * rejeita. `byFormat` só perde o formato que desapareceu do catálogo; esportes
+ * apenas desmarcados continuam lembrados. Catálogo vazio (carregando ou
+ * indisponível) não poda nada e preserva a escolha do usuário.
+ */
+export function pruneSelectionToFormats(
+  selection: QueueSelection,
+  catalogFormatIds: ReadonlySet<string>,
+): QueueSelection {
+  if (catalogFormatIds.size === 0) {
+    return selection;
+  }
+  const formats = selection.formats.filter((formatId) => catalogFormatIds.has(formatId));
+  const staleChoices = Object.keys(selection.byFormat).filter(
+    (formatId) => !catalogFormatIds.has(formatId),
+  );
+  if (formats.length === selection.formats.length && staleChoices.length === 0) {
+    return selection;
+  }
+  const byFormat = { ...selection.byFormat };
+  for (const formatId of staleChoices) {
+    delete byFormat[formatId];
+  }
+  return { formats, byFormat };
+}
+
+/**
+ * Um rascunho só é retomado quando corresponde à intenção de entrada
+ * (`casual`/`ranqueada`). Assim a busca nova nunca reabre com o filtro de
+ * esporte de uma seleção anterior. Sem intenção explícita, o rascunho vale.
+ */
+export function draftMatchesIntent(selection: QueueSelection, intent: unknown): boolean {
+  if (intent !== 'casual' && intent !== 'ranked') {
+    return true;
+  }
+  return selection.formats.some((formatId) =>
+    (selection.byFormat[formatId]?.modes ?? []).includes(intent),
+  );
+}
+
 /** Liga/desliga um esporte sem descartar modos e nível já escolhidos. */
 export function withFormatToggled(selection: QueueSelection, formatId: string): QueueSelection {
   if (!formatId) {

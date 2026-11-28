@@ -9,6 +9,7 @@ import {
   buildSelectionPayload,
   cancelOutcome,
   divergentCourtFormats,
+  draftMatchesIntent,
   emptySelection,
   formatLabelFromCatalog,
   isExpired,
@@ -19,6 +20,7 @@ import {
   lobbyIdFromQueue,
   nextPollDelay,
   oldestCreatedAt,
+  pruneSelectionToFormats,
   queueFailureMessage,
   queueContinuity,
   reconcileEntries,
@@ -686,4 +688,36 @@ test('lobby prefere a entrada encontrada e backoff não passa de 30 s', () => {
   assert.equal(nextPollDelay(3), 20_000);
   assert.equal(nextPollDelay(4), 30_000);
   assert.equal(nextPollDelay(9), 30_000);
+});
+
+test('esporte fora do catálogo sai da seleção sem apagar escolhas lembradas', () => {
+  const selection = selectionOf({
+    f1: ['casual'],
+    f2: ['ranked'],
+    f3: ['casual', 'ranked'],
+  });
+  const pruned = pruneSelectionToFormats(selection, new Set(['f1', 'f3']));
+
+  assert.deepEqual(pruned.formats, ['f1', 'f3']);
+  assert.deepEqual(Object.keys(pruned.byFormat).sort(), ['f1', 'f3']);
+  assert.deepEqual(pruned.byFormat.f3.modes, ['casual', 'ranked']);
+  assert.equal(selectionCount(pruned), 3);
+
+  // Nada velho: a mesma referência volta e o React não re-renderiza.
+  assert.equal(pruneSelectionToFormats(pruned, new Set(['f1', 'f3'])), pruned);
+  // Catálogo vazio (carregando/indisponível) nunca joga a escolha fora.
+  assert.equal(pruneSelectionToFormats(selection, new Set()), selection);
+});
+
+test('rascunho antigo não reabre a fila com o filtro de uma intenção anterior', () => {
+  const casual = selectionOf({ f1: ['casual'] });
+  const mixed = selectionOf({ f1: ['casual'], f2: ['ranked'] });
+
+  assert.equal(draftMatchesIntent(casual, 'casual'), true);
+  assert.equal(draftMatchesIntent(casual, 'ranked'), false);
+  assert.equal(draftMatchesIntent(mixed, 'ranked'), true);
+  // Entrada sem intenção explícita (ex.: "Acompanhar busca") retoma o rascunho.
+  assert.equal(draftMatchesIntent(casual, undefined), true);
+  assert.equal(draftMatchesIntent(casual, 'from:queue-search'), true);
+  assert.equal(draftMatchesIntent(emptySelection(), 'casual'), false);
 });

@@ -19,6 +19,7 @@ import {
   buildSelection,
   buildSelectionPayload,
   divergentCourtFormats,
+  draftMatchesIntent,
   emptySelection,
   entryMode,
   formatLabelFromCatalog,
@@ -28,6 +29,7 @@ import {
   levelLabel,
   modeLabel,
   oldestCreatedAt,
+  pruneSelectionToFormats,
   queueContinuity,
   queueCourtPreference,
   queueFailureMessage,
@@ -85,6 +87,21 @@ type LegacyQueueDraft = QueueDraft & { court?: string };
  * é enviado ao servidor sem o toque em "Confirmar busca".
  */
 let queueDraft: QueueDraft | null = null;
+
+/**
+ * O rascunho só volta quando ainda tem o que retomar e continua de acordo com
+ * a intenção de entrada. Um rascunho de outra modalidade não pode reabrir a
+ * busca com o filtro de esporte de uma seleção anterior.
+ */
+function resumableDraft(draft: LegacyQueueDraft | null, intent: unknown): LegacyQueueDraft | null {
+  if (!draft) {
+    return null;
+  }
+  if (draft.step === 2 && draft.selection.formats.length === 0) {
+    return null;
+  }
+  return draftMatchesIntent(draft.selection, intent) ? draft : null;
+}
 
 function formatName(catalog: readonly Sport[], formatId: string): string {
   return formatLabelFromCatalog(catalog, formatId);
@@ -278,15 +295,30 @@ export function QueueScreen() {
     [nav.params.mode],
   );
   // Lido uma única vez, no primeiro render: o rascunho sobrevive à saída da
-  // tela sem virar fonte de verdade do servidor.
-  const draftAtMount = queueDraft as LegacyQueueDraft | null;
-  const legacyCourt = draftAtMount?.court ? queueCourtPreference(draftAtMount.court) : undefined;
+  // tela sem virar fonte de verdade do servidor. Rascunho de outra intenção
+  // (ou vazio no passo 2) é descartado para não repetir a seleção anterior.
+  const [mountDraft] = useState<LegacyQueueDraft | null>(() => {
+    const stored = queueDraft as LegacyQueueDraft | null;
+    // Quem chega pela busca ativa edita a fila confirmada, não um rascunho
+    // antigo: a fila vence a seleção anterior (mesma regra do 2A).
+    const resumed =
+      nav.params.from === 'queue-search' && queue.length > 0
+        ? null
+        : resumableDraft(stored, nav.params.mode);
+    if (stored && !resumed) {
+      queueDraft = null;
+    }
+    return resumed;
+  });
+  const legacyCourt = mountDraft?.court ? queueCourtPreference(mountDraft.court) : undefined;
   const [view, setView] = useState<QueueView>(() =>
-    draftAtMount || nav.params.from === 'queue-search' ? 'edit' : 'overview',
+    mountDraft || nav.params.from === 'queue-search' ? 'edit' : 'overview',
   );
-  const [step, setStep] = useState<QueueStep>(() => draftAtMount?.step ?? 1);
-  const [selection, setSelection] = useState<QueueSelection>(
-    () => draftAtMount?.selection ?? emptySelection(),
+  const [step, setStep] = useState<QueueStep>(() => mountDraft?.step ?? 1);
+  // A seleção exibida é sempre podada pelo catálogo atual; um esporte que
+  // saiu de `/sports` não volta como chip invisível nem chega ao `PUT`.
+  const [rawSelection, setSelection] = useState<QueueSelection>(
+    () => mountDraft?.selection ?? emptySelection(),
   );
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -297,13 +329,18 @@ export function QueueScreen() {
   const [catalogLoading, setCatalogLoading] = useState(() => catalog.length === 0);
   const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const touched = useRef(!!draftAtMount);
+  const touched = useRef(!!mountDraft);
   const synced = useRef(false);
 
   const formats = useMemo(() => catalog.flatMap((sport) => sport.formats), [catalog]);
   const optionById = useMemo(
     () => new Map(formats.map((format) => [format.id, format])),
     [formats],
+  );
+  const catalogFormatIds = useMemo(() => new Set(optionById.keys()), [optionById]);
+  const selection = useMemo(
+    () => pruneSelectionToFormats(rawSelection, catalogFormatIds),
+    [catalogFormatIds, rawSelection],
   );
   const profileFormatIds = useMemo(
     () => (profile?.sports ?? []).map((sport) => sport.format_id),
@@ -883,6 +920,11 @@ export function QueueScreen() {
                 {selection.formats.length === 1 ? 'esporte selecionado' : 'esportes selecionados'} ·{' '}
                 {count} {count === 1 ? 'par real' : 'pares reais'}.
               </Txt>
+              {count === 0 ? (
+                <Txt variant="tiny" style={{ marginTop: 6 }}>
+                  Escolha pelo menos um esporte e um modo para continuar.
+                </Txt>
+              ) : null}
               {selection.formats.length > 0 ? (
                 <View style={{ marginTop: 8, gap: 4 }}>
                   {selection.formats.map((formatId) => (
