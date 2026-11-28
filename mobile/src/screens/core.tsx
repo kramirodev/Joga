@@ -94,7 +94,7 @@ import type { ScreenDef } from './types';
 import { QueueScreen, QueueSearch } from './queue';
 
 const TICKET_PURCHASE_DISABLED_TEXT =
-  'A compra de ingressos está desativada nesta versão do JOGA. Seus ingressos atuais continuam válidos e podem ser usados normalmente nas reservas.';
+  'A compra de pacotes está desativada. A assinatura do Passe JOGA substitui os pacotes de ingressos; seus ingressos e o crédito legado continuam válidos.';
 
 function toastError(nav: { toast: (message: string) => void }, error: unknown) {
   if (error instanceof ApiError) {

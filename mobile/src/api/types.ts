@@ -388,14 +388,6 @@ export type TicketLot = {
   ref_id: string | null;
 };
 
-export type TicketPack = {
-  code: string;
-  label: string;
-  tickets: number;
-  unit_price_cents: number;
-  amount_cents: number;
-};
-
 export type PurchasePayment = {
   provider: string | null;
   provider_status: string | null;
@@ -409,41 +401,84 @@ export type PurchasePayment = {
   paid: boolean;
 };
 
-export type Purchase = {
-  id: string;
-  pack_id: string;
-  tickets: number;
-  amount_cents: number;
-  status: string;
-  created_at: string;
-  paid_at: string | null;
-  payment: PurchasePayment | null;
-};
-
+/** Catálogo da assinatura (ADR 0070). O cliente só envia `plan_code`. */
 export type PassPlan = {
   code: string;
   label: string;
+  months: number;
   tickets_per_month: number;
   unit_price_cents: number;
+  monthly_cents: number;
+  cycle_total_cents: number;
+  installments: number;
+  catalog_version: number;
+  /** Espelho de `monthly_cents` mantido pelo backend para compatibilidade. */
   price_per_month_cents: number;
-  quarter_cents: number;
 };
 
-export type PassDelivery = { month_index: number; tickets: number; delivered_at: string };
+export type PassDelivery = {
+  month_index: number;
+  tickets: number;
+  period: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  delivered_at: string | null;
+  closed_at: string | null;
+};
+
+export type PassCurrentCycle = {
+  period: string;
+  starts_at: string;
+  ends_at: string;
+  tickets_granted: number;
+  tickets_used: number;
+  tickets_remaining: number;
+  expires_at: string | null;
+};
 
 export type PassSubscription = {
   id: string;
   plan_code: string;
+  plan_label: string;
   tickets_per_month: number;
   amount_cents: number;
+  cycle_months: number;
+  unit_price_cents: number;
+  installments: number;
   status: string;
   starts_at: string | null;
   ends_at: string | null;
   paid_at: string | null;
+  refund_window_ends_at: string | null;
   created_at: string;
   deliveries: PassDelivery[];
+  cycles: PassDelivery[];
+  current_cycle: PassCurrentCycle | null;
   next_delivery_at: string | null;
   payment: PurchasePayment | null;
+};
+
+/** Comprovante interno da compra; não é documento fiscal. */
+export type PassReceipt = {
+  receipt_id: string;
+  subscription_id: string;
+  document_type: string;
+  fiscal_document: null;
+  status: string;
+  issued_at: string;
+  plan_code: string;
+  plan_label: string;
+  cycle_months: number;
+  tickets_per_month: number;
+  unit_price_cents: number;
+  monthly_cents: number;
+  cycle_total_cents: number;
+  amount_cents: number;
+  currency: string;
+  provider: string | null;
+  payment_status: string | null;
+  paid_at: string;
 };
 
 export type Band = {

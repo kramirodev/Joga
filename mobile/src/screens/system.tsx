@@ -1239,13 +1239,13 @@ function Decisions() {
     ],
     [
       '2',
-      'PIX só em pacote e passe',
-      'T3 extinto: os ingressos são consumidos na confirmação do lobby.',
+      'PIX só na assinatura',
+      'Pacotes de ingressos foram substituídos pela assinatura; o crédito legado continua válido.',
     ],
     ['3', 'Check-in GPS + estabelecimento', 'GPS com fallback do estabelecimento.'],
     ['4', 'Notificações dentro do app', 'Central de prazos e ações.'],
     ['5', 'Identidade no cadastro', 'Ícone escolhido no onboarding e editável no perfil.'],
-    ['6', 'Passe 10/20/30/50', 'Franquia mensal, cobrança trimestral, entrega mês a mês.'],
+    ['6', 'Assinatura 1/3/6 meses', 'Franquia mensal, cobrança por ciclo, entrega mês a mês.'],
     [
       '7',
       'Divisão reseta por temporada',
