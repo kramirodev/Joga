@@ -70,27 +70,34 @@ def seed_default_visual_catalog(session: Session) -> None:
 
 
 def default_identity_keys(session: Session) -> dict[str, str | None]:
-    """Primeiro item ativo e gratuito de cada slot, na ordem do seed."""
+    """Primeiro item ativo e gratuito de cada slot, na ordem do seed.
 
+    Uma única consulta serve os seis slots: o cartão público lê este baseline
+    a cada perfil sem identidade escolhida.
+    """
+
+    items = list(
+        session.scalars(
+            select(VisualCatalogItem)
+            .where(
+                VisualCatalogItem.active.is_(True),
+                VisualCatalogItem.kind.in_(tuple(DEFAULT_IDENTITY_KEYS)),
+            )
+            .order_by(VisualCatalogItem.key)
+        )
+    )
+    by_key = {item.key: item for item in items}
     keys: dict[str, str | None] = {}
     for slot in DEFAULT_IDENTITY_KEYS:
-        preferred = DEFAULT_IDENTITY_KEYS[slot]
-        item = session.scalar(
-            select(VisualCatalogItem).where(
-                VisualCatalogItem.key == preferred,
-                VisualCatalogItem.active.is_(True),
-            )
-        )
+        item = by_key.get(DEFAULT_IDENTITY_KEYS[slot])
         if item is None:
-            item = session.scalar(
-                select(VisualCatalogItem)
-                .where(
-                    VisualCatalogItem.kind == slot,
-                    VisualCatalogItem.active.is_(True),
-                    VisualCatalogItem.unlock_state == "free",
-                )
-                .order_by(VisualCatalogItem.key)
-                .limit(1)
+            item = next(
+                (
+                    candidate
+                    for candidate in items
+                    if candidate.kind == slot and candidate.unlock_state == "free"
+                ),
+                None,
             )
         keys[slot] = item.key if item is not None else None
     return keys

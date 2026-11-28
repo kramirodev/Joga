@@ -1,7 +1,8 @@
 """Perfil público mínimo e busca de jogador por nome parcial ou tag exata.
 
 O resultado é deliberadamente mínimo: identificador interno, nome canônico,
-tag, relação de amizade e clã ativo. E-mail, telefone, CPF, status de conta,
+tag, relação de amizade, clã ativo e o snapshot do cartão (tema, visual,
+progresso e insígnias equipadas). E-mail, telefone, CPF, status de conta,
 localização e MMR nunca saem por estas rotas.
 """
 
@@ -20,6 +21,7 @@ from app.infrastructure.database.dependency import get_session
 from app.modules.clans.service import active_clan_for
 from app.modules.identity.models import User
 from app.modules.identity.sessions import AuthenticatedSession
+from app.modules.profile.card import PublicCard, build_public_card
 from app.modules.profile.models import UserProfile
 from app.modules.ratelimit.service import RateLimitExceeded
 from app.modules.social.models import UserBlock
@@ -50,12 +52,66 @@ class PublicClanView(BaseModel):
     tag: str
 
 
+class PublicCardVisualView(BaseModel):
+    icon_key: str | None
+    frame_key: str | None
+    accent_key: str | None
+    entry_key: str | None
+    emote_key: str | None
+    badge_key: str | None
+    catalog_version: int
+
+
+class PublicCardBadgeView(BaseModel):
+    code: str
+    name: str
+    kind: str
+
+
+class PublicCardView(BaseModel):
+    theme_id: str | None
+    visual: PublicCardVisualView
+    tier: str | None
+    level: int | None
+    qualifier: str | None
+    season_label: str
+    record: int
+    win_streak: int
+    badges: list[PublicCardBadgeView]
+
+
 class PublicPlayerView(BaseModel):
     user_id: UUID
     display_name: str | None
     tag: str
     relation: PlayerRelation
     clan: PublicClanView | None
+    card: PublicCardView | None
+
+
+def _card_view(card: PublicCard) -> PublicCardView:
+    return PublicCardView(
+        theme_id=card.theme_id,
+        visual=PublicCardVisualView(
+            icon_key=card.visual.icon_key,
+            frame_key=card.visual.frame_key,
+            accent_key=card.visual.accent_key,
+            entry_key=card.visual.entry_key,
+            emote_key=card.visual.emote_key,
+            badge_key=card.visual.badge_key,
+            catalog_version=card.visual.catalog_version,
+        ),
+        tier=card.tier,
+        level=card.level,
+        qualifier=card.qualifier,
+        season_label=card.season_label,
+        record=card.record,
+        win_streak=card.win_streak,
+        badges=[
+            PublicCardBadgeView(code=badge.code, name=badge.name, kind=badge.kind)
+            for badge in card.badges
+        ],
+    )
 
 
 def _not_found() -> HTTPException:
@@ -113,7 +169,7 @@ def read_player(
     current: Annotated[AuthenticatedSession, Depends(get_current_session)],
     session: Annotated[Session, Depends(get_session)],
 ) -> PublicPlayerView:
-    """Perfil público mínimo; conta inexistente, inativa ou bloqueada é 404."""
+    """Perfil público mínimo e cartão; conta inexistente, inativa ou bloqueada é 404."""
 
     blocked_either_direction = exists().where(
         or_(
@@ -122,7 +178,7 @@ def read_player(
         )
     )
     row = session.execute(
-        select(User.id, User.tag, UserProfile.display_name)
+        select(User.id, User.tag, UserProfile.display_name, UserProfile.theme_id)
         .outerjoin(UserProfile, UserProfile.user_id == User.id)
         .where(
             User.id == user_id,
@@ -135,6 +191,7 @@ def read_player(
 
     relation = SocialService(session).relation_with(current.user_id, user_id)
     clan = active_clan_for(session, user_id)
+    card = build_public_card(session, user_id, theme_id=row.theme_id)
     return PublicPlayerView(
         user_id=row.id,
         display_name=row.display_name,
@@ -143,4 +200,5 @@ def read_player(
         clan=(
             PublicClanView(id=clan.id, name=clan.name, tag=clan.tag) if clan is not None else None
         ),
+        card=_card_view(card),
     )

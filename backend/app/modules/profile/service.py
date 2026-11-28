@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import time
@@ -63,6 +64,10 @@ class DiscoveryError(ProfileError):
     """Parâmetros de descoberta inválidos."""
 
 
+# Tema cosmético do cartão: chave fechada, sem texto livre nem URL.
+THEME_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
 class Geography(UserDefinedType[Any]):
     """Tipo mínimo para cast geography no PostgreSQL."""
 
@@ -78,6 +83,7 @@ class ProfileSnapshot:
     display_name: str | None
     tag: str
     bio: str | None
+    theme_id: str | None
     sports: list[UserSportProfile]
     availability: list[Availability]
     region: UserRegion | None
@@ -175,6 +181,7 @@ class ProfileService:
             display_name=profile.display_name if profile else None,
             tag=user.tag if user else "",
             bio=profile.bio if profile else None,
+            theme_id=profile.theme_id if profile else None,
             sports=sports,
             availability=availability,
             region=region,
@@ -193,6 +200,20 @@ class ProfileService:
             self._session.add(profile)
         profile.display_name = normalize_display_name(display_name)
         profile.bio = _clean_optional(bio)
+        self._session.flush()
+        return self.get_profile(user_id)
+
+    def set_theme(self, user_id: uuid.UUID, theme_id: str | None) -> ProfileSnapshot:
+        """Define o tema cosmético do cartão; ``None`` volta ao padrão."""
+
+        normalized = _clean_optional(theme_id)
+        if normalized is not None and not THEME_ID_PATTERN.fullmatch(normalized):
+            raise InvalidProfile("tema inválido")
+        profile = self._session.get(UserProfile, user_id)
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+            self._session.add(profile)
+        profile.theme_id = normalized
         self._session.flush()
         return self.get_profile(user_id)
 
