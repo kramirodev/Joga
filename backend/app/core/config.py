@@ -310,6 +310,11 @@ class Settings(BaseSettings):
     # mas abrir compra exige decisão operacional explícita.
     ticket_purchase_enabled: bool = False
 
+    # Catálogo v2 (ADR 0079): 3 planos mensais 20/40/70 e passe de temporada
+    # separado, com preço por meio/parcelamento e reembolso proporcional.
+    # Desligada por padrão: enquanto falsa, o piloto da ADR 0070 não muda.
+    catalog_v2_enabled: bool = False
+
     # Organização da plataforma que possui as quadras públicas. Não aparece em
     # listagens de estabelecimentos e é operada por platform_admin sem vínculo.
     platform_org_slug: str = Field(default="joga-publico", min_length=2, max_length=60)

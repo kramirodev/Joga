@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.infrastructure.database.base import Base
 from app.modules.avatar import models as avatar_models  # noqa: F401
 from app.modules.bookings import models as bookings_models  # noqa: F401
+from app.modules.catalog_v2 import models as catalog_v2_models  # noqa: F401
 from app.modules.chat import models as chat_models  # noqa: F401
 from app.modules.clans import models as clans_models  # noqa: F401
 from app.modules.email import models as email_models  # noqa: F401
