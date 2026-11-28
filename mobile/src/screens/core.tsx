@@ -18,10 +18,13 @@ import { useNav, useTheme } from '../state/context';
 import {
   avatarTargetFor,
   canRequestFriendship,
+  equippedBadgeNames,
+  equippedBadges,
   friendSearchPrefill,
   profileClanName,
   profileTagForCard,
   profileTagLabel,
+  publicCardFields,
   publicProfileStatus,
   publicProfileStatusLabel,
 } from '../state/profileState';
@@ -1314,6 +1317,11 @@ function LobbyFull() {
   );
 }
 
+/** Rótulo de temporada do cartão (trimestre corrente), igual no próprio perfil e na prévia pública. */
+function seasonLabelFor(date: Date = new Date()): string {
+  return `T${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+}
+
 function ProfileMe() {
   const nav = useNav();
   const { palette } = useTheme();
@@ -1351,8 +1359,6 @@ function ProfileMe() {
   // O clã vem do estado global: já está disponível no primeiro frame em que o
   // perfil renderiza e não depende de uma segunda chamada ou de scroll.
   const personalClan = profileClanName(clan?.name, hydrated);
-  const level = progress?.level ?? 0;
-  const tier = tierLabel(progress?.tier);
   const matches = stats?.totals.matches ?? 0;
   const wins = stats?.totals.wins ?? 0;
   const presence =
@@ -1372,19 +1378,21 @@ function ProfileMe() {
       ? divisionLabel(rating.division)
       : '—';
   const tag = profileTagForCard(profile?.tag);
-  const now = new Date();
-  const seasonLabel = `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+  const seasonLabel = seasonLabelFor();
   const qualifier = rating && !rating.provisional ? division.toUpperCase() : 'PROVISÓRIO';
   const record = stats?.totals.matches ?? 0;
+  const highlightBadges = equippedBadges(badges);
   const cardData: ProfileCardData = {
     name,
     tag,
     clanName: personalClan,
-    tier,
-    level,
+    tier: progress ? tierLabel(progress.tier) : null,
+    level: progress?.level ?? null,
     qualifier,
     seasonLabel,
     record,
+    winstreak: progress?.streak.current ?? null,
+    badges: equippedBadgeNames(badges),
     visual,
   };
   const openPublicProfile = () => {
@@ -1398,6 +1406,12 @@ function ProfileMe() {
       tag: profile.tag,
       self: true,
     });
+  };
+  const openEditor = () => {
+    const target = avatarTargetFor('me');
+    if (target) {
+      nav.go(target);
+    }
   };
   const copyValue = async (value: string | null | undefined, label: string) => {
     const clean = value?.trim();
@@ -1442,7 +1456,7 @@ function ProfileMe() {
           </View>
         }
       >
-        <ProfileCard data={cardData} onPressAvatar={openPublicProfile} />
+        <ProfileCard data={cardData} avatarLabel="Editar perfil" onPressAvatar={openEditor} />
         <Row between>
           <TextBtn onPress={() => void copyValue(profile?.display_name, 'Nome')}>
             Copiar nome
@@ -1490,17 +1504,19 @@ function ProfileMe() {
         <Card>
           <Row between>
             <Txt variant="h3">Insígnias</Txt>
-            <Txt variant="tiny">{Math.min(badges.length, 3)}/3 em destaque</Txt>
+            <Txt variant="tiny">{highlightBadges.length}/3 em destaque</Txt>
           </Row>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            {badges.length ? (
-              badges.slice(0, 3).map((badge) => (
+            {highlightBadges.length ? (
+              highlightBadges.map((badge) => (
                 <Badge key={badge.badge_id} tone={badge.kind === 'founder' ? 'default' : 'lime'}>
                   {badge.name.toUpperCase()}
                 </Badge>
               ))
             ) : (
-              <Txt variant="tiny">Nenhuma insígnia ainda.</Txt>
+              <Txt variant="tiny">
+                {badges.length ? 'Nenhuma insígnia em destaque.' : 'Nenhuma insígnia ainda.'}
+              </Txt>
             )}
           </View>
           <Row between style={{ marginTop: 12 }}>
@@ -1647,9 +1663,6 @@ function ProfileMe() {
             {availability}
           </Txt>
         </Card>
-        <Btn tone="primary" go="profile-edit">
-          Editar perfil
-        </Btn>
       </Page>
       <CardShareSheet
         visible={shareOpen}
@@ -1663,8 +1676,21 @@ function ProfileMe() {
 
 function ProfileOther() {
   const nav = useNav();
-  const { palette } = useTheme();
-  const { profile, clan, session, loadSocial, matches, hydrated, visual } = useApp();
+  const { themeId } = useTheme();
+  const {
+    profile,
+    clan,
+    session,
+    loadSocial,
+    matches,
+    hydrated,
+    visual,
+    progress,
+    ratings,
+    stats,
+    badges,
+    primaryFormatId,
+  } = useApp();
   const token = session?.accessToken ?? null;
   const userId = typeof nav.params.userId === 'string' ? nav.params.userId : '';
   const seedName = typeof nav.params.name === 'string' ? nav.params.name : '';
@@ -1758,6 +1784,32 @@ function ProfileOther() {
     : profileClanName(player?.clan?.name, status === 'ready');
   const publicStatus = publicProfileStatus(isSelf, relation);
   const showAddFriend = canRequestFriendship(isSelf, relation);
+  const publicCard = publicCardFields(player);
+  const selfRating = primaryFormatId ? ratings[primaryFormatId] : undefined;
+  const selfQualifier =
+    selfRating && !selfRating.provisional
+      ? divisionLabel(selfRating.division).toUpperCase()
+      : 'PROVISÓRIO';
+  const cardData: ProfileCardData = {
+    name,
+    tag: profileTagForCard(tag),
+    clanName,
+    tier: isSelf ? (progress ? tierLabel(progress.tier) : null) : publicCard.tier,
+    level: isSelf ? (progress?.level ?? null) : publicCard.level,
+    qualifier: isSelf ? selfQualifier : publicCard.qualifier,
+    seasonLabel: isSelf ? seasonLabelFor() : publicCard.seasonLabel,
+    record: isSelf ? (stats?.totals.matches ?? 0) : publicCard.record,
+    winstreak: isSelf ? (progress?.streak.current ?? null) : publicCard.winstreak,
+    badges: isSelf ? equippedBadgeNames(badges) : publicCard.badges,
+    visual: isSelf ? visual : publicCard.visual,
+  };
+  const cardThemeId = isSelf ? themeId : publicCard.themeId;
+  const openEditor = () => {
+    const target = avatarTargetFor('me');
+    if (target) {
+      nav.go(target);
+    }
+  };
 
   const copyValue = async (value: string | null | undefined, label: string) => {
     const clean = value?.trim();
@@ -1817,34 +1869,20 @@ function ProfileOther() {
           É assim que outros jogadores veem seu perfil.
         </Notice>
       ) : null}
-      <Card>
-        <Row style={{ gap: 14 }}>
-          <IdentityBadge
-            size={112}
-            identity={isSelf ? visual : identityFromSeed(userId || name)}
-            palette={palette}
-          />
-          <View style={{ flex: 1 }}>
-            <Txt variant="h1" style={{ fontSize: 26 }}>
-              {name}
-            </Txt>
-            <Txt variant="tiny">{tagLabel}</Txt>
-            <View style={{ flexDirection: 'row', gap: 6, marginTop: 7 }}>
-              <Badge>{publicProfileStatusLabel(publicStatus)}</Badge>
-            </View>
-          </View>
-        </Row>
-        <Divider style={{ marginVertical: 12 }} />
-        <Kv label="Clã" value={clanName} />
+      <ProfileCard
+        data={cardData}
+        themeId={cardThemeId}
+        avatarLabel={isSelf ? 'Editar perfil' : undefined}
+        onPressAvatar={isSelf ? openEditor : undefined}
+      />
+      <Row between>
+        <Badge>{publicProfileStatusLabel(publicStatus)}</Badge>
         {publicClan?.tag && clanName !== 'Sem clã' && clanName !== '—' ? (
-          <Txt variant="tiny" style={{ marginTop: 2 }}>
-            {profileTagLabel(publicClan.tag)}
-          </Txt>
-        ) : null}
-        <Txt variant="tiny" style={{ marginTop: 10 }}>
-          Divisão e insígnias ainda não aparecem no perfil público.
-        </Txt>
-      </Card>
+          <Txt variant="tiny">{profileTagLabel(publicClan.tag)}</Txt>
+        ) : (
+          <View />
+        )}
+      </Row>
 
       {friendNotice ? (
         <Notice tone="green" icon="check">

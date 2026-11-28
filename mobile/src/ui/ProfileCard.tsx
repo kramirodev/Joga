@@ -4,6 +4,7 @@ import type { VisualIdentity } from '../api/types';
 import { useTheme } from '../state/context';
 import { Card } from './kit';
 import { Icon } from './icons';
+import { IdentityBadge } from './IdentityBadge';
 import { Text } from './text';
 import { ThemeArt } from './themeArtView';
 import { themeById } from './themes';
@@ -13,11 +14,17 @@ export type ProfileCardData = {
   name: string;
   tag: string;
   clanName: string;
-  tier: string;
-  level: number;
-  qualifier: string;
-  seasonLabel: string;
-  record: number;
+  /** `null` quando o backend não expõe o elo; não vira Bronze por conta própria. */
+  tier: string | null;
+  level: number | null;
+  qualifier: string | null;
+  seasonLabel: string | null;
+  /** Número do bloco de recorde (hoje, total de partidas). */
+  record: number | null;
+  /** Sequência atual de vitórias; ausente no perfil público enquanto sem contrato. */
+  winstreak?: number | null;
+  /** Insígnias equipadas nos quadros do cartão, na ordem dos slots. */
+  badges?: string[];
   visual: Partial<VisualIdentity> | null | undefined;
 };
 
@@ -31,17 +38,23 @@ export function ProfileCard({
   imageMode = false,
   width,
   height,
+  themeId,
+  avatarLabel = 'Abrir perfil',
   onPressAvatar,
 }: {
   data: ProfileCardData;
   imageMode?: boolean;
   width?: number;
   height?: number;
+  /** Tema do dono do cartão; ausente cai no tema de quem está vendo. */
+  themeId?: string | null;
+  avatarLabel?: string;
   /** Toque no emblema/avatar; a imagem compartilhável não recebe ação. */
   onPressAvatar?: () => void;
 }) {
-  const { palette, themeId } = useTheme();
-  const theme = themeById(themeId);
+  const { themeId: viewerThemeId } = useTheme();
+  const theme = themeById(themeId ?? viewerThemeId);
+  const palette = theme.palette;
   const window = useWindowDimensions();
   const compact = window.width < 360;
   const cardWidth = width ?? window.width - 32;
@@ -57,13 +70,29 @@ export function ProfileCard({
   const pillBackground = theme.dark ? 'rgba(255, 255, 255, 0.26)' : 'rgba(255, 255, 255, 0.6)';
   const pillBorder = theme.dark ? 'rgba(255, 255, 255, 0.36)' : 'rgba(0, 0, 0, 0.18)';
   const pillIconColor = theme.dark ? '#FFFFFF' : palette.brand;
-  const honorFrames = [
-    { key: 'season', icon: 'trophy' as const, label: data.seasonLabel },
-    { key: 'founder', icon: 'crown' as const, label: 'FUNDADOR' },
-    { key: 'badge', icon: 'shield' as const, label: 'A CONQUISTAR' },
-  ];
+  const honorIcons = ['trophy', 'crown', 'shield'] as const;
+  // Os três quadros mostram as insígnias equipadas; vazio continua "A CONQUISTAR"
+  // (o convite visual que já existia), nunca o nome de uma insígnia alheia.
+  const honorFrames = [0, 1, 2].map((index) => ({
+    key: `badge-${index}`,
+    icon: honorIcons[index],
+    label: data.badges?.[index] ?? 'A CONQUISTAR',
+  }));
   // A tag chega sem `#`; ausência nunca vira uma tag fake.
   const tagText = data.tag && data.tag !== '—' ? `#${data.tag}` : '—';
+  const tierText = data.tier
+    ? `${data.tier.toUpperCase()}${data.level != null ? ` ${data.level}` : ''}`
+    : '—';
+  const qualifierText = [data.qualifier, data.seasonLabel].filter(Boolean).join(' · ') || '—';
+  const recordText = data.record != null ? String(data.record) : '—';
+  const streakText =
+    data.winstreak != null && data.winstreak > 0 ? `SEQUÊNCIA ${data.winstreak}` : null;
+  const emblem = data.tier ? (
+    <TierEmblem tier={data.tier} size={emblemSize} identity={data.visual} palette={palette} />
+  ) : (
+    // Sem elo exposto, mostrar a identidade sem alegar metal nenhum.
+    <IdentityBadge size={emblemSize} identity={data.visual} palette={palette} />
+  );
 
   return (
     <Card
@@ -171,7 +200,7 @@ export function ProfileCard({
               },
             ]}
           >
-            {data.seasonLabel}
+            {data.seasonLabel ?? '—'}
           </Text>
         </View>
 
@@ -181,24 +210,14 @@ export function ProfileCard({
               <Pressable
                 onPress={onPressAvatar}
                 accessibilityRole="button"
-                accessibilityLabel="Abrir perfil público"
+                accessibilityLabel={avatarLabel}
                 hitSlop={8}
                 style={({ pressed }) => ({ opacity: pressed ? 0.82 : 1 })}
               >
-                <TierEmblem
-                  tier={data.tier}
-                  size={emblemSize}
-                  identity={data.visual}
-                  palette={palette}
-                />
+                {emblem}
               </Pressable>
             ) : (
-              <TierEmblem
-                tier={data.tier}
-                size={emblemSize}
-                identity={data.visual}
-                palette={palette}
-              />
+              emblem
             )}
           </View>
           <View style={{ alignItems: 'center', marginTop: -12, zIndex: 1 }}>
@@ -269,7 +288,7 @@ export function ProfileCard({
                     },
                   ]}
                 >
-                  {`${data.tier.toUpperCase()} ${data.level}`}
+                  {tierText}
                 </Text>
                 <Text
                   style={[
@@ -284,7 +303,7 @@ export function ProfileCard({
                     },
                   ]}
                 >
-                  {`${data.qualifier} · ${data.seasonLabel}`}
+                  {qualifierText}
                 </Text>
               </View>
             </View>
@@ -315,7 +334,7 @@ export function ProfileCard({
                     },
                   ]}
                 >
-                  {data.record}
+                  {recordText}
                 </Text>
                 <Text
                   style={[
@@ -333,6 +352,24 @@ export function ProfileCard({
                 >
                   VITÓRIAS E DERROTAS
                 </Text>
+                {streakText ? (
+                  <Text
+                    style={[
+                      artShadow,
+                      {
+                        marginTop: 1,
+                        fontSize: 9.5,
+                        lineHeight: 12,
+                        fontWeight: '800',
+                        letterSpacing: 0.4,
+                        color: artText,
+                        textTransform: 'uppercase',
+                      },
+                    ]}
+                  >
+                    {streakText}
+                  </Text>
+                ) : null}
               </View>
             </View>
           </View>
