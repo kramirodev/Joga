@@ -2,6 +2,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   Appearance,
   BackHandler,
@@ -15,6 +16,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { fontScaleFactor } from './src/accessibility';
 import { authConfig } from './src/auth/config';
 import { AppProvider, useApp } from './src/state/app';
+import { queueMatchDestination } from './src/state/queueRouting';
 import {
   createStackEntry,
   sameParams,
@@ -762,6 +764,8 @@ function Shell() {
   const tabRef = useRef<TabKey>(tab);
   const phaseRef = useRef<ScreenPhase>('idle');
   const transitionId = useRef(0);
+  /** Lobby já levado ao usuário pela precedência global; nunca repete. */
+  const handledMatchLobby = useRef<string | null>(null);
   const [phase, setPhase] = useState<ScreenPhase>('idle');
   const [motion, setMotion] = useState<ScreenMotion>('push');
   const palette = themeById(app.themeId).palette;
@@ -1047,6 +1051,23 @@ function Shell() {
     }
     routeColdStartNotification();
   }, [app.ready, signedIn]);
+
+  // Precedência global da fila: uma partida encontrada tira o usuário de
+  // qualquer tela de perfil (próprio, público/"olhinho" ou edição) uma única
+  // vez. `nav.replace` preserva o match e não empilha navegação dupla; o
+  // `QueueIndicator` continua sendo a saída manual nas demais telas.
+  useEffect(() => {
+    if (!app.ready || !signedIn || app.suspended || app.updateRequired) {
+      return;
+    }
+    const target = queueMatchDestination(current.id, app.matchedEntry, handledMatchLobby.current);
+    if (!target) {
+      return;
+    }
+    handledMatchLobby.current = target.params.lobbyId;
+    AccessibilityInfo.announceForAccessibility('Partida encontrada.');
+    nav.replace(target.screen, target.params);
+  }, [app.matchedEntry, app.ready, app.suspended, app.updateRequired, current.id, nav, signedIn]);
 
   const theme = useMemo(
     () => ({
