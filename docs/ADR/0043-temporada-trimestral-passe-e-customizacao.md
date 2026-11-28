@@ -1,6 +1,6 @@
 # ADR 0043 — Temporada trimestral, passe, trilha e customização
 
-- **Status:** Aprovado como direção de produto; implementado no backend nas fatias 14D.7–14D.16. A unidade de conta e o preço foram realinhados pela **ADR 0049**; temporada, trilha, XP, passe e catálogo permanecem.
+- **Status:** Aprovado como direção de produto; implementado no backend nas fatias 14D.7–14D.16. A unidade de conta e o preço foram realinhados pela **ADR 0049**; temporada, trilha, XP, passe e catálogo permanecem. **Substituído parcialmente pela ADR 0079 (catálogo mensal + passe separado), 2026-11-28:** o §2 (passe trimestral pago, tamanhos 10/20/30/50 e preço de R$ 3,25 por ingresso) deixa de ser catálogo; temporada trimestral, trilha, XP, customização e benefícios do passe permanecem.
 - **Data:** 2026-11-11
 - **Decisores:** responsável pelo produto e equipe técnica.
 - **Relaciona:** ADR 0025 (MMR, rankings e cosméticos), ADR 0029 (sem fotos de pessoas), ADR 0042 (ingresso e passe), ADR 0044 (clãs no MVP).
