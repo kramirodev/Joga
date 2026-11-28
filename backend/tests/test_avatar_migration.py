@@ -16,7 +16,7 @@ TEST_DATABASE_URL = os.environ.get("JOGA_TEST_DATABASE_URL")
 SCHEMA = "avatar_migration_test"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS_REVISION = "c8d9e0f1a2b3"
-HEAD_REVISION = "bc23de45fa67"
+HEAD_REVISION = "d4a7b2c9e1f0"
 
 pytestmark = pytest.mark.skipif(
     not TEST_DATABASE_URL,
