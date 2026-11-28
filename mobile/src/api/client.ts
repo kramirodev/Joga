@@ -1,7 +1,6 @@
 import type {
   Availability,
   Badge,
-  Band,
   BookableVenueDetail,
   BookableVenuePage,
   Booking,
@@ -31,6 +30,7 @@ import type {
   MyRating,
   Network,
   Notification,
+  PassReceipt,
   PassSubscription,
   PassPlan,
   Passkey,
@@ -41,7 +41,6 @@ import type {
   Profile,
   Progress,
   PublicPlayer,
-  Purchase,
   QueueEntry,
   QueueSelectionPayload,
   QueueStateResponse,
@@ -52,7 +51,6 @@ import type {
   Substitute,
   TermsAcceptance,
   TermsVersion,
-  TicketPack,
   Tokens,
   Track,
   TrackLevel,
@@ -745,34 +743,6 @@ export const api = {
     wallet(token: string, limit = 20) {
       return call<Wallet>(`/me/tickets${qs({ limit })}`, { token });
     },
-    packs(token: string) {
-      return call<{ packs: TicketPack[] }>('/me/tickets/packs', { token });
-    },
-    createPurchase(
-      token: string,
-      packCode: string,
-      idempotencyKey?: string,
-      termsVersionId?: string,
-    ) {
-      return call<Purchase>('/me/tickets/purchases', {
-        method: 'POST',
-        body: {
-          pack_code: packCode,
-          ...(termsVersionId ? { terms_version_id: termsVersionId } : {}),
-        },
-        token,
-        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-      });
-    },
-    purchase(token: string, purchaseId: string) {
-      return call<Purchase>(`/me/tickets/purchases/${encodeURIComponent(purchaseId)}`, { token });
-    },
-    syncPurchase(token: string, purchaseId: string) {
-      return call<Purchase>(`/me/tickets/purchases/${encodeURIComponent(purchaseId)}/sync`, {
-        method: 'POST',
-        token,
-      });
-    },
   },
 
   passes: {
@@ -782,10 +752,13 @@ export const api = {
     get(token: string) {
       return call<{ subscription: PassSubscription | null }>('/me/pass', { token });
     },
-    subscribe(token: string, planCode: string, idempotencyKey?: string) {
+    subscribe(token: string, planCode: string, idempotencyKey?: string, termsVersionId?: string) {
       return call<PassSubscription>('/me/pass/subscriptions', {
         method: 'POST',
-        body: { plan_code: planCode },
+        body: {
+          plan_code: planCode,
+          ...(termsVersionId ? { terms_version_id: termsVersionId } : {}),
+        },
         token,
         headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
@@ -793,6 +766,12 @@ export const api = {
     subscription(token: string, subscriptionId: string) {
       return call<PassSubscription>(
         `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}`,
+        { token },
+      );
+    },
+    receipt(token: string, subscriptionId: string) {
+      return call<PassReceipt>(
+        `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}/receipt`,
         { token },
       );
     },
@@ -807,12 +786,6 @@ export const api = {
         `/me/pass/subscriptions/${encodeURIComponent(subscriptionId)}`,
         { method: 'DELETE', token },
       );
-    },
-  },
-
-  pricing: {
-    bands(token: string) {
-      return call<{ bands: Band[] }>('/pricing/bands', { token });
     },
   },
 

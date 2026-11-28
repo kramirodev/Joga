@@ -32,7 +32,6 @@ import {
 import type {
   Availability,
   Badge,
-  Band,
   Booking,
   Clan,
   ClanMember,
@@ -56,7 +55,6 @@ import type {
   QueueSelectionPayload,
   Sport,
   Stats,
-  TicketPack,
   Track,
   Wallet,
   Venue,
@@ -145,10 +143,8 @@ type AppValue = {
   queueReconnecting: boolean;
   queueNotice: string | null;
   ratings: Record<string, MyRating>;
-  packs: TicketPack[];
   pass: PassSubscription | null;
   passPlans: PassPlan[];
-  bands: Band[];
   venues: Venue[];
   friends: Friend[];
   friendRequestsIncoming: FriendRequest[];
@@ -192,7 +188,6 @@ type AppValue = {
   replaceQueue: (payload: QueueSelectionPayload) => Promise<QueueReplaceOutcome>;
   cancelQueue: () => Promise<QueueCancelOutcome>;
   clearQueueNotice: () => void;
-  loadStore: () => Promise<void>;
   loadPass: () => Promise<void>;
   loadSocial: () => Promise<void>;
   loadClan: () => Promise<void>;
@@ -261,10 +256,8 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [queueReconnecting, setQueueReconnecting] = useState(false);
   const [queueNotice, setQueueNotice] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<string, MyRating>>({});
-  const [packs, setPacks] = useState<TicketPack[]>([]);
   const [pass, setPass] = useState<PassSubscription | null>(null);
   const [passPlans, setPassPlans] = useState<PassPlan[]>([]);
-  const [bands, setBands] = useState<Band[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendRequestsIncoming, setFriendRequestsIncoming] = useState<FriendRequest[]>([]);
@@ -548,7 +541,6 @@ export function AppProvider({ children }: PropsWithChildren) {
     setMatches([]);
     setQueue([], null);
     setRatings({});
-    setPacks([]);
     setPass(null);
     setPassPlans([]);
     setVenues([]);
@@ -664,22 +656,6 @@ export function AppProvider({ children }: PropsWithChildren) {
     const result = await api.matches.list(token);
     setMatches(result.matches);
     return result.matches;
-  }, [token]);
-
-  const loadStore = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-    const [packResult, bandResult, passPlansResult, passResult] = await Promise.all([
-      api.tickets.packs(token),
-      api.pricing.bands(token),
-      api.passes.plans(token),
-      api.passes.get(token),
-    ]);
-    setPacks(packResult.packs);
-    setBands(bandResult.bands);
-    setPassPlans(passPlansResult.plans);
-    setPass(passResult.subscription);
   }, [token]);
 
   const loadPass = useCallback(async () => {
@@ -1362,10 +1338,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       queueReconnecting: queueReconnecting && queue.length > 0,
       queueNotice,
       ratings,
-      packs,
       pass,
       passPlans,
-      bands,
       venues,
       friends,
       friendRequestsIncoming,
@@ -1407,7 +1381,6 @@ export function AppProvider({ children }: PropsWithChildren) {
       replaceQueue,
       cancelQueue,
       clearQueueNotice,
-      loadStore,
       loadPass,
       loadSocial,
       loadClan,
@@ -1455,10 +1428,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       queueReconnecting,
       queueNotice,
       ratings,
-      packs,
       pass,
       passPlans,
-      bands,
       venues,
       friends,
       friendRequestsIncoming,
@@ -1496,7 +1467,6 @@ export function AppProvider({ children }: PropsWithChildren) {
       replaceQueue,
       cancelQueue,
       clearQueueNotice,
-      loadStore,
       loadPass,
       loadSocial,
       loadClan,
